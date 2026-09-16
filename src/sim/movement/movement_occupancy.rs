@@ -520,6 +520,14 @@ pub(super) fn naval_occ_diag(
     }
 }
 
+// Only a test uses this now. Its production consumer was the code-2 arm's
+// peer re-snapshot, which existed because the blocker scatter mutated the world
+// between the tick snapshot and the immediate blocked repath; native's code-2
+// arm scatters nothing, so there is no mutation to re-read. Kept, behind
+// cfg(test), because `gsi_04_12_...` still exercises the context builder
+// underneath it; whether that test should follow the mechanism out is a separate
+// call, recorded on the A4 row rather than made here.
+#[cfg(test)]
 fn bridge_marker_context_with_peers<'a>(
     context: crate::sim::movement::path_markers::BridgeMarkerContext<'a>,
     peers: &'a crate::sim::movement::path_markers::BridgeMarkerPeerSnapshot,
@@ -1120,13 +1128,7 @@ pub(super) fn handle_deferred_occupancy(
                 }
             }
         }
-        temporary @ (CellEntryResult::TemporaryBlock { .. }
-        | CellEntryResult::TemporaryOccupation) => {
-            let blocker_id = match temporary {
-                CellEntryResult::TemporaryBlock { blocker_id } => Some(blocker_id),
-                CellEntryResult::TemporaryOccupation => None,
-                _ => unreachable!(),
-            };
+        CellEntryResult::TemporaryBlock { .. } | CellEntryResult::TemporaryOccupation => {
             // Drive moving-friendly response: raise the latch, arm the wait
             // once, repath. **No scatter** - native's code-2 arm nudges nobody.
             //
@@ -1151,7 +1153,6 @@ pub(super) fn handle_deferred_occupancy(
             // `Foot+0x64C = 0xA` at `0x004B3285`, a retry-counter reload consumed
             // by the decrement at `0x004B2DC8`, on a different arm entirely.
             let mut has_target = false;
-            let mut grace_expired = false;
             let mut first_block = false;
             if let Some(entity) = entities.get_mut(entity_id) {
                 if mover_loco_kind != LocomotorKind::Walk {
@@ -1163,11 +1164,6 @@ pub(super) fn handle_deferred_occupancy(
                         entity.navigation.path_runtime.path_blocked = true;
                     }
                     has_target = true;
-                    grace_expired = entity
-                        .navigation
-                        .path_runtime
-                        .blocked_timer
-                        .expired(mcfg.binary_frame as i32);
                 }
             }
             if has_target {
@@ -1177,9 +1173,15 @@ pub(super) fn handle_deferred_occupancy(
                 // tick the movement-delay rate limiter allows, and that limiter
                 // is permanently open for Drive movers (the only writers of the
                 // tick field are the FootClass constructor and
-                // Set_Destination_Internal, both of which store zero). Only the
-                // blocker scatter and the peer refresh below wait for the timer.
-                let refreshed_marker_peers = None;
+                // Set_Destination_Internal, both of which store zero).
+                // `handle_blocked_tick` reads the timer itself, so nothing here
+                // needs to.
+                //
+                // The peer-path re-snapshot that used to sit here went with the
+                // scatter: it existed because the nudge was "the sole mutation
+                // between the tick snapshot and this immediate blocked repath",
+                // and with no mutation there is nothing to re-read.
+                //
                 // Walk ProcessMovement 0x75B8A0..0x75B9F9 (code 2) only waits and
                 // repaths, and so - now - does Drive. `first_block` is this
                 // port's spelling of the `+0x6B7` latch: it is true exactly on
@@ -1194,11 +1196,7 @@ pub(super) fn handle_deferred_occupancy(
                         );
                     }
                 }
-                let effective_marker_context = match refreshed_marker_peers.as_ref() {
-                    Some(peers) => marker_context
-                        .map(|context| bridge_marker_context_with_peers(context, peers)),
-                    None => marker_context,
-                };
+                let effective_marker_context = marker_context;
                 // Re-borrow the mover since scatter_blocker and the live
                 // marker snapshot both released it.
                 if let Some(entity) = entities.get_mut(entity_id) {
