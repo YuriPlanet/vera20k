@@ -1399,3 +1399,142 @@ fn advance_drive_track_reported_cell_deltas_sum_to_the_head_delta() {
     assert_eq!(deltas(1, 4, 0, 1, 0x80), vec![(0, 1)]);
     assert_eq!(deltas(1, 1, -1, 0, 0xC0), vec![(-1, 0)]);
 }
+
+/// Every `TURN_TRACKS` and `RAW_TRACKS` entry, as gamemd.exe stores them.
+///
+/// Read from the retail binary (SHA-256 `1cdd1180...4298c`) at `0x007E7B28`
+/// (72 entries of 12 bytes) and `0x007E7A28` (16 entries of 16 bytes). Native
+/// layout: TurnTrack byte +0x00 normal track, +0x01 short track, dword +0x04
+/// target facing, dword +0x08 flags; RawTrack dword +0x00 points pointer,
+/// +0x04 chain index, +0x08 entry index, +0x0C occupation handoff index, the
+/// last three signed with -1 meaning none.
+///
+/// The A3 examination sampled 8 of the 72 TurnTrack entries and 6 of the 16
+/// RawTrack entries and carried the remainder as a coverage limit. This pins
+/// all of both, so an edit to either table has to answer to the binary.
+///
+/// The pointer column is deliberately absent: VERA stores the points inline
+/// through `points_start`/`points_count`, so there is no address to compare.
+#[test]
+fn track_tables_match_the_retail_bytes_entry_for_entry() {
+    // (normal_track, short_track, target_facing, flags)
+    const NATIVE_TURN_TRACKS: [(u8, u8, u8, u8); 72] = [
+        (1, 0, 0x00, 0x00),
+        (3, 7, 0x20, 0x08),
+        (4, 9, 0x40, 0x08),
+        (0, 0, 0x60, 0x00),
+        (0, 0, 0x80, 0x00),
+        (0, 0, 0xA0, 0x00),
+        (4, 9, 0xC0, 0x0A),
+        (3, 7, 0xE0, 0x0A),
+        (6, 8, 0x00, 0x0F),
+        (2, 0, 0x20, 0x00),
+        (6, 8, 0x40, 0x08),
+        (5, 10, 0x60, 0x08),
+        (0, 0, 0x80, 0x00),
+        (0, 0, 0xA0, 0x00),
+        (0, 0, 0xC0, 0x00),
+        (5, 10, 0xE0, 0x0F),
+        (4, 9, 0x00, 0x0F),
+        (3, 7, 0x20, 0x0F),
+        (1, 0, 0x40, 0x03),
+        (3, 7, 0x60, 0x0B),
+        (4, 9, 0x80, 0x0B),
+        (0, 0, 0xA0, 0x00),
+        (0, 0, 0xC0, 0x00),
+        (0, 0, 0xE0, 0x00),
+        (0, 0, 0x00, 0x00),
+        (5, 10, 0x20, 0x0C),
+        (6, 8, 0x40, 0x0C),
+        (2, 0, 0x60, 0x04),
+        (6, 8, 0x80, 0x0B),
+        (5, 10, 0xA0, 0x0B),
+        (0, 0, 0xC0, 0x00),
+        (0, 0, 0xE0, 0x00),
+        (0, 0, 0x00, 0x00),
+        (0, 0, 0x20, 0x00),
+        (4, 9, 0x40, 0x0C),
+        (3, 7, 0x60, 0x0C),
+        (1, 0, 0x80, 0x04),
+        (3, 7, 0xA0, 0x0E),
+        (4, 9, 0xC0, 0x0E),
+        (0, 0, 0xE0, 0x00),
+        (0, 0, 0x00, 0x00),
+        (0, 0, 0x20, 0x00),
+        (0, 0, 0x40, 0x00),
+        (5, 10, 0x60, 0x09),
+        (6, 8, 0x80, 0x09),
+        (2, 0, 0xA0, 0x01),
+        (6, 8, 0xC0, 0x0E),
+        (5, 10, 0xE0, 0x0E),
+        (4, 9, 0x00, 0x0D),
+        (0, 0, 0x20, 0x00),
+        (0, 0, 0x40, 0x00),
+        (0, 0, 0x60, 0x00),
+        (4, 9, 0x80, 0x09),
+        (3, 7, 0xA0, 0x09),
+        (1, 0, 0xC0, 0x01),
+        (3, 7, 0xE0, 0x0D),
+        (6, 8, 0x00, 0x0D),
+        (5, 10, 0x20, 0x0D),
+        (0, 0, 0x40, 0x00),
+        (0, 0, 0x60, 0x00),
+        (0, 0, 0x80, 0x00),
+        (5, 10, 0xA0, 0x0A),
+        (6, 8, 0xC0, 0x0A),
+        (2, 0, 0xE0, 0x02),
+        (11, 11, 0xA0, 0x00),
+        (12, 12, 0xA0, 0x00),
+        (13, 13, 0xA0, 0x00),
+        (14, 14, 0x20, 0x00),
+        (14, 14, 0x60, 0x04),
+        (14, 14, 0xA0, 0x01),
+        (14, 14, 0xE0, 0x02),
+        (15, 15, 0xC0, 0x00),
+    ];
+    // (chain_index, entry_index, occupation_handoff_point_index)
+    const NATIVE_RAW_TRACKS: [(i16, u16, i16); 16] = [
+        (0, 192, 0),
+        (-1, 0, -1),
+        (-1, 0, -1),
+        (37, 12, 22),
+        (26, 11, 19),
+        (45, 15, 31),
+        (44, 16, 27),
+        (-1, 0, -1),
+        (-1, 0, -1),
+        (-1, 0, -1),
+        (-1, 0, -1),
+        (-1, 0, -1),
+        (-1, 0, -1),
+        (-1, 0, -1),
+        (-1, 0, -1),
+        (-1, 0, -1),
+    ];
+
+    for (index, native) in NATIVE_TURN_TRACKS.iter().enumerate() {
+        let ours = &TURN_TRACKS[index];
+        assert_eq!(
+            (
+                ours.normal_track,
+                ours.short_track,
+                ours.target_facing,
+                ours.flags
+            ),
+            *native,
+            "TURN_TRACKS[{index}] disagrees with gamemd 0x007E7B28 + {index} * 12",
+        );
+    }
+    for (index, native) in NATIVE_RAW_TRACKS.iter().enumerate() {
+        let ours = &RAW_TRACKS[index];
+        assert_eq!(
+            (
+                ours.chain_index,
+                ours.entry_index,
+                ours.occupation_handoff_point_index
+            ),
+            *native,
+            "RAW_TRACKS[{index}] disagrees with gamemd 0x007E7A28 + {index} * 16",
+        );
+    }
+}

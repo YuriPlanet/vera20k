@@ -63,9 +63,15 @@
 //!   a friendly wall and **5** for an enemy one (Unit: `OverlayTypeClass+0x2A8`
 //!   at `0x0073F420` with the `Crushable=` gate `+0x22D` at `0x0073F42E`;
 //!   Infantry: `5 - isAlly`), and 4 and 5 both still expand in the A*. Retail
-//!   therefore routes *through* a wall line at 60×/20× cost and stops at it;
-//!   VERA reports no path. [`CellEntryResult::FriendlyWall`] consequently has no
-//!   producer. Trigger: any expansion into a `Wall=yes` overlay cell. Player
+//!   therefore routes *through* a wall line at 60×/20× cost and stops at it.
+//!   **Partly addressed by I9b (2026-09-16):** the runtime cell crossing now
+//!   produces 4 and 5 and dispatches the wall-attack Override, so
+//!   [`CellEntryResult::FriendlyWall`] has a producer there. The **A\*** still
+//!   hard-blocks, which is what the rest of this paragraph describes and what
+//!   bounds the fix: because order-time search never routes into a wall cell,
+//!   the arm fires only where a wall appears across an already-moving mover's
+//!   path and the following repath fails. Trigger: any expansion into a
+//!   `Wall=yes` overlay cell. Player
 //!   effect: a move order whose destination is enclosed by walls is refused
 //!   outright instead of routing to the wall and stopping. Frequency: pre-placed
 //!   civilian fences appear on most stock maps, so this fires many times a match

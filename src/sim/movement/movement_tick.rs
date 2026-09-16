@@ -304,9 +304,21 @@ pub(super) fn snapshot_mover(
             .map(|h| rules.object_by_handle(h))
     });
     let is_armed = obj.is_some_and(|obj| crate::sim::combat::combat_weapon::is_armed(e, obj));
-    let (warhead_wall, warhead_wood) = obj.zip(rules).map_or((false, false), |(obj, rules)| {
-        crate::sim::combat::combat_weapon::primary_warhead_wall_flags(e, obj, rules)
-    });
+    // Gated on `is_armed`, the way native gates it: `Can_Enter_Cell` tests the
+    // armed vtable slot at `0x0073F487` (`CALL [EAX+0x2AC]`, `JZ 0x0073FCD0`)
+    // and only then fetches weapon 0 at `0x0073F497`/`0x0073F49B`. Ungated,
+    // this ran the lookup for every mover every tick, and `RuleSet::weapon`
+    // falls back to a full linear scan when the key misses - which is exactly
+    // what `Primary=none` on `[CMIN]`, `[TRUCKA]` and `[TRUCKB]` produces, so
+    // every Chrono Miner and truck scanned all weapon sections per movement
+    // tick. An unarmed mover cannot take the wall arm anyway.
+    let (warhead_wall, warhead_wood) = if is_armed {
+        obj.zip(rules).map_or((false, false), |(obj, rules)| {
+            crate::sim::combat::combat_weapon::primary_warhead_wall_flags(e, obj, rules)
+        })
+    } else {
+        (false, false)
+    };
     Some(MoverSnapshot {
         category: e.category,
         speed_type: e.locomotor.as_ref().map(|l| l.speed_type),
@@ -3175,11 +3187,16 @@ fn advance_ordinary_mover(
     // can do immutable EntityStore lookups for blocker properties.
     // The wall-attack Override, outside the entity borrow the crossing held.
     //
-    // `finished_entities` is what makes this fire once per block rather than
-    // every tick: a second Override with an empty queue archives the CURRENT
-    // mission, so a mover that re-entered next tick would overwrite its archived
-    // Move with Attack and every later Restore would hand it back Attack instead
-    // of its order.
+    // Pushing onto `finished_entities` is what makes this fire once per block
+    // rather than every tick, but the guard is one hop further on:
+    // `finalize_finished_entities` clears `movement_target` for everything in
+    // that list (see the assignment below in this file), and a mover with no
+    // target runs no crossing next tick, so it cannot reach this line again.
+    //
+    // The hazard being avoided - not the guard itself - is double archiving: a
+    // second Override with an empty queue archives the CURRENT mission, so a
+    // re-entering mover would overwrite its archived Move with Attack and every
+    // later Restore would hand it back Attack instead of its order.
     if let Some(cell) = deferred_wall_override
         && crate::sim::mission::authority::override_mission_on_wall_cell(entities, entity_id, cell)
     {
