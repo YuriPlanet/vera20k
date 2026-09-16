@@ -1361,6 +1361,11 @@ pub fn astar_search(
                         options.mover_is_crusher,
                     )
                 };
+                // Set when the neighbour is impassable but the Foot `+0x1AC`
+                // cost class says this mover may still enter it at a price -
+                // today, a wall it can shoot. `None` means "passable", which is
+                // class 0.
+                let mut refused_cost_class: Option<u8> = None;
                 trace_step.walkable = Some(neighbor_passable);
                 if !neighbor_passable {
                     // Impassable-destination abort. When the goal cell itself is
@@ -1387,9 +1392,31 @@ pub fn astar_search(
                             w,
                         ));
                     }
-                    trace_step.rejected_reason = Some("walkability_blocked");
-                    emit_astar_trace(options, trace_step);
-                    continue;
+                    // Ask the cost-class producer before refusing. THIS is
+                    // where native decides: `AStar_main_loop @ 0x00429A90`
+                    // calls the `FootClass +0x1AC` slot for the neighbour and
+                    // branches on the returned class, so a cell the grid calls
+                    // impassable is not automatically dropped - a wall the
+                    // mover may shoot answers 4 or 5 (`0x0073F4EB`,
+                    // `0x0073F50E`) and `AStar_compute_edge_cost @ 0x00429830`
+                    // prices it at 60x and 20x from the table at `0x0081870C`.
+                    //
+                    // Before this, the refusal `continue`d here unconditionally
+                    // and the classifier below was only consulted on the
+                    // `neighbor_passable` path - where it is never needed. That
+                    // made the whole producer **dead code**: every wall was
+                    // simply unreachable, and a mover whose only route crossed
+                    // a wall line got no path at all. Wiring a classifier in
+                    // could not have changed anything without this.
+                    let refused_class = options.search_cost_classifier.map_or(7, |classifier| {
+                        classifier.classify((cx, cy), (nx, ny), neighbor_use_bridge)
+                    });
+                    if refused_class >= 7 {
+                        trace_step.rejected_reason = Some("walkability_blocked");
+                        emit_astar_trace(options, trace_step);
+                        continue;
+                    }
+                    refused_cost_class = Some(refused_class);
                 }
 
                 // Entity blocks (layer-separated). Goal exempt.
@@ -1552,13 +1579,9 @@ pub fn astar_search(
                 // VERA's other cost-class source is the `entity_block_map` below,
                 // whose 2/5/6 codes reproduce the `0x0081870C` entries
                 // 1.0/20.0/8.0 and the code-2 prediction override.
-                let raw_cost_class = if neighbor_passable {
-                    0
-                } else {
-                    options.search_cost_classifier.map_or(7, |classifier| {
-                        classifier.classify((cx, cy), (nx, ny), neighbor_use_bridge)
-                    })
-                };
+                // `None` is the passable case, which native reaches with the
+                // class the slot returned for an enterable cell: 0.
+                let raw_cost_class = refused_cost_class.unwrap_or(0);
                 let search_cost = search_cell_cost_decision(
                     raw_cost_class,
                     options.search_cost_class_coerce_to_zero,

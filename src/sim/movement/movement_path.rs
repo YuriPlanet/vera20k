@@ -1299,4 +1299,124 @@ mod tests {
             "a failed layered search must remain failed instead of launching a second flat A*"
         );
     }
+
+    /// A wall line the mover may shoot is **routed through at cost**, not
+    /// reported unreachable.
+    ///
+    /// This is the search half of ledger row I9b, and it is the test the first
+    /// version of that work did not have. `astar_search` consults the Foot
+    /// `+0x1AC` cost-class producer only after its own `neighbor_passable` has
+    /// refused a cell; a `Wall=yes` overlay is `overlay_blocks`, so every wall
+    /// cell takes that path. With no producer the search answers 7 - "does not
+    /// expand" - and a mover whose only route crosses the line gets **no path
+    /// at all**. Native prices it instead: `AStar_main_loop 0x00429A90` calls
+    /// the slot, the arm answers 5 for an enemy wall (`0x0073F50E`), and
+    /// `AStar_compute_edge_cost 0x00429830` multiplies the step by 20 from the
+    /// table at `0x0081870C`.
+    ///
+    /// The two halves of this test differ **only** in the mover's own facts, so
+    /// it fails if `find_move_path_with_marker_detailed` goes back to passing
+    /// `wall_cost: None`: both halves would then answer `None`.
+    #[test]
+    fn a_shootable_wall_line_is_routed_through_instead_of_refusing_the_order() {
+        use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zone_class};
+        use crate::rules::ini_parser::IniFile;
+
+        // Column x=2 is a solid, unowned `Wall=yes` line across a 5x3 board, so
+        // the only route from (0,1) to (4,1) crosses it.
+        let mut cells = Vec::with_capacity(15);
+        for ry in 0..3u16 {
+            for rx in 0..5u16 {
+                let mut cell = ResolvedTerrainCell::clear_for_test(rx, ry);
+                cell.speed_costs.track = Some(100);
+                if rx == 2 {
+                    cell.zone_type = zone_class::WALL;
+                    cell.overlay_zone_type = Some(zone_class::WALL);
+                    cell.overlay_blocks = true;
+                }
+                cells.push(cell);
+            }
+        }
+        let terrain = ResolvedTerrainGrid::from_cells(5, 3, cells);
+        let grid = PathGrid::from_resolved_terrain(&terrain);
+
+        let registry = crate::map::overlay_types::OverlayTypeRegistry::from_ini(
+            &IniFile::from_str("[OverlayTypes]\n0=GAWALL\n\n[GAWALL]\nWall=yes\n"),
+            None,
+        );
+        let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(5, 3);
+        for ry in 0..3u16 {
+            overlays.cell_mut(2, ry).overlay_id = Some(0);
+        }
+        // Intern before cloning the thread-local interner.
+        let mover = crate::sim::intern::test_intern("Americans");
+        let interner = crate::sim::intern::test_interner();
+        let alliances = crate::map::houses::HouseAllianceMap::new();
+
+        let search = |facts: MoverPathFacts| {
+            find_move_path(
+                PathfindingContext {
+                    wall_tables: Some(crate::sim::pathfinding::cell_entry::WallArmTables {
+                        overlay_grid: Some(&overlays),
+                        overlay_registry: Some(&registry),
+                        alliances: Some(&alliances),
+                        interner: Some(&interner),
+                    }),
+                    path_grid: Some(&grid),
+                    zone_grid: None,
+                    resolved_terrain: Some(&terrain),
+                    playfield_bounds: None,
+                    blocker_neighbor_counts: None,
+                },
+                false,
+                (0, 1),
+                MovementLayer::Ground,
+                (4, 1),
+                None,
+                None,
+                None,
+                None,
+                MovementZone::Normal,
+                Some(MovementZone::Normal),
+                false,
+                None,
+                facts,
+                true,
+            )
+        };
+
+        // An armed mover whose primary warhead sets `Wall=` takes the wall arm:
+        // the line is priced, so the order is admitted and the route crosses it.
+        let armed = MoverPathFacts {
+            urgency: 0,
+            mover_is_crusher: false,
+            is_infantry: false,
+            speed_type: Some(SpeedType::Track),
+            owner: Some(mover),
+            is_armed: true,
+            warhead_wall: true,
+            warhead_wood: false,
+        };
+        let (path, _layers) = search(armed).expect(
+            "a mover that can shoot the wall must be given a route through it, not refused",
+        );
+        assert_eq!(path.first(), Some(&(0, 1)));
+        assert_eq!(path.last(), Some(&(4, 1)));
+        assert!(
+            path.iter().any(|&(rx, _)| rx == 2),
+            "the admitted route must cross the wall line, not detour around a 5x3 board: {path:?}"
+        );
+
+        // Same board, same search, mover facts that cannot take the arm: an
+        // unarmed mover answers 7 at `0x0073F48F` and the line stays solid.
+        let unarmed = MoverPathFacts {
+            is_armed: false,
+            warhead_wall: false,
+            ..armed
+        };
+        assert!(
+            search(unarmed).is_none(),
+            "an unarmed mover must still find the wall line impassable"
+        );
+    }
 }
