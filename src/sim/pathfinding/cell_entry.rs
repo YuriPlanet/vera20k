@@ -492,6 +492,19 @@ impl WallArmContext<'_> {
         if !(self.warhead_wall || wood_route) {
             return None;
         }
+        // Fail closed on a wiring gap rather than guessing "enemy". Native
+        // always has a house to ask, so absent alliance tables here are a VERA
+        // wiring mistake, not a game state — and answering 5 would be
+        // indistinguishable from a genuinely unowned wall while quietly pricing
+        // it at 20x. Declining keeps the pre-I9b hard block, which is the same
+        // "absent context => pre-I9b behaviour" rule the rest of the arm
+        // follows, and it matters because the producer has to reach many call
+        // sites: a site wired without tables then refuses walls instead of
+        // silently mis-pricing them. An unowned wall (`wall_owner: None` with
+        // the tables present) still takes 5 — native's index -1.
+        if self.alliances.is_none() || self.interner.is_none() || self.mover_owner.is_none() {
+            return None;
+        }
         Some(if self.owner_is_ally(wall_owner) { 4 } else { 5 })
     }
 }
@@ -656,13 +669,28 @@ fn target_has_structural_bridge(ctx: CanEnterCellContext<'_>) -> bool {
 /// `land_passable` is VERA's coarse "may this mover stand here at all" answer:
 /// the path grid, the speed row and the cost grid folded together.
 ///
-/// `land_row_passable` is the **terrain's own land row** and nothing else —
-/// `speed_type_allows_cell`, the analogue of native's `FLD [ECX*4 + 0x89EA40]`
-/// / `FCOMP 0.0` at `0x0073FAB5`. It is a separate parameter because the wall
-/// arm needs the row *without* the overlay terms the other two carry: both
-/// `grid_ok` and the cost grid go false on `overlay_blocks`, which
-/// `ResolvedTerrainGrid` sets for every `zone_class::WALL` overlay, so either
-/// of them would refuse the very cells the wall arm exists to price.
+/// `land_row_passable` is the cell's **land row** — `speed_type_allows_cell`,
+/// the analogue of native's `FLD [ECX*4 + 0x89EA40]` / `FCOMP 0.0` at
+/// `0x0073FAB5`.
+///
+/// It is a separate parameter because the wall arm needs the row without the
+/// two *blocking* terms the coarse answer folds in: `grid_ok` and the cost grid
+/// both go false on `overlay_blocks`, which `ResolvedTerrainGrid` sets for every
+/// `zone_class::WALL` overlay, so gating the wall classes on `land_passable`
+/// would refuse the very cells the arm exists to price.
+///
+/// The row itself is *not* overlay-free, and the distinction matters:
+/// `apply_overlay_land` writes `cell.speed_costs` from the overlay's own `Land=`
+/// row, exactly as native does — `CellClass::RecalcAttributes @ 0x0047D2B0`
+/// opens with `this->LandType = ot->Land` (`+0x298`) and early-returns on
+/// `Land == 4`/`9` or `NoUseTileLandType` (`+0x2AC`), which
+/// `uses_early_recalc_land_branch` ports. So reading the post-overlay row is the
+/// faithful analogue, not an accident.
+///
+/// In stock data this gate never fires: no `Wall=yes` overlay declares `Land=`,
+/// so each inherits `LandType::Clear` and its passable row rather than the
+/// all-zero `[Wall]` row. It bites only where an overlay declares a land whose
+/// row is zero for the mover's SpeedType.
 fn evaluate_shared_cell_leaf(
     ctx: CanEnterCellContext<'_>,
     land_passable: bool,
@@ -2904,13 +2932,27 @@ mod tests {
         assert!(decision.should_call_edge_cost);
     }
 
-    fn wall_arm(is_armed: bool, warhead_wall: bool, warhead_wood: bool) -> WallArmContext<'static> {
+    /// `tables` carries the alliance context the arm needs to answer the ally
+    /// test; `None` models a caller that has not wired it, which the arm treats
+    /// as a reason to decline rather than to guess.
+    type AllianceTables<'a> = (
+        &'a HouseAllianceMap,
+        &'a crate::sim::intern::StringInterner,
+        crate::sim::intern::InternedId,
+    );
+
+    fn wall_arm<'a>(
+        tables: Option<AllianceTables<'a>>,
+        is_armed: bool,
+        warhead_wall: bool,
+        warhead_wood: bool,
+    ) -> WallArmContext<'a> {
         WallArmContext {
             overlay_grid: None,
             overlay_registry: None,
-            alliances: None,
-            interner: None,
-            mover_owner: None,
+            alliances: tables.map(|(alliances, _, _)| alliances),
+            interner: tables.map(|(_, interner, _)| interner),
+            mover_owner: tables.map(|(_, _, owner)| owner),
             is_armed,
             warhead_wall,
             warhead_wood,
@@ -2932,32 +2974,48 @@ mod tests {
     /// non-crushable wooden wall gamemd refuses it.
     #[test]
     fn the_wall_arm_wood_route_is_unit_only() {
+        // Intern before cloning the thread-local: the clone must already carry
+        // the id, or `resolve` in the ally test finds nothing.
+        let mover = crate::sim::intern::test_intern("Americans");
+        let interner = crate::sim::intern::test_interner();
+        let alliances = HouseAllianceMap::new();
+        let tables = Some((&alliances, &interner, mover));
+        let arm = |armed, wall, wood| wall_arm(tables, armed, wall, wood);
+
         // Wood= against a wooden wall: the vehicle routes, the infantryman does not.
         assert_eq!(
-            wall_arm(true, false, true).weapon_route_code(true, None, false),
+            arm(true, false, true).weapon_route_code(true, None, false),
             Some(5)
         );
         assert_eq!(
-            wall_arm(true, false, true).weapon_route_code(true, None, true),
+            arm(true, false, true).weapon_route_code(true, None, true),
             None
         );
         // Wall= routes for both classes.
         assert_eq!(
-            wall_arm(true, true, false).weapon_route_code(false, None, false),
+            arm(true, true, false).weapon_route_code(false, None, false),
             Some(5)
         );
         assert_eq!(
-            wall_arm(true, true, false).weapon_route_code(false, None, true),
+            arm(true, true, false).weapon_route_code(false, None, true),
             Some(5)
         );
         // Wood= against a non-wood overlay never routes, for either class.
         assert_eq!(
-            wall_arm(true, false, true).weapon_route_code(false, None, false),
+            arm(true, false, true).weapon_route_code(false, None, false),
             None
         );
         // An unarmed mover leaves at 0x0073F48F before any warhead is read.
         assert_eq!(
-            wall_arm(false, true, true).weapon_route_code(true, None, false),
+            arm(false, true, true).weapon_route_code(true, None, false),
+            None
+        );
+        // Wiring gap: with no alliance tables the arm declines instead of
+        // guessing "enemy" and quietly pricing the wall at 20x. An unowned wall
+        // with the tables present still takes 5 — that is the `None` wall_owner
+        // in the cases above.
+        assert_eq!(
+            wall_arm(None, true, true, false).weapon_route_code(false, None, false),
             None
         );
     }
@@ -2976,7 +3034,7 @@ mod tests {
         let terrain = crushable_wall_grid();
         let grid = PathGrid::from_resolved_terrain(&terrain);
         let classifier = WallSearchCostClassifier {
-            wall: wall_arm(true, true, true),
+            wall: wall_arm(None, true, true, true),
             path_grid: Some(&grid),
             resolved_terrain: Some(&terrain),
             terrain_costs: None,
@@ -3041,6 +3099,10 @@ mod tests {
         let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(3, 3);
         // Unowned: `Is_Ally_ByIndex` rejects index -1, so the route takes 5.
         overlays.cell_mut(1, 1).overlay_id = Some(0);
+        // Intern before cloning the thread-local interner.
+        let mover = crate::sim::intern::test_intern("Americans");
+        let interner = crate::sim::intern::test_interner();
+        let alliances = HouseAllianceMap::new();
 
         let entry = |track_row: Option<u8>| {
             let terrain = wall_row_fixture(track_row);
@@ -3049,9 +3111,9 @@ mod tests {
                 wall: Some(WallArmContext {
                     overlay_grid: Some(&overlays),
                     overlay_registry: Some(&registry),
-                    alliances: None,
-                    interner: None,
-                    mover_owner: None,
+                    alliances: Some(&alliances),
+                    interner: Some(&interner),
+                    mover_owner: Some(mover),
                     is_armed: true,
                     warhead_wall: true,
                     warhead_wood: false,
