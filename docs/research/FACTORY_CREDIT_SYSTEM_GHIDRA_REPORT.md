@@ -3,7 +3,7 @@
 **Source**: Ghidra decompilation of `gamemd.exe`
 **Confidence**: High — all functions directly decompiled
 **Date**: 2026-03-26
-**Supplements**: BUILD_QUEUE_GHIDRA_REPORT.md, FACTORYCLASS_PRODUCTION_DEEP_DIVE.md
+**Supplements**: [BUILD_QUEUE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILD_QUEUE_GHIDRA_REPORT.md), FACTORYCLASS_PRODUCTION_DEEP_DIVE.md
 
 ## Overview
 

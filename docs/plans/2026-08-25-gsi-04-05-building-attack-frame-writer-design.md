@@ -23,7 +23,7 @@ foundation. Its `base_reservation_writer_eligible` method independently contains
 the same verified `UndeploysInto && 1x1` type predicate as one of its gates.
 
 The new research report
-`docs/research/PHASE3_HOUSE_LAST_BUILDING_ATTACK_FRAME_0044229C_GHIDRA_REPORT.md`
+[docs/research/PHASE3_HOUSE_LAST_BUILDING_ATTACK_FRAME_0044229C_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_HOUSE_LAST_BUILDING_ATTACK_FRAME_0044229C_GHIDRA_REPORT.md)
 is primary evidence. It verifies active YR receiver dispatch, exact entry order,
 all direct `House+0x54D8` references, and retail-data activation. No relevant
 House/combat `*_SYSTEM_MODEL_SYNTHESIS.md` exists; lifecycle synthesis documents
@@ -83,7 +83,7 @@ than duplicating a misleading cloak-like condition.
 - **COMPOUNDING — no false outcome gates:** alliance, requested damage sign,
   immunity, Health zero, attacker limbo, and eventual result do not suppress
   the store. Adding any of them changes AI abandonment/replacement timing.
-  [doc: `PHASE3_HOUSE_LAST_BUILDING_ATTACK_FRAME_0044229C_GHIDRA_REPORT.md`
+  [doc: [PHASE3_HOUSE_LAST_BUILDING_ATTACK_FRAME_0044229C_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_HOUSE_LAST_BUILDING_ATTACK_FRAME_0044229C_GHIDRA_REPORT.md)
   §§1,6]
 - **COMPOUNDING — exact type predicate:** only a type with both non-null
   `UndeploysInto` and exactly 1x1 foundation skips. It is not cloak state.

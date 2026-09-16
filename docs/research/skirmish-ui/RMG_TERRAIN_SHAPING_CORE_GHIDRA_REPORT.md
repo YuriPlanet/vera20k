@@ -575,7 +575,7 @@ no `RMGMD.INI` reader. (Rust scan this session)
 
 Omitted: these phases write sim/map state (tiles, levels, overlays, terrain
 objects); they have no paint path of their own. Preview rendering is covered
-by GENERATETERRAINPREVIEW_RANDMAP_DIMENSIONS_COLORS_GHIDRA_REPORT.md.
+by [GENERATETERRAINPREVIEW_RANDMAP_DIMENSIONS_COLORS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/GENERATETERRAINPREVIEW_RANDMAP_DIMENSIONS_COLORS_GHIDRA_REPORT.md).
 
 ## 10. Implementation Handoff
 

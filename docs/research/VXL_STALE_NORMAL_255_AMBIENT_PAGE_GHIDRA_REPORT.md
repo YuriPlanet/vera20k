@@ -38,7 +38,7 @@ correctness-by-construction rather than a visible in-match change.
 1. **Native normals tables.** Dispatch pointer table at `0x008469E0` =
    `[NULL, 0x00846A08, 0x00846AC8, 0x00846C78, 0x00846F78]`; count table at
    `0x008469F4` = `[0, 16, 36, 64, 245]` (prior finding,
-   `VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md` §6.2; both dereferenced live this
+   [VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md) §6.2; both dereferenced live this
    session via the decompiles below). Mode 2 (TS) = 36 entries; mode 4 (RA2)
    = **245 entries** at `0x00846F78`, stride 12 (3 × f32).
    - Entry 0 read live: bytes `d1cd063f 3e20b8be 7f3345bf` =
@@ -121,5 +121,5 @@ correctness-by-construction rather than a visible in-match change.
   never references indices ≥ 250 — **refuted** by the retail_goldens corpus
   scan (8 files, index 255).
 - This report resolves the "what does stale slot 255 shade as" question left
-  open in that comment and in `VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md` §9.2
+  open in that comment and in [VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md) §9.2
   row 4 ("Rare in retail"): the answer is a deliberate constant — VPL page 16.

@@ -356,9 +356,9 @@ Approaches B–D above are rejected. A future exact shell renderer may reuse the
 
 ## Sources
 
-- `docs/research/LAUNCHER_OPTIONS_0XD5_BACKUP_RESET_GHIDRA_REPORT.md`, GREEN SHA-256 `3B47ABD9EC6EB285687F4548C8AA4FEEBA540EE15B32118C9785C0D6246340BB`.
+- [docs/research/LAUNCHER_OPTIONS_0XD5_BACKUP_RESET_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LAUNCHER_OPTIONS_0XD5_BACKUP_RESET_GHIDRA_REPORT.md), GREEN SHA-256 `3B47ABD9EC6EB285687F4548C8AA4FEEBA540EE15B32118C9785C0D6246340BB`.
 - Bounded active-binary Theme lifecycle zero-add recheck: constructor `0x00720960`, AI `0x007209D0`, Next `0x00720A80`, Queue `0x00720B20`, Play `0x00720BB0`, Stop `0x00720EA0`, and live menu/scenario/main-tick/launcher callers.
-- `docs/research/OPTIONS_PROFILE_TRANSACTION_GHIDRA_REPORT.md` and merged PR #202.
+- [docs/research/OPTIONS_PROFILE_TRANSACTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/OPTIONS_PROFILE_TRANSACTION_GHIDRA_REPORT.md) and merged PR #202.
 - `docs/contracts/2026-08-31-launcher-options-parent-implementation-contract.md`, frozen GREEN hash cited above.
 - Active `gamemd.exe` SHA-256 `1CDD1180E49024FBDA8AD568CAAC2E86E856063FF67AB38F62B7D2C7BB84298C`.
 - Retail RT_DIALOG `0xD5`, active `ra2md.csf`, `[AudioVisual] GenericBeep`, and current-monitor Winit facts.

@@ -180,7 +180,7 @@ The important verified ordering is:
 Evidence:
 
 - `ComputeBridgeZones @ 0x0056D6E0` xrefs include map-load/init callers.
-- Existing `BRIDGE_LOW_AND_ZONE_RECORDS_GHIDRA_SUPPLEMENT.md` also records the same high-level order and was spot-checked here against the live decompilation.
+- Existing [BRIDGE_LOW_AND_ZONE_RECORDS_GHIDRA_SUPPLEMENT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/BRIDGE_LOW_AND_ZONE_RECORDS_GHIDRA_SUPPLEMENT.md) also records the same high-level order and was spot-checked here against the live decompilation.
 
 ### 5.2 `ComputeBridgeZones` low-bridge path
 
@@ -336,7 +336,7 @@ Verified source scan:
 
 ### Existing docs verified or corrected
 
-- `BRIDGE_LOW_AND_ZONE_RECORDS_GHIDRA_SUPPLEMENT.md` is broadly correct that low bridge overlays are not enough and that `IsLowBridgeCell` requires `cell+0x116` plus `LandType == 10`.
+- [BRIDGE_LOW_AND_ZONE_RECORDS_GHIDRA_SUPPLEMENT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/BRIDGE_LOW_AND_ZONE_RECORDS_GHIDRA_SUPPLEMENT.md) is broadly correct that low bridge overlays are not enough and that `IsLowBridgeCell` requires `cell+0x116` plus `LandType == 10`.
 - `HIGH_BRIDGE_DAMAGE_STATE_MACHINE_GHIDRA_REPORT.md` sections around low bridge tubes contain useful field facts, but the line saying "TubeClass is per-bridge" is stale for the automatic low-bridge construction path verified here. The live `RecalcAttributes` branch is per qualifying cell.
 - `docs/gap-scans/2026-05-15-disparity-scan-bridges-end-to-end.md` and `docs/gap-scans/2026-05-15-disparity-scan-bridge-business-logic.md` correctly identify the missing Rust TubeClass/tube-index model as a current low-bridge parity gap.
 
@@ -421,7 +421,7 @@ Current Rust already has `BridgeEndpointRecord.bridge_kind`, which removes one r
 - `docs/research/BRIDGE_SYSTEM.md`
 - `docs/research/HIGH_BRIDGE_DAMAGE_STATE_MACHINE_GHIDRA_REPORT.md`
 - `docs/research/UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md`
-- `docs/research/ZONE_MAP_BUILD_LEVEL_GHIDRA_REPORT.md`
+- [docs/research/ZONE_MAP_BUILD_LEVEL_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ZONE_MAP_BUILD_LEVEL_GHIDRA_REPORT.md)
 - `docs/research/PATH_SMOOTHING_AND_SPEED_RAMPING_GHIDRA_REPORT.md`
 - `docs/gap-scans/2026-05-15-disparity-scan-bridges-end-to-end.md`
 - `docs/gap-scans/2026-05-15-disparity-scan-bridge-business-logic.md`

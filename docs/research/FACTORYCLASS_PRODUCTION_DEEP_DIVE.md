@@ -1,6 +1,6 @@
 # FactoryClass & Production System — Deep Dive Ghidra Report
 
-Extends BUILD_QUEUE_GHIDRA_REPORT.md with newly decompiled functions.
+Extends [BUILD_QUEUE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILD_QUEUE_GHIDRA_REPORT.md) with newly decompiled functions.
 
 ---
 
@@ -355,7 +355,7 @@ int __thiscall FUN_004faa10(
 
 **CRITICAL FINDING — Queue restart resolved:**
 
-The "OPEN QUESTION" from BUILD_QUEUE_GHIDRA_REPORT.md about non-naval queue restart
+The "OPEN QUESTION" from [BUILD_QUEUE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILD_QUEUE_GHIDRA_REPORT.md) about non-naval queue restart
 is now answerable. The flow is:
 
 1. For non-naval types after normal completion, `FUN_004FAA10` is called with the
@@ -676,7 +676,7 @@ int FUN_004ca670(FactoryClass *factory, TechnoTypeClass *type) {
 
 ## 14. FUN_00509140 — Factory Prerequisite Update (0x00509140)
 
-**This resolves the OPEN QUESTION from BUILD_QUEUE_GHIDRA_REPORT.md.**
+**This resolves the OPEN QUESTION from [BUILD_QUEUE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILD_QUEUE_GHIDRA_REPORT.md).**
 
 ```c
 void __thiscall UpdateFactoryPrereqs(HouseClass *this, int rtti, char isNaval, int navalIndex) {

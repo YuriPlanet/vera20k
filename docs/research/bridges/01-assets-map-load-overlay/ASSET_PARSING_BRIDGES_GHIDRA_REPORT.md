@@ -1353,11 +1353,11 @@ covered:
   / `0x00829148`.
 - **Docs cross-referenced (HIGH-confidence, used as base):**
   `ISOMETRIC_TILE_TYPE_CLASS_GHIDRA_REPORT.md`,
-  `LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md`,
+  [LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md),
   `BRIDGE_DISPLAY_TABLE_GHIDRA_REPORT.md`,
-  `BRIDGE_RENDERING_GHIDRA_REPORT.md`,
+  [BRIDGE_RENDERING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/06-render-presentation-audio/BRIDGE_RENDERING_GHIDRA_REPORT.md),
   `BRIDGE_SYSTEM.md`,
-  `MAPCLASS_COMPLETE_DECODE.md`.
+  [MAPCLASS_COMPLETE_DECODE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAPCLASS_COMPLETE_DECODE.md).
 - **INI files checked:** `ini/rules.ini`, `ini/rulesmd.ini`, `ini/art.ini`,
   `ini/artmd.ini` (via prior scoping agent).
 - **Plan executed:** `docs/plans/2026-05-10-asset-parsing-bridges-investigation-plan.md`.

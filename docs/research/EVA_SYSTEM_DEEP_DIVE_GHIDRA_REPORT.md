@@ -3,7 +3,7 @@
 **Date:** 2026-03-23
 **Binary:** gamemd.exe (Yuri's Revenge)
 **Confidence:** HIGH - all findings verified from decompiled binary code
-**Companion:** This supplements `EVA_SYSTEM_GHIDRA_REPORT.md` with exhaustive detail.
+**Companion:** This supplements [EVA_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/EVA_SYSTEM_GHIDRA_REPORT.md) with exhaustive detail.
 
 ---
 

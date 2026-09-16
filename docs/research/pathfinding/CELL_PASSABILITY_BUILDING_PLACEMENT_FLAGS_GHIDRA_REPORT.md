@@ -33,7 +33,7 @@ The function is not a generic unit pathing check. It is a building-placement pre
 | Field | Placement meaning | Active in YR | Evidence |
 |---|---|---|---|
 | `BuildingType+0x16B7` | Upgrade/garrison-related placement exception: if set, the validator tolerates only a matching existing building owned by the same owner in the cell. | Conditional | `0x0047C620` branches on `+0x16B7`; `BuildingPlacement_per_cell_draw @ 0x0047EC90` separately uses `CanAcceptUpgrade` in the same preview mode. Stock activation depends on building data. |
-| `BuildingType+0x16BE` | `LaserFencePost=`. Treated with `+0x16B7` in the object-exception branch. | Conditional | `FIRESTORM_LASER_FENCE_POST_INTERACTIONS_GHIDRA_REPORT.md` verifies parse key; `0x0047C620` reads `+0x16BE`. No stock `rulesmd.ini` building sets it. |
+| `BuildingType+0x16BE` | `LaserFencePost=`. Treated with `+0x16B7` in the object-exception branch. | Conditional | [FIRESTORM_LASER_FENCE_POST_INTERACTIONS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FIRESTORM_LASER_FENCE_POST_INTERACTIONS_GHIDRA_REPORT.md) verifies parse key; `0x0047C620` reads `+0x16BE`. No stock `rulesmd.ini` building sets it. |
 | `BuildingType+0x16BF` | `LaserFence=`. Uses a separate branch: rejects existing buildings and existing TerrainClass objects, but permits same-owner laser-fence building replacement. | Conditional | `FIRESTORM...` verifies parse key; `0x0047C620` reads `+0x16BF`. No stock `rulesmd.ini` building sets it. |
 | `BuildingType+0xE58` | Building spawns/replaces a terrain tile via `ToTile=`-style type pointer. Placement rejects IsoTileTypes whose `+0x2E0` flag is false and rejects existing building occupants. | Conditional | `0x0047C620` checks `param_3+0xE58`; `rulesmd.ini` has `ToTile=Green01` entries. |
 | `BuildingType+0xE54` | Overlay type pointer for wall/gate replacement matching; compares overlay type index at `OverlayType+0x294`. | Conditional | `0x0047C620` reads `param_3+0xE54` and then `+0x294`. |
@@ -59,7 +59,7 @@ Active in YR: Yes for object scans; Conditional for laser-fence flags because st
 
 After object exceptions, ordinary placement rejects if `cell+0x124 & 0x3F` is nonzero. This is stricter than infantry subcell checks that often use `0x1F`; building placement treats any of the low six ground occupation bits as blocking.
 
-Active in YR: Yes. Evidence: `0x0047C620`; `RALLY_POINTS_AND_UNIT_SPAWNING.md` and bridge cell-offset audits identify `+0x124` as ground occupation flags.
+Active in YR: Yes. Evidence: `0x0047C620`; [RALLY_POINTS_AND_UNIT_SPAWNING.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RALLY_POINTS_AND_UNIT_SPAWNING.md) and bridge cell-offset audits identify `+0x124` as ground occupation flags.
 
 ### D. Wall/overlay replacement gates
 
@@ -87,7 +87,7 @@ If the candidate has no blocking overlay and `speedType == -1`, the ordinary bui
 
 If `speedType != -1`, the function ignores the `Buildable=` byte and accepts when `g_SpeedType_LandType_Table[speedType + landType*9] != 0.0`.
 
-Active in YR: Yes. Evidence: `0x0047C620` read at `0x0047CA58`; `SPEEDTYPE_LANDTYPE_TABLE_GHIDRA_REPORT.md` verifies base `0x0089EA40`, 9-slot row stride, and col 8 `Buildable=`.
+Active in YR: Yes. Evidence: `0x0047C620` read at `0x0047CA58`; [SPEEDTYPE_LANDTYPE_TABLE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPEEDTYPE_LANDTYPE_TABLE_GHIDRA_REPORT.md) verifies base `0x0089EA40`, 9-slot row stride, and col 8 `Buildable=`.
 
 ## 5. Rust-Facing Rules Summary
 
@@ -143,5 +143,5 @@ Rust does not currently mirror the full `0x0047C620` taxonomy as an ordered bina
 - Ghidra decompile: `CellClass__OverlayToTiberiumIndex @ 0x005FDD20`
 - Ghidra decompile: `BuildingPlacement_per_cell_draw @ 0x0047EC90`
 - Ghidra decompile: `FUN_0043F180`, `FUN_00449440`, `OverlayWall_PlacementShadow @ 0x006D5C50`, `FirestormWall_PlacementShadow @ 0x006D59D0`
-- Prior verified docs: `FIRESTORM_LASER_FENCE_POST_INTERACTIONS_GHIDRA_REPORT.md`, `SPEEDTYPE_LANDTYPE_TABLE_GHIDRA_REPORT.md`, `RALLY_POINTS_AND_UNIT_SPAWNING.md`, bridge cell-offset audit entries in `AUDIT_LOG.md`
+- Prior verified docs: [FIRESTORM_LASER_FENCE_POST_INTERACTIONS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FIRESTORM_LASER_FENCE_POST_INTERACTIONS_GHIDRA_REPORT.md), [SPEEDTYPE_LANDTYPE_TABLE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPEEDTYPE_LANDTYPE_TABLE_GHIDRA_REPORT.md), [RALLY_POINTS_AND_UNIT_SPAWNING.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RALLY_POINTS_AND_UNIT_SPAWNING.md), bridge cell-offset audit entries in [AUDIT_LOG.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AUDIT_LOG.md)
 - INI cross-checks: `ini/rulesmd.ini` `[General]` gate/tower values, `WaterBound=`, `Naval=`, `ToTile=`, and stock absence of `LaserFence=` / `LaserFencePost=`

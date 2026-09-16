@@ -24,7 +24,7 @@ For a Rust-native CellClass substrate, this means the substrate needs explicit c
 
 | Offset / item | Contract needed by CellClass substrate | Active in YR | Evidence |
 |---|---|---|---|
-| `CellStruct` top-left | `CheckPassability` takes packed signed 16-bit `x,y` plus explicit width/height stack args. | Yes | `0x0056E7E8..0x0056E7FA`, `CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md` |
+| `CellStruct` top-left | `CheckPassability` takes packed signed 16-bit `x,y` plus explicit width/height stack args. | Yes | `0x0056E7E8..0x0056E7FA`, [CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md) |
 | `CellRect` | `CheckOccupancy` reads four 32-bit fields `x,y,width,height`; low 16-bit signed coords are used for cell lookup. | Yes | `0x005867AC..0x005867CE`, `0x00578390` |
 | cell lookup | Both validators use fixed 512-wide map indexing and dummy-cell fallback for out-of-range lookup. | Yes | `0x0056E7FF..0x0056E832`, `0x005867D4..0x00586812` |
 | `CellClass+0x44` | Overlay type index. `CheckPassability` rejects it only when caller `reject_any_overlay != 0`; `CheckOccupancy` always requires `-1`. | Yes / Conditional | `0x0056E832..0x0056E83E`, `0x0058682D..0x00586832` |
@@ -62,7 +62,7 @@ Material findings:
 
 | Behavior | Active in YR | Evidence |
 |---|---|---|
-| Stack arity is nine 32-bit args (`RET 0x24`). | Yes | `CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md`; full-arg decode report |
+| Stack arity is nine 32-bit args (`RET 0x24`). | Yes | [CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md); full-arg decode report |
 | Loop is rectangle-wide, x outer and y inner; signed `< width/height` means width/height <= 0 skips all cell checks and returns true. | Conditional on malformed caller dimensions | `0x0056E7CA..0x0056E87C` |
 | Out-of-range cell lookups substitute the dummy cell; this wrapper has no final `MapClass__IsRectInPlayfield` call. | Yes | `0x0056E7FF..0x0056E832`; no xref/call to `0x00578390` in body |
 | `reject_any_overlay != 0` rejects `CellClass+0x44 != -1` before `CheckCellPassability`. | Conditional on caller flag | `0x0056E832..0x0056E83E` |
@@ -75,7 +75,7 @@ Material findings:
 |---|---|---|
 | `speed_type == 4` immediately succeeds, skipping zone, height, occupation, wall-overlay, and speed-table checks. | Yes when Winged/Fly SpeedType is passed | `0x004834A7`, `0x004835FF` |
 | If `required_zone_id != -1`, `MapClass__GetZoneID(cell, movement_zone, bridge_arg)` must equal it. | Conditional on real zone id | `0x004834BF..0x004834D8`; `0x0056D230` |
-| `movement_zone` is the zone-map/matrix-row family; `speed_type` is separate and feeds the SpeedType/LandType table. | Yes | FNPC caller matrix; `ZONE_PASSABILITY_MATRIX_READERS_GHIDRA_REPORT.md`; `SPEEDTYPE_LANDTYPE_TABLE_GHIDRA_REPORT.md` |
+| `movement_zone` is the zone-map/matrix-row family; `speed_type` is separate and feeds the SpeedType/LandType table. | Yes | FNPC caller matrix; [ZONE_PASSABILITY_MATRIX_READERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/ZONE_PASSABILITY_MATRIX_READERS_GHIDRA_REPORT.md); [SPEEDTYPE_LANDTYPE_TABLE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPEEDTYPE_LANDTYPE_TABLE_GHIDRA_REPORT.md) |
 | Explicit required height uses exact base level or bridge `level+4`; `-1` is unrestricted but still participates in bridge occupation-field selection. | Conditional; FNPC passes `-1` | `0x004834E1..0x00483527`; bridge occupancy report |
 | Selected occupation byte is `+0x124` or `+0x128`; `CheckPassability` passes both ignore-mask flags as zero, so any selected remaining bit blocks. | Yes / Conditional on bridge selection | `0x00483527..0x00483572`; wrapper pushes zero args at `0x0056E854..0x0056E856` |
 | Accepted wall-overlay cases force LandType to Clear before speed lookup; otherwise exact `g_SpeedType_LandType_Table[speed_type + LandType*9] == 0.0` rejects. | Conditional on wall overlay / non-bridge path | `0x00483583..0x004835F6`; speed-table report |
@@ -92,7 +92,7 @@ Material findings:
 
 | Behavior | Active in YR | Evidence |
 |---|---|---|
-| Stack arity is two args (`RET 0x8`). | Yes | `CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md` |
+| Stack arity is two args (`RET 0x8`). | Yes | [CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md) |
 | `arg == -1` makes reservation mask zero; otherwise mask is `1 << (arg & 0x1F)`, computed once before scanning. Other negative values are not skips. | Yes / Conditional for non-`-1` callers | `0x00586787..0x0058679D`, `0x0058681F..0x0058682B` |
 | Rectangle loop uses signed `< x+width` / `< y+height`; nonpositive dimensions skip blocker scan but still run final playfield check using `width-1` / `height-1` corners. | Conditional | `0x005867AC..0x00586880`; `0x00578390` |
 | First blocker helper scans ground object list for RTTI `0x24`; corrected evidence says `FUN_0047C550` is `__thiscall`, with cell as implicit receiver and explicit arg `0`. | Yes | `0x00586812..0x0058681D`; `0x0047C550`; audit log 2026-05-28 |
@@ -213,10 +213,10 @@ Current Rust has pieces, but not the native validator boundary:
 
 - `docs/research/CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md`
 - `docs/research/CELLRECT_CHECKPASSABILITY_0056E7C0_FULL_ARG_DECODE_GHIDRA_REPORT.md`
-- `docs/research/CELLRECT_CHECKOCCUPANCY_00586780_FULL_BLOCKER_TREE_GHIDRA_REPORT.md`
-- `docs/research/CELLCLASS_0XDC_RESERVATION_LIFECYCLE_GHIDRA_REPORT.md`
+- [docs/research/CELLRECT_CHECKOCCUPANCY_00586780_FULL_BLOCKER_TREE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELLRECT_CHECKOCCUPANCY_00586780_FULL_BLOCKER_TREE_GHIDRA_REPORT.md)
+- [docs/research/CELLCLASS_0XDC_RESERVATION_LIFECYCLE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELLCLASS_0XDC_RESERVATION_LIFECYCLE_GHIDRA_REPORT.md)
 - `docs/research/bridges/02-cell-state-layering-zones/BRIDGE_OCCUPANCY_OBJECT_LISTS_GHIDRA_REPORT.md`
-- `docs/research/AUDIT_LOG.md` 2026-05-28 validator audit entry
+- [docs/research/AUDIT_LOG.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AUDIT_LOG.md) 2026-05-28 validator audit entry
 - Prior evidence addresses cited by those reports: `0x0056E7C0`, `0x00586780`, `0x004834A0`, `0x0047C550`, `0x0047C520`, `0x00578390`, `0x0056DC20`, `0x005060B0`, `0x0056D230`
 - INI checked: `ini/rulesmd.ini`, `ini/rules.ini`
 - Rust scan: `src/sim/pathfinding/passability.rs`, `src/sim/pathfinding/zone_build.rs`, `src/sim/pathfinding/cell_entry.rs`, `src/sim/occupancy.rs`, `src/sim/production/production_placement.rs`, `src/sim/production/production_spawn.rs`, `src/sim/world/mod.rs`

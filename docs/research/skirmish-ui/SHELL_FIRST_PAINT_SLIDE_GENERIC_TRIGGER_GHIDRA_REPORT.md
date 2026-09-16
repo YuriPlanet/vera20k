@@ -13,7 +13,7 @@
 - `create_function 0x00610CA0` → body `0x00610CA0..0x006128E1` (7265 bytes); `0x00612690` is inside. (Now `FUN_00610ca0`.)
 - `get_xrefs_to 0x00610CA0` → `[DATA]` ref from `0x0060FF05` in `FUN_0060f9a0`: i.e. `SetWindowLongA(hwnd, GWL_WNDPROC=-4, 0x00610ca0)` installs `0x00610ca0` as the subclass proc.
 
-This matches and resolves the `SHELL_MENU_TRANSITION_SYSTEM_MODEL_SYNTHESIS.md` "Needs Re-Investigation #1/#2" and OQ-09 in `SKIRMISH_MAIN_MENU_TO_SHELL_TRANSITION_CALLER_FRAME_COMPOSITION_GHIDRA_REPORT.md`.
+This matches and resolves the [SHELL_MENU_TRANSITION_SYSTEM_MODEL_SYNTHESIS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SHELL_MENU_TRANSITION_SYSTEM_MODEL_SYNTHESIS.md) "Needs Re-Investigation #1/#2" and OQ-09 in [SKIRMISH_MAIN_MENU_TO_SHELL_TRANSITION_CALLER_FRAME_COMPOSITION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_MAIN_MENU_TO_SHELL_TRANSITION_CALLER_FRAME_COMPOSITION_GHIDRA_REPORT.md).
 
 ## 2. The slide trigger — first-paint of any shell dialog
 
@@ -77,14 +77,14 @@ Other legs use the same pattern: case-1's `0x100`, `0x0052DD93`'s `0x101`, `0x00
 
 ### Participating controls
 
-`FUN_006071e0` enumerates the dialog's visible, enabled, owner-draw children (`FUN_00608CD0` / `FUN_00609730` filters per `SKIRMISH_FUN_006071E0_SHELL_TRANSITION_REDRAW_PATH_GHIDRA_REPORT.md`) and slides them in over `max(schedule)+6` ticks at 30 ms each, plus optional right-panel/radar groups gated by record `+0xD5/+0xD6/+0xD7/+0xD8` (set per-dialog-ID in `FUN_00622820`, asm `0x006228E1..0x00622A12`). For `0x102` these include the right-panel groups; for source dialogs like `0x100` they are cleared.
+`FUN_006071e0` enumerates the dialog's visible, enabled, owner-draw children (`FUN_00608CD0` / `FUN_00609730` filters per [SKIRMISH_FUN_006071E0_SHELL_TRANSITION_REDRAW_PATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_FUN_006071E0_SHELL_TRANSITION_REDRAW_PATH_GHIDRA_REPORT.md)) and slides them in over `max(schedule)+6` ticks at 30 ms each, plus optional right-panel/radar groups gated by record `+0xD5/+0xD6/+0xD7/+0xD8` (set per-dialog-ID in `FUN_00622820`, asm `0x006228E1..0x00622A12`). For `0x102` these include the right-panel groups; for source dialogs like `0x100` they are cleared.
 
 ## 6. Implication for current Rust (no code changed)
 
 The committed slide wave is wired to fire on **skirmish-shell entry**. That leg is not "wrong" (skirmish does slide), but the model is off in two ways that are DRIFT until reconciled:
 
 1. **Character:** native is a per-dialog "controls slide into their final positions on first paint," not a whole-screen menu→skirmish crossfade/slide. A whole-screen compositor between two screens is a different observable effect.
-2. **Coverage:** native slides every allow-listed shell dialog. Current Rust collapses the intermediate `0x100` single-player shell (per `SKIRMISH_MAIN_MENU_TO_SHELL_TRANSITION_CALLER_FRAME_COMPOSITION_GHIDRA_REPORT.md` §7) and has no campaign `0x94` dialog, so the main-menu `0xE2`, single-player `0x100`, and campaign `0x94` first-paint slides are missing.
+2. **Coverage:** native slides every allow-listed shell dialog. Current Rust collapses the intermediate `0x100` single-player shell (per [SKIRMISH_MAIN_MENU_TO_SHELL_TRANSITION_CALLER_FRAME_COMPOSITION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_MAIN_MENU_TO_SHELL_TRANSITION_CALLER_FRAME_COMPOSITION_GHIDRA_REPORT.md) §7) and has no campaign `0x94` dialog, so the main-menu `0xE2`, single-player `0x100`, and campaign `0x94` first-paint slides are missing.
 
 Stock `ShellButtonSlideSound=` is empty in `rules.ini`/`rulesmd.ini`, so the slide is silent in stock YR; the animation itself is still played.
 

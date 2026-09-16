@@ -207,5 +207,5 @@ Adversarial corner cases answered:
 - Ghidra read-only decompile: `ScenarioClass__Full_Init @ 0x00686B20`, `ScenarioClass__AssignStartingPoints @ 0x005EE9D0`
 - Ghidra assembly context: Battle-style selected `+0x80` target `0x005D6BE0..0x005D6C63`
 - Ghidra xrefs to `0x0056DC20`
-- Prior docs referenced: `SKIRMISH_GATHER_START_POSITIONS_DEFICIENT_WAYPOINT_FALLBACK_00688380_GHIDRA_REPORT.md`, `CELLRECT_CHECKPASSABILITY_0056E7C0_FULL_ARG_DECODE_GHIDRA_REPORT.md`, `CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md`, `FIND_NEARBY_PASSABLE_CELL_GHIDRA_REPORT.md`
+- Prior docs referenced: `SKIRMISH_GATHER_START_POSITIONS_DEFICIENT_WAYPOINT_FALLBACK_00688380_GHIDRA_REPORT.md`, [CELLRECT_CHECKPASSABILITY_0056E7C0_FULL_ARG_DECODE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/CELLRECT_CHECKPASSABILITY_0056E7C0_FULL_ARG_DECODE_GHIDRA_REPORT.md), [CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md), `FIND_NEARBY_PASSABLE_CELL_GHIDRA_REPORT.md`
 - Rust scan: `src/app_skirmish.rs`, `src/sim/miner/miner_dock_sequence.rs`, `src/sim/pathfinding/core.rs`, `src/map/resolved_terrain.rs`

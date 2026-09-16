@@ -4,7 +4,7 @@
 > facing/rotation math across gamemd.exe — **verify existing high-confidence reports,
 > reconcile them, and fill the named gaps**. Do NOT re-cover ground that
 > [UNITCLASS_TURRET_TRACKING_AND_FIRE_TIMING_GHIDRA_REPORT.md](../../../ra2-rust-game-docs/UNITCLASS_TURRET_TRACKING_AND_FIRE_TIMING_GHIDRA_REPORT.md)
-> and [BULLETCLASS_TRAJECTORY_AND_HOMING.md](../../../ra2-rust-game-docs/BULLETCLASS_TRAJECTORY_AND_HOMING.md)
+> and [BULLETCLASS_TRAJECTORY_AND_HOMING.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLETCLASS_TRAJECTORY_AND_HOMING.md)
 > already cover at HIGH confidence. The deliverable is one unified primitives doc, not
 > a re-derivation.
 
@@ -53,13 +53,13 @@ When this investigation finishes, the report must answer:
 | Report | Scope Covered | Confidence | Known Gaps |
 |--------|---------------|------------|------------|
 | [UNITCLASS_TURRET_TRACKING_AND_FIRE_TIMING_GHIDRA_REPORT.md](../../../ra2-rust-game-docs/UNITCLASS_TURRET_TRACKING_AND_FIRE_TIMING_GHIDRA_REPORT.md) | **FacingClass 24-byte struct (current/desired/ROT/timer/in_motion), turret/barrel facing separation, ROT shifted by 8, body/turret discretization formulas, atan2(dy,-dx) convention, 8-cell TurretAI scan, IFV auto-deploy** | HIGH | Type+0x67C semantic, Type+0x6AF/+0x6AD instance flags, vtable+0x4E4/+0x2E4 semantic labels |
-| [BULLETCLASS_TRAJECTORY_AND_HOMING.md](../../../ra2-rust-game-docs/BULLETCLASS_TRAJECTORY_AND_HOMING.md) | Homing missile facing/pitch math; helpers `IsWithinROT/GetTurnDelta/ClampToROT` at 0x5B2990/0x5B2950/0x5B29C0; 16-bit pitch convention 0x3FFF=level | HIGH | None stated. Note: bullet uses **same** primitives as units (0x5B29C0 etc.) but does not share unit body code |
-| [SPATIAL_PRIMITIVES_LAYER_GHIDRA_REPORT.md](../../../ra2-rust-game-docs/SPATIAL_PRIMITIVES_LAYER_GHIDRA_REPORT.md) | 8-dir tables 0x89F688 / 0x89F6D8; atan2 at 0x4CAE30; facing convention as a category | HIGH | Math primitives not deep-covered (this plan fills it) |
-| [LOCOMOTION_MATH_AND_CONSTANTS.md](../../../ra2-rust-game-docs/LOCOMOTION_MATH_AND_CONSTANTS.md) | Drive track waypoints with embedded facing; 11 locomotor CLSIDs; ROT in track flags | HIGH | Per-locomotor rotation step (drive vs walk vs fly vs jumpjet) not normalized |
-| [FIRE_AT_ANALYSIS.md](../../../ra2-rust-game-docs/FIRE_AT_ANALYSIS.md) | Muzzle-flash anim picked by turret facing; ROF gate; facing in projectile launch velocity | HIGH | Doesn't touch the rotation step itself |
-| [INFANTRYCLASS_GHIDRA_REPORT.md](../../../ra2-rust-game-docs/INFANTRYCLASS_GHIDRA_REPORT.md) | SequenceTypeClass+0x0C facing-direction value; sequence remap (Walk→Panic etc.) | MEDIUM | **No infantry rotation step decompiled** — major gap |
-| [DRIVE_TRACK_SYSTEM.md](../../../ra2-rust-game-docs/DRIVE_TRACK_SYSTEM.md) | Drive track curves; facing transitions per step | HIGH | Doesn't decompose the FacingClass step itself |
-| [VOXEL_SLOPE_TILT_SYSTEM.md](../../../ra2-rust-game-docs/VOXEL_SLOPE_TILT_SYSTEM.md), [VXL_DRAW_MATRIX_GHIDRA_REPORT.md](../../../ra2-rust-game-docs/VXL_DRAW_MATRIX_GHIDRA_REPORT.md) | Voxel matrix from facing for render | HIGH | Linkage from FacingClass.current → matrix index not documented in primitives terms |
+| [BULLETCLASS_TRAJECTORY_AND_HOMING.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLETCLASS_TRAJECTORY_AND_HOMING.md) | Homing missile facing/pitch math; helpers `IsWithinROT/GetTurnDelta/ClampToROT` at 0x5B2990/0x5B2950/0x5B29C0; 16-bit pitch convention 0x3FFF=level | HIGH | None stated. Note: bullet uses **same** primitives as units (0x5B29C0 etc.) but does not share unit body code |
+| [SPATIAL_PRIMITIVES_LAYER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPATIAL_PRIMITIVES_LAYER_GHIDRA_REPORT.md) | 8-dir tables 0x89F688 / 0x89F6D8; atan2 at 0x4CAE30; facing convention as a category | HIGH | Math primitives not deep-covered (this plan fills it) |
+| [LOCOMOTION_MATH_AND_CONSTANTS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOCOMOTION_MATH_AND_CONSTANTS.md) | Drive track waypoints with embedded facing; 11 locomotor CLSIDs; ROT in track flags | HIGH | Per-locomotor rotation step (drive vs walk vs fly vs jumpjet) not normalized |
+| [FIRE_AT_ANALYSIS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FIRE_AT_ANALYSIS.md) | Muzzle-flash anim picked by turret facing; ROF gate; facing in projectile launch velocity | HIGH | Doesn't touch the rotation step itself |
+| [INFANTRYCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/INFANTRYCLASS_GHIDRA_REPORT.md) | SequenceTypeClass+0x0C facing-direction value; sequence remap (Walk→Panic etc.) | MEDIUM | **No infantry rotation step decompiled** — major gap |
+| [DRIVE_TRACK_SYSTEM.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_TRACK_SYSTEM.md) | Drive track curves; facing transitions per step | HIGH | Doesn't decompose the FacingClass step itself |
+| [VOXEL_SLOPE_TILT_SYSTEM.md](../../../ra2-rust-game-docs/VOXEL_SLOPE_TILT_SYSTEM.md), [VXL_DRAW_MATRIX_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_DRAW_MATRIX_GHIDRA_REPORT.md) | Voxel matrix from facing for render | HIGH | Linkage from FacingClass.current → matrix index not documented in primitives terms |
 
 **Conflicts between reports:** None substantive. atan2 convention `atan2(dy, -dx)` is
 consistent (UNITCLASS_TURRET_TRACKING + BULLETCLASS_TRAJECTORY). 16-bit shifted ROT
@@ -194,7 +194,7 @@ The executor must extract:
   way. Agent D found `UnitClass::AI @ 0x7360C0` calls both — verify order from disasm.
 - Where does building animation facing fit? (#22-#23 — likely separate from unit tick.)
 - How does projectile facing tick fit? `BulletClass::AI` per
-  [BULLET_PROJECTILE_SYSTEM_CONSOLIDATED_REPORT.md](../../../ra2-rust-game-docs/BULLET_PROJECTILE_SYSTEM_CONSOLIDATED_REPORT.md).
+  [BULLET_PROJECTILE_SYSTEM_CONSOLIDATED_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLET_PROJECTILE_SYSTEM_CONSOLIDATED_REPORT.md).
 
 ### TS-legacy flags
 - `VXL_InterpolatedFacing` Quaternion slerp (#19) — verify YR actually invokes the slerp
@@ -218,7 +218,7 @@ The executor must extract:
 | Key | Section | Default | Suspected Purpose | Currently Parsed in Rust? |
 |-----|---------|---------|-------------------|----------------------------|
 | `ROT=` | per-TechnoType | 0 | Body / turret rotation rate; degrees-per-frame at 15fps base | **YES** — `[object_type.rs](../src/rules/object_type.rs):244` as `turret_rot: i32` |
-| `JumpJetTurnRate=` | per-jumpjet-infantry | varies (2/6/10/12/100) | Airborne rotation rate; independent of ground ROT | Partial — `JumpjetParams` per [LOCOMOTION_MATH_AND_CONSTANTS.md §13.7](../../../ra2-rust-game-docs/LOCOMOTION_MATH_AND_CONSTANTS.md), verify field |
+| `JumpJetTurnRate=` | per-jumpjet-infantry | varies (2/6/10/12/100) | Airborne rotation rate; independent of ground ROT | Partial — `JumpjetParams` per [LOCOMOTION_MATH_AND_CONSTANTS.md §13.7](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOCOMOTION_MATH_AND_CONSTANTS.md), verify field |
 | `DeployFacing=` | per-deployable-unit | 0 | Initial facing on deploy (0=N..7=NW) | TBD — check during exec |
 | `MissileROTVar=` | `[General]` | 0.25 | Random fluctuation % for guided missile turn rate | NO — gap |
 | `WindDirection=` | `[General]` | 1 | Map-level wind direction as FacingType — informational, not a primitive | NO — gap (low priority) |
@@ -226,7 +226,7 @@ The executor must extract:
 | `RadarEventRotationSpeed=` | `[General]` | 0.05 | UI radar event spin — render-only, not a primitive | Out of scope |
 | `Rotates=` | art.ini per-image | yes/no | Voxel rotation enable flag (render gate) | TBD |
 | `TurretRotateSound=` | per-unit-with-turret | (sound name) | Audio cue during turret rotation — informational | Out of scope (audio doc) |
-| `V3RocketTurnRate=`, `DMislTurnRate=`, `CMislTurnRate=` | `[General]` | 0.05 / 0.08 / 0.10 | Rocket-specific pitch maneuverability — bullet domain, partial in [LOCOMOTION_MATH_AND_CONSTANTS.md §11](../../../ra2-rust-game-docs/LOCOMOTION_MATH_AND_CONSTANTS.md) | NO — 36 missile keys total per locomotion doc |
+| `V3RocketTurnRate=`, `DMislTurnRate=`, `CMislTurnRate=` | `[General]` | 0.05 / 0.08 / 0.10 | Rocket-specific pitch maneuverability — bullet domain, partial in [LOCOMOTION_MATH_AND_CONSTANTS.md §11](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOCOMOTION_MATH_AND_CONSTANTS.md) | NO — 36 missile keys total per locomotion doc |
 
 ROT distribution sample (Agent B): ROT=5 most common (61 units), ROT=1 (10 units),
 ROT=40 (5 units), ROT=60 (3), ROT=100 (1). Useful for sanity-checking the rotation-step
@@ -427,5 +427,5 @@ The executed research document must:
   `src/sim/movement/movement_tick.rs`, `src/sim/movement/drive_track.rs`,
   `src/sim/game_entity.rs`, `src/rules/object_type.rs`.
 - **Related plans:** None — this is the first plan for facing/rotation primitives.
-- **Related candidate doc**: [SPATIAL_RESEARCH_CANDIDATES.md](../../../ra2-rust-game-docs/SPATIAL_RESEARCH_CANDIDATES.md)
+- **Related candidate doc**: [SPATIAL_RESEARCH_CANDIDATES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPATIAL_RESEARCH_CANDIDATES.md)
   §1 (this investigation closes that candidate).

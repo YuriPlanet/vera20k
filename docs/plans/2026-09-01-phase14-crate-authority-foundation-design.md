@@ -2,7 +2,7 @@
 
 **Status:** approved for implementation after design-review
 **Phase hypothesis:** GSI-14 row 303, “Crates / powerups,” contains several independently deliverable mechanisms. This design closes only the authoritative creation and delivery of scenario-start crates. Pickup, regeneration, effects, and specific-cell producers remain separate Phase 14 mechanisms.
-**Caller/order evidence:** `docs/research/SCENARIO_START_CRATE_POST_MAP_CALLER_GATE_GHIDRA_REPORT.md`
+**Caller/order evidence:** [docs/research/SCENARIO_START_CRATE_POST_MAP_CALLER_GATE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SCENARIO_START_CRATE_POST_MAP_CALLER_GATE_GHIDRA_REPORT.md)
 **Placement/runtime evidence:** `docs/research/PHASE3_ACTIVE_RETAIL_CRATE_RUNTIME_GHIDRA_REPORT.md`
 **Supersedes as design authority:** `docs/plans/2026-07-23-crate-authority-design.md` and `docs/plans/2026-07-23-crate-evidence-foundation-plan.md`
 
@@ -117,7 +117,7 @@ closed.
 | Rules constructor and layered reader for the six startup fields | `RulesClass__Constructor @ 0x00665650`; `RulesClass__ReadCrateRules @ 0x0066B900` |
 | Random placement, slots, and Mark facts | `MapClass__PlaceRandomCrate`, `MapClass__PlaceCrate`, and `MapClass__CrateSlot` bodies/callers in the placement/runtime report |
 | Constructor TerrainClass gate | `OverlayClass::OverlayClass @ 0x005FC380`; TerrainClass hit skips Unlimbo and Mark entirely |
-| Mark branch dispatch and ordering | `OverlayClass::Mark @ 0x005FC570`; high setters `0x0047E040`/`0x0047E470`; `REGULAR_OVERLAY_WALL_AUTOFILL_COMMIT_GHIDRA_REPORT.md` |
+| Mark branch dispatch and ordering | `OverlayClass::Mark @ 0x005FC570`; high setters `0x0047E040`/`0x0047E470`; [REGULAR_OVERLAY_WALL_AUTOFILL_COMMIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/REGULAR_OVERLAY_WALL_AUTOFILL_COMMIT_GHIDRA_REPORT.md) |
 | CellAnim palette and Z-adjust post-writes | `OverlayClass::Mark @ 0x005FD112..0x005FD1FA`; `ECX=CellClass` before `GetTiberiumType @ 0x00485010`, then `Anim+0xD4` and `Anim+0xFC` writes |
 | Low endpoint tables, dummy alias, search, overwrites, and raw Scenario draws | `docs/research/bridges/01-assets-map-load-overlay/LOW_OVERLAY_MARK_FIXED_MAP_STAMP_RNG_TRANSACTION_GHIDRA_REPORT.md` |
 | Road tiberium density postwrite | `CellClass::SpreadCellGerminate @ 0x004818E0`; dword table `0x0081CD28` = `[0,1,3,4,6,7,8,10,11,7,0,1]` |

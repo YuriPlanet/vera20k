@@ -31,7 +31,7 @@ The older broad radar docs were close on the tracker shape, but stale on one key
 | `ObjectType+0x22F` | `RadarInvisible=` | parser `0x005F946E..0x005F947F`, render read `0x00655DFF` | Yes |
 | `ObjectType+0x232` | `Insignificant=`; stale docs mislabel this in radar section | parser `0x005F950A..0x005F951B` from prior audited docs; render read `0x00655E24` | Yes |
 | `TechnoType+0xC9B` | `RadarVisible=` | parser context `0x00714AB1..0x00714ACC`, string `0x00843934`; render read `0x00655E3D` | Yes |
-| `HouseType+0x1A6` | `MultiplayPassive=` | render read `0x00655E55..0x00655E60`; field identity from `COUNTRY_SIDE_TYPE_CLASSES.md` and `rulesmd.ini:3343,3351` | Yes; true for stock Neutral/Special |
+| `HouseType+0x1A6` | `MultiplayPassive=` | render read `0x00655E55..0x00655E60`; field identity from [COUNTRY_SIDE_TYPE_CLASSES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/COUNTRY_SIDE_TYPE_CLASSES.md) and `rulesmd.ini:3343,3351` | Yes; true for stock Neutral/Special |
 | `House+0x56F9..0x56FB` | raw RGB owner color for dirty-pixel path | `0x00655F7C..0x00655FE2` | Yes |
 | `House+0x16054` | color scheme index for fast overlay path | `0x006561D2..0x00656232` | Yes |
 
@@ -121,7 +121,7 @@ Observed deltas:
 - `[RESOLVED] OQ6 -- Is `RadarInvisible` overridden by alliance? -> Yes, allied objects pass; non-allied objects skip.` (evidence: `0x00655DFF..0x00655E17`, `0x004F9A90`)
 - `[RESOLVED] OQ7 -- Is `RadarVisible` the byte at `type+0x232`? -> No; `RadarVisible` is `TechnoType+0xC9B`; `+0x232` is `Insignificant`.` (evidence: `0x00714AB1..0x00714ACC`, `0x005F950A..0x005F951B`)
 - `[RESOLVED] OQ8 -- Does the dot path read current cloak state? -> No dynamic cloak-state read appears in the object eligibility block.` (evidence: `0x00655DC0..0x00655E78`)
-- `[RESOLVED] OQ9 -- What does `HouseType+0x1A6` mean? -> `MultiplayPassive`, true for stock Special/Neutral.` (evidence: `COUNTRY_SIDE_TYPE_CLASSES.md`, `rulesmd.ini:3343,3351`)
+- `[RESOLVED] OQ9 -- What does `HouseType+0x1A6` mean? -> `MultiplayPassive`, true for stock Special/Neutral.` (evidence: [COUNTRY_SIDE_TYPE_CLASSES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/COUNTRY_SIDE_TYPE_CLASSES.md), `rulesmd.ini:3343,3351`)
 - `[RESOLVED] OQ10 -- Is Rust currently using the native priority model? -> No; it iterates `EntityStore` order and overwrites pixels.` (evidence: `src/render/minimap.rs:284..325`)
 - `[DEFERRED] OQ11 -- Exactly when does native choose `RenderAllCells` vs dirty `RenderCellPixel` in every radar mode?` (category: out-of-scope; reason: this slot only needed object winner/gates, and `RenderAllCells` behavior itself was decompiled; next-step-if-pursued: trace the no-shroud/full-refresh mode selector in `RadarClass::Update` and `RefreshRadar`)
 
@@ -173,13 +173,13 @@ Suggested Rust test names:
 
 - `docs/research/RADAR_MINIMAP_RENDERING.md` section "Per-Cell Pixel Rendering: RenderCellPixel (0x00655C50)" currently describes the `type+0x232` branch as a "Cloaking check" / `Cloakable` and refers to `+0xC9B` as `CloakStop`. Replacement wording:
   - "After `RadarInvisible`, `RenderCellPixel` reads `ObjectTypeClass+0x232` (`Insignificant=`), not `RadarVisible` or `Cloakable`. If `Insignificant` is false, the object is eligible. If it is true, the code reads `TechnoTypeClass+0xC9B` (`RadarVisible=`); `RadarVisible=true` restores eligibility. Otherwise the object is eligible only when it has an owner whose `HouseTypeClass+0x1A6` (`MultiplayPassive=`) is false. No dynamic cloak state is read in this minimap-dot gate."
-- `docs/research/RADAR_MINIMAP_DEEP_DIVE.md` key insight says local objects draw on top and click searches backward for enemies. That remains directionally correct, but should be tightened:
+- [docs/research/RADAR_MINIMAP_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADAR_MINIMAP_DEEP_DIVE.md) key insight says local objects draw on top and click searches backward for enemies. That remains directionally correct, but should be tightened:
   - "Local-player tracker entries insert at the front and draw scans forward, so local visible entries win the drawn pixel. Click lookup scans backward, so it can return a different overlapping object than the drawn pixel."
 
 ## Sources
 
 - Ghidra decompile: `0x00655C50`, `0x00656150`, `0x00655560`, `0x00655740`, `0x006565A0`, `0x00656750`, `0x00656EC0`, `0x0070CC90`, `0x00456580`, `0x0050B6F0`, `0x004F9A90`.
 - Ghidra assembly context: `0x00655DC0..0x00655E78`, `0x00714AB1..0x00714ACC`, `0x005F946E..0x005F947F`.
-- Existing docs: `RADAR_MINIMAP_RENDERING.md`, `RADAR_MINIMAP_DEEP_DIVE.md`, `COUNTRY_SIDE_TYPE_CLASSES.md`, `TIBTRE_BUILDING_EXCEPTION_BYTES_0XC9A_0X1701_GHIDRA_REPORT.md`.
+- Existing docs: `RADAR_MINIMAP_RENDERING.md`, [RADAR_MINIMAP_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADAR_MINIMAP_DEEP_DIVE.md), [COUNTRY_SIDE_TYPE_CLASSES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/COUNTRY_SIDE_TYPE_CLASSES.md), [TIBTRE_BUILDING_EXCEPTION_BYTES_0XC9A_0X1701_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TIBTRE_BUILDING_EXCEPTION_BYTES_0XC9A_0X1701_GHIDRA_REPORT.md).
 - INI: `ini/rulesmd.ini:3343`, `ini/rulesmd.ini:3351` (`MultiplayPassive=true` for Special/Neutral).
 - Rust: `src/render/minimap.rs:213`, `src/render/minimap.rs:284..325`, `src/rules/object_type.rs:324`, `src/rules/object_type.rs:936`.

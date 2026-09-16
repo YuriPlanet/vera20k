@@ -15,18 +15,18 @@
 
 **Prior Research:**
 - HIGH (covered, **out of scope** for this investigation):
-  - `VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md` — VXL/HVA on-disk format + loaders
+  - [VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md) — VXL/HVA on-disk format + loaders
   - `ISOMETRIC_TILE_TYPE_CLASS_GHIDRA_REPORT.md` — TMP file format + slope type + class layout
-  - `LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md` — theater LAT-table init at `0x00545150`
+  - [LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md) — theater LAT-table init at `0x00545150`
 - HIGH (related but runtime, **out of scope**):
   - `BRIDGE_DISPLAY_TABLE_GHIDRA_REPORT.md` — runtime tile picker
-  - `BRIDGE_RENDERING_GHIDRA_REPORT.md` — render pipeline
+  - [BRIDGE_RENDERING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/06-render-presentation-audio/BRIDGE_RENDERING_GHIDRA_REPORT.md) — render pipeline
   - `BRIDGE_SYSTEM.md` — CellClass bridge fields + state machine
-  - `MAPCLASS_COMPLETE_DECODE.md` — runtime class layout (NOT .map file parsing)
+  - [MAPCLASS_COMPLETE_DECODE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAPCLASS_COMPLETE_DECODE.md) — runtime class layout (NOT .map file parsing)
   - `LAT_RETRIGGER_AND_BRIDGE_DAMAGE_VARIANT_GHIDRA_REPORT.md`
 - **Confirmed gaps** (in scope):
   - **No** MIX archive parser doc (header, file index, blowfish-encrypted MIX, hash table)
-  - **No** SHP file-format doc (only rendering integration covered in `PARACHUTE_SHP_RENDERING_GHIDRA_REPORT.md`)
+  - **No** SHP file-format doc (only rendering integration covered in [PARACHUTE_SHP_RENDERING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARACHUTE_SHP_RENDERING_GHIDRA_REPORT.md))
   - **No** PAL file-format doc (referenced inline; never broken out)
   - **No** CSF (string-table) parser doc
   - **No** AUD file-format / IMA-ADPCM-Westwood doc
@@ -70,13 +70,13 @@ When this investigation finishes, the report must answer:
 
 | Report | Scope | Confidence | Known Gaps |
 |--------|-------|------------|------------|
-| `VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md` | VXL/HVA on-disk + parser | HIGH | MIX-extraction not covered (out of scope for this plan, this gap is *in* our scope) |
+| [VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md) | VXL/HVA on-disk + parser | HIGH | MIX-extraction not covered (out of scope for this plan, this gap is *in* our scope) |
 | `ISOMETRIC_TILE_TYPE_CLASS_GHIDRA_REPORT.md` | TMP_Loader `0x00547020` + slope type + class layout | HIGH | How TMP files are *located* in MIX — covered upstream by `0x00545150` (in scope here) |
-| `LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md` | Theater INI loader at `0x00545150` (LAT focus) | HIGH | Bridge-specific keys (`BridgeMiddle1`, `WaterBridge`, etc.) read by same function but not enumerated there — **must extend coverage** |
+| [LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md) | Theater INI loader at `0x00545150` (LAT focus) | HIGH | Bridge-specific keys (`BridgeMiddle1`, `WaterBridge`, etc.) read by same function but not enumerated there — **must extend coverage** |
 | `BRIDGE_DISPLAY_TABLE_GHIDRA_REPORT.md` | Runtime tile picker (overlay byte ranges) | HIGH (HIGH/MED/LOW noted) | No asset-loading coverage |
-| `BRIDGE_RENDERING_GHIDRA_REPORT.md` | Renderer integration | HIGH | No asset-loading coverage |
-| `MAPCLASS_COMPLETE_DECODE.md` | Runtime MapClass class layout | HIGH | **Does NOT cover .map file parsing** (recurring point of confusion — verify in this report) |
-| `PARACHUTE_SHP_RENDERING_GHIDRA_REPORT.md` | SHP runtime rendering | HIGH | No SHP file-format coverage |
+| [BRIDGE_RENDERING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/06-render-presentation-audio/BRIDGE_RENDERING_GHIDRA_REPORT.md) | Renderer integration | HIGH | No asset-loading coverage |
+| [MAPCLASS_COMPLETE_DECODE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAPCLASS_COMPLETE_DECODE.md) | Runtime MapClass class layout | HIGH | **Does NOT cover .map file parsing** (recurring point of confusion — verify in this report) |
+| [PARACHUTE_SHP_RENDERING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARACHUTE_SHP_RENDERING_GHIDRA_REPORT.md) | SHP runtime rendering | HIGH | No SHP file-format coverage |
 
 **Conflicts between reports:**
 - `BRIDGE_DISPLAY_TABLE` corrects `BRIDGE_RENDERING` on `FUN_004D1890` being a fogged-object walker, not the live render path. Note for executor: in this asset-parsing pass, **do not** rely on `BRIDGE_RENDERING` for caller chains; use `BRIDGE_DISPLAY_TABLE` and live decompilation.
@@ -265,11 +265,11 @@ checked against `Init_Theater @ 0x005349C0`.
 - Bridge atlases: [src/render/bridge_atlas.rs](src/render/bridge_atlas.rs), [src/render/bridge_railing_atlas.rs](src/render/bridge_railing_atlas.rs)
 
 **Callers explicitly NOT investigated (with justification):**
-- VXL section rasterizer `0x00756590` and runtime VXL draw — already covered in `VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md` and `VOXEL_RENDERING_ANALYSIS.md`. Just verify Rust output feeds it correctly.
+- VXL section rasterizer `0x00756590` and runtime VXL draw — already covered in [VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md) and [VOXEL_RENDERING_ANALYSIS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VOXEL_RENDERING_ANALYSIS.md). Just verify Rust output feeds it correctly.
 - TMP per-pixel blitter `0x00547CF0` — runtime render, not asset parse.
 - Building-type `BridgeRepairHut` reader at `0x00460E8D` — building-type INI, not asset parse.
 - All 109 `LoadFileFromMIX` callers — sample only, the function is generic.
-- Anything in `MAPCLASS_COMPLETE_DECODE.md` — runtime layout.
+- Anything in [MAPCLASS_COMPLETE_DECODE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAPCLASS_COMPLETE_DECODE.md) — runtime layout.
 
 ## 7. TS-Legacy Risk Register
 

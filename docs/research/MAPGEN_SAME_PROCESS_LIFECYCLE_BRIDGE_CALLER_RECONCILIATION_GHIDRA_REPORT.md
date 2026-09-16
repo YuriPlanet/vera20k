@@ -158,7 +158,7 @@ The apparent destruction implications came from stale names. Fresh body/caller r
 
 Fresh full disassembly finds four `Random__RandomRanged @ 0x0065C7E0` sites in each eligible walker-animation iteration: two position jitter draws, delay `1..5`, and explosion-slot `0..count-1`. Before every call, the receiver is loaded from `[0x00A8B230]+0x218`, i.e. the Scenario-owned RNG (`0x00575D25..0x00575D30`, `0x00575D5E..0x00575D6B`, `0x00575DB4..0x00575DBE`, `0x00575DC9..0x00575DD6`). There is no call to `0x00598030` and no `0x00ABE890` receiver.
 
-The allocation-sensitive count is two Scenario draws when the eligible animation allocation fails after jitter, and four when it succeeds and therefore also selects delay and explosion slot. A center/destroyed-anchor exclusion can skip the animation and its draws. The commonly cited full high-walker fixture consumes 48 draws only under its stated geometry and successful allocations; it is not an unconditional per-collapse constant. Evidence: `disassemble_function(0x00575BA0)` and the independently checked ordering in `BRIDGE_COLLAPSE_VISUAL_RNG_ORDER_TRACE.md`.
+The allocation-sensitive count is two Scenario draws when the eligible animation allocation fails after jitter, and four when it succeeds and therefore also selects delay and explosion slot. A center/destroyed-anchor exclusion can skip the animation and its draws. The commonly cited full high-walker fixture consumes 48 draws only under its stated geometry and successful allocations; it is not an unconditional per-collapse constant. Evidence: `disassemble_function(0x00575BA0)` and the independently checked ordering in [BRIDGE_COLLAPSE_VISUAL_RNG_ORDER_TRACE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/08-traces/BRIDGE_COLLAPSE_VISUAL_RNG_ORDER_TRACE.md).
 
 **Active in standard YR:** yes when a destroyable bridge collapse reaches this high NS walker; conditional on geometry, animation list, and allocation.
 
@@ -362,10 +362,10 @@ Repository evidence:
 - `vera20k-oracle:docs/research/ORACLE_NATIVE_STARTUP_AUTHORITY_GATES_GHIDRA_REPORT.md`
 - `docs/research/skirmish-ui/RMG_RNG_SEED_MAPGENRNG_GHIDRA_REPORT.md`
 - `docs/research/skirmish-ui/SKIRMISH_RANDOM_MAP_GENERATOR_00598960_GHIDRA_REPORT.md`
-- `docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md`
-- `docs/research/bridges/05-damage-collapse-repair-cabhut/REPAIRBRIDGEWALKER_BODIES_GHIDRA_REPORT.md`
-- `docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGE_RNG_CALL_ORDER_CLASSIFICATION_GHIDRA_REPORT.md`
-- `docs/research/bridges/08-traces/BRIDGE_COLLAPSE_VISUAL_RNG_ORDER_TRACE.md`
-- `docs/research/substrate/tables/BRIDGE_OVERLAY_SUBSTRATE_STUDY.md`
+- [docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md)
+- [docs/research/bridges/05-damage-collapse-repair-cabhut/REPAIRBRIDGEWALKER_BODIES_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/REPAIRBRIDGEWALKER_BODIES_GHIDRA_REPORT.md)
+- [docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGE_RNG_CALL_ORDER_CLASSIFICATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGE_RNG_CALL_ORDER_CLASSIFICATION_GHIDRA_REPORT.md)
+- [docs/research/bridges/08-traces/BRIDGE_COLLAPSE_VISUAL_RNG_ORDER_TRACE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/08-traces/BRIDGE_COLLAPSE_VISUAL_RNG_ORDER_TRACE.md)
+- [docs/research/substrate/tables/BRIDGE_OVERLAY_SUBSTRATE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/substrate/tables/BRIDGE_OVERLAY_SUBSTRATE_STUDY.md)
 - `ini/rules.ini`, `ini/rulesmd.ini`
 - current Rust files and line ranges cited in section 7.

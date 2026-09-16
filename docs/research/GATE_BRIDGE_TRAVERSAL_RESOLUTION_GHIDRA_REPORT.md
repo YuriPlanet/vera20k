@@ -69,7 +69,7 @@ Cell field offsets used: `+0x140` Flags (`0x100`=on-bridge, `0x200`=bridgehead),
   checks. The reconstruction in row A still runs (wasted `Get_CellClass` using pseudo-dir `(-1-4)&7=3`)
   but its result is unused by row B.
 - A* passes an **explicit** parent (current node cell) + real path height — explicit-parent directed
-  traversal, never the null fallback (per `BRIDGE_CHECK_TRAVERSAL_PARENT_FALLBACK_GHIDRA_REPORT.md`,
+  traversal, never the null fallback (per [BRIDGE_CHECK_TRAVERSAL_PARENT_FALLBACK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/03-traversal-pathfinding-entry/BRIDGE_CHECK_TRAVERSAL_PARENT_FALLBACK_GHIDRA_REPORT.md),
   A* callsite `0x00429F54`). Runtime locomotors (Drive/Ship/Hover) pass `parent=0`.
 
 **`-1` candidate height-seed (the gate's explicit question):** rows B and D both seed `Level+4`
@@ -123,7 +123,7 @@ if (((*g_ScenarioClass_Instance & 0x8000) == 0) || (warhead->+0x144 /*Wall*/ == 
 ```
 i.e. AoE warhead damage collapses high/low/wood/concrete bridges only when the warhead has
 `Wall=yes` AND the scenario `DestroyableBridges` SpecialFlag (bit 0xF / 0x8000 of
-`ScenarioClass+0x000`) is set. This corroborates `DESTROYABLEBRIDGES_INI_GATE_GHIDRA_REPORT.md`
+`ScenarioClass+0x000`) is set. This corroborates [DESTROYABLEBRIDGES_INI_GATE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/DESTROYABLEBRIDGES_INI_GATE_GHIDRA_REPORT.md)
 exactly. (Bridge Repair Hut C4/demo-truck collapse is NOT gated by either flag — that doc §5.)
 
 ---
@@ -152,7 +152,7 @@ All three items are **live in retail YR**, not TS-legacy:
   `Can_Enter_Cell` (A* and runtime locomotion) — core pathing, fires constantly.
 - `Wall=` is read on every AoE detonation via `Apply_area_damage` (the central AoE dispatcher).
 - The bridge-destruction sub-blocks it gates are wrapped by the `DestroyableBridges` SpecialFlag,
-  which defaults **on** in skirmish (per `DESTROYABLEBRIDGES_INI_GATE_GHIDRA_REPORT.md`).
+  which defaults **on** in skirmish (per [DESTROYABLEBRIDGES_INI_GATE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/DESTROYABLEBRIDGES_INI_GATE_GHIDRA_REPORT.md)).
 No subterranean/tunnel or off-by-default-flag dead path is involved in any of the three.
 
 ---
@@ -188,4 +188,4 @@ No subterranean/tunnel or off-by-default-flag dead path is involved in any of th
 - `decompile_function 0x00469080`→`0x004690B0` WarheadTypeClass::Detonate (dispatches Apply_area_damage); `decompile_function 0x00489280` Apply_area_damage — +0x144 read sites (overlay + bridge gate).
 - `get_field_access_context 0x0081AC58` — `"Wall"` also used by `BuildingTypeClass__ReadINI @ 0x0045FE50`.
 - INI: `ini/rulesmd.ini` `Wall=yes` lines (12031, 16388, …).
-- Prior docs (extended, not redone): `bridges/03-traversal-pathfinding-entry/BRIDGE_CHECK_TRAVERSAL_PARENT_FALLBACK_GHIDRA_REPORT.md`, `BRIDGE_CHECK_TRAVERSAL_AND_CELL_OFFSETS_GHIDRA_REPORT.md`, `bridges/05-damage-collapse-repair-cabhut/DESTROYABLEBRIDGES_INI_GATE_GHIDRA_REPORT.md`.
+- Prior docs (extended, not redone): [bridges/03-traversal-pathfinding-entry/BRIDGE_CHECK_TRAVERSAL_PARENT_FALLBACK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/03-traversal-pathfinding-entry/BRIDGE_CHECK_TRAVERSAL_PARENT_FALLBACK_GHIDRA_REPORT.md), [BRIDGE_CHECK_TRAVERSAL_AND_CELL_OFFSETS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/03-traversal-pathfinding-entry/BRIDGE_CHECK_TRAVERSAL_AND_CELL_OFFSETS_GHIDRA_REPORT.md), [bridges/05-damage-collapse-repair-cabhut/DESTROYABLEBRIDGES_INI_GATE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/DESTROYABLEBRIDGES_INI_GATE_GHIDRA_REPORT.md).

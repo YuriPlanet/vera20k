@@ -50,8 +50,8 @@ writes depth. Cliff redraw uses `zdepth+Less`.
 ### Why we're changing it
 
 Two reports
-([VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md](docs/research/VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md),
-[VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md](docs/research/VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md))
+([VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md),
+[VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md))
 established that gamemd applies house remap **at blit time**, not at rasterize
 time, and stores **pre-remap palette indices** in its visibility-map
 intermediate. Our current atlas inverts that: it bakes house remap in.

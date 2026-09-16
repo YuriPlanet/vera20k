@@ -1,7 +1,7 @@
 ## Particle System — Gap-Closing Investigation Plan
 
 > **For Claude:** This plan scopes a `/re-investigate` pass that will close every
-> remaining gap in `PARTICLESYSTEMCLASS_GHIDRA_REPORT.md`. The existing report is
+> remaining gap in [PARTICLESYSTEMCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARTICLESYSTEMCLASS_GHIDRA_REPORT.md). The existing report is
 > already GREEN-rated and binary-verified through §9 (Verification Pass) and
 > §10 (Exhaustive Detail Pass). This plan touches **only the gaps** — do NOT
 > re-cover material in §1–§10 of the existing report.
@@ -15,7 +15,7 @@
 **Est. Effort:** ~5–7 hours of `/re-investigate` work.
 **Prior Research:** see Section 2.
 **Expected Output:** an addendum / appendix appended to
-`docs/research/PARTICLESYSTEMCLASS_GHIDRA_REPORT.md`
+[docs/research/PARTICLESYSTEMCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARTICLESYSTEMCLASS_GHIDRA_REPORT.md)
 under a new `## 11. Gap-Closing Pass (2026-05-XX)` section. Do NOT rewrite the
 existing 1–10 — append.
 **Next Pipeline Step:** `/brainstorm particle-system-rust-architecture` once the
@@ -56,16 +56,16 @@ When this investigation finishes, the report must answer:
 
 | Report | Scope | Confidence | Used For |
 |--------|-------|------------|----------|
-| `PARTICLESYSTEMCLASS_GHIDRA_REPORT.md` | Particle system, full §1–§10 | GREEN (audited 2026-05-04) | Baseline — append to it; do NOT redo |
+| [PARTICLESYSTEMCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARTICLESYSTEMCLASS_GHIDRA_REPORT.md) | Particle system, full §1–§10 | GREEN (audited 2026-05-04) | Baseline — append to it; do NOT redo |
 | `TECHNOTYPECLASS_BASE_GHIDRA_REPORT.md` | TTC ReadINI, base size 0xDF8, ~332 ReadINI calls | HIGH | Skip TTC overall structure — only extract the 6 particle-related read sites |
-| `TECHNOTYPECLASS_BASE_ADDENDUM.md` | TTC corrections | MEDIUM | Cross-check before publishing TTC offsets |
-| `BUILDINGCLASS_SAVE_LOAD_GHIDRA_REPORT.md` | BuildingClass Load/Save (0x453E20 / 0x454190), OLE Structured Storage, IPersistStream contract | HIGH | Use as template for the PSC/ParticleClass Save/Load decompile — same pattern |
-| `ABSTRACTCLASS_GHIDRA_REPORT.md` | AbstractClass Load (0x410380), Save (0x410320), 4 COM vtables | MEDIUM | Reference for the secondary-vtable layout |
-| `OBJECTCLASS_GHIDRA_REPORT.md` | ObjectClass vtable at 0x7EF060 (122 entries) | HIGH | Cross-check — particle vtables override slots from this base |
-| `ANIM_CLASS_GHIDRA_REPORT.md` | AnimTypeClass, Image= storage at +0x1F8, ResolveImageForTheater (0x5F9070) | MEDIUM | Confirms the Image=/SHP path is shared with ParticleType |
-| `ANIMCLASS_SPAWN_PATHS_GHIDRA_REPORT.md` | LightSourceClass entry at FUN_005FF250, combat light spawner FUN_0048A620 | LOW | Already cross-referenced by §10.3 — no new dive needed |
-| `VOXELANIMCLASS_GHIDRA_REPORT.md` | VoxelAnimClass ctor 0x7493B0, AI 0x749F30 | HIGH | Skip the class — only extract the particle-spawn tail call |
-| `RULESCLASS_COLORADD_TABLE.md`, `HOUSE_CREATION_COLOR_SYSTEM.md` | Player/scheme color systems | LOW | Not relevant to ColorList runtime layout — skip |
+| [TECHNOTYPECLASS_BASE_ADDENDUM.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOTYPECLASS_BASE_ADDENDUM.md) | TTC corrections | MEDIUM | Cross-check before publishing TTC offsets |
+| [BUILDINGCLASS_SAVE_LOAD_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_SAVE_LOAD_GHIDRA_REPORT.md) | BuildingClass Load/Save (0x453E20 / 0x454190), OLE Structured Storage, IPersistStream contract | HIGH | Use as template for the PSC/ParticleClass Save/Load decompile — same pattern |
+| [ABSTRACTCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ABSTRACTCLASS_GHIDRA_REPORT.md) | AbstractClass Load (0x410380), Save (0x410320), 4 COM vtables | MEDIUM | Reference for the secondary-vtable layout |
+| [OBJECTCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/OBJECTCLASS_GHIDRA_REPORT.md) | ObjectClass vtable at 0x7EF060 (122 entries) | HIGH | Cross-check — particle vtables override slots from this base |
+| [ANIM_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ANIM_CLASS_GHIDRA_REPORT.md) | AnimTypeClass, Image= storage at +0x1F8, ResolveImageForTheater (0x5F9070) | MEDIUM | Confirms the Image=/SHP path is shared with ParticleType |
+| [ANIMCLASS_SPAWN_PATHS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ANIMCLASS_SPAWN_PATHS_GHIDRA_REPORT.md) | LightSourceClass entry at FUN_005FF250, combat light spawner FUN_0048A620 | LOW | Already cross-referenced by §10.3 — no new dive needed |
+| [VOXELANIMCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VOXELANIMCLASS_GHIDRA_REPORT.md) | VoxelAnimClass ctor 0x7493B0, AI 0x749F30 | HIGH | Skip the class — only extract the particle-spawn tail call |
+| [RULESCLASS_COLORADD_TABLE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RULESCLASS_COLORADD_TABLE.md), [HOUSE_CREATION_COLOR_SYSTEM.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/HOUSE_CREATION_COLOR_SYSTEM.md) | Player/scheme color systems | LOW | Not relevant to ColorList runtime layout — skip |
 
 **Conflicts between reports:** none flagged in the scoping scan.
 
@@ -269,7 +269,7 @@ The executed research must:
 1. Resolve every Section 1 question with HIGH confidence (binary citation per claim).
 2. Decompile every function in Section 3 OR explicitly justify omission (e.g., "ParticleClass::Save not located in any vtable; documented as STILL-OPEN").
 3. State "Active in YR: Yes / No / Conditional" for every key in the TS-Legacy Risk Register (Section 7).
-4. Add a `## 11. Gap-Closing Pass` section to `PARTICLESYSTEMCLASS_GHIDRA_REPORT.md` — appended, not replacing §1–§10.
+4. Add a `## 11. Gap-Closing Pass` section to [PARTICLESYSTEMCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARTICLESYSTEMCLASS_GHIDRA_REPORT.md) — appended, not replacing §1–§10.
 5. Update the existing Section 7 Open Questions with explicit `RESOLVED in §11.X` annotations or `STILL OPEN — see §11 Known Limits`.
 6. Bump the report's overall confidence header to reflect the additional verification.
 7. Make NO Rust changes. The output is a doc patch only.

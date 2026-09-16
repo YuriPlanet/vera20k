@@ -5,7 +5,7 @@
 **Rule:** Rust-native structure, gamemd-native semantics.
 **Ladder position:** S0–S3 merged to `dev` (S3 = `073c5ac4`; `SNAPSHOT_VERSION` 23).
 S4 is the next rung. Source of the slice contract:
-`docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md` §9-S4 (slice table row
+[docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md) §9-S4 (slice table row
 `S4 | UnitClass | pre/post common + RNG pos | yes | S3`).
 
 S4 operates **one layer deeper than S3**. S3 owns the post-Foot `UnitClass::AI` tail
@@ -50,7 +50,7 @@ of `TechnoClass::AI_Update (0x006F9E50)` exists.** It does not exist today.
   L2 fire-damage-timing, FootClass mission-move). **S4's TechnoClass-common layer has no
   equivalent.**
 
-**Partial unblock (docs-grounded, 2026-06-10):** `docs/research/TECHNOCLASS_AI_UPDATE_BODY_SYNTHESIS.md`
+**Partial unblock (docs-grounded, 2026-06-10):** [docs/research/TECHNOCLASS_AI_UPDATE_BODY_SYNTHESIS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_AI_UPDATE_BODY_SYNTHESIS.md)
 reconstructs the body order from verified docs by in-function byte address (split point =
 `Mission_Dispatch 0x006FA655`; landmarks for rocking/IsAlive/behind-marker/passive-acquire/
 damage-particle/timer-accumulator/EMP). It makes four corrections to this design (EMP recovery
@@ -60,7 +60,7 @@ BuildingClass post-parent check; damage-particle is post-dispatch on `g_MainRng`
 six strictly-binary gaps (U1–U6). The Ghidra task below is now **verify-and-fill the synthesis**,
 not a from-scratch decode.
 
-**Prerequisite task (Ghidra-gated): produce `TECHNOCLASS_AI_UPDATE_BODY_GHIDRA_REPORT.md`** by
+**Prerequisite task (Ghidra-gated): produce [TECHNOCLASS_AI_UPDATE_BODY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_AI_UPDATE_BODY_GHIDRA_REPORT.md)** by
 verifying the synthesis §2 map and resolving its U1–U6 —
 a `/re-investigate`-grade decode of `0x006F9E50` enumerating, per step in body order:
 step index · address · field(s) touched · gate condition · RNG draw (count + stream + helper)
@@ -105,15 +105,15 @@ early-returns, (b) the damage-particle RNG, (c) the passive-acquire shadow.
 
 ## 3. Verified anchors for the S4 components (existing docs)
 
-- **Damage-particle spawn (step 40):** `PARTICLESYSTEMCLASS_GHIDRA_REPORT.md` §8.6.1
+- **Damage-particle spawn (step 40):** [PARTICLESYSTEMCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARTICLESYSTEMCLASS_GHIDRA_REPORT.md) §8.6.1
   (`TechnoClass::AI_Update 0x006f9e50` — Damage Smoke). Gate `+0x308==NULL` +
   `health_ratio < ConditionYellow` + has-DamageParticleSystems; spawn-probability roll
   (`RulesClass +0x558/+0x560` red/yellow bands), `FUN_007178c0` random visual offset, system
   list-pick. **Stream = `g_MainRng`** for all particle spawns
-  (`PER_FRAME_RNG_CONSUMPTION_ORDER_GHIDRA_REPORT.md` §3.1: "particles (all types)" →
+  ([PER_FRAME_RNG_CONSUMPTION_ORDER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PER_FRAME_RNG_CONSUMPTION_ORDER_GHIDRA_REPORT.md) §3.1: "particles (all types)" →
   `g_MainRng`; ParticleClass ctor draws 1). Exact draw **count/position UNVERIFIED** → §1 gate.
-- **Passive/opportunity acquire (step 23):** `GRIZZLY_OPPORTUNITYFIRE_CONSUMER_GHIDRA_REPORT.md`
-  + `GRIZZLY_OPPORTUNITYFIRE_FIRST_SHOT_TIMING_GHIDRA_REPORT.md`. `Mission_Dispatch` runs
+- **Passive/opportunity acquire (step 23):** [GRIZZLY_OPPORTUNITYFIRE_CONSUMER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GRIZZLY_OPPORTUNITYFIRE_CONSUMER_GHIDRA_REPORT.md)
+  + [GRIZZLY_OPPORTUNITYFIRE_FIRST_SHOT_TIMING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GRIZZLY_OPPORTUNITYFIRE_FIRST_SHOT_TIMING_GHIDRA_REPORT.md). `Mission_Dispatch` runs
   **first**; then the mission **{2 Move, 10 Harvest, 5 Guard}** block reads `OpportunityFire`
   (`TechnoType +0x6AF`) and runs the scanner `vtable+0x39C` (`0x006FA699..0x006FA6C1`), writing
   `g_CurrentFrameCounter` to `+0x4FC`; passive-acquire timer at `+0x180/+0x188` (45-frame
@@ -121,14 +121,14 @@ early-returns, (b) the damage-particle RNG, (c) the passive-acquire shadow.
   is the later `UnitClass::AI → Fire_At_Target` path (S3's seam). Side-target waits for turret
   alignment. → **S4c lands the scanner as a shadow; it flips authoritative in S5** (keyed on the
   then-authoritative mission selector).
-- **EMP recovery (step 42):** `TECHNOCLASS_SYSTEMS_GHIDRA_REPORT.md` §6.3 +
-  `RADIATION_EMP_GHIDRA_REPORT.md` §2.6 (`+0x504` EMPLockRemaining → 0 ⇒ recover; building
+- **EMP recovery (step 42):** [TECHNOCLASS_SYSTEMS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_SYSTEMS_GHIDRA_REPORT.md) §6.3 +
+  [RADIATION_EMP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADIATION_EMP_GHIDRA_REPORT.md) §2.6 (`+0x504` EMPLockRemaining → 0 ⇒ recover; building
   branch `RestoreOnlineEffects`, foot branch restarts locomotor). **Building branch deferred
   to S8** per §9-S4; the foot branch (locomotor restart) is the unit-relevant part.
-- **FootClass::AI subsystem order:** `FOOTCLASS_COMPLETE_GHIDRA_REPORT.md` §3.1 (10 subsystems:
+- **FootClass::AI subsystem order:** [FOOTCLASS_COMPLETE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_COMPLETE_GHIDRA_REPORT.md) §3.1 (10 subsystems:
   AI_Update #1, tib self-heal #2, veteran promote #3, locomotor Process #4, …). Frame-modulo
   cadences (tib self-heal `frame % Rules+0x1808`, the `&0x8000000f` 16-frame gate) in
-  `FRAME_MODULO_CADENCE_INVENTORY_YR_TICK_GHIDRA_REPORT.md`.
+  [FRAME_MODULO_CADENCE_INVENTORY_YR_TICK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FRAME_MODULO_CADENCE_INVENTORY_YR_TICK_GHIDRA_REPORT.md).
 - **Mission-dispatch-before-locomotor:** `UNITCLASS_PERCELLPROCESS_CALLER_TICK_ORDER` §3.2,
   `TECHNOCLASS_AI_UPDATE_UNLOAD_ACCUMULATOR_ORDERING` (Mission_Dispatch before the unload
   accumulator; buildings RTTI-6 `goto`-skip it — assert units-only).
@@ -217,7 +217,7 @@ Per invariant #8, every flip carries a gamemd-evidence-cited golden; every shado
 ## 7. Work split: Ghidra-gated vs independent
 
 **Ghidra-gated (needs a running gamemd instance):**
-1. `TECHNOCLASS_AI_UPDATE_BODY_GHIDRA_REPORT.md` decode (§1) — the prerequisite for everything.
+1. [TECHNOCLASS_AI_UPDATE_BODY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_AI_UPDATE_BODY_GHIDRA_REPORT.md) decode (§1) — the prerequisite for everything.
 2. S4b damage-particle exact draw count/stream/position.
 3. Confirm the two unit early-returns are unit-reachable; confirm `+0x70` render-only;
    confirm iron-curtain/temporal are non-decrementing.
@@ -274,7 +274,7 @@ verdict DRIFT; mark anything not read this session UNCHECKED.
    #1) and `TECHNOCLASS_AI_UPDATE_UNLOAD_ACCUMULATOR_ORDERING` (dispatch precedes the unload
    accumulator; buildings RTTI-6 skip it). Note any conflict as DRIFT.
 
-Output: `docs/research/TECHNOCLASS_AI_UPDATE_BODY_GHIDRA_REPORT.md` — ordered step table
+Output: [docs/research/TECHNOCLASS_AI_UPDATE_BODY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_AI_UPDATE_BODY_GHIDRA_REPORT.md) — ordered step table
 (index · addr · field · gate · RNG[count,stream,helper] · early-return · active-YR) + the S4b
 draw-count truth table + an UNCHECKED section.
 

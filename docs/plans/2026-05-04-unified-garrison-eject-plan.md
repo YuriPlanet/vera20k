@@ -14,7 +14,7 @@
 
 ## Grounding Summary
 
-- **Docs:** `ra2-rust-game-docs/GARRISON_SYSTEM_GHIDRA_REPORT.md` §14c (SellBuilding ejection); `BUILDING_CHANGE_OWNER_GHIDRA_REPORT.md` (CheckAutoSellOrCivilian / civilian revert semantics).
+- **Docs:** [ra2-rust-game-docs/GARRISON_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GARRISON_SYSTEM_GHIDRA_REPORT.md) §14c (SellBuilding ejection); `BUILDING_CHANGE_OWNER_GHIDRA_REPORT.md` (CheckAutoSellOrCivilian / civilian revert semantics).
 - **Ghidra:** `BuildingClass::SellBuilding @ 0x00457DE0` ejects occupants atomically; for civilian buildings whose ownership transferred via garrisoning, the structure is preserved (ownership reverts to civilian house). Verified in prior /verify-doc audits — accepted.
 - **Repo state:** `sell_building` at `production_sell.rs:508-554` always does unconditional `entities.remove(stable_id)` (line 532). `eject_garrison_occupants` at `production_sell.rs:247-374` already handles eject + cargo clear + conditional owner revert (line 368-370 reverts iff `garrison_original_owner` was `Some`). `garrison_original_owner` is `.take()`'d in `passenger.rs:614` when cargo empties on unload, so `is_some()` ⇔ "captured AND has occupants".
 - **Pattern:** `SimSoundEvent::StructureAbandoned` push pattern at `passenger.rs:619-622` (pre-revert owner captured before mut borrow). Existing test pattern `test_last_occupant_emits_abandoned_event_with_pre_revert_owner` at `passenger.rs:864-913` mirrors what we want.
@@ -385,7 +385,7 @@ Commit message: `garrison: tests for sell captured civilian + player-built regre
 
 - **Design doc:** [docs/plans/2026-05-04-unified-garrison-eject-design.md](docs/plans/2026-05-04-unified-garrison-eject-design.md)
 - **v2 disparity scan:** [docs/gap-scans/2026-05-04-disparity-scan-garrison-v2.md](docs/gap-scans/2026-05-04-disparity-scan-garrison-v2.md) — finding N1
-- **Ghidra reports:** `ra2-rust-game-docs/GARRISON_SYSTEM_GHIDRA_REPORT.md` §14c; `ra2-rust-game-docs/BUILDING_CHANGE_OWNER_GHIDRA_REPORT.md`
+- **Ghidra reports:** [ra2-rust-game-docs/GARRISON_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GARRISON_SYSTEM_GHIDRA_REPORT.md) §14c; `ra2-rust-game-docs/BUILDING_CHANGE_OWNER_GHIDRA_REPORT.md`
 - **gamemd.exe addresses:** `BuildingClass::SellBuilding @ 0x00457DE0`; `BuildingClass::CheckAutoSellOrCivilian @ 0x00458200`
 - **Related code:** `src/sim/passenger.rs:606-622` (existing StructureAbandoned push pattern); `src/sim/passenger.rs:864-913` (existing pre-revert owner test pattern); `src/sim/production/production_sell.rs:247-374` (`eject_garrison_occupants` helper, unchanged)
 - **Parallel-session work (out of scope, already on `dev`):** commits `83338d3` `9db662e` `f5195c8` `527b3f4` `fef8824` (combat death-path eject via `DestroyedGarrisonBuilding` + `eject_destruction_garrison`)

@@ -17,7 +17,7 @@ baselines with documented reasons. Design-review findings were resolved in v2 be
 implementation.
 **Date:** 2026-06-10
 **Rule:** Rust-native structure, gamemd-native semantics. Second hash-affecting object-AI slice.
-**Ladder position:** Slice **S3** in `docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md`
+**Ladder position:** Slice **S3** in [docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md)
 §9 (4th of S0–S8). Builds on landed S2 (dispatch-time mission authority, `32f9ef36..7b79a186`)
 and the landed L2 ai-shell tasks (per-object Unit fire via `resolve_attacker_fire` in live order;
 per-Unit facing via `unit_post::tick_unit_facing`, hash-neutral flip).

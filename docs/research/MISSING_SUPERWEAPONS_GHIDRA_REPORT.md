@@ -12,10 +12,10 @@ carried from an existing verified doc are marked **[V-doc:<name>]**; inferences 
 
 **Status:** RESEARCH ONLY. No `src/` file was edited. Companion deep-dive docs already exist and
 are extended, not redone:
-`NUKE_SUPERWEAPON_GHIDRA_REPORT.md`, `CHRONOSPHERE_SUPERWEAPON_GHIDRA_REPORT.md`,
-`PSYCHIC_DOMINATOR_SUPERWEAPON_GHIDRA_REPORT.md`, `SUPERCLASS_SYSTEM_GHIDRA_REPORT.md`,
-`SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md`, `SPY_SATELLITE_REVEAL_RADAR_PIXEL_PIPELINE_GHIDRA_REPORT.md`,
-`AIRCRAFTCLASS_GHIDRA_REPORT.md`, `REVEAL_Z_SHIFT_GHIDRA_REPORT.md`.
+`NUKE_SUPERWEAPON_GHIDRA_REPORT.md`, [CHRONOSPHERE_SUPERWEAPON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CHRONOSPHERE_SUPERWEAPON_GHIDRA_REPORT.md),
+[PSYCHIC_DOMINATOR_SUPERWEAPON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PSYCHIC_DOMINATOR_SUPERWEAPON_GHIDRA_REPORT.md), `SUPERCLASS_SYSTEM_GHIDRA_REPORT.md`,
+[SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md), [SPY_SATELLITE_REVEAL_RADAR_PIXEL_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPY_SATELLITE_REVEAL_RADAR_PIXEL_PIPELINE_GHIDRA_REPORT.md),
+[AIRCRAFTCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AIRCRAFTCLASS_GHIDRA_REPORT.md), [REVEAL_Z_SHIFT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/REVEAL_Z_SHIFT_GHIDRA_REPORT.md).
 
 ---
 
@@ -23,7 +23,7 @@ are extended, not redone:
 
 ### 0.1 `SuperClass::Launch` = `0x006CC390`
 Verified this session: `get_function_callers(0x0065eab0)` → `SuperClass__Launch @ 006cc390`
-**[V-this-session]**. (The `0x006CC200` in `CHRONOSPHERE_SUPERWEAPON_GHIDRA_REPORT.md` is a
+**[V-this-session]**. (The `0x006CC200` in [CHRONOSPHERE_SUPERWEAPON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CHRONOSPHERE_SUPERWEAPON_GHIDRA_REPORT.md) is a
 stale/approx address; the real entry and all case bodies are inside `0x006CC390`.) Dispatch is a
 `switch` on `*(int*)(SuperWeaponTypeClass + 0xB4)` (the Type enum). Enum ordering
 (`SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md §3`, string table `0x008425C0`):
@@ -91,7 +91,7 @@ Radiation: `RadLevel=500` on `[NukePayload]` creates a `RadSiteClass` at ground 
 
 ### 1.4 Cues
 - `RechargeVoice=00-I154` (ready EVA). `EVA_NuclearMissileLaunched` on fire.
-  (`EVA_SYSTEM_GHIDRA_REPORT.md` superweapon table.)
+  ([EVA_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/EVA_SYSTEM_GHIDRA_REPORT.md) superweapon table.)
 - Launch sound + `NukeTakeOff=NUKETO` anim at the silo (`RulesClass+0x98`, `BuildingClass::CreateFireAnim @ 0x0043B5E0`).
 - Screen flash (30 frames) + screen shake from `[Nuke]` warhead `ShakeX/Yhi/lo`.
 

@@ -587,24 +587,24 @@ See companion reports for full details. Remaining minor unknowns noted inline be
 **Vestigial/unused EVA voice fields.** Never read by any code path. EVA voices are hardcoded
 per-Type in switch statements inside `AI_Charging` and `AI_Ready`. Included in `ComputeChecksum`
 (0x006CE910) but otherwise dead. **Confidence: 85%.**
-*(Source: SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md)*
+*(Source: [SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md))*
 
 ### Resolved: RechargeTime Conversion Factor
 **Confirmed: 900.0f** (float constant at `0x007F4100` = `0x44610000`).
 Formula: `frames = (int)(minutes_from_ini * 900.0f)`. Default 4500 = 5 min @ 15fps.
-*(Source: SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md)*
+*(Source: [SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md))*
 
 ### Resolved: CDTimerClass Layout (SuperClass+0x30)
 12-byte struct: `{ int StartFrame, int Reserved, int Duration }`.
 `GetTimeRemaining()` returns `Duration - (CurrentFrame - StartFrame)` or 0 if expired.
-*(Source: SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md)*
+*(Source: [SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md))*
 
 ### Resolved: Action Enum (73 entries at 0x7E4C50)
 Key superweapon actions: None(0), Move(1), Attack(5), **Nuke(20)**, **IronCurtain(37)**,
 **LightningStorm(38)**, **ChronoSphere(39)**, **ChronoWarp(40)**, **ParaDrop(41)**,
 **PsychicDominator(59)**, **ForceShield(62)**, **Airstrike(64)**.
 Several DontUse and TibSunBug entries are TS legacy placeholders.
-*(Source: SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md)*
+*(Source: [SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md))*
 
 ### Resolved: Lightning Storm Per-Tick Logic
 `LightningStorm::Process` at `0x0053A6C0`, called from `LogicClass::PerTickUpdate`.
@@ -624,7 +624,7 @@ Several DontUse and TibSunBug entries are TS legacy placeholders.
 3. Filter out buildings, ImmuneToPsionics, BalloonHover, iron-curtained, in-limbo
 4. **Permanent ownership transfer** via `SetOwner(house, 1)` — NOT CaptureManager MC
 5. Creates `PermaControlledAnimationType` (MINDANIMR, red ring)
-*(Source: PSYCHIC_DOMINATOR_SUPERWEAPON_GHIDRA_REPORT.md)*
+*(Source: [PSYCHIC_DOMINATOR_SUPERWEAPON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PSYCHIC_DOMINATOR_SUPERWEAPON_GHIDRA_REPORT.md))*
 
 ### Resolved: ForceShield Blackout + IronCurtain Storage
 - `HouseClass::SpyPowerSabotage` (0x0050BC90): forces `PowerOutput=0` for duration
@@ -724,18 +724,18 @@ SW kills infantry with MutateWarhead (Rules+0xF98, InfDeath=9) → plays GENDEAT
 
 ### Companion Research Documents (created by deep-dive agents)
 - `NUKE_SUPERWEAPON_GHIDRA_REPORT.md` — Full nuke chain from carrier to radiation
-- `PSYCHIC_DOMINATOR_SUPERWEAPON_GHIDRA_REPORT.md` — 5-phase state machine + area MC
+- [PSYCHIC_DOMINATOR_SUPERWEAPON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PSYCHIC_DOMINATOR_SUPERWEAPON_GHIDRA_REPORT.md) — 5-phase state machine + area MC
 - `IRONCURTAIN_FORCESHIELD_GHIDRA_REPORT.md` — Invulnerability storage + blackout mechanic
-- `SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md` — Unknown offsets, Action enum, CDTimerClass
+- [SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md) — Unknown offsets, Action enum, CDTimerClass
 - `SUPERWEAPON_LAUNCH_HANDLERS_REPORT.md` — GeneticMutator, ParaDrop, SpyPlane handlers
 
 ### Prior Research Documents Referenced
-- `CHRONOSPHERE_SUPERWEAPON_GHIDRA_REPORT.md` — Chrono-specific details (verified, consistent)
-- `SPECIAL_BUILDINGS_POWER_SYSTEM.md` — Power suspend logic (verified, consistent)
-- `TECHNOCLASS_CHRONO_OFFSETS_VERIFIED.md` — Warp field offsets (verified, consistent)
-- `HOUSECLASS_GHIDRA_REPORT.md` — Partial SuperClass field map (extended here)
-- `TEMPORAL_WARP_PIPELINE_GHIDRA_REPORT.md` — TemporalClass linked list (referenced)
-- `TELEPORT_LOCOMOTION_DEEP_DIVE.md` — TeleportLocomotion fields (referenced)
+- [CHRONOSPHERE_SUPERWEAPON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CHRONOSPHERE_SUPERWEAPON_GHIDRA_REPORT.md) — Chrono-specific details (verified, consistent)
+- [SPECIAL_BUILDINGS_POWER_SYSTEM.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPECIAL_BUILDINGS_POWER_SYSTEM.md) — Power suspend logic (verified, consistent)
+- [TECHNOCLASS_CHRONO_OFFSETS_VERIFIED.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_CHRONO_OFFSETS_VERIFIED.md) — Warp field offsets (verified, consistent)
+- [HOUSECLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/HOUSECLASS_GHIDRA_REPORT.md) — Partial SuperClass field map (extended here)
+- [TEMPORAL_WARP_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TEMPORAL_WARP_PIPELINE_GHIDRA_REPORT.md) — TemporalClass linked list (referenced)
+- [TELEPORT_LOCOMOTION_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TELEPORT_LOCOMOTION_DEEP_DIVE.md) — TeleportLocomotion fields (referenced)
 
 ### INI Files Checked
 - `ini/rulesmd.ini` — All 12 SW type sections, [General] keys, building SuperWeapon= keys

@@ -12,7 +12,7 @@
 >
 > **Correction 2026-05-22 - stock reachability re-audit**
 >
-> `STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md`
+> [STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md)
 > supersedes the remaining reachability mistakes in this report. Stock
 > `HARV/CMIN -> GAREFN/NAREFN` unload uses the zero `UnitClass+0x2E4` path.
 > The nonzero `+0x2E4` branch is the conditional `ReleaseDockedHarvester` /
@@ -596,7 +596,7 @@ leaves through the mission-timer epilogue without `ReleaseDockedHarvester` or
 `Force_Track(0x47)`.
 
 For full details on `BuildingClass::ReleaseDockedHarvester` (0x004595C0) see
-`RELEASEDOCKEDHARVESTER_0x4595C0_GHIDRA_REPORT.md`. That function handles:
+[RELEASEDOCKEDHARVESTER_0x4595C0_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/RELEASEDOCKEDHARVESTER_0x4595C0_GHIDRA_REPORT.md). That function handles:
 - `ClearAnimSlot` slots 0xA and 0xB (teardown of unloading anims)
 - `BunkerWallsDownSound` VOC
 - `CreateAnimForSlot` slots 0xC and 0xD (`SpecialAnimThree`/`Four`)
@@ -616,7 +616,7 @@ function falls into `LAB_0073D672` which:
 The next mission is branch-dependent. For the normal stock zero-link state-4
 exit, mission scheduling is handled in `Mission_Deploy_Building`; the
 conditional `ReleaseDockedHarvester` branch is not the stock CMIN/HARV exit.
-See `STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md`
+See [STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md)
 for the 2026-05-22 canonical reachability correction.
 
 ---
@@ -757,7 +757,7 @@ field is only used by `BuildingClass::UpdateAnimation` for the tier-display visu
 | "Slot 7 fires on dock arrival, slot 10 per-gate, slot 8 on later empty completion" | **CORROBORATED WITH TIMING CORRECTION** | All three call sites are verified; slot 8 follows a later threshold crossing after the final successful drain reset. (corrected 2026-07-10: verified via `disassemble_function 0x0073D630` — OPERATOR_OR_ORDER_DRIFT) |
 | "Particle emitter fires before SetAnimSlotImage(10)" | **CORROBORATED** | Order at `0x0073E37E` (vtable+0x468) before `0x0073E3BA` (SetAnimSlotImage). |
 | "ClearAnimSlot slot 10 on completion" | **CORROBORATED with correction** | Slot index is `0xA` (decimal 10), confirmed `PUSH 0xA` at `0073E530`. |
-| "Radio 0x07 DOCKING_COMPLETE fires after last bale" (HARVESTER_DOCK_UNLOAD_SEQUENCE.md §8.3) | **WRONG** | No `PUSH 0x7` anywhere in `Mission_Deploy_Building`. Radio 0x07 does not fire from this function. The `UnitClass::Receive_Radio case 7` is real; 2026-05-21 follow-up verifies the direct sender as the carryall pickup path and refutes `BuildingClass::MissionRepairAndProduce` as a 0x07 sender. |
+| "Radio 0x07 DOCKING_COMPLETE fires after last bale" ([HARVESTER_DOCK_UNLOAD_SEQUENCE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/HARVESTER_DOCK_UNLOAD_SEQUENCE.md) §8.3) | **WRONG** | No `PUSH 0x7` anywhere in `Mission_Deploy_Building`. Radio 0x07 does not fire from this function. The `UnitClass::Receive_Radio case 7` is real; 2026-05-21 follow-up verifies the direct sender as the carryall pickup path and refutes `BuildingClass::MissionRepairAndProduce` as a 0x07 sender. |
 | "Radio 0x19 LEAVE_DOCK fires at end of cycle" | **WRONG** | No `PUSH 0x19` anywhere in `Mission_Deploy_Building`. Not transmitted from this function. |
 | "Only radio transmitted: cmd 3 (CLEAR_LINK), conditionally on exit" | **CONFIRMED NEW FINDING** | All four `CALL [EAX+0x274]` sites push 0x3. Two in state-4 exit, one in state-3 refinery-destroyed path, one in non-harvester-deploy path. |
 
@@ -772,8 +772,8 @@ field is only used by `BuildingClass::UpdateAnimation` for the tier-display visu
 | OQ-3 | When exactly is `param_1[0xB9]` set by the building side (linkage call)? | **OPEN** — the linkage call `FUN_004595C0` is invoked from `PerCellProcess` when the harvester reaches the pad. Exactly when during the tick cycle (before or after Mission_Deploy_Building on the same tick) determines whether states 3/4 can complete on the same tick as linkage. |
 | OQ-4 | `Building::MissionRepairAndProduce` — does it run at all for DockUnload buildings? | **OPEN** — the building enters mission 0x14 on DOCK_NOW (radio 0x15). Whether that mission dispatches to MissionRepairAndProduce for Refinery buildings vs a null handler is unverified. If it does, it runs a building-side state machine in parallel with the unit-side FSM. |
 | OQ-5 | `Radio cmd 0x07 DOCKING_COMPLETE` — what function actually sends it? | **RESOLVED 2026-05-21** — verified direct sender is `AircraftClass::Mission_Move_Carryall @ 0x00416D50`; not stock refinery and not `BuildingClass::MissionRepairAndProduce`. |
-| OQ-6 | `UnitClass::Receive_Radio case 7` path — is it dead for harvesters? | **OPEN** — the case is present in the binary (HARVESTER_DOCK_UNLOAD_SEQUENCE.md §6) but if cmd 0x07 is never sent to a refinery-docked harvester, the case is never executed in normal play. |
-| OQ-7 | `RulesClass+0x1528` vs earlier `0x16E8` claim in HARVESTER_DOCK_UNLOAD_SEQUENCE.md | **RESOLVED** — this function uses `0x1528` (`HarvesterDumpRate` as confirmed by INI parser). The `0x16E8` claim was incorrect. |
+| OQ-6 | `UnitClass::Receive_Radio case 7` path — is it dead for harvesters? | **OPEN** — the case is present in the binary ([HARVESTER_DOCK_UNLOAD_SEQUENCE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/HARVESTER_DOCK_UNLOAD_SEQUENCE.md) §6) but if cmd 0x07 is never sent to a refinery-docked harvester, the case is never executed in normal play. |
+| OQ-7 | `RulesClass+0x1528` vs earlier `0x16E8` claim in [HARVESTER_DOCK_UNLOAD_SEQUENCE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/HARVESTER_DOCK_UNLOAD_SEQUENCE.md) | **RESOLVED** — this function uses `0x1528` (`HarvesterDumpRate` as confirmed by INI parser). The `0x16E8` claim was incorrect. |
 
 ---
 
@@ -783,8 +783,8 @@ and stock refineries normally do not wait there because slot 8 is empty/commente
 OQ-3 and OQ-4 are resolved for stock DockUnload reachability: normal ore unload
 does not establish reciprocal `unit/building +0x2E4`, so the old "linkage call
 from PerCellProcess" model is not stock refinery behavior. See
-`STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md`
-and `BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_NAVCOM_GHIDRA_REPORT.md`.
+[STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md)
+and [BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_NAVCOM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_NAVCOM_GHIDRA_REPORT.md).
 
 ## Sources
 
@@ -793,13 +793,13 @@ and `BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_NAVCOM_GHIDRA_REPORT.md`.
   - Full disassembly via `disassemble_function 0x0073D630`
 
 - **Prior-art docs read (not re-decompiled):**
-  - `STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md` — 2026-05-22 canonical stock reachability correction for zero-link state-4 exit, the contact-vector predicate polarity, and conditional `ReleaseDockedHarvester` (corrected 2026-07-10: `0x0065AE30` role verified via `decompile_function 0x0065AE30`, `decompile_function 0x0065AE60`, and `decompile_function 0x0065AD90` — RTTI_LABEL_DRIFT)
-  - `RELEASEDOCKEDHARVESTER_0x4595C0_GHIDRA_REPORT.md` — ReleaseDockedHarvester body (HIGH confidence)
+  - [STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md) — 2026-05-22 canonical stock reachability correction for zero-link state-4 exit, the contact-vector predicate polarity, and conditional `ReleaseDockedHarvester` (corrected 2026-07-10: `0x0065AE30` role verified via `decompile_function 0x0065AE30`, `decompile_function 0x0065AE60`, and `decompile_function 0x0065AD90` — RTTI_LABEL_DRIFT)
+  - [RELEASEDOCKEDHARVESTER_0x4595C0_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/RELEASEDOCKEDHARVESTER_0x4595C0_GHIDRA_REPORT.md) — ReleaseDockedHarvester body (HIGH confidence)
   - `HARVESTER_DOCK_UNLOAD.md` — partial narrative; §4a building-side claim corrected here
-  - `HARVESTER_DOCK_UNLOAD_SEQUENCE.md` — lifecycle doc; §8.3 radio-0x07 claim corrected here
+  - [HARVESTER_DOCK_UNLOAD_SEQUENCE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/HARVESTER_DOCK_UNLOAD_SEQUENCE.md) — lifecycle doc; §8.3 radio-0x07 claim corrected here
   - `REFINERY_DOCK_ANIM_SLOTS_GHIDRA_REPORT.md` — anim slot context (HIGH confidence, corroborated)
   - `REFINERY_STORAGE_FLOW_GHIDRA_REPORT.md` — drain flow (HIGH confidence, corroborated)
-  - `MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md` — approach choreography
+  - [MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md) — approach choreography
 
 - **INI files:** `ini/rulesmd.ini`, `ini/artmd.ini` (referenced for constant validation)
 

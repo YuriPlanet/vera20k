@@ -136,7 +136,7 @@ Do not patch the older report from this slot; this paragraph is the shared corre
 
 - Ghidra decompiled: `0x00552A40`, `0x00552CC0`, `0x00642C80`, `0x00642B10`, `0x00684620`, `0x00552BE0`, `0x00552C90`, `0x00642C20`, `0x00642DF0`, `0x00643AE0`, `0x00643720`, `0x00643400`, `0x00642BB0`.
 - Ghidra xrefs/callees: xrefs to `0x00552A40`, `0x00552CC0`, `0x00642C80`, `0x00642B10`, `0x00552BE0`, `0x00552C90`, `0x00642DF0`; callees from `0x00684620`.
-- Prior reports consulted: `LOADING_PROGRESS_CALLBACK_VISIBLE_UI_GHIDRA_REPORT.md`, `SKIRMISH_START_TO_LOADING_SCREEN_ACTIVATION_GHIDRA_REPORT.md`, `LOADING_SCREEN_WM_PAINT_MODE2_COMPOSITION_GHIDRA_REPORT.md`, `PUDLGBG_LOADING_SCREEN_SHP_LIFECYCLE_GHIDRA_REPORT.md`.
+- Prior reports consulted: `LOADING_PROGRESS_CALLBACK_VISIBLE_UI_GHIDRA_REPORT.md`, `SKIRMISH_START_TO_LOADING_SCREEN_ACTIVATION_GHIDRA_REPORT.md`, [LOADING_SCREEN_WM_PAINT_MODE2_COMPOSITION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOADING_SCREEN_WM_PAINT_MODE2_COMPOSITION_GHIDRA_REPORT.md), [PUDLGBG_LOADING_SCREEN_SHP_LIFECYCLE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PUDLGBG_LOADING_SCREEN_SHP_LIFECYCLE_GHIDRA_REPORT.md).
 - Current Rust scan: `src/app.rs`, `src/app_transitions.rs`, `src/ui/main_menu.rs`.
 
 **Status:** COMPLETE for the scoped setup inputs; lower-level progress drawing remains intentionally out-of-scope.

@@ -8,7 +8,7 @@ Load the active YR `AIMD.INI` TeamType, ScriptType, TaskForce, and AITriggerType
 
 Approved autonomously under the active Phase 3 goal after adversarial review. The goal explicitly authorizes safe autonomous progress, the active-YR investigation is complete, and the smallest robust prerequisite is discoverable without a user-only choice.
 
-This design owns Stage A of `docs/research/PHASE3_TEAM_PRODUCTION_REACHABILITY_GHIDRA_REPORT.md`. It does not close production reachability. The row remains open after implementation because a normal House still needs the exact AITrigger selector, empty Team construction, and incremental live recruitment.
+This design owns Stage A of [docs/research/PHASE3_TEAM_PRODUCTION_REACHABILITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_TEAM_PRODUCTION_REACHABILITY_GHIDRA_REPORT.md). It does not close production reachability. The row remains open after implementation because a normal House still needs the exact AITrigger selector, empty Team construction, and incremental live recruitment.
 
 Out of scope: Railgun, LaserDraw, Sonic Wave, destroyable cliffs, TS legacy, complete AITrigger condition semantics, runtime weight feedback, Team creation, TaskForce recruitment, and ScriptType opcode implementation.
 
@@ -20,7 +20,7 @@ The app loading path resolves `rulesmd.ini` through `AssetManager`, retains the 
 
 The active binary establishes a separate data pipeline. `Load_Game_Rules @ 0x0052CD70` opens `AIMD.INI`. `ScenarioClass::Full_Init @ 0x00686B20` processes fixed AIMD and map data per registry, in the order TeamTypes, ScriptTypes, TaskForces, AITriggerTypes, reusing existing identifiers in place and appending new ones. ScriptType and TaskForce readers reset their payloads on re-read; TeamType applies authored fields over its current/default state; AITriggerType replaces its comma record. Registry order is later AITrigger selection authority.
 
-There is no relevant Team/AI system-model synthesis document. The primary source is `docs/research/PHASE3_TEAM_PRODUCTION_REACHABILITY_GHIDRA_REPORT.md`, backed by the live addresses above and the retail `ini/aimd.ini` corpus. The research index identifies `src/sim/team_script_vm.rs`, `src/sim/world/mod.rs`, and `src/sim/ai.rs` as the current Rust corridor.
+There is no relevant Team/AI system-model synthesis document. The primary source is [docs/research/PHASE3_TEAM_PRODUCTION_REACHABILITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_TEAM_PRODUCTION_REACHABILITY_GHIDRA_REPORT.md), backed by the live addresses above and the retail `ini/aimd.ini` corpus. The research index identifies `src/sim/team_script_vm.rs`, `src/sim/world/mod.rs`, and `src/sim/ai.rs` as the current Rust corridor.
 
 ## Impact Analysis
 
@@ -63,7 +63,7 @@ Adversarial question: what could cause expensive later rework? Throwing away loa
 
 ## Player-Experience Detail Ledger
 
-- `MILESTONE-BLOCKING` — ordinary nonhuman Houses need all four fixed AIMD registries; current production state has none. Stage A supplies data only and leaves the producer row open. [doc: `PHASE3_TEAM_PRODUCTION_REACHABILITY_GHIDRA_REPORT.md` §§1, 8]
+- `MILESTONE-BLOCKING` — ordinary nonhuman Houses need all four fixed AIMD registries; current production state has none. Stage A supplies data only and leaves the producer row open. [doc: [PHASE3_TEAM_PRODUCTION_REACHABILITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_TEAM_PRODUCTION_REACHABILITY_GHIDRA_REPORT.md) §§1, 8]
 - `COMPOUNDING` — registry source order becomes weighted-selection order and exact-tie authority later. Preserve fixed order, existing-ID position, and map append order. [GHIDRA `0x00686B20`, `0x006F0AB0`]
 - `COMPOUNDING` — `AIMD.INI` is a distinct fixed root. Folding it into Rules layers changes both precedence and per-registry re-read behavior. [GHIDRA `0x0052CD70`, `0x0068797A..0x006879E3`]
 - `COMPOUNDING` — map duplicates update the existing identity without moving it; new map identities append. [GHIDRA registry loaders `0x006F19B0`, `0x00691970`, `0x006E8220`, `0x0041F2E0`]

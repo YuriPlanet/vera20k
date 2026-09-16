@@ -1,7 +1,8 @@
 # VERA20k Research Index
 
-Local evidence index for VERA20k research docs. This is a small, repo-specific
-retrieval tool for turning research files into cited implementation evidence.
+Local index for retained VERA20k research and retail INI data. It retrieves
+references for investigation; a search result does not establish that a claim
+is current, correct or implemented.
 
 V1 is deliberately simple:
 
@@ -59,10 +60,18 @@ python tools/research_index/index.py
 Default indexed roots:
 
 - `docs/research`
-- `docs/plans`
 - `ini`
 
-You can override roots:
+Historical research is archived outside the repository and excluded from
+default searches. Plans remain in the repository for task continuity, but are
+also excluded by default. Search them explicitly using a separate database:
+
+```powershell
+python tools/research_index/index.py docs/plans --db tools/research_index/.cache/plans.db
+python tools/research_index/search.py --db tools/research_index/.cache/plans.db "movement acceptance"
+```
+
+You can override roots in the default database:
 
 ```powershell
 python tools/research_index/index.py docs/research/bridges
@@ -72,6 +81,27 @@ Explicit root overrides are persisted in the generation manifest, so automatic
 MCP refreshes keep the same scope. Roots must stay inside the workspace and
 contain at least one indexable Markdown or INI file; an unsafe or empty request
 cannot replace a valid database.
+
+After upgrading an older index, or to reset a custom scope, run
+`python tools/research_index/index.py`. This explicitly restores the current
+defaults; a health refresh alone preserves the previously saved roots.
+
+### Search Historical Research Explicitly
+
+The [research archive guide](../../docs/research/README.md) records the archive
+snapshot and retrieval instructions. Preserve its original `docs/research/`
+tree, and index it with a separate workspace **and** database:
+
+```powershell
+$archiveRoot = 'C:/path/to/vera20k-research-archive'
+python tools/research_index/index.py docs/research --workspace $archiveRoot --db "$archiveRoot/.cache/research.db"
+python tools/research_index/search.py --db "$archiveRoot/.cache/research.db" "BridgeRepairHut"
+```
+
+Paths returned by that database are relative to the archive workspace. Archived
+reports describe historical investigations and may contain superseded claims;
+check the current source and original native evidence before relying on them.
+Do not add the archive to the current index or put a copy under its indexed roots.
 
 Rebuilds use unique sibling temporary databases plus atomic replacement. A
 cross-process lock serializes publication, and the new generation is certified
@@ -102,9 +132,9 @@ also preserves the exact timestamp requires an explicit reindex.
 ## Search
 
 ```powershell
-python tools/research_index/search.py "BridgeRepairHut C4"
+python tools/research_index/search.py "BlowUpBridge DropIn"
 python tools/research_index/search.py --system bridges "Can_Enter_Cell"
-python tools/research_index/search.py --source ghidra "0x00574000"
+python tools/research_index/search.py --source ghidra "0x0047DD70"
 python tools/research_index/search.py --json "low bridge TubeClass height"
 ```
 
@@ -117,18 +147,24 @@ Results include:
 - status
 - ranked snippet
 
+Source kind and status are inferred from filenames. In particular, `verified`
+can mean only that a filename contains `GHIDRA_REPORT`, `TRACE` or `VERIFICATION`;
+it does not certify the report, the current Rust implementation or native parity.
+The direct CLI search reads the existing database without refreshing it; rebuild
+after corpus changes or check freshness with `health.py` first.
+
 ## Related Docs
 
 Find docs sharing symbols, addresses, INI keys, or Rust paths with a source doc:
 
 ```powershell
-python tools/research_index/related.py docs/research/bridges/00-system-models/BRIDGE_SYSTEM.md
+python tools/research_index/related.py docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGE_COLLAPSE_FALLOUT_ORDERING_GHIDRA_REPORT.md
 ```
 
 Find docs related to an exact term:
 
 ```powershell
-python tools/research_index/related.py --term BridgeRepairHut
+python tools/research_index/related.py --term CellClass::BlowUpBridge
 ```
 
 ## Docgraph
@@ -148,11 +184,11 @@ The index also builds deterministic graph edges from extracted evidence:
 Graph commands:
 
 ```powershell
-python tools/research_index/graph.py doc docs/research/bridges/00-system-models/BRIDGE_SYSTEM.md
-python tools/research_index/graph.py backlinks docs/research/bridges/00-system-models/BRIDGE_SYSTEM.md
-python tools/research_index/graph.py evidence BridgeRepairHut
-python tools/research_index/graph.py implementation BridgeRepairHut
-python tools/research_index/graph.py evidence 0x00574000 --json
+python tools/research_index/graph.py doc docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGE_COLLAPSE_FALLOUT_ORDERING_GHIDRA_REPORT.md
+python tools/research_index/graph.py backlinks docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGE_COLLAPSE_FALLOUT_ORDERING_GHIDRA_REPORT.md
+python tools/research_index/graph.py evidence CellClass::BlowUpBridge
+python tools/research_index/graph.py implementation CellClass::BlowUpBridge
+python tools/research_index/graph.py evidence 0x0047DD70 --json
 ```
 
 `evidence` prioritizes research-document relationships. `implementation`
@@ -175,7 +211,7 @@ python tools/research_index/handoff.py --system bridges "collapse"
 The handoff view combines:
 
 - explicit implementation-handoff sections when present;
-- top verified evidence chunks with file and line citations;
+- top evidence chunks ranked by inferred status, with file and line citations;
 - Rust touchpoints from extracted graph terms, including supporting doc citations;
 - warnings when evidence, handoff sections, or Rust touchpoints are missing.
 
@@ -262,8 +298,9 @@ V1 uses a conservative evidence preference:
 6. plans
 7. unknown notes
 
-The ranking is a retrieval hint only. `gamemd.exe` evidence and verified research
-remain the source of truth.
+The ranking and inferred status are retrieval hints only. Establish native
+behavior from original `gamemd.exe` bodies, callers and data; establish current
+Rust behavior from source and appropriate validation.
 
 ## Next Steps
 

@@ -11,8 +11,8 @@
 **Confidence:** HIGH — every address verified by live Ghidra decompilation.
 **Active in YR:** Yes — this is the top-level render/input pipeline for every in-game frame.
 
-> This report fills the gap left by the existing docs (`TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md`,
-> `SIDEBAR_SYSTEM_GHIDRA_REPORT.md`, `MouseClass_research.md`, `ScrollClass_research.md`,
+> This report fills the gap left by the existing docs ([TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md),
+> `SIDEBAR_SYSTEM_GHIDRA_REPORT.md`, [MouseClass_research.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MouseClass_research.md), [ScrollClass_research.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ScrollClass_research.md),
 > `MAPCLASS_GHIDRA_REPORT.md`) by focusing on **GScreenClass itself** (the empty base that
 > is never instantiated standalone) and the **orchestration contract** between the display
 > chain (`g_DisplayChain` = `MouseClass*` at `0x00887640`) and the sibling tactical object
@@ -242,7 +242,7 @@ most of its vtable.
 
 **`TacticalClass::Draw` (`0x006D3D10`) is NOT virtual.** It is called directly by address
 from `RenderFrame_main` (3 times per frame with different `param_3` selectors: 0/1/2).
-See `TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md` for the complete internals of those three passes.
+See [TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md) for the complete internals of those three passes.
 
 **`TacticalClass::Update` (vtable[23], `0x006D2540`) — per-frame scroll animator:**
 
@@ -601,7 +601,7 @@ does NOT need to expose the surface-swap / dirty-bit plumbing the original uses.
 1. **Exact layout of the isometric camera matrix.** The constructor writes 12+ floats
    starting at +0xDE4, but `FUN_005AEA10` (matrix scale) may also write to earlier
    offsets. Full matrix offset map requires decompiling the CellToPixel/CoordsToClient
-   helpers — out of scope for this report. Existing `COORDINATE_SYSTEM_GAMEMD.md` may
+   helpers — out of scope for this report. Existing [COORDINATE_SYSTEM_GAMEMD.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/COORDINATE_SYSTEM_GAMEMD.md) may
    cover this. **Action:** if RA2's exact isometric projection differs from ours by
    sub-pixel amounts, re-investigate this field block.
 
@@ -650,13 +650,13 @@ does NOT need to expose the surface-swap / dirty-bit plumbing the original uses.
 - `0x0055E160` — Non-gameplay frame wrapper
 
 **Doc files cross-referenced:**
-- `TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md` — three-pass internals of `TacticalClass::Draw`
+- [TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md) — three-pass internals of `TacticalClass::Draw`
 - `SIDEBAR_SYSTEM_GHIDRA_REPORT.md` — SidebarClass vtable, input dispatch chain, class hierarchy
-- `MouseClass_research.md` — MouseClass override methods, cursor state
-- `ScrollClass_research.md` — Edge scroll, RMB drag, scroll coasting
+- [MouseClass_research.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MouseClass_research.md) — MouseClass override methods, cursor state
+- [ScrollClass_research.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ScrollClass_research.md) — Edge scroll, RMB drag, scroll coasting
 - `MAPCLASS_GHIDRA_REPORT.md` — MapClass field layout (the largest chain member)
 - `GAMEMD_ARCHITECTURE.md` — Overall class hierarchy + display chain diagram
-- `ADDRESS_MAP.md` — Verified canonical addresses for all mentioned constructors/vtables
+- [ADDRESS_MAP.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ADDRESS_MAP.md) — Verified canonical addresses for all mentioned constructors/vtables
 
 **INI files checked:**
 - `ini/rulesmd.ini` — No viewport/screen/tactical-layout keys found (all layout hardcoded)

@@ -2089,7 +2089,7 @@ builder/fresh-critic chain, focused validation, PR-readiness full suite, or merg
 - `docs/research/bridges/00-system-models/ACTIVE_RETAIL_BRIDGE_COVERAGE_REINVESTIGATION_GHIDRA_REPORT.md`
 - `docs/research/bridges/00-system-models/RMG_BRIDGE_DUAL_RNG_LIFECYCLE_REINVESTIGATION_GHIDRA_REPORT.md`
 - `docs/research/bridges/00-system-models/RMG_PREVIEW_ANIM_BUILDING_IDENTITY_LIFECYCLE_REINVESTIGATION_GHIDRA_REPORT.md`
-- `docs/research/bridges/00-system-models/SCENARIO_PREFIX_PLAN_INELIGIBLE_FALLBACK_REINVESTIGATION_GHIDRA_REPORT.md`
+- [docs/research/bridges/00-system-models/SCENARIO_PREFIX_PLAN_INELIGIBLE_FALLBACK_REINVESTIGATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/00-system-models/SCENARIO_PREFIX_PLAN_INELIGIBLE_FALLBACK_REINVESTIGATION_GHIDRA_REPORT.md)
 - `docs/research/bridges/01-assets-map-load-overlay/LOW_OVERLAY_MARK_FIXED_MAP_STAMP_RNG_TRANSACTION_GHIDRA_REPORT.md`
 - `docs/research/bridges/01-assets-map-load-overlay/LOW_OVERLAY_MARK_SCENARIO_LOAD_ACTIVATION_BOUNDARY_GHIDRA_REPORT.md`
 - `docs/research/bridges/01-assets-map-load-overlay/LOW_OVERLAY_MARK_ALL_LOAD_CONTEXT_SCENARIO_RNG_LIFECYCLE_GHIDRA_REPORT.md`

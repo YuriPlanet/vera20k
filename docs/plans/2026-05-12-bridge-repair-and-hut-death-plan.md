@@ -1779,7 +1779,7 @@ If no diff, skip this commit.
   - [BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md](../../../ra2-rust-game-docs/BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md) (Phases 1 + 2, completed 2026-05-12)
   - [BRIDGE_SYSTEM.md](../../../ra2-rust-game-docs/BRIDGE_SYSTEM.md) (corrected for the dispatcher-identity finding inline)
   - [HIGH_BRIDGE_DAMAGE_STATE_MACHINE_GHIDRA_REPORT.md](../../../ra2-rust-game-docs/HIGH_BRIDGE_DAMAGE_STATE_MACHINE_GHIDRA_REPORT.md) (forward state machine docs)
-  - [MAPCLASS_ZONES_RAMPS_HUT_REGISTRY_GHIDRA_REPORT.md](../../../ra2-rust-game-docs/MAPCLASS_ZONES_RAMPS_HUT_REGISTRY_GHIDRA_REPORT.md) (UpdateBridgeZonesHelper internals)
+  - [MAPCLASS_ZONES_RAMPS_HUT_REGISTRY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAPCLASS_ZONES_RAMPS_HUT_REGISTRY_GHIDRA_REPORT.md) (UpdateBridgeZonesHelper internals)
 - **gamemd.exe addresses (kept here, NOT in Rust comments):**
   - `0x519630` — InfantryClass::PerCellProcess (engineer-repair trigger)
   - `0x43FB20` — BuildingClass::Update (C4-timer-expired branch)

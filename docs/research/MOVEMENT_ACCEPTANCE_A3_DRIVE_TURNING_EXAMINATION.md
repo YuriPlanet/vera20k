@@ -242,7 +242,7 @@ entry byte `+0x04` rather than the live interpolated hull facing.
   `TeleportLocomotionClass::PostWarpValidation 0x0071896B` and `0x00718AC2`,
   `UnitClass::ReceiveDamage 0x00737E51`.
   Ghidra's own field label at the read site `0x0070B5AE` is `IsSinking`
-  (`docs/research/BODY_ROCKING_GHIDRA_REPORT.md`). It is the sinking/falling
+  ([docs/research/BODY_ROCKING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BODY_ROCKING_GHIDRA_REPORT.md)). It is the sinking/falling
   latch, not a generic damage flag. This upgrades the "identity is UNCHECKED"
   note in `drive_locomotion.rs:186-200`.
 - **VERA.** `update_vehicle_speed_fraction` (`drive_locomotion.rs:290-312`) has
@@ -306,8 +306,8 @@ entry byte `+0x04` rather than the live interpolated hull facing.
   `UnitClass::PointerExpired 0x007446FF`,
   `UnitClass::Transfer_Convoy_On_Owner_Change 0x007463CF`. Only the scenario
   reader creates a non-null link. (The same reading is in
-  `docs/research/CONVOY_FORMATION_SYSTEM_GHIDRA_REPORT.md` and
-  `CHANGEOWNER_SUBCLASS_WRAPPERS_RESWARM_20260528.md`; I confirmed the writer
+  [docs/research/CONVOY_FORMATION_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CONVOY_FORMATION_SYSTEM_GHIDRA_REPORT.md) and
+  [CHANGEOWNER_SUBCLASS_WRAPPERS_RESWARM_20260528.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CHANGEOWNER_SUBCLASS_WRAPPERS_RESWARM_20260528.md); I confirmed the writer
   set from the binary rather than taking the docs.)
 - **VERA.** No convoy chain, no propagation.
 - **Trigger.** A map whose `[Units]` section declares a follower chain.

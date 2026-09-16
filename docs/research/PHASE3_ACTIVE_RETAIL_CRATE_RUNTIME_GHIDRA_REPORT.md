@@ -1333,8 +1333,8 @@ native stack residue and must remain normalized/hash-neutral.
 
 ### Building `CrateBeneath`
 
-The older `BUILDINGCLASS_ON_DESTROYED_GHIDRA_REPORT.md` and
-`BUILDINGCLASS_MASTER_GHIDRA_REPORT_V3.md` claim this is Iron-Curtain-only;
+The older [BUILDINGCLASS_ON_DESTROYED_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_ON_DESTROYED_GHIDRA_REPORT.md) and
+[BUILDINGCLASS_MASTER_GHIDRA_REPORT_V3.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_MASTER_GHIDRA_REPORT_V3.md) claim this is Iron-Curtain-only;
 live exhaustive caller reconciliation proves that claim false.
 
 `BuildingClass__Place_OccupyMap @ 0x00441F60` has exactly two callers:

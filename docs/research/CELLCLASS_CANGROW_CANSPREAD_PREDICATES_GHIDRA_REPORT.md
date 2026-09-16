@@ -231,9 +231,9 @@ Adversarial corner cases answered:
 
 ## 12. Stale Docs / Follow-up Docs
 
-- `docs/research/ORE_OVERLAY_SYSTEM_GHIDRA_REPORT.md`: replace wording saying gems are suppressed by `GrowthPercentage=0` at `CanGrowTiberium` with: "`CanGrowTiberium` rejects negative/unordered `GrowthPercentage`, not zero. Stock Cruentus with `GrowthPercentage=0` can pass this source predicate if overlay/density/slope gates pass; the later growth processor exits on `GrowthPercentage <= 0.0`."
-- `docs/research/PLACETIBERIUM_SPREAD_GERMINATION_CONSTRAINTS_AND_OVERLAY_FRAME_GHIDRA_REPORT.md`: keep target validation separate from these helpers; if mentioning `CanSpreadTiberium`, state that it is a source predicate and does not check target land/buildable/AllowTiberium.
-- `docs/research/TIBERIUMCLASS_MAP_LOAD_QUEUE_SEEDING_GHIDRA_REPORT.md`: existing wording that zero-percent classes can seed but processors later exit is consistent with this report.
+- [docs/research/ORE_OVERLAY_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ORE_OVERLAY_SYSTEM_GHIDRA_REPORT.md): replace wording saying gems are suppressed by `GrowthPercentage=0` at `CanGrowTiberium` with: "`CanGrowTiberium` rejects negative/unordered `GrowthPercentage`, not zero. Stock Cruentus with `GrowthPercentage=0` can pass this source predicate if overlay/density/slope gates pass; the later growth processor exits on `GrowthPercentage <= 0.0`."
+- [docs/research/PLACETIBERIUM_SPREAD_GERMINATION_CONSTRAINTS_AND_OVERLAY_FRAME_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PLACETIBERIUM_SPREAD_GERMINATION_CONSTRAINTS_AND_OVERLAY_FRAME_GHIDRA_REPORT.md): keep target validation separate from these helpers; if mentioning `CanSpreadTiberium`, state that it is a source predicate and does not check target land/buildable/AllowTiberium.
+- [docs/research/TIBERIUMCLASS_MAP_LOAD_QUEUE_SEEDING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TIBERIUMCLASS_MAP_LOAD_QUEUE_SEEDING_GHIDRA_REPORT.md): existing wording that zero-percent classes can seed but processors later exit is consistent with this report.
 
 ## Sources
 
@@ -241,4 +241,4 @@ Adversarial corner cases answered:
 - Ghidra assembly contexts: `0x00483620`, `0x00483690`, `0x007221B0`, `0x00722C40`.
 - INI checked: `ini/rulesmd.ini` `[General]`, `[Tiberiums]`, `[Riparius]`, `[Cruentus]`, `[Vinifera]`, `[Aboreus]`.
 - Rust scanned: `src/sim/ore_growth.rs`, `src/app_init.rs`, `src/rules/ruleset.rs`, `src/map/basic.rs`, `src/map/theater.rs`, `src/map/resolved_terrain.rs`, `src/sim/terrain_spawn.rs`.
-- Prior reports referenced for contrast: `TIBERIUMCLASS_MAP_LOAD_QUEUE_SEEDING_GHIDRA_REPORT.md`, `PLACETIBERIUM_SPREAD_GERMINATION_CONSTRAINTS_AND_OVERLAY_FRAME_GHIDRA_REPORT.md`, `TIBERIUMCLASS_GROWTH_PROCESSOR_EXACT_QUEUE_PROCESSING_GHIDRA_REPORT.md`.
+- Prior reports referenced for contrast: [TIBERIUMCLASS_MAP_LOAD_QUEUE_SEEDING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TIBERIUMCLASS_MAP_LOAD_QUEUE_SEEDING_GHIDRA_REPORT.md), [PLACETIBERIUM_SPREAD_GERMINATION_CONSTRAINTS_AND_OVERLAY_FRAME_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PLACETIBERIUM_SPREAD_GERMINATION_CONSTRAINTS_AND_OVERLAY_FRAME_GHIDRA_REPORT.md), [TIBERIUMCLASS_GROWTH_PROCESSOR_EXACT_QUEUE_PROCESSING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TIBERIUMCLASS_GROWTH_PROCESSOR_EXACT_QUEUE_PROCESSING_GHIDRA_REPORT.md).

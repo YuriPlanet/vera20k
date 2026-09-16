@@ -268,14 +268,14 @@ No Rust files were modified.
 - `[RESOLVED] OQ-03 - What gates the normal ore/gem path? -> `Harvester=yes`, not full, current LandType `5`, and `Weeder=no`.` (evidence: `0x0073D450`)
 - `[RESOLVED] OQ-04 - What happens when current cell is not tiberium? -> Timer fields reset to zero/rate-zero and the function returns false; caller then handles short-scan/return.` (evidence: `0x0073D450`; `0x0073EA8D..0x0073EB19`)
 - `[RESOLVED] OQ-05 - What happens when storage is full? -> The callee resets timer and returns false before `Reduce_Tiberium`; the caller's full branch moves to substate 2 when percentage equals `1.0`.` (evidence: `0x0073D450`; `0x0073E99A..0x0073EA7B`)
-- `[RESOLVED] OQ-06 - How is requested amount computed for normal cargo? -> `ftol(Storage - StorageClass::GetTotalAmount())`, then passed to `Reduce_Tiberium`.` (evidence: `0x0073D450`; `0x006C9650`; prior `ORE_OVERLAY_SYSTEM_GHIDRA_REPORT.md`)
+- `[RESOLVED] OQ-06 - How is requested amount computed for normal cargo? -> `ftol(Storage - StorageClass::GetTotalAmount())`, then passed to `Reduce_Tiberium`.` (evidence: `0x0073D450`; `0x006C9650`; prior [ORE_OVERLAY_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ORE_OVERLAY_SYSTEM_GHIDRA_REPORT.md))
 - `[RESOLVED] OQ-07 - What rounding does request conversion use? -> `Math__ftol`; prior direct disassembly docs establish truncate toward zero under YR's FPU control word.` (evidence: `0x007C5F00`; `ADD_TIBERIUM_CREDITS_PURIFIER...`)
 - `[RESOLVED] OQ-08 - Does the function add credits or storage? -> Storage only: `StorageClass::AddAmount((float)removed, tib_type)`. Credit value is later.` (evidence: `0x0073D450`; `0x006C9690`)
 - `[RESOLVED] OQ-09 - Are gems special-cased? -> No. Gems are `Cruentus` tiberium type index 1 with `Value=50`; same branch stores the removed amount into that type slot.` (evidence: `0x00485010`; `rulesmd.ini [Tiberiums]/[Cruentus]`)
 - `[RESOLVED] OQ-10 - Does the Weeder path apply to CMIN/HARV? -> No for stock CMIN/HARV; conditional for modded/TS units with `Weeder=yes`.` (evidence: `0x0073D450`; `rulesmd.ini [CMIN]/[HARV]`)
 - `[RESOLVED] OQ-11 - Does successful extraction reset the timer? -> Yes; success writes step counter `0`, start frame current, step amount/rate `HarvesterLoadRate`, then returns success.` (evidence: `0x0073D450`)
 - `[RESOLVED] OQ-12 - Does zero removed amount reset the success timer? -> No success reset occurs after `Reduce_Tiberium` returns 0; the function returns false.` (evidence: `0x0073D450`)
-- `[RESOLVED] OQ-13 - What is the max-density known edge? -> `OverlayData=11`: `Reduce_Tiberium` removes the overlay and returns 11 only if the request is >= 11 (the trace probed with an artificial request of 20); the live harvest gate requests `min(1.0, Storage - load)` = 1 per fire, so an 11-density cell takes 11 gates.` (evidence: `0x00480A80`; `CMIN_HARVEST_DENSITY_CARGO_REDUCE_TIBERIUM_TRACE.md`)
+- `[RESOLVED] OQ-13 - What is the max-density known edge? -> `OverlayData=11`: `Reduce_Tiberium` removes the overlay and returns 11 only if the request is >= 11 (the trace probed with an artificial request of 20); the live harvest gate requests `min(1.0, Storage - load)` = 1 per fire, so an 11-density cell takes 11 gates.` (evidence: `0x00480A80`; [CMIN_HARVEST_DENSITY_CARGO_REDUCE_TIBERIUM_TRACE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/traces/CMIN_HARVEST_DENSITY_CARGO_REDUCE_TIBERIUM_TRACE.md))
 - `[RESOLVED] OQ-14 - Does Rust currently represent cargo as float storage? -> No; it uses discrete `Vec<CargoBale>` and `cargo.len()` capacity.` (evidence: `src/sim/miner/mod.rs:253`, `src/sim/miner/mod.rs:345`)
 - `[RESOLVED] OQ-15 - Does Rust have a real-overlay max-density test? -> Not in the scanned focused tests; current tests seed `11 * 120` directly and do not cover `production_queue.rs` `frame+1` seeding.` (evidence: `src/sim/miner/miner_tests.rs:3731`; `src/sim/production/production_queue.rs:155`)
 - `[DEFERRED] OQ-16 - What exact x87 instruction sequence handles `remaining <= epsilon`?` (category: bounded-cost-too-high; reason: Ghidra decompile hides the FPU stack around one comparison, while normal integer storage behavior is already clear; next-step-if-pursued: instruction-level disassembly around the `Storage - total` comparison and `Math__ftol` call)
@@ -300,7 +300,7 @@ Deferred ratio is 3/18. The report is complete for standard `HARV`/`CMIN` intege
 
 ### Stale Docs / Follow-up Docs
 
-- `docs/research/miner/traces/CHRONO_MINER_MISSION_HARVEST_TRACE.md` contains stale wording that subsequent bales happen every `HarvesterLoadRate=2` frames because the step counter is not reset. The current direct `0x0073D450` decompile shows successful standard extraction resets `param_1[0x3E]=0` and rate/step fields to `HarvesterLoadRate`. Replacement wording: "After successful standard ore/gem extraction, `Harvest_Ore_Tick` resets the StepTimer fields to a fresh `HarvesterLoadRate` cycle; tests should verify the observed gate from direct runtime or StepTimer semantics, not assume a 2-frame subsequent cadence."
+- [docs/research/miner/traces/CHRONO_MINER_MISSION_HARVEST_TRACE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/traces/CHRONO_MINER_MISSION_HARVEST_TRACE.md) contains stale wording that subsequent bales happen every `HarvesterLoadRate=2` frames because the step counter is not reset. The current direct `0x0073D450` decompile shows successful standard extraction resets `param_1[0x3E]=0` and rate/step fields to `HarvesterLoadRate`. Replacement wording: "After successful standard ore/gem extraction, `Harvest_Ore_Tick` resets the StepTimer fields to a fresh `HarvesterLoadRate` cycle; tests should verify the observed gate from direct runtime or StepTimer semantics, not assume a 2-frame subsequent cadence."
 - Any document or test that equates `9 * HarvesterLoadRate = 18` with a
   helper call exactly at `F+18` is stale. The ninth increment is post-mission at
   `F+18`; the helper call is `F+19` on the ordinary live path.
@@ -340,13 +340,13 @@ Deferred ratio is 3/18. The report is complete for standard `HARV`/`CMIN` intege
   - `decompile_function 0x007C5F00` - `Math__ftol`
 - Prior docs read:
   - `docs/research/miner/HARVESTER_MISSION_HARVEST_GHIDRA_REPORT.md`
-  - `docs/research/miner/HARV_HARVEST_STATE_RETARGET_VISUAL_FLAG_GHIDRA_REPORT.md`
-  - `docs/research/CELLCLASS_REDUCE_TIBERIUM_FUN_00480A80_GHIDRA_REPORT.md`
-  - `docs/research/TIBERIUM_QUEUE_SEEDING_AND_TIMING_REPORT.md`
-  - `docs/research/ORE_OVERLAY_SYSTEM_GHIDRA_REPORT.md`
-  - `docs/research/miner/DRIVE_BLOCKED_DELAY_EXPIRY_MINER_RETARGET_GHIDRA_REPORT.md`
-  - `docs/research/traces/CMIN_HARVEST_DENSITY_CARGO_REDUCE_TIBERIUM_TRACE.md`
-  - `docs/research/ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md`
+  - [docs/research/miner/HARV_HARVEST_STATE_RETARGET_VISUAL_FLAG_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/HARV_HARVEST_STATE_RETARGET_VISUAL_FLAG_GHIDRA_REPORT.md)
+  - [docs/research/CELLCLASS_REDUCE_TIBERIUM_FUN_00480A80_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELLCLASS_REDUCE_TIBERIUM_FUN_00480A80_GHIDRA_REPORT.md)
+  - [docs/research/TIBERIUM_QUEUE_SEEDING_AND_TIMING_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TIBERIUM_QUEUE_SEEDING_AND_TIMING_REPORT.md)
+  - [docs/research/ORE_OVERLAY_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ORE_OVERLAY_SYSTEM_GHIDRA_REPORT.md)
+  - [docs/research/miner/DRIVE_BLOCKED_DELAY_EXPIRY_MINER_RETARGET_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/DRIVE_BLOCKED_DELAY_EXPIRY_MINER_RETARGET_GHIDRA_REPORT.md)
+  - [docs/research/traces/CMIN_HARVEST_DENSITY_CARGO_REDUCE_TIBERIUM_TRACE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/traces/CMIN_HARVEST_DENSITY_CARGO_REDUCE_TIBERIUM_TRACE.md)
+  - [docs/research/ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md)
   - `docs/research/RULESCLASS_FIELDS.csv`
 - INI checked:
   - `ini/rulesmd.ini`

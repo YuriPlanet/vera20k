@@ -114,6 +114,12 @@ or recursive `mod.rs`. Coordinate snapshot versions/rebaselines; exclude others'
 
 ## Knowledge and guidance
 
+Keep current contracts, focused implementation rationale and reproducible native
+evidence close to their code or tools. Historical investigations live in the
+[research archive](docs/research/README.md); consult them explicitly when useful,
+recheck their claims, and update the current owner rather than maintaining chains
+of superseded reports. Retention or an index status is not proof of correctness.
+
 Internet documentation lookup is allowed without routine approval. Resolve uncertain
 technical behavior using authoritative references, specifications and upstream source;
 match library/API documentation to the version in use. Graphics work requires both

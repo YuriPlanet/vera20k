@@ -37,7 +37,7 @@ replace that design or authorize the still-blocked renderer path.
 
 Primary evidence:
 
-- `docs/research/PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md`
+- [docs/research/PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md)
 - `docs/contracts/2026-07-18-spark-collision-pixel-compositor-implementation-contract.md`
 - `docs/plans/2026-07-18-spark-native-float-and-point-compositor-design.md`
 - Live roots `0x0062C6E0`, `0x0062E840`, `0x00578080`, `0x0047B3A0`,
@@ -119,7 +119,7 @@ Before implementation, a bounded Ghidra pass must prove:
   signed semantics. Rust now has the shared mutable dummy substrate in
   `cell_rect`, but Spark still returns typed unavailable/off-array errors rather
   than routing through it; that caller-specific integration remains open. [doc:
-  `PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md`]
+  [PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md)]
 - Candidate ground includes signed terrain level and exact slope contribution.
   [GHIDRA `0x00578080`, `0x0047B3A0`; exact formula pending prerequisite]
 - The slope matrix is selected by the candidate cell's slope byte, not particle

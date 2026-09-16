@@ -62,8 +62,8 @@ Passive SpySat reveal is managed separately by `0x00508F60`. It searches for an 
 ## Stale or Superseded Statements
 
 - `POWER_SYSTEM_GHIDRA_REPORT.md`: `+0x16A5` as `PoweredSpecialShroud`, `0x00508F60` as a low-power transition, and `0x00508DF0` as a superweapon-ready check are superseded by live-body evidence.
-- `HOUSECLASS_GHIDRA_REPORT.md`: `+0x16A5` as `NeedsPower` is superseded.
-- `SPY_SATELLITE_REVEAL_RADAR_PIXEL_PIPELINE_GHIDRA_REPORT.md`: the virtual `+0x1D4` gate is not an online/powered-style gate; it resolves to `IsWarpingOut`.
+- [HOUSECLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/HOUSECLASS_GHIDRA_REPORT.md): `+0x16A5` as `NeedsPower` is superseded.
+- [SPY_SATELLITE_REVEAL_RADAR_PIXEL_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPY_SATELLITE_REVEAL_RADAR_PIXEL_PIPELINE_GHIDRA_REPORT.md): the virtual `+0x1D4` gate is not an online/powered-style gate; it resolves to `IsWarpingOut`.
 
 ## Cross-Document Conflict
 
@@ -113,5 +113,5 @@ Verdict: DRIFT for exact mechanism; the tactical-radar path is ready for an impl
 - Live Ghidra decompile: reveal `0x00577D90`, restore `0x00577AB0`, tactical-map state change `0x00656DF0`.
 - Live Ghidra decompile: `ScenarioClass__Read_INI_Basic`, `0x00689E90`; scenario initializer `0x00683610`.
 - Retail rules: `ini/rulesmd.ini` and `ini/rules.ini`, `[GASPYSAT]`.
-- Research: `SPY_SATELLITE_REVEAL_RADAR_PIXEL_PIPELINE_GHIDRA_REPORT.md`, `POWER_SYSTEM_GHIDRA_REPORT.md`, `HOUSECLASS_GHIDRA_REPORT.md`, `RADAR_SYSTEM_COMPREHENSIVE.md`.
+- Research: [SPY_SATELLITE_REVEAL_RADAR_PIXEL_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPY_SATELLITE_REVEAL_RADAR_PIXEL_PIPELINE_GHIDRA_REPORT.md), `POWER_SYSTEM_GHIDRA_REPORT.md`, [HOUSECLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/HOUSECLASS_GHIDRA_REPORT.md), [RADAR_SYSTEM_COMPREHENSIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADAR_SYSTEM_COMPREHENSIVE.md).
 - Rust: `src/sim/vision/mod.rs`, `src/sim/world/mod.rs`, `src/sim/power_system.rs`, `src/sim/radar.rs`, sell/destruction paths, and vision tests.

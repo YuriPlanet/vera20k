@@ -95,7 +95,7 @@ Armory uses the same `IRepairRate * 900.0` threshold but promotes directly throu
 | `RepairStep=` | `Rules+0x16CC` | `0x0083BDE8` xref `0x00670DD6`, store `0x00670DE3` | `8` | Not directly read by scoped `TechnoClass 0x1C`; type virtual `+0xB4` supplies step |
 | `RepairPercent=` | `Rules+0x16D0` | `0x0083BDF4` xref `0x00670DB7`, store `0x00670DC4` | `15%` | Not directly read by scoped `TechnoClass 0x1C`; type virtual `+0xB0` supplies cost |
 | `RepairBay=` | `Rules+0x850` vector | `0x0083C818` xref `0x0066F362` | `GADEPT,NADEPT,CAOUTP;,YADEPT` | Yes for Mission_Unload repair-bay search, not the radio tick itself |
-| `InfantryGainSelfHeal=` / `UnitsGainSelfHeal=` | `BuildingType+0x1564/+0x1568` | `TECH_CAHOSP_VS_CATHOSP_GHIDRA_REPORT.md` GREEN audit | stock YR tech hospital / machine shop style aura | Yes, separate from this walk-in radio path |
+| `InfantryGainSelfHeal=` / `UnitsGainSelfHeal=` | `BuildingType+0x1564/+0x1568` | [TECH_CAHOSP_VS_CATHOSP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECH_CAHOSP_VS_CATHOSP_GHIDRA_REPORT.md) GREEN audit | stock YR tech hospital / machine shop style aura | Yes, separate from this walk-in radio path |
 
 ## 6. Current Rust Implementation Status
 
@@ -138,7 +138,7 @@ No Rust path was found for legacy `Hospital=` / `Armory=` walk-in service. That 
 - `[RESOLVED] OQ-SR-010 - What is the Repair Depot timing threshold? -> `Rules+0x16E8 * 900.0 <= accumulator`.` (evidence: `0x0044BD32..0x0044BD44`)
 - `[RESOLVED] OQ-SR-011 - What is the Hospital timing threshold? -> `Rules+0x16F0 * 900.0 <= accumulator`.` (evidence: `0x0044B8EB..0x0044B904`)
 - `[RESOLVED] OQ-SR-012 - Does Armory send `0x1C`? -> No; it uses the infantry timer threshold but calls veterancy helpers directly.` (evidence: `0x0044BAF4..0x0044BB37`)
-- `[RESOLVED] OQ-SR-013 - Are Hospital/Armory walk-in paths stock YR active? -> No for stock `rulesmd.ini`; `Hospital=` and `Armory=` are parsed but stock YR comments them out and uses aura keys.` (evidence: `ini/rulesmd.ini:13992`, `14016`, `14040`; parser `0x00460AE1`, `0x00460AF7`; `TECH_CAHOSP_VS_CATHOSP_GHIDRA_REPORT.md`)
+- `[RESOLVED] OQ-SR-013 - Are Hospital/Armory walk-in paths stock YR active? -> No for stock `rulesmd.ini`; `Hospital=` and `Armory=` are parsed but stock YR comments them out and uses aura keys.` (evidence: `ini/rulesmd.ini:13992`, `14016`, `14040`; parser `0x00460AE1`, `0x00460AF7`; [TECH_CAHOSP_VS_CATHOSP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECH_CAHOSP_VS_CATHOSP_GHIDRA_REPORT.md))
 - `[RESOLVED] OQ-SR-014 - Are UnitRepair service depots stock YR active? -> Yes; `GADEPT`, `NADEPT`, `YADEPT`, and `CAOUTP` set `UnitRepair=yes`.` (evidence: `ini/rulesmd.ini:11895`, `12683`, `13438`, `13886`)
 - `[RESOLVED] OQ-SR-015 - What current Rust surface implements this? -> `src/sim/docking/building_dock.rs` direct FSM plus rules parsing in `src/rules/ruleset.rs` / `src/rules/object_type.rs`.` (evidence: Rust scan)
 - `[DEFERRED] OQ-SR-016 - Exact concrete implementations of type virtuals `+0xB0/+0xB4`.` (category: out-of-scope; reason: repair radio handoff only needs observed call shape; next-step-if-pursued: investigate TechnoType/ObjectType virtual table cost/repair-step methods)
@@ -162,7 +162,7 @@ No Rust path was found for legacy `Hospital=` / `Armory=` walk-in service. That 
 - Do not apply `0x1C` repair to Foot-derived receivers while chrono destination/state `+0x5A4` is non-null.
 - Do not implement Armory promotion as repeated `0x1C` repair ticks; Armory promotes directly through veterancy helpers after the infantry timer threshold.
 - Do not treat stock YR `[CATHOSP]`/`[CAHOSP]` as legacy `Hospital=yes` walk-in buildings; `rulesmd.ini` comments out that key and uses aura counters.
-- Do not preserve the older `BUILDINGCLASS_MISSION_REPAIR_AND_PRODUCE.md` wording that service depot threshold is `Rules+0x16E8 * 1.0`; verified assembly uses `* 900.0`.
+- Do not preserve the older [BUILDINGCLASS_MISSION_REPAIR_AND_PRODUCE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_MISSION_REPAIR_AND_PRODUCE.md) wording that service depot threshold is `Rules+0x16E8 * 1.0`; verified assembly uses `* 900.0`.
 
 ## 11. Remaining Uncertainty
 
@@ -172,8 +172,8 @@ No Rust path was found for legacy `Hospital=` / `Armory=` walk-in service. That 
 
 ## 12. Stale Docs / Follow-up Docs
 
-- `docs/research/BUILDINGCLASS_MISSION_REPAIR_AND_PRODUCE.md` section "Repair tick tuning" should replace "threshold = Rules+0x16E8 x 1.0" with "threshold = Rules+0x16E8 x 900.0 (`DAT_007E27F8`), verified at `0x0044BD38..0x0044BD44`."
-- `docs/research/MISSION_REPAIR_AND_PRODUCE_GHIDRA_REPORT.md` should avoid saying `Rules+0x16F8` is `RepairPercent`; replacement wording: "`Rules+0x16F8` is the service completion health-ratio threshold read by `0x1C` and `0x22`; `RepairPercent=` is parsed to `Rules+0x16D0` and is not directly read at the scoped `TechnoClass::Receive_Radio 0x1C` site."
+- [docs/research/BUILDINGCLASS_MISSION_REPAIR_AND_PRODUCE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_MISSION_REPAIR_AND_PRODUCE.md) section "Repair tick tuning" should replace "threshold = Rules+0x16E8 x 1.0" with "threshold = Rules+0x16E8 x 900.0 (`DAT_007E27F8`), verified at `0x0044BD38..0x0044BD44`."
+- [docs/research/MISSION_REPAIR_AND_PRODUCE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MISSION_REPAIR_AND_PRODUCE_GHIDRA_REPORT.md) should avoid saying `Rules+0x16F8` is `RepairPercent`; replacement wording: "`Rules+0x16F8` is the service completion health-ratio threshold read by `0x1C` and `0x22`; `RepairPercent=` is parsed to `Rules+0x16D0` and is not directly read at the scoped `TechnoClass::Receive_Radio 0x1C` site."
 
 ## Sources
 
@@ -191,10 +191,10 @@ No Rust path was found for legacy `Hospital=` / `Armory=` walk-in service. That 
 - Ghidra `get_assembly_context 005F532C,005F5339,005F5358,005F537A`
 - Ghidra string/xref checks for `UnitRepair`, `Hospital`, `Armory`, `URepairRate`, `IRepairRate`, `RepairStep`, `RepairPercent`, `RepairBay`
 - `ini/rulesmd.ini`, `ini/rules.ini`
-- `docs/research/FOOTCLASS_RECEIVE_RADIO_FULL_SWITCH_GHIDRA_REPORT.md`
-- `docs/research/BUILDINGCLASS_RECEIVE_RADIO_FULL_SWITCH_GHIDRA_REPORT.md`
-- `docs/research/RADIOCLASS_CORE_PRIMITIVES_VERIFIED_GHIDRA_REPORT.md`
-- `docs/research/TECH_CAHOSP_VS_CATHOSP_GHIDRA_REPORT.md`
+- [docs/research/FOOTCLASS_RECEIVE_RADIO_FULL_SWITCH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_RECEIVE_RADIO_FULL_SWITCH_GHIDRA_REPORT.md)
+- [docs/research/BUILDINGCLASS_RECEIVE_RADIO_FULL_SWITCH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_RECEIVE_RADIO_FULL_SWITCH_GHIDRA_REPORT.md)
+- [docs/research/RADIOCLASS_CORE_PRIMITIVES_VERIFIED_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADIOCLASS_CORE_PRIMITIVES_VERIFIED_GHIDRA_REPORT.md)
+- [docs/research/TECH_CAHOSP_VS_CATHOSP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECH_CAHOSP_VS_CATHOSP_GHIDRA_REPORT.md)
 - Rust scan: `src/sim/docking/building_dock.rs`, `src/rules/ruleset.rs`, `src/rules/object_type.rs`
 
 ## Status

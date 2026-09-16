@@ -25,14 +25,14 @@ This investigation changed no Rust source, production behavior, Ghidra labels/co
 
 No exact report named `FOOTCLASS_GET_CURRENT_SPEED_EXACT_GHIDRA_REPORT.md` existed at investigation start. This report extends and corrects these partial artifacts rather than treating their unresolved labels as authority:
 
-- `DRIVE_RULES_FIELDS_SPEED_INPUTS_GHIDRA_REPORT.md`;
-- `DRIVE_PROCESS_DRIVE_TRACK_SPEED_BUDGET_RESIDUAL_GHIDRA_REPORT.md`;
+- [DRIVE_RULES_FIELDS_SPEED_INPUTS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_RULES_FIELDS_SPEED_INPUTS_GHIDRA_REPORT.md);
+- [DRIVE_PROCESS_DRIVE_TRACK_SPEED_BUDGET_RESIDUAL_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_PROCESS_DRIVE_TRACK_SPEED_BUDGET_RESIDUAL_GHIDRA_REPORT.md);
 - `DRIVE_ACCELERATES_TRUE_FALSE_SPEED_RAMP_GHIDRA_REPORT.md`;
 - `CRATE_SYSTEM_GHIDRA_REPORT.md`;
-- `VETERANCY_SYSTEM_GHIDRA_REPORT.md`;
-- `UNITCLASS_GHIDRA_REPORT.md` and `UNIT_DRAW_EXTRAS_REPORT.md`;
-- `COUNTRY_MULTIPLIERS_APPLICATION.md`;
-- `timing/movement-speed-turn-rate.md`.
+- [VETERANCY_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VETERANCY_SYSTEM_GHIDRA_REPORT.md);
+- [UNITCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNITCLASS_GHIDRA_REPORT.md) and [UNIT_DRAW_EXTRAS_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNIT_DRAW_EXTRAS_REPORT.md);
+- [COUNTRY_MULTIPLIERS_APPLICATION.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/COUNTRY_MULTIPLIERS_APPLICATION.md);
+- [timing/movement-speed-turn-rate.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/timing/movement-speed-turn-rate.md).
 
 The repo-local research index was rebuilt before the deep pass. The prior reports were used for navigation, then every load-bearing claim below was re-read from the active binary.
 
@@ -618,17 +618,17 @@ Both are resolved above. The pass also identified two explicitly deferred integr
 
 This report supersedes these load-bearing older claims:
 
-- `COUNTRY_MULTIPLIERS_APPLICATION.md`: type code `0x28` is UnitType; Unit speed uses `SpeedUnitsMult`.
-- `DRIVE_RULES_FIELDS_SPEED_INPUTS_GHIDRA_REPORT.md` and related Drive prose: `+0x580` is not a slope cache, and it multiplies before the first integer conversion.
+- [COUNTRY_MULTIPLIERS_APPLICATION.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/COUNTRY_MULTIPLIERS_APPLICATION.md): type code `0x28` is UnitType; Unit speed uses `SpeedUnitsMult`.
+- [DRIVE_RULES_FIELDS_SPEED_INPUTS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_RULES_FIELDS_SPEED_INPUTS_GHIDRA_REPORT.md) and related Drive prose: `+0x580` is not a slope cache, and it multiplies before the first integer conversion.
 - older Foot/timing layouts: `+0x6CC` is not docking/dead padding.
-- `timing/movement-speed-turn-rate.md`: the CTF branch has live YR writers and is not TS-only; `GameSpeedBias` is not part of this helper.
+- [timing/movement-speed-turn-rate.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/timing/movement-speed-turn-rate.md): the CTF branch has live YR writers and is not TS-only; `GameSpeedBias` is not part of this helper.
 - any fused “base * house * crate * veteran * fraction” formula: intermediate integer boundaries are mandatory.
 
 Those source documents were not patched because this `/re-investigate` slice owns one new report only. A later explicit audit/fix pass should correct them against this evidence.
 
 ### Remaining production blockers
 
-- `DRIVE_RAWTRACK_METADATA_INITIALIZER_RECONCILIATION_GHIDRA_REPORT.md` is still required to finish Checkpoint B.
+- [DRIVE_RAWTRACK_METADATA_INITIALIZER_RECONCILIATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_RAWTRACK_METADATA_INITIALIZER_RECONCILIATION_GHIDRA_REPORT.md) is still required to finish Checkpoint B.
 - Exact Phase-1 miner, Infantry/Walk, Hover, Ship, tube, forced-track, lifecycle/effect, and formation owners remain required for the approved atomic production flip.
 - An executable retail native oracle remains required for parity certification.
 - This report authorizes research/plan reconciliation only, not a vehicle-only production activation.

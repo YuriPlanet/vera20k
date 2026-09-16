@@ -92,7 +92,12 @@ def research_search(
     source: str | None = None,
     format: Literal["text", "json"] = "text",
 ) -> str:
-    """Full-text search over docs/research/, docs/plans/, ini/ via SQLite FTS5.
+    """Search retained research and retail INI data via SQLite FTS5.
+
+    Default roots are docs/research/ and ini/. Plans require an explicit
+    research_reindex root override. Historical research lives outside this
+    workspace and is searched separately; see tools/research_index/README.md.
+    Inferred status labels are retrieval hints, not proof of native parity.
 
     Use when looking up where a concept (function name, INI key, address,
     mechanism) is documented. For exploring docgraph adjacency or related
@@ -388,7 +393,9 @@ def research_reindex(
 
     Args:
         roots: Optional repo-relative paths to walk. Defaults to
-            ("docs/research", "docs/plans", "ini") when omitted.
+            ("docs/research", "ini") when omitted. Add "docs/plans" only
+            for an intentional plan search; overrides persist until reindexed.
+            External archives require a separate CLI workspace and database.
 
     Returns:
         One-line summary: ``indexed documents=N chunks=M db=<path>``.

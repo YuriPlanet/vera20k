@@ -214,7 +214,7 @@ At 0x73F4F9-0x73FA8C:
 ```
 
 **Iron-law tiny details:**
-- The **object-list selection** ([ESP+0x13]) is decided PRE-vtable from cell flags + targetHeight. The vtable can update targetHeight, but it doesn't update [ESP+0x13]... **with one exception:** `CheckBridgeTraversal`'s `*param_4 = 1` write in its diff-4-going-up branch (`src.Level == dst.Level - 4 AND src.0x100 AND src.0x200`) DOES overwrite [ESP+0x13] because Can_Enter_Cell passes `&[ESP+0x13]` as CBT's `param_4`. So the pass flag can be force-set to 1 mid-call when entering a bridgehead from below — refined sub-case 1.e in [G6_TWO_PASS_DIVERGENCE_SUPPLEMENT.md §3](../../G6_TWO_PASS_DIVERGENCE_SUPPLEMENT.md#3-divergence-sub-case-map-concrete-predicates). The list iterated is "pre-decision OR CBT-diff-4-override", not strictly pre-decided.
+- The **object-list selection** ([ESP+0x13]) is decided PRE-vtable from cell flags + targetHeight. The vtable can update targetHeight, but it doesn't update [ESP+0x13]... **with one exception:** `CheckBridgeTraversal`'s `*param_4 = 1` write in its diff-4-going-up branch (`src.Level == dst.Level - 4 AND src.0x100 AND src.0x200`) DOES overwrite [ESP+0x13] because Can_Enter_Cell passes `&[ESP+0x13]` as CBT's `param_4`. So the pass flag can be force-set to 1 mid-call when entering a bridgehead from below — refined sub-case 1.e in [G6_TWO_PASS_DIVERGENCE_SUPPLEMENT.md §3](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/G6_TWO_PASS_DIVERGENCE_SUPPLEMENT.md#3-divergence-sub-case-map-concrete-predicates). The list iterated is "pre-decision OR CBT-diff-4-override", not strictly pre-decided.
 - The **occupancy bits** (local[0x14], local[0x15]) are decided POST-vtable. The vtable updates targetHeight, then a fresh predicate (`targetHeight == cell.Level+4 AND cell has 0x100`) decides whether to overwrite the bits.
 - **These two decisions CAN disagree** in edge cases — the function iterates the ground list but uses bridge-layer occupancy bits, or vice versa. This happens when targetHeight starts at -1 and the vtable doesn't fill it to Level+4 (e.g., dst cell isn't a bridge), but the cell-flag pre-decision already chose ground/bridge list.
 - The **byte-shift-by-5 pattern** in occupancy-bit construction is verified at 0x73F100 and 0x73F33F: `(OccupationFlags >> 5) & 1` extracts bit 5 (vehicle present) and stores it as bit 0 of `local[0x15]`. The decompilation's `CONCAT11((char)(... >> 5), ...) & 0x01FF` representation is a Ghidra artifact of the same logic — bit 5 of OccupationFlags ends up at bit 8 of the combined word, while bits 0-4 (infantry sub-cells) are preserved in bits 0-4. **Important: bit 5 of OccupationFlags is duplicated into bit 8 of the snapshot** — both reflect the same source bit, redundantly. Likely TS-era artifact; behavior preserved.
@@ -427,7 +427,7 @@ Called by SetBridgeDirection on each visited cell when state.byte0 == 0
    `(IsAllocated != 0 || Capacity == 0) && GrowthStep > 0` chain always
    evaluates false. Every push is silently dropped. No consumer, no allocator,
    no tick processor exists anywhere in the binary. Safe to skip in Rust
-   port.** See [BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md §6](BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md).
+   port.** See [BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md §6](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/00-system-models/BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md).
 4. Spawns randomized destruction anims with probability gated by
    `g_RulesClass+0x168` (`BridgeExplosions` vector size) and
    `_DAT_007E1738` (probability float, ~0.95):
@@ -444,7 +444,7 @@ BridgeBlast weapon" is wrong — the string `"BridgeBlast"` does not exist
 in YR. `+0xFA8` is `C4Warhead`, verified at `RulesClass__ReadCombatDamage @
 0x66C32C` reading `s_C4Warhead_0083b1d4`. The labeled lists at `+0x140`
 and `+0x15C` were swapped — `+0x140` is `MetallicDebris`, `+0x15C` is
-`BridgeExplosions`. See [BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md §2](BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md).
+`BridgeExplosions`. See [BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md §2](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/00-system-models/BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md).
 
 Skipped in `g_IsMapEditor != 0` — the function does nothing in editor mode.
 
@@ -698,10 +698,10 @@ If the binary blocks but Rust passes (or vice versa): divergence is observable.
 
 **Docs referenced:**
 - docs/research/BRIDGE_SYSTEM.md
-- docs/research/AUDIT_LOG.md (2026-05-11 entries)
+- [docs/research/AUDIT_LOG.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AUDIT_LOG.md) (2026-05-11 entries)
 - docs/research/UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md
 - docs/research/CELLCLASS_STRUCT_GHIDRA_REPORT.md
-- docs/research/LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md
+- [docs/research/LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md)
 - docs/plans/2026-05-11-bridge-locomotor-layer-correctness-design.md (parent plan)
 - docs/gap-scans/2026-05-11-disparity-scan-bridge-pathfinding.md (origin of G3/G4/G6)
 - docs/plans/2026-05-12-bridge-mechanics-deferred-investigation-plan.md (this investigation's scope)

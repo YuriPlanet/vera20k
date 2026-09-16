@@ -16,7 +16,7 @@ The table values behind the `FUN_00547230` C_SHADOW emitter are not runtime-capt
 - `DAT_00ABC1F8` and `DAT_00AA1098` are runtime tile-class bases derived from `[General] SlopeSetPieces=` and `[General] SlopeSetPieces2=`.
 - There is no separate wood table for this emitter. Both `[DAT_00ABC1F8,+10)` and `[DAT_00AA1098,+10)` use the same `DAT_00ABC210` entries.
 
-This corrects the prior open question in `BRIDGE_RENDERING_REMAINING_CASES_GHIDRA_REPORT.md`: the exact `DAT_00ABC210` and `DAT_00ABC2D0` values are now decompiled. A live debugger capture is still useful for visual validation, but it is no longer required to recover these values.
+This corrects the prior open question in [BRIDGE_RENDERING_REMAINING_CASES_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/06-render-presentation-audio/BRIDGE_RENDERING_REMAINING_CASES_GHIDRA_REPORT.md): the exact `DAT_00ABC210` and `DAT_00ABC2D0` values are now decompiled. A live debugger capture is still useful for visual validation, but it is no longer required to recover these values.
 
 ## Entry Format
 

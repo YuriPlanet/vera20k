@@ -96,7 +96,7 @@ Current Rust comparison is informational only:
 |---|---|---|
 | Ready placement rectangle | correct class for Add/Remove: base dimensions | `src/sim/production/production_placement.rs` |
 | Ready placement path-grid dependency | can be indirectly polluted if path grid uses adjusted footprint blockers | prior footprint audit |
-| MCV deploy mixed-height check | mismatch if it rejects mixed-height clear foundations | `traces/IMPLEMENTATION_MCV_DEPLOY_MIXED_HEIGHT_TRACE_RERUN_2026-05-21.md` |
+| MCV deploy mixed-height check | mismatch if it rejects mixed-height clear foundations | [traces/IMPLEMENTATION_MCV_DEPLOY_MIXED_HEIGHT_TRACE_RERUN_2026-05-21.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/traces/IMPLEMENTATION_MCV_DEPLOY_MIXED_HEIGHT_TRACE_RERUN_2026-05-21.md) |
 | Add/Remove footprint helper consumers | mismatch where one adjusted footprint is used as ordinary structure occupancy | prior foundation/footprint reports |
 
 ## 7. Coverage Ledger
@@ -124,5 +124,5 @@ Current Rust comparison is informational only:
 
 - Ghidra read-only decompiled: `FUN_00716150 @ 0x00716150`, `Cell_passability_building_placement @ 0x0047C620`, `BuildingTypeClass::CanBePlacedAt @ 0x0045EE70`, `HouseClass::Place_Production @ 0x004FB0E0`, `UnitClass::Deploy @ 0x007393C0`, `BuildingTypeClass_ReadINI_Water @ 0x0045FE50/0x00461425..0x004614E8`.
 - Ghidra xrefs: `CanBePlacedAt` direct xrefs from `0x00739536`, `0x006ED6E0`, `0x00445210`; `Cell_passability_building_placement` xrefs from `0x0047EC90`, `0x00716209`, wall/overlay helpers.
-- Prior reports referenced: `BUILDING_FOUNDATION_OCCUPY_MODIFIERS_PARITY_GHIDRA_REPORT.md`, `BUILDING_FOOTPRINT_CONSUMER_DISCREPANCY_AUDIT_GHIDRA_REPORT.md`, `BUILDINGCLASS_UNLIMBO_AND_PLACEMENT.md`, `BUILDING_MCV_DEPLOY_ORIGIN_BLAST_RADIUS_GHIDRA_REPORT.md`.
+- Prior reports referenced: [BUILDING_FOUNDATION_OCCUPY_MODIFIERS_PARITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_FOUNDATION_OCCUPY_MODIFIERS_PARITY_GHIDRA_REPORT.md), [BUILDING_FOOTPRINT_CONSUMER_DISCREPANCY_AUDIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_FOOTPRINT_CONSUMER_DISCREPANCY_AUDIT_GHIDRA_REPORT.md), [BUILDINGCLASS_UNLIMBO_AND_PLACEMENT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_UNLIMBO_AND_PLACEMENT.md), [BUILDING_MCV_DEPLOY_ORIGIN_BLAST_RADIUS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_MCV_DEPLOY_ORIGIN_BLAST_RADIUS_GHIDRA_REPORT.md).
 - INI checked: `ini/artmd.ini`, `ini/rulesmd.ini` for `Foundation=`, `AddOccupy=`, `RemoveOccupy=`, `CanHideThings=`, stock `DeploysInto=`.

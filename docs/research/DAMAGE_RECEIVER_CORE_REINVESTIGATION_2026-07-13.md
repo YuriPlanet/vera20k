@@ -10,9 +10,9 @@ Authority Gate G1: **FAILED**
 
 This document reconciles exactly these three child reports:
 
-- `DAMAGE_RECEIVER_TECHNO_GATES_REINVESTIGATION_2026-07-13.md` (PARTIAL);
-- `DAMAGE_RECEIVER_OBJECT_CALLBACKS_REINVESTIGATION_2026-07-13.md` (COMPLETE for its bounded slice);
-- `DAMAGE_RECEIVER_RULE_HOUSE_ASSEMBLY_REINVESTIGATION_2026-07-13.md` (PARTIAL, G1 FAILED).
+- [DAMAGE_RECEIVER_TECHNO_GATES_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_RECEIVER_TECHNO_GATES_REINVESTIGATION_2026-07-13.md) (PARTIAL);
+- [DAMAGE_RECEIVER_OBJECT_CALLBACKS_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_RECEIVER_OBJECT_CALLBACKS_REINVESTIGATION_2026-07-13.md) (COMPLETE for its bounded slice);
+- [DAMAGE_RECEIVER_RULE_HOUSE_ASSEMBLY_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_RECEIVER_RULE_HOUSE_ASSEMBLY_REINVESTIGATION_2026-07-13.md) (PARTIAL, G1 FAILED).
 
 The output path did not exist at preflight. No same-file conflict was present. No Rust, INI, plan, claim ledger, child report, or older research document was changed. No Cargo command, debugger, Ghidra mutation, UI automation, or process/screen manipulation was used.
 

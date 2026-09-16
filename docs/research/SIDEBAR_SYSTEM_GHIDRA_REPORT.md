@@ -274,7 +274,7 @@ Each 0x60 (96) bytes. Tab array at `0x00B07C48` (4 entries).
 > init at `0x006a5496` (`MOV byte ptr [0x00b0b345],0x1` with base 0xb0b328).
 > ID at +0x24 and SHP at +0x50 were already correct. Fields marked **UNVERIFIED**
 > below were not covered by the 2026-05-19 audit — re-check before relying on them.
-> See `SIDEBAR_INIT_GADGET_POSITIONING_GHIDRA_REPORT.md` for full evidence.
+> See [SIDEBAR_INIT_GADGET_POSITIONING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_INIT_GADGET_POSITIONING_GHIDRA_REPORT.md) for full evidence.
 
 | Offset | Size | Name | Description |
 |---|---|---|---|
@@ -307,7 +307,7 @@ Each 0x60 (96) bytes. Tab array at `0x00B07C48` (4 entries).
 > Aircraft (6/7) → tab 0 (non-naval) or tab 1 (naval), SuperWeapon (0x1F/0x20/0x39) → tab 1.
 > Tab IDs 0xCB..0xCE are assigned left-to-right by tab index in `SidebarClass::Init` at
 > 0x006A5310 (`*piVar7 = iVar6 + 0xcb;`). Tab string-table mapping in
-> SIDEBAR_STRIPS_TABS_CAMEOS_GHIDRA.md (TXT_DEFENSE_TAB_DESC at Tab 1,
+> [SIDEBAR_STRIPS_TABS_CAMEOS_GHIDRA.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_STRIPS_TABS_CAMEOS_GHIDRA.md) (TXT_DEFENSE_TAB_DESC at Tab 1,
 > TXT_STRUCTURE_TAB_DESC at Tab 2, TXT_UNIT_TAB_DESC at Tab 3) corroborates.
 
 | Tab | Command ID | Content (per binary) |
@@ -540,7 +540,7 @@ When mouse is in sidebar region: calls `FUN_005bdc80(0,0)` to clear tactical cur
 
 ### Click → Slot Index (from `SelectClass::Action` at `0x006AAD00`)
 
-> **2026-05-20 audit.** Entry address corrected from `0x006AB970` (a mid-body offset ~3185 bytes into the function) to `0x006AAD00`. Re-verified 2026-07-10: both `get_function_by_address 0x006AAD00` and `get_function_by_address 0x006AB970` resolve the containing function as `SelectClass__Action`, entry `0x006AAD00`, body `0x006AAD00..0x006AB986` — ROOT_CAUSE: GHIDRA_ADDRESS_SHIFT. Cross-confirmed against the patched BUILD_QUEUE_GHIDRA_REPORT.md and SIDEBAR_STRIPS_TABS_CAMEOS_GHIDRA.md.
+> **2026-05-20 audit.** Entry address corrected from `0x006AB970` (a mid-body offset ~3185 bytes into the function) to `0x006AAD00`. Re-verified 2026-07-10: both `get_function_by_address 0x006AAD00` and `get_function_by_address 0x006AB970` resolve the containing function as `SelectClass__Action`, entry `0x006AAD00`, body `0x006AAD00..0x006AB986` — ROOT_CAUSE: GHIDRA_ADDRESS_SHIFT. Cross-confirmed against the patched [BUILD_QUEUE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILD_QUEUE_GHIDRA_REPORT.md) and [SIDEBAR_STRIPS_TABS_CAMEOS_GHIDRA.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_STRIPS_TABS_CAMEOS_GHIDRA.md).
 
 
 ```

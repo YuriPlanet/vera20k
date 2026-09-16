@@ -31,7 +31,7 @@ Thumbs.db
 !/docs/images/**
 !/docs/system-map/
 !/docs/system-map/**
-# research corpus and plans are tracked so forks and worktrees get them
+# Focused evidence and task plans are tracked; historical research is archived.
 !/docs/research/
 !/docs/research/**
 !/docs/plans/

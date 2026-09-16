@@ -14,7 +14,7 @@ ALREADY DONE (committed on `dev` — confirm with `git log --grep="substrate Sli
   OwnerDrawControl trait was deliberately deferred to Slice 4).
 
 READ FIRST:
-- Study (verified): `docs/research/SHELL_DIALOG_FRAMEWORK_SUBSTRATE_SERVICE.md` (contracts
+- Study (verified): [docs/research/SHELL_DIALOG_FRAMEWORK_SUBSTRATE_SERVICE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SHELL_DIALOG_FRAMEWORK_SUBSTRATE_SERVICE.md) (contracts
   C1-C14, §7 retire list, §8 slices).
 - Main plan: `docs/plans/2026-05-31-shell-substrate-plan.md` — Slice 4 outline (~L797-805).
 - Design: `docs/plans/2026-05-31-shell-substrate-design.md` (§5).

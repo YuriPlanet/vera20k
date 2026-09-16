@@ -21,7 +21,7 @@ Active in YR: Yes. Most standard callsites use `1x1`, `reject_any_overlay=0`, `c
 |---|---:|---|---|
 | Stack arity | Yes | `RET 0x3c` means 15 caller stack args, so omitted trailing zeros in pseudocode are display artifacts. | `0x0056E797/0x0056E7B3` return sequence. |
 | Required height/layer | Yes | Not caller-controlled; FNPC passes `-1` to all `CellRect::CheckPassability` invocations. | FNPC calls at `0x0056DE0E`, `0x0056E024`, `0x0056E265`, `0x0056E467`. |
-| Occupancy reservation layer | Yes | If caller enables final occupancy, FNPC passes `CellRect::CheckOccupancy(rect, -1)`, skipping `Cell+0xDC`. | FNPC internal call plus `CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md`. |
+| Occupancy reservation layer | Yes | If caller enables final occupancy, FNPC passes `CellRect::CheckOccupancy(rect, -1)`, skipping `Cell+0xDC`. | FNPC internal call plus [CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md). |
 | Search radius | Yes | Not caller-controlled; derived from the foot object's fields and capped at 32. | FNPC body already documented; no caller arg exists in 15-arg contract. |
 | Target selection | Yes | Null/zero target means random/direct-list selection; non-null target means closest-to-target selection. | FNPC param 14 and callsites passing stack target cells or zero locals. |
 
@@ -82,7 +82,7 @@ Replace `param_13` wording:
 
 Replace the `CellRect::CheckOccupancy` summary:
 
-> FNPC calls `CellRect::CheckOccupancy(rect, -1)` only when `param_16` is true. With `-1`, the validator skips `Cell+0xDC` reservation filtering and checks the other object/cell/playfield blockers documented in `CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md`.
+> FNPC calls `CellRect::CheckOccupancy(rect, -1)` only when `param_16` is true. With `-1`, the validator skips `Cell+0xDC` reservation filtering and checks the other object/cell/playfield blockers documented in [CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/CELLRECT_PASSABILITY_OCCUPANCY_VALIDATORS_GHIDRA_REPORT.md).
 
 ## Remaining Uncertainty
 

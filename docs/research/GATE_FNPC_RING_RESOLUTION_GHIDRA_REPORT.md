@@ -17,7 +17,7 @@ body `0x0056dc20–0x0056e7b5`. `decompile_function 0x0056DC20` and
 `disassemble_function 0x0056DC20` agree: 16-param `__thiscall`, `this`=FootClass* in
 ECX/EBX, out-cell `param_2`, origin-cell `param_3`. Identity is unambiguous — this is the
 same function the chrono-return and MCV-deploy callers invoke (cross-checked against
-`miner/PATHFINDING_VALIDATE_ALTERNATE_CHRONO_RETURN_GHIDRA_REPORT.md` §1 and
+[miner/PATHFINDING_VALIDATE_ALTERNATE_CHRONO_RETURN_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/PATHFINDING_VALIDATE_ALTERNATE_CHRONO_RETURN_GHIDRA_REPORT.md) §1 and
 `pathfinding/FIND_NEARBY_PASSABLE_CELL_GHIDRA_REPORT.md`). Full per-candidate validation
 pipeline (IsOnScreen, CheckPassability, ±2 height, occupant, bridge, CheckOccupancy) is
 documented in that latter report and is NOT re-derived here; this gate covers only ring

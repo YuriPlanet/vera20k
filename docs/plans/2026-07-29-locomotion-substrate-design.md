@@ -3,7 +3,7 @@ title: LocomotionClass as an engine substrate service — design study
 date: 2026-07-29
 scope: gamemd.exe LocomotionClass / ILocomotion / IPiggyback, and the VERA20k Rust replacement boundary
 kind: design study (docs/plans) — analysis only, no Rust landed in this session
-supersedes: nothing. Corrects docs/research/ILOCOMOTION_COM_PROTOCOL_SPEC.md (§11 below)
+supersedes: nothing. Corrects [docs/research/ILOCOMOTION_COM_PROTOCOL_SPEC.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ILOCOMOTION_COM_PROTOCOL_SPEC.md) (§11 below)
 updated: 2026-07-29 — open-question closeout pass, then an OQ4/OQ5 re-run (see Changelog); §11b holds self-corrections
 ---
 
@@ -270,7 +270,7 @@ self-consistent, because slots 0/1/2 of the ILocomotion vtable are `-4` adjustor
 its own identically-shaped thunks `0x0054DFF0/E000/E010` (`read_memory 0x007ECD68 len 16`;
 `disassemble_bytes 0x0054DFF0 len 48`) — the only class examined that does. Why is **[U]**.
 
-`ILOCOMOTION_COM_PROTOCOL_SPEC.md`'s addresses and the thunk addresses are **both correct
+[ILOCOMOTION_COM_PROTOCOL_SPEC.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ILOCOMOTION_COM_PROTOCOL_SPEC.md)'s addresses and the thunk addresses are **both correct
 and describe different things** — the doc lists the real implementations; the vtable slots
 hold the thunks. See §11 C1.
 
@@ -342,7 +342,7 @@ discrepancies** (`read_memory <vtable> len 160` on all 12 vtables).
 † Mech / DropPod / Tunnel are **DORMANT-TS** — see §3.
 
 **Naming caveat [U]:** the 40 slot *names* come from
-`docs/research/ILOCOMOTION_COM_PROTOCOL_SPEC.md` and remain **navigation hints**. Names
+[docs/research/ILOCOMOTION_COM_PROTOCOL_SPEC.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ILOCOMOTION_COM_PROTOCOL_SPEC.md) and remain **navigation hints**. Names
 confirmed against a body or a caller this study: 3 (stores an object pointer), 5 vs 6
 (constant-null coord vs live object coord — the reverse assignment is nonsensical), 13
 (`FootClass::GetVisualState` first-refusal protocol, `decompile_function 0x004DA4E8`), 16,
@@ -1942,7 +1942,7 @@ This section was rewritten once already, on the basis of the **slot-4** bodies. 
 wrong predicate: the Mission gate reads **slot 32 (`Is_Moving_Now`)**, never slot 4. Slot 4
 matters only as an inner term, because Drive/Ship/Walk/Hover's slot 32 opens with `slot4()`.
 Both earlier framings of this gap are therefore superseded. Settled contract and citations:
-`docs/research/ILOCOMOTION_IS_MOVING_NOW_SLOT32_AND_MISSION_GATE_GHIDRA_REPORT.md`.
+[docs/research/ILOCOMOTION_IS_MOVING_NOW_SLOT32_AND_MISSION_GATE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ILOCOMOTION_IS_MOVING_NOW_SLOT32_AND_MISSION_GATE_GHIDRA_REPORT.md).
 
 What survived re-grounding on the right slot: **all six Rust predicates were already
 slot-32 shapes** — term set, conjunction structure, short-circuit order and signedness. The
@@ -2271,7 +2271,7 @@ today.
 >    the `REP MOVSD` at `0x004b4607` is shared-tail behaviour. The bug was a *second*
 >    increment on top of the ordinary advance. Fix: delete one line.
 >    See §11 C20 and the correction banner added to
->    `docs/research/DRIVE_SHARP_TURN_FALLBACK_RE.md`.
+>    [docs/research/DRIVE_SHARP_TURN_FALLBACK_RE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_SHARP_TURN_FALLBACK_RE.md).
 > 2. **The full octant path-node re-representation did NOT land** and is not required to
 >    retire either gate. `TubePathStepResult::Blocked` was deleted outright, which makes the
 >    abort unrepresentable by type — the stated goal — without changing how `MovementTarget`
@@ -2664,9 +2664,9 @@ Stated plainly, so no one mistakes silence for a decision.
 ## 11. Corrections to existing docs
 
 Every place this study contradicts a doc in `docs/research/`. The main target is
-`ILOCOMOTION_COM_PROTOCOL_SPEC.md`.
+[ILOCOMOTION_COM_PROTOCOL_SPEC.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ILOCOMOTION_COM_PROTOCOL_SPEC.md).
 
-### C1 — Not a contradiction; two different things (`ILOCOMOTION_COM_PROTOCOL_SPEC.md` §3, slots 0/1/2)
+### C1 — Not a contradiction; two different things ([ILOCOMOTION_COM_PROTOCOL_SPEC.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ILOCOMOTION_COM_PROTOCOL_SPEC.md) §3, slots 0/1/2)
 
 The doc lists base fallbacks `0x0055A9B0`/`0x0055A950`/`0x0055A970` for QI/AddRef/Release.
 Those are the **real implementations**. The base ILocomotion vtable *slots* hold `-4`
@@ -2735,7 +2735,7 @@ helper with an out-buffer". The "surrogate token in +0x674" reading is unsupport
 vtables rewritten at `0x00744521`–`0x00744534` are `UnitClass`'s own. **`+0x674` is NULL
 after a load and the re-acquisition path is UNKNOWN.**
 
-### C7 — `INDEX_PATHFINDING_LOCOMOTION.md` §6: `0x812D50` / `0x814A58` are not init-dispatch tables
+### C7 — [INDEX_PATHFINDING_LOCOMOTION.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/INDEX_PATHFINDING_LOCOMOTION.md) §6: `0x812D50` / `0x814A58` are not init-dispatch tables
 
 The doc lists them as unresearched per-class dispatch tables holding
 `Compute_*HeightStep` / `Compute_*BridgeZOffset` / `InitNullCoords`. **All of that is
@@ -2812,7 +2812,7 @@ Factory vtable: Hover's is **`0x007F3CA8`** (`read_memory 0x007F3CA8 len 48` →
 `0x006C4310`, exactly the `CreateInstance` push-shove names), not `0x007F3CC0`, which is
 Rocket's.
 
-### C11 — `LOCOMOTION_PUSH_SHOVE_CALLER_PROVENANCE_GHIDRA_REPORT.md` (2026-05-14): counts wrong, hedge should retire
+### C11 — [LOCOMOTION_PUSH_SHOVE_CALLER_PROVENANCE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOCOMOTION_PUSH_SHOVE_CALLER_PROVENANCE_GHIDRA_REPORT.md) (2026-05-14): counts wrong, hedge should retire
 
 The doc's core findings all re-verify — override matrix, base-stub disassembly, the
 `Shove → Push` callsite at `0x00516FCD`, the data-only xrefs, the false-positive families.
@@ -2831,7 +2831,7 @@ Note the asymmetry the doc should record: **the `Shove` half of the verdict is s
 than the `Push` half.** The sweep covers the direct `CALL [reg+off]` form; a two-step
 `MOV reg,[vtbl+0x68]; CALL reg` would evade it. That residual cannot rescue `Shove`.
 
-### C12 — `MAGNETRON_SYSTEM_GHIDRA_REPORT.md`: the IPiggyback anchor is not corroborated
+### C12 — [MAGNETRON_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAGNETRON_SYSTEM_GHIDRA_REPORT.md): the IPiggyback anchor is not corroborated
 
 The complete IPiggyback enumeration (5 direct QI sites via `get_xrefs_to 0x00819088`, 18
 helper sites via `search_instructions CALL 0x0045af20`, 13 creation sites via

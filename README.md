@@ -27,7 +27,7 @@ Room for RTS features the original never had.
 
 ## Development process
 
-The reference is the decompiled `gamemd.exe`. New behavior is read from the original function in Ghidra first, and the Rust that matches it cites that function and address; 1,100+ reverse-engineering notes in `docs/research/` back this. Playtesting in retail and in VERA decides what gets worked on next.
+The reference is the original `gamemd.exe`. Rust behavior cites its native function and address, supported by executable native comparisons and [focused research evidence](docs/research/README.md). Historical investigations remain available in the linked archive. Playtesting in retail and in VERA decides what gets worked on next.
 
 For executable comparisons, see the [native oracle workflow](tools/native_oracle.md):
 run original game code under Unicorn and compare its outputs with production Rust.

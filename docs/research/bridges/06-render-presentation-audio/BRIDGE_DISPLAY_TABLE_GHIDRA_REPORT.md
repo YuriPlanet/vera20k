@@ -26,7 +26,7 @@ All answered below with binary citations.
 
 ## 2. Headline Findings (read this first)
 
-The investigation surfaced **eight major corrections** to prior reports. The pre-Phase F `BRIDGE_RENDERING_GHIDRA_REPORT.md` had several layer-mapping and table-existence claims that are wrong. Document them here so future investigators don't relitigate.
+The investigation surfaced **eight major corrections** to prior reports. The pre-Phase F [BRIDGE_RENDERING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/06-render-presentation-audio/BRIDGE_RENDERING_GHIDRA_REPORT.md) had several layer-mapping and table-existence claims that are wrong. Document them here so future investigators don't relitigate.
 
 ### 2.1 The "FoggedObject walker" myth (corrects BRIDGE_RENDERING §2.1)
 

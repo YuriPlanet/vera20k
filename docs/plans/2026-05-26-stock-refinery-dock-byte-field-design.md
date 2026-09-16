@@ -14,11 +14,11 @@ Swarm: `2026-05-26T21:48+02:00 - plan-c-refinery-dock-unload-proof-gates`
 
 Reports:
 
-- `docs/research/miner/UNIT_0X110_UNLOAD_ACCUMULATOR_STEP_WRITERS_GHIDRA_REPORT.md`
-- `docs/research/miner/MISSION_DEPLOY_UNLOAD_TIMER_CLUSTER_0X104_SOURCE_GHIDRA_REPORT.md`
-- `docs/research/miner/MISSION_0X10_RETURN_DELAY_STORAGE_AND_RESCHEDULE_GHIDRA_REPORT.md`
-- `docs/research/miner/TECHNOCLASS_AI_UPDATE_UNLOAD_ACCUMULATOR_ORDERING_GHIDRA_REPORT.md`
-- `docs/research/miner/DOCK_RATE_TIMER_FRAME_COUNTER_ORDERING_GHIDRA_REPORT.md`
+- [docs/research/miner/UNIT_0X110_UNLOAD_ACCUMULATOR_STEP_WRITERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/UNIT_0X110_UNLOAD_ACCUMULATOR_STEP_WRITERS_GHIDRA_REPORT.md)
+- [docs/research/miner/MISSION_DEPLOY_UNLOAD_TIMER_CLUSTER_0X104_SOURCE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MISSION_DEPLOY_UNLOAD_TIMER_CLUSTER_0X104_SOURCE_GHIDRA_REPORT.md)
+- [docs/research/miner/MISSION_0X10_RETURN_DELAY_STORAGE_AND_RESCHEDULE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MISSION_0X10_RETURN_DELAY_STORAGE_AND_RESCHEDULE_GHIDRA_REPORT.md)
+- [docs/research/miner/TECHNOCLASS_AI_UPDATE_UNLOAD_ACCUMULATOR_ORDERING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/TECHNOCLASS_AI_UPDATE_UNLOAD_ACCUMULATOR_ORDERING_GHIDRA_REPORT.md)
+- [docs/research/miner/DOCK_RATE_TIMER_FRAME_COUNTER_ORDERING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/DOCK_RATE_TIMER_FRAME_COUNTER_ORDERING_GHIDRA_REPORT.md)
 
 Resolved proof gates:
 
@@ -115,16 +115,16 @@ The chosen approach is full for this dock/unload slice:
 
 ## Tiny-Detail Ledger
 
-- Stock activation: `CMIN/HARV` have `Harvester=yes` and dock to `NAREFN,GAREFN`; `GAREFN/NAREFN` have `DockUnload=yes`, `Refinery=yes`. Source: `rulesmd.ini`, `UNIT_MISSION_DEPLOY_BUILDING_UNLOAD_START_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md`.
+- Stock activation: `CMIN/HARV` have `Harvester=yes` and dock to `NAREFN,GAREFN`; `GAREFN/NAREFN` have `DockUnload=yes`, `Refinery=yes`. Source: `rulesmd.ini`, [UNIT_MISSION_DEPLOY_BUILDING_UNLOAD_START_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNIT_MISSION_DEPLOY_BUILDING_UNLOAD_START_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md).
 - Accepted movement target is `NW+(3,1)`, not `GetDockCoord` and not `QueueingCell`. Source: `STOCK_REFINERY_DOCK_UNLOAD_STATE_MACHINE_CURRENT_SYSTEM_MODEL_SYNTHESIS.md`.
 - `QueueingCell=4,1` remains staging/fallback only. Source: `artmd.ini`, lifecycle doc map.
 - `0x18` sets contact-entered `+0x418`; it is not unload-active state and not reciprocal pad occupancy. Source: `STOCK_REFINERY_DOCK_UNLOAD_LIFECYCLE_DOC_MAP.md`.
-- First ordinary `0x16` can call active locomotor `+0x4C(0x4000)` and return `1` without sending `0x15`. Source: `DOCK_ARRIVAL_PIVOT_SEQUENCE_DOC_CONFLICT_AUDIT_GHIDRA_REPORT.md`.
+- First ordinary `0x16` can call active locomotor `+0x4C(0x4000)` and return `1` without sending `0x15`. Source: [DOCK_ARRIVAL_PIVOT_SEQUENCE_DOC_CONFLICT_AUDIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/DOCK_ARRIVAL_PIVOT_SEQUENCE_DOC_CONFLICT_AUDIT_GHIDRA_REPORT.md).
 - `0x16` has no `GetDockCoord`, no `Set_Destination`, no location write, and no unload start. Source: same audit.
-- Drive locomotor `+0x4C` is `DriveLocomotionClass::Do_Turn`; decompile is `RateTimer__Set(&param_2)`. Source: `FACING_BYTE_VS_DIRECTION_INDEX_GHIDRA_REPORT.md`.
+- Drive locomotor `+0x4C` is `DriveLocomotionClass::Do_Turn`; decompile is `RateTimer__Set(&param_2)`. Source: [FACING_BYTE_VS_DIRECTION_INDEX_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FACING_BYTE_VS_DIRECTION_INDEX_GHIDRA_REPORT.md).
 - East compass convention remains valid: 8-bit `0x40`, direction index `2`, delta `(1,0)`. Source: same facing report.
-- `0x15` queues mission `0x10`; it does not start unload, snap, drain cargo, emit sound, or set pad occupancy. Source: `RADIO_0X15_START_UNLOAD_SIDE_EFFECTS_GHIDRA_REPORT.md`, mission deploy verification.
-- Mission `0x10` dispatches to `UnitClass::Mission_Deploy_Building`. Source: `UNIT_MISSION_DEPLOY_BUILDING_UNLOAD_START_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md`.
+- `0x15` queues mission `0x10`; it does not start unload, snap, drain cargo, emit sound, or set pad occupancy. Source: [RADIO_0X15_START_UNLOAD_SIDE_EFFECTS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADIO_0X15_START_UNLOAD_SIDE_EFFECTS_GHIDRA_REPORT.md), mission deploy verification.
+- Mission `0x10` dispatches to `UnitClass::Mission_Deploy_Building`. Source: [UNIT_MISSION_DEPLOY_BUILDING_UNLOAD_START_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNIT_MISSION_DEPLOY_BUILDING_UNLOAD_START_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md).
 - Mission `0x10` checks `RadioClass::In_Radio_Contact` (formerly mislabeled PathType__Has_Valid_Steps) before facing/RateTimer gate and before unload-start writes. Source: same verification.
 - Facing/RateTimer accept condition is `((RateTimerCurrent >> 7) + 1) & 0x1FE == 0x80`. Source: same verification.
 - If not accepted and `+0x6AF` is clear, mission `0x10` calls locomotor `+0x4C(0x4000)` and returns delay `5`. Source: same verification.
@@ -133,13 +133,13 @@ The chosen approach is full for this dock/unload slice:
 - No direct sound/Voc call appears in the verified unload-start init range. Source: same verification OQ-09.
 - First cargo drain is later state 3, gated by `+0xF8 >= HarvesterDumpRate * 900.0`, not unload-start frame. Source: same verification and dump-rate reports.
 - Normal stock zero-link unload has no stock reciprocal `unit/building +0x2E4` write at unload start. Source: same verification OQ-08.
-- Exact visible body-facing byte for every approach remains runtime-sensitive. Source: `FACING_BYTE_VS_DIRECTION_INDEX_GHIDRA_REPORT.md` OQ-10.
-- `+0x104` is written from stack scratch during unload-start timer-cluster initialization; it is not a cadence input and should be modeled as opaque scratch if carried. Source: `MISSION_DEPLOY_UNLOAD_TIMER_CLUSTER_0X104_SOURCE_GHIDRA_REPORT.md`. Status: `RESOLVED for timing/behavior; exact runtime byte value remains unchecked`.
-- Accepted unload-start returns through mission timer epilogue after latch/timer/substate writes: stock `[Unload] Rate=.016` gives `14..16` frames and consumes exactly one `RandomRanged(0,2)`. Source: `MISSION_0X10_RETURN_DELAY_STORAGE_AND_RESCHEDULE_GHIDRA_REPORT.md`. Status: `RESOLVED`.
-- Facing-not-ready mission `0x10` direct-returns `5`, stores that return as passive mission duration, and consumes no RNG. Source: `MISSION_0X10_RETURN_DELAY_STORAGE_AND_RESCHEDULE_GHIDRA_REPORT.md`. Status: `RESOLVED`.
-- `+0x110` is constructor-set to `1`; Mission_Deploy unload-start preserves it; AI_Update adds it to `+0xF8`. Source: `UNIT_0X110_UNLOAD_ACCUMULATOR_STEP_WRITERS_GHIDRA_REPORT.md`. Status: `RESOLVED`.
-- Mission dispatch runs before the generic Techno accumulator block, so Mission_Deploy state 3 reads the previous `+0xF8` value before the current tick increment. Source: `TECHNOCLASS_AI_UPDATE_UNLOAD_ACCUMULATOR_ORDERING_GHIDRA_REPORT.md`. Status: `RESOLVED`.
-- Same-tick timer start/read uses elapsed `0` because gamemd increments `g_CurrentFrameCounter` after logic/object work. Source: `DOCK_RATE_TIMER_FRAME_COUNTER_ORDERING_GHIDRA_REPORT.md`. Status: `RESOLVED`.
+- Exact visible body-facing byte for every approach remains runtime-sensitive. Source: [FACING_BYTE_VS_DIRECTION_INDEX_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FACING_BYTE_VS_DIRECTION_INDEX_GHIDRA_REPORT.md) OQ-10.
+- `+0x104` is written from stack scratch during unload-start timer-cluster initialization; it is not a cadence input and should be modeled as opaque scratch if carried. Source: [MISSION_DEPLOY_UNLOAD_TIMER_CLUSTER_0X104_SOURCE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MISSION_DEPLOY_UNLOAD_TIMER_CLUSTER_0X104_SOURCE_GHIDRA_REPORT.md). Status: `RESOLVED for timing/behavior; exact runtime byte value remains unchecked`.
+- Accepted unload-start returns through mission timer epilogue after latch/timer/substate writes: stock `[Unload] Rate=.016` gives `14..16` frames and consumes exactly one `RandomRanged(0,2)`. Source: [MISSION_0X10_RETURN_DELAY_STORAGE_AND_RESCHEDULE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MISSION_0X10_RETURN_DELAY_STORAGE_AND_RESCHEDULE_GHIDRA_REPORT.md). Status: `RESOLVED`.
+- Facing-not-ready mission `0x10` direct-returns `5`, stores that return as passive mission duration, and consumes no RNG. Source: [MISSION_0X10_RETURN_DELAY_STORAGE_AND_RESCHEDULE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MISSION_0X10_RETURN_DELAY_STORAGE_AND_RESCHEDULE_GHIDRA_REPORT.md). Status: `RESOLVED`.
+- `+0x110` is constructor-set to `1`; Mission_Deploy unload-start preserves it; AI_Update adds it to `+0xF8`. Source: [UNIT_0X110_UNLOAD_ACCUMULATOR_STEP_WRITERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/UNIT_0X110_UNLOAD_ACCUMULATOR_STEP_WRITERS_GHIDRA_REPORT.md). Status: `RESOLVED`.
+- Mission dispatch runs before the generic Techno accumulator block, so Mission_Deploy state 3 reads the previous `+0xF8` value before the current tick increment. Source: [TECHNOCLASS_AI_UPDATE_UNLOAD_ACCUMULATOR_ORDERING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/TECHNOCLASS_AI_UPDATE_UNLOAD_ACCUMULATOR_ORDERING_GHIDRA_REPORT.md). Status: `RESOLVED`.
+- Same-tick timer start/read uses elapsed `0` because gamemd increments `g_CurrentFrameCounter` after logic/object work. Source: [DOCK_RATE_TIMER_FRAME_COUNTER_ORDERING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/DOCK_RATE_TIMER_FRAME_COUNTER_ORDERING_GHIDRA_REPORT.md). Status: `RESOLVED`.
 
 ## Design
 

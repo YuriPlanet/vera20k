@@ -12,7 +12,7 @@
 
 ## Grounding Summary
 
-**Docs (R1):** `GARRISON_SYSTEM_GHIDRA_REPORT.md` §4 Step 5 documents the EVA + SFX emission flow inside `BuildingClass::AddGarrisonOccupant` (0x00522910). Audited via `/verify-doc` on 2026-05-04 — status YELLOW with no impact on this work (the four wrong labels are unrelated functions). `GARRISON_OCCUPANT_SYSTEM_GHIDRA_REPORT.md` confirms the BuildingClass+0x694 occupant count semantics. `GARRISON_IMPLEMENTATION_PLAN.md` §10 lists these three cues as "Not implemented" — confirmed accurate.
+**Docs (R1):** [GARRISON_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GARRISON_SYSTEM_GHIDRA_REPORT.md) §4 Step 5 documents the EVA + SFX emission flow inside `BuildingClass::AddGarrisonOccupant` (0x00522910). Audited via `/verify-doc` on 2026-05-04 — status YELLOW with no impact on this work (the four wrong labels are unrelated functions). [GARRISON_OCCUPANT_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GARRISON_OCCUPANT_SYSTEM_GHIDRA_REPORT.md) confirms the BuildingClass+0x694 occupant count semantics. [GARRISON_IMPLEMENTATION_PLAN.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GARRISON_IMPLEMENTATION_PLAN.md) §10 lists these three cues as "Not implemented" — confirmed accurate.
 
 **Ghidra (R2):** Three xrefs verified live on 2026-05-04:
 - `EVA_StructureGarrisoned` string at 0x008255b0 → xref from `BuildingClass::AddGarrisonOccupant` at 0x005229bc
@@ -1040,9 +1040,9 @@ git tag -a garrison-sound-implemented -m "Garrison sound + EVA cues match gamemd
 - **Design doc:** [docs/plans/2026-05-04-garrison-sound-design.md](2026-05-04-garrison-sound-design.md)
 - **Disparity scan:** [docs/gap-scans/2026-05-04-disparity-scan-garrison.md](../gap-scans/2026-05-04-disparity-scan-garrison.md) (G2 = this work)
 - **Verified Ghidra reports:**
-  - `ra2-rust-game-docs/GARRISON_SYSTEM_GHIDRA_REPORT.md` (audited 2026-05-04 — YELLOW status; the four wrong labels do not affect this work)
-  - `ra2-rust-game-docs/GARRISON_OCCUPANT_SYSTEM_GHIDRA_REPORT.md`
-  - `ra2-rust-game-docs/GARRISON_IMPLEMENTATION_PLAN.md` §10 (status table is partly stale; the three cues listed there match this implementation)
+  - [ra2-rust-game-docs/GARRISON_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GARRISON_SYSTEM_GHIDRA_REPORT.md) (audited 2026-05-04 — YELLOW status; the four wrong labels do not affect this work)
+  - [ra2-rust-game-docs/GARRISON_OCCUPANT_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GARRISON_OCCUPANT_SYSTEM_GHIDRA_REPORT.md)
+  - [ra2-rust-game-docs/GARRISON_IMPLEMENTATION_PLAN.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GARRISON_IMPLEMENTATION_PLAN.md) §10 (status table is partly stale; the three cues listed there match this implementation)
 - **gamemd.exe addresses (verified live 2026-05-04):**
   - `BuildingClass::AddGarrisonOccupant` at 0x00522910 — first-occupant EVA + SFX trigger
   - `BuildingClass::CheckAutoSellOrCivilian` at 0x00458200 — last-occupant EVA trigger (xref from string at 0x004582d3)

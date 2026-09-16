@@ -165,12 +165,12 @@ binding for this plan.
 - **Use bit-backed native inputs and an integer-backed x87 subset:** Host
   `f32`/`f64` execution is not used by simulation damage math. — **Confidence:
   high**
-  - **Source:** approved design numeric contract; `DAMAGE_MATH_GHIDRA_REPORT.md`;
+  - **Source:** approved design numeric contract; [DAMAGE_MATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_MATH_GHIDRA_REPORT.md);
     `GATE_DAMAGE_VERSES_F64_RESOLUTION_GHIDRA_REPORT.md`.
 - **Keep source object and source house as separate call facts:** This preserves
   alliance-gate semantics, attackerless attribution, and null-source cases. —
   **Confidence: high**
-  - **Source:** `WARHEADTYPECLASS_REINVESTIGATION_GHIDRA_REPORT.md` and
+  - **Source:** [WARHEADTYPECLASS_REINVESTIGATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WARHEADTYPECLASS_REINVESTIGATION_GHIDRA_REPORT.md) and
     `DAMAGE_HELPERS_ENGINE_SUBSTRATE_SERVICE_STUDY.md`.
 - **Model readiness reduction as an effect, never a damage multiplier:** HP
   processing continues after the verified readiness mutation. — **Confidence:
@@ -193,7 +193,7 @@ binding for this plan.
 - **Run normal weapon receiver calls at impact, never in `Fire_At`:** Same-frame
   impact remains possible, but only through the live scheduler position. —
   **Confidence: high**
-  - **Source:** `L2_FIRE_DAMAGE_TIMING_VERDICT_GHIDRA_REPORT.md` and
+  - **Source:** [L2_FIRE_DAMAGE_TIMING_VERDICT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/L2_FIRE_DAMAGE_TIMING_VERDICT_GHIDRA_REPORT.md) and
     `AAHEATSEEKER2_FIRST_TICK_DAMAGE_LATENCY_GHIDRA_REPORT.md`.
 - **Keep runtime shadow diagnostics transient:** They are neither serialized nor
   hashed and never assert, mutate state, consume RNG, or choose gameplay. —
@@ -274,18 +274,18 @@ binding for this plan.
 
 | Action | Path | Responsibility |
 |---|---|---|
-| Create | `docs/research/DAMAGE_RECEIVER_TECHNO_GATES_REINVESTIGATION_2026-07-13.md` | Task 1A Techno prefix, source predicates, readiness, and rule/runtime reads |
-| Create | `docs/research/DAMAGE_RECEIVER_OBJECT_CALLBACKS_REINVESTIGATION_2026-07-13.md` | Task 1B Object HP, callbacks, triggers, and re-entry |
-| Create | `docs/research/DAMAGE_RECEIVER_RULE_HOUSE_ASSEMBLY_REINVESTIGATION_2026-07-13.md` | Task 1C defaults and house/country/difficulty assembly |
+| Create | [docs/research/DAMAGE_RECEIVER_TECHNO_GATES_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_RECEIVER_TECHNO_GATES_REINVESTIGATION_2026-07-13.md) | Task 1A Techno prefix, source predicates, readiness, and rule/runtime reads |
+| Create | [docs/research/DAMAGE_RECEIVER_OBJECT_CALLBACKS_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_RECEIVER_OBJECT_CALLBACKS_REINVESTIGATION_2026-07-13.md) | Task 1B Object HP, callbacks, triggers, and re-entry |
+| Create | [docs/research/DAMAGE_RECEIVER_RULE_HOUSE_ASSEMBLY_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_RECEIVER_RULE_HOUSE_ASSEMBLY_REINVESTIGATION_2026-07-13.md) | Task 1C defaults and house/country/difficulty assembly |
 | Create | `docs/research/DAMAGE_RECEIVER_CORE_REINVESTIGATION_2026-07-13.md` | G1 Techno/Object gates, numeric prefix, callbacks, triggers, defaults, and source semantics |
-| Create | `docs/research/DAMAGE_NONBUILDING_RECEIVERS_REINVESTIGATION_2026-07-13.md` | Task 2A Infantry, Unit/Foot, and Aircraft wrappers |
-| Create | `docs/research/DAMAGE_BUILDING_RECEIVER_REINVESTIGATION_2026-07-13.md` | Task 2B Building wrapper, RNG, effects, and lifecycle |
-| Create | `docs/research/DAMAGE_POSTMORTEM_REINVESTIGATION_2026-07-13.md` | Task 2C delay-kill state machine and expiry owner |
-| Create | `docs/research/DAMAGE_CONCRETE_RECEIVER_REINVESTIGATION_2026-07-13.md` | G1 concrete wrappers, PostMortem, RNG, and lifecycle ownership |
-| Create | `docs/research/DAMAGE_AREA_DISPATCH_REINVESTIGATION_2026-07-13.md` | Task 3A ordered collection, filters, coordinate/distance conversion, and receiver arguments |
+| Create | [docs/research/DAMAGE_NONBUILDING_RECEIVERS_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_NONBUILDING_RECEIVERS_REINVESTIGATION_2026-07-13.md) | Task 2A Infantry, Unit/Foot, and Aircraft wrappers |
+| Create | [docs/research/DAMAGE_BUILDING_RECEIVER_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_BUILDING_RECEIVER_REINVESTIGATION_2026-07-13.md) | Task 2B Building wrapper, RNG, effects, and lifecycle |
+| Create | [docs/research/DAMAGE_POSTMORTEM_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_POSTMORTEM_REINVESTIGATION_2026-07-13.md) | Task 2C delay-kill state machine and expiry owner |
+| Create | [docs/research/DAMAGE_CONCRETE_RECEIVER_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_CONCRETE_RECEIVER_REINVESTIGATION_2026-07-13.md) | G1 concrete wrappers, PostMortem, RNG, and lifecycle ownership |
+| Create | [docs/research/DAMAGE_AREA_DISPATCH_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_AREA_DISPATCH_REINVESTIGATION_2026-07-13.md) | Task 3A ordered collection, filters, coordinate/distance conversion, and receiver arguments |
 | Create | `docs/research/DAMAGE_PROJECTILE_IMPACT_TIMING_REINVESTIGATION_2026-07-13.md` | Task 3B normal projectile/effect scheduling and G2 adapter facts |
-| Create | `docs/research/DAMAGE_SPECIAL_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md` | Task 3C death/radiation/lightning argument and scheduler facts |
-| Create | `docs/research/DAMAGE_AREA_AND_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md` | G1/G2 area collection, impact timing, and producer argument inventory |
+| Create | [docs/research/DAMAGE_SPECIAL_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_SPECIAL_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md) | Task 3C death/radiation/lightning argument and scheduler facts |
+| Create | [docs/research/DAMAGE_AREA_AND_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_AREA_AND_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md) | G1/G2 area collection, impact timing, and producer argument inventory |
 | Consume existing private authority | `vera20k-oracle:docs/research/DAMAGE_ORACLE_CAPTURE_CONTRACT_2026-07-13.md` | Existing G3 fixture schema and handoff acceptance record retained by the private Oracle repository; coordinate only future versioned updates |
 | Consume existing private authority | `vera20k-oracle:docs/research/schemas/damage-oracle-v1.schema.json` | Existing closed private Oracle fixture schema; extensions require a separately coordinated version bump |
 | Create | `docs/plans/2026-07-13-damage-authoritative-cutover-owned-files.txt` | Exact execution-owned path manifest used for formatting and final dirty-tree accounting |
@@ -528,14 +528,14 @@ again for every filter, and call `Assert-CargoIdle` immediately before the final
 `ignore_defenses`, defaults, callbacks, and triggers remain partly inferred.
 
 **Files:**
-- Create: `docs/research/DAMAGE_RECEIVER_TECHNO_GATES_REINVESTIGATION_2026-07-13.md`
-- Create: `docs/research/DAMAGE_RECEIVER_OBJECT_CALLBACKS_REINVESTIGATION_2026-07-13.md`
-- Create: `docs/research/DAMAGE_RECEIVER_RULE_HOUSE_ASSEMBLY_REINVESTIGATION_2026-07-13.md`
+- Create: [docs/research/DAMAGE_RECEIVER_TECHNO_GATES_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_RECEIVER_TECHNO_GATES_REINVESTIGATION_2026-07-13.md)
+- Create: [docs/research/DAMAGE_RECEIVER_OBJECT_CALLBACKS_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_RECEIVER_OBJECT_CALLBACKS_REINVESTIGATION_2026-07-13.md)
+- Create: [docs/research/DAMAGE_RECEIVER_RULE_HOUSE_ASSEMBLY_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_RECEIVER_RULE_HOUSE_ASSEMBLY_REINVESTIGATION_2026-07-13.md)
 - Create: `docs/research/DAMAGE_RECEIVER_CORE_REINVESTIGATION_2026-07-13.md`
 - Modify only when a live check disproves it:
-  `docs/research/RECEIVE_DAMAGE_PIPELINE_VERIFICATION_REPORT.md`
+  [docs/research/RECEIVE_DAMAGE_PIPELINE_VERIFICATION_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RECEIVE_DAMAGE_PIPELINE_VERIFICATION_REPORT.md)
 - Modify only when a live check disproves it:
-  `docs/research/GATE_DAMAGE_COUNTRY_ARMOR_ORDER_RESOLUTION_GHIDRA_REPORT.md`
+  [docs/research/GATE_DAMAGE_COUNTRY_ARMOR_ORDER_RESOLUTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GATE_DAMAGE_COUNTRY_ARMOR_ORDER_RESOLUTION_GHIDRA_REPORT.md)
 
 **Pattern:** Use `/re-investigate` discipline: read current reports, enumerate
 claims before editing, verify load-bearing facts from function bodies and
@@ -545,9 +545,9 @@ callsites, then write a Rust-facing handoff. Ghidra access is read-only.
 
 | Unit | Sole output | Fixed scope | Acceptance |
 |---|---|---|---|
-| 1A — Techno prefix/gates | `DAMAGE_RECEIVER_TECHNO_GATES_REINVESTIGATION_2026-07-13.md` | `0x00701900`, the `0x00489180` negative branch, source/null predicates, every Techno precheck, readiness, and all receiver-consumed runtime reads/writers | Ordered branch table; exact widths/defaults/arguments; writer inventory includes crate firepower/armor and no unresolved in-scope branch |
-| 1B — Object callbacks | `DAMAGE_RECEIVER_OBJECT_CALLBACKS_REINVESTIGATION_2026-07-13.md` | `0x005f5390`, HP writes/caps, condition classification, health-change callbacks, trigger calls `0x26`-`0x2c`, object/house kill routing, XP callback boundaries, and re-entry | Ordered read/write/call table including both `0x29` calls; every refresh checkpoint decided |
-| 1C — Rule/house assembly | `DAMAGE_RECEIVER_RULE_HOUSE_ASSEMBLY_REINVESTIGATION_2026-07-13.md` | Constructor/parser/default and house/country/difficulty assembly for every field read by 1A/1B | Full native-field-to-INI/default/stock/current-Rust matrix; missing key and inheritance behavior stated |
+| 1A — Techno prefix/gates | [DAMAGE_RECEIVER_TECHNO_GATES_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_RECEIVER_TECHNO_GATES_REINVESTIGATION_2026-07-13.md) | `0x00701900`, the `0x00489180` negative branch, source/null predicates, every Techno precheck, readiness, and all receiver-consumed runtime reads/writers | Ordered branch table; exact widths/defaults/arguments; writer inventory includes crate firepower/armor and no unresolved in-scope branch |
+| 1B — Object callbacks | [DAMAGE_RECEIVER_OBJECT_CALLBACKS_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_RECEIVER_OBJECT_CALLBACKS_REINVESTIGATION_2026-07-13.md) | `0x005f5390`, HP writes/caps, condition classification, health-change callbacks, trigger calls `0x26`-`0x2c`, object/house kill routing, XP callback boundaries, and re-entry | Ordered read/write/call table including both `0x29` calls; every refresh checkpoint decided |
+| 1C — Rule/house assembly | [DAMAGE_RECEIVER_RULE_HOUSE_ASSEMBLY_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_RECEIVER_RULE_HOUSE_ASSEMBLY_REINVESTIGATION_2026-07-13.md) | Constructor/parser/default and house/country/difficulty assembly for every field read by 1A/1B | Full native-field-to-INI/default/stock/current-Rust matrix; missing key and inheritance behavior stated |
 | 1S — Reconcile | `DAMAGE_RECEIVER_CORE_REINVESTIGATION_2026-07-13.md` | Reconcile 1A-1C and cited prior reports; no broad new investigation | One contradiction ledger and one Rust-facing contract; any unresolved load-bearing fact fails G1 |
 
 Dispatch 1A-1C as separate read-only work items (one per worker at most), wait
@@ -658,17 +658,17 @@ Aircraft, or Building wrappers and their player-visible aftermath.
 
 **Files:**
 - Create:
-  `docs/research/DAMAGE_NONBUILDING_RECEIVERS_REINVESTIGATION_2026-07-13.md`
+  [docs/research/DAMAGE_NONBUILDING_RECEIVERS_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_NONBUILDING_RECEIVERS_REINVESTIGATION_2026-07-13.md)
 - Create:
-  `docs/research/DAMAGE_BUILDING_RECEIVER_REINVESTIGATION_2026-07-13.md`
+  [docs/research/DAMAGE_BUILDING_RECEIVER_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_BUILDING_RECEIVER_REINVESTIGATION_2026-07-13.md)
 - Create:
-  `docs/research/DAMAGE_POSTMORTEM_REINVESTIGATION_2026-07-13.md`
+  [docs/research/DAMAGE_POSTMORTEM_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_POSTMORTEM_REINVESTIGATION_2026-07-13.md)
 - Create:
-  `docs/research/DAMAGE_CONCRETE_RECEIVER_REINVESTIGATION_2026-07-13.md`
+  [docs/research/DAMAGE_CONCRETE_RECEIVER_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_CONCRETE_RECEIVER_REINVESTIGATION_2026-07-13.md)
 - Modify only when live evidence requires a correction:
-  `docs/research/BUILDING_DAMAGE_DESTRUCTION_GHIDRA_REPORT.md`
+  [docs/research/BUILDING_DAMAGE_DESTRUCTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_DAMAGE_DESTRUCTION_GHIDRA_REPORT.md)
 - Correct or explicitly supersede the conflicting section in:
-  `docs/research/TARGETDEATH_BUILDINGCLASS_DESTRUCTION_REMOVAL_OWNER_RESWARM_20260528.md`
+  [docs/research/TARGETDEATH_BUILDINGCLASS_DESTRUCTION_REMOVAL_OWNER_RESWARM_20260528.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TARGETDEATH_BUILDINGCLASS_DESTRUCTION_REMOVAL_OWNER_RESWARM_20260528.md)
 
 **Pattern:** Narrow `/re-investigate` with `re-decoder-ring` only for vtable,
 adjustor-thunk, receiver-identity, or function-boundary ambiguity.
@@ -677,10 +677,10 @@ adjustor-thunk, receiver-identity, or function-boundary ambiguity.
 
 | Unit | Sole output | Fixed scope | Acceptance |
 |---|---|---|---|
-| 2A — Non-Building wrappers | `DAMAGE_NONBUILDING_RECEIVERS_REINVESTIGATION_2026-07-13.md` | Active Infantry, Unit/Foot, and Aircraft receiver overrides and their pre/post calls | Raw-vtable/callsite identity plus ordered nonlethal/lethal state machine for each class |
-| 2B — Building wrapper | `DAMAGE_BUILDING_RECEIVER_REINVESTIGATION_2026-07-13.md` | `0x00442230`, audited `0x004415f0`, effects/RNG/audio lookup, and actual removal chain | All result bands, RNG draws, effect identities, and membership transitions; stale `+0x4EC=Limbo` claim corrected |
-| 2C — PostMortem | `DAMAGE_POSTMORTEM_REINVESTIGATION_2026-07-13.md` | `CausesDelayKill`, eligibility, interpolation, repeated hits, restoration, return 5, and expiry | Exact field/formula/timer contract plus stock OilExplosionWH fixtures |
-| 2S — Reconcile | `DAMAGE_CONCRETE_RECEIVER_REINVESTIGATION_2026-07-13.md` | Reconcile 2A-2C and prior reports | One complete class dispatch/lifecycle handoff; any unresolved class remains blocked |
+| 2A — Non-Building wrappers | [DAMAGE_NONBUILDING_RECEIVERS_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_NONBUILDING_RECEIVERS_REINVESTIGATION_2026-07-13.md) | Active Infantry, Unit/Foot, and Aircraft receiver overrides and their pre/post calls | Raw-vtable/callsite identity plus ordered nonlethal/lethal state machine for each class |
+| 2B — Building wrapper | [DAMAGE_BUILDING_RECEIVER_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_BUILDING_RECEIVER_REINVESTIGATION_2026-07-13.md) | `0x00442230`, audited `0x004415f0`, effects/RNG/audio lookup, and actual removal chain | All result bands, RNG draws, effect identities, and membership transitions; stale `+0x4EC=Limbo` claim corrected |
+| 2C — PostMortem | [DAMAGE_POSTMORTEM_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_POSTMORTEM_REINVESTIGATION_2026-07-13.md) | `CausesDelayKill`, eligibility, interpolation, repeated hits, restoration, return 5, and expiry | Exact field/formula/timer contract plus stock OilExplosionWH fixtures |
+| 2S — Reconcile | [DAMAGE_CONCRETE_RECEIVER_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_CONCRETE_RECEIVER_REINVESTIGATION_2026-07-13.md) | Reconcile 2A-2C and prior reports | One complete class dispatch/lifecycle handoff; any unresolved class remains blocked |
 
 Dispatch 2A-2C independently, then dispatch 2S. A single worker must not be
 given the combined concrete-wrapper/PostMortem umbrella.
@@ -742,17 +742,17 @@ or scheduler positions differ even when the arithmetic is perfect.
 
 **Files:**
 - Create:
-  `docs/research/DAMAGE_AREA_DISPATCH_REINVESTIGATION_2026-07-13.md`
+  [docs/research/DAMAGE_AREA_DISPATCH_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_AREA_DISPATCH_REINVESTIGATION_2026-07-13.md)
 - Create:
   `docs/research/DAMAGE_PROJECTILE_IMPACT_TIMING_REINVESTIGATION_2026-07-13.md`
 - Create:
-  `docs/research/DAMAGE_SPECIAL_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md`
+  [docs/research/DAMAGE_SPECIAL_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_SPECIAL_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md)
 - Create:
-  `docs/research/DAMAGE_AREA_AND_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md`
+  [docs/research/DAMAGE_AREA_AND_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_AREA_AND_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md)
 - Modify only when live evidence corrects it:
-  `docs/research/L2_FIRE_DAMAGE_TIMING_VERDICT_GHIDRA_REPORT.md`
+  [docs/research/L2_FIRE_DAMAGE_TIMING_VERDICT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/L2_FIRE_DAMAGE_TIMING_VERDICT_GHIDRA_REPORT.md)
 - Modify only when live evidence corrects it:
-  `docs/research/TARGETDEATH_APPLY_AREA_DAMAGE_LIVE_VECTOR_ITERATION_RESWARM_20260528.md`
+  [docs/research/TARGETDEATH_APPLY_AREA_DAMAGE_LIVE_VECTOR_ITERATION_RESWARM_20260528.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TARGETDEATH_APPLY_AREA_DAMAGE_LIVE_VECTOR_ITERATION_RESWARM_20260528.md)
 
 **Pattern:** `/re-investigate` from exact dispatcher and producer callsites;
 trace arguments forward into receiver calls and backward to the gameplay source.
@@ -761,10 +761,10 @@ trace arguments forward into receiver calls and backward to the gameplay source.
 
 | Unit | Sole output | Fixed scope | Acceptance |
 |---|---|---|---|
-| 3A — Area dispatcher | `DAMAGE_AREA_DISPATCH_REINVESTIGATION_2026-07-13.md` | `0x00489280` collection, order, filters, layers, native Cartesian world-lepton coordinate conversion, distance, fixed records, and receiver arguments | Complete ordered collector contract and worked ground/air/Building coordinate fixtures |
+| 3A — Area dispatcher | [DAMAGE_AREA_DISPATCH_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_AREA_DISPATCH_REINVESTIGATION_2026-07-13.md) | `0x00489280` collection, order, filters, layers, native Cartesian world-lepton coordinate conversion, distance, fixed records, and receiver arguments | Complete ordered collector contract and worked ground/air/Building coordinate fixtures |
 | 3B — Projectile impact | `DAMAGE_PROJECTILE_IMPACT_TIMING_REINVESTIGATION_2026-07-13.md` | `0x006fdd50` through munition/effect insertion, live Logic-vector scheduling, detonation, and receiver | Same-frame and delayed traces; exact G2 call fields and scheduler owner |
-| 3C — Special producers | `DAMAGE_SPECIAL_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md` | Death weapon, radiation, and lightning only | One argument-provenance/tick-position table per producer, including recursion, RNG owner, and provenance lifetime/storage |
-| 3S — Reconcile | `DAMAGE_AREA_AND_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md` | Reconcile 3A-3C and classify all dispatcher xrefs | Complete in-scope route inventory; G1 rows resolved and G2 gaps stated without approximation |
+| 3C — Special producers | [DAMAGE_SPECIAL_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_SPECIAL_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md) | Death weapon, radiation, and lightning only | One argument-provenance/tick-position table per producer, including recursion, RNG owner, and provenance lifetime/storage |
+| 3S — Reconcile | [DAMAGE_AREA_AND_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_AREA_AND_PRODUCER_TIMING_REINVESTIGATION_2026-07-13.md) | Reconcile 3A-3C and classify all dispatcher xrefs | Complete in-scope route inventory; G1 rows resolved and G2 gaps stated without approximation |
 
 Dispatch 3A-3C independently, then dispatch 3S. The 3S owner may classify an
 xref as excluded only with active-YR reachability evidence.
@@ -4111,63 +4111,63 @@ Uncaptured input space remains `UNVERIFIED`; any remaining in-scope mismatch is
 ### Design and correction bundle
 
 - `docs/plans/2026-07-13-damage-authoritative-cutover-design.md`
-- `docs/research/DAMAGE_KERNEL_CONSTANTS_REVERIFICATION_2026-07-13.md`
-- `docs/research/DAMAGE_MATH_GHIDRA_REPORT.md` — use the current formula/order
+- [docs/research/DAMAGE_KERNEL_CONSTANTS_REVERIFICATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_KERNEL_CONSTANTS_REVERIFICATION_2026-07-13.md)
+- [docs/research/DAMAGE_MATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_MATH_GHIDRA_REPORT.md) — use the current formula/order
   sections; its older healing-parameter prose must be reconciled against live
   assembly in Task 11 before authority.
-- `docs/research/GATE_DAMAGE_VERSES_F64_RESOLUTION_GHIDRA_REPORT.md` — corrected
+- [docs/research/GATE_DAMAGE_VERSES_F64_RESOLUTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GATE_DAMAGE_VERSES_F64_RESOLUTION_GHIDRA_REPORT.md) — corrected
   256-lepton section and exact Verses/x87 evidence.
-- `docs/research/GATE_DAMAGE_MAXDAMAGE_CLAMP_RESOLUTION_GHIDRA_REPORT.md` —
+- [docs/research/GATE_DAMAGE_MAXDAMAGE_CLAMP_RESOLUTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GATE_DAMAGE_MAXDAMAGE_CLAMP_RESOLUTION_GHIDRA_REPORT.md) —
   constructor fallback mechanism only; not authority for stock runtime value.
-- `docs/research/CCINICLASS_GHIDRA_REPORT.md` — generic `ReadDouble` `%f`
+- [docs/research/CCINICLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CCINICLASS_GHIDRA_REPORT.md) — generic `ReadDouble` `%f`
   prefix parse and percent path.
-- `docs/research/core-services-map/ini-parsing.md`
-- `docs/research/INI_PARSING_HELPERS_ENGINE_SUBSTRATE_SERVICE_STUDY.md` —
+- [docs/research/core-services-map/ini-parsing.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/ini-parsing.md)
+- [docs/research/INI_PARSING_HELPERS_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/INI_PARSING_HELPERS_ENGINE_SUBSTRATE_SERVICE_STUDY.md) —
   distinguishes generic CCINI readers from Verses atoi/strtod token parsing.
-- `docs/research/ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md`
+- [docs/research/ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md)
   — `Math__ftol` qword conversion and `0x0e7f` control-word evidence.
-- `docs/research/SPARK_LIGHT_EFFECT_TICK_ROUNDING_AND_FIRST_VISIBLE_STAGE_RESWARM_20260528.md`
+- [docs/research/SPARK_LIGHT_EFFECT_TICK_ROUNDING_AND_FIRST_VISIBLE_STAGE_RESWARM_20260528.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPARK_LIGHT_EFFECT_TICK_ROUNDING_AND_FIRST_VISIBLE_STAGE_RESWARM_20260528.md)
   — startup/live x87 control-word path.
 
 ### Receiver, rules, and concrete wrappers
 
-- `docs/research/RECEIVE_DAMAGE_GHIDRA_REPORT.md`
-- `docs/research/RECEIVE_DAMAGE_PIPELINE_VERIFICATION_REPORT.md` — useful stage
+- [docs/research/RECEIVE_DAMAGE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RECEIVE_DAMAGE_GHIDRA_REPORT.md)
+- [docs/research/RECEIVE_DAMAGE_PIPELINE_VERIFICATION_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RECEIVE_DAMAGE_PIPELINE_VERIFICATION_REPORT.md) — useful stage
   map with readiness terminology and some field identities requiring Task 1
   correction.
-- `docs/research/GATE_DAMAGE_COUNTRY_ARMOR_ORDER_RESOLUTION_GHIDRA_REPORT.md` —
+- [docs/research/GATE_DAMAGE_COUNTRY_ARMOR_ORDER_RESOLUTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GATE_DAMAGE_COUNTRY_ARMOR_ORDER_RESOLUTION_GHIDRA_REPORT.md) —
   numeric order; its post-veterancy containment labels are superseded.
-- `docs/research/TANK_BUNKER_COMBAT_SURFACE_GHIDRA_REPORT.md` — authoritative
+- [docs/research/TANK_BUNKER_COMBAT_SURFACE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TANK_BUNKER_COMBAT_SURFACE_GHIDRA_REPORT.md) — authoritative
   containment identities/order and bunker routing surface.
 - `docs/research/TECHNOTYPECLASS_BASE_GHIDRA_REPORT.md` — readiness fields and
   type layout.
-- `docs/research/WARHEADTYPECLASS_REINVESTIGATION_GHIDRA_REPORT.md` —
+- [docs/research/WARHEADTYPECLASS_REINVESTIGATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WARHEADTYPECLASS_REINVESTIGATION_GHIDRA_REPORT.md) —
   `AffectsAllies`, delay kill, warhead gate evidence.
-- `docs/research/WARHEADTYPECLASS_FULL_STRUCT_LAYOUT.md` — numeric/flag defaults;
+- [docs/research/WARHEADTYPECLASS_FULL_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WARHEADTYPECLASS_FULL_STRUCT_LAYOUT.md) — numeric/flag defaults;
   its old “no stock DelayKill” statement is superseded by current stock INI.
-- `docs/research/DAMAGE_HELPERS_ENGINE_SUBSTRATE_SERVICE_STUDY.md` — source-
+- [docs/research/DAMAGE_HELPERS_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_HELPERS_ENGINE_SUBSTRATE_SERVICE_STUDY.md) — source-
   present ally test and readiness side-effect evidence.
-- `docs/research/BUILDING_DAMAGE_DESTRUCTION_GHIDRA_REPORT.md` — audited
+- [docs/research/BUILDING_DAMAGE_DESTRUCTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_DAMAGE_DESTRUCTION_GHIDRA_REPORT.md) — audited
   Building wrapper and `DestructionEffects` identity.
-- `docs/research/AUDIT_LOG.md` — raw Building vtable correction record.
-- `docs/research/TARGETDEATH_BUILDINGCLASS_DESTRUCTION_REMOVAL_OWNER_RESWARM_20260528.md`
+- [docs/research/AUDIT_LOG.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AUDIT_LOG.md) — raw Building vtable correction record.
+- [docs/research/TARGETDEATH_BUILDINGCLASS_DESTRUCTION_REMOVAL_OWNER_RESWARM_20260528.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TARGETDEATH_BUILDINGCLASS_DESTRUCTION_REMOVAL_OWNER_RESWARM_20260528.md)
   — stale `+0x4EC=Limbo` claim retained only as a conflict to correct.
-- `docs/research/TARGETDEATH_RECEIVEDAMAGE_DEATH_DISPATCH_REMOVAL_TIMING_RESWARM_20260528.md`
+- [docs/research/TARGETDEATH_RECEIVEDAMAGE_DEATH_DISPATCH_REMOVAL_TIMING_RESWARM_20260528.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TARGETDEATH_RECEIVEDAMAGE_DEATH_DISPATCH_REMOVAL_TIMING_RESWARM_20260528.md)
   — death-dispatch navigation; concrete timing must be rechecked in Task 2.
-- `docs/research/VETERANCY_SYSTEM_GHIDRA_REPORT.md` — native f32 accumulator,
+- [docs/research/VETERANCY_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VETERANCY_SYSTEM_GHIDRA_REPORT.md) — native f32 accumulator,
   rank/ability parsing, kill XP, promotion, and crate writer paths.
-- `docs/research/INFANTRYCLASS_GHIDRA_REPORT.md` — signed integer FearLevel and
+- [docs/research/INFANTRYCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/INFANTRYCLASS_GHIDRA_REPORT.md) — signed integer FearLevel and
   reachable 300-value behavior.
 - `docs/research/CRATE_SYSTEM_GHIDRA_REPORT.md` — active firepower/armor/
   veterancy crate writers that GS/GV must migrate with receiver state.
 
 ### Area dispatch and timing
 
-- `docs/research/combat/systems/damage_formula.md`
-- `docs/research/combat/systems/splash_cellspread.md`
-- `docs/research/TARGETDEATH_APPLY_AREA_DAMAGE_LIVE_VECTOR_ITERATION_RESWARM_20260528.md`
-- `docs/research/L2_FIRE_DAMAGE_TIMING_VERDICT_GHIDRA_REPORT.md`
-- `docs/research/AAHEATSEEKER2_FIRST_TICK_DAMAGE_LATENCY_GHIDRA_REPORT.md`
+- [docs/research/combat/systems/damage_formula.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/combat/systems/damage_formula.md)
+- [docs/research/combat/systems/splash_cellspread.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/combat/systems/splash_cellspread.md)
+- [docs/research/TARGETDEATH_APPLY_AREA_DAMAGE_LIVE_VECTOR_ITERATION_RESWARM_20260528.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TARGETDEATH_APPLY_AREA_DAMAGE_LIVE_VECTOR_ITERATION_RESWARM_20260528.md)
+- [docs/research/L2_FIRE_DAMAGE_TIMING_VERDICT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/L2_FIRE_DAMAGE_TIMING_VERDICT_GHIDRA_REPORT.md)
+- [docs/research/AAHEATSEEKER2_FIRST_TICK_DAMAGE_LATENCY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AAHEATSEEKER2_FIRST_TICK_DAMAGE_LATENCY_GHIDRA_REPORT.md)
 
 ### Live binary anchors
 

@@ -5,7 +5,7 @@
 > the text here conflicts with the sources below, **trust the newer
 > documents**:
 >
-> - [`MAPCLASS_COMPLETE_DECODE.md`](MAPCLASS_COMPLETE_DECODE.md) —
+> - [`MAPCLASS_COMPLETE_DECODE.md`](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAPCLASS_COMPLETE_DECODE.md) —
 >   master summary with the final status matrix.
 > - [`MAPCLASS_GHIDRA_REPORT_REVISIT_2026_04_24.md`](MAPCLASS_GHIDRA_REPORT_REVISIT_2026_04_24.md)
 >   — vtable size (30, not 64), slot 3 = `IsCellExplored`, dead-byte
@@ -604,7 +604,7 @@ Selected identified methods from the MapClass vtable (30 slots — corrected 202
 - 0x56EB80 (SetOverlayAndPropagate), 0x594870 (random cell in playfield — confirms +0xFC-0x108 usage)
 
 ### Doc files referenced
-BRIDGE_SYSTEM.md, SHROUD_SYSTEM_COMPLETE.md, ZONE_PASSABILITY_VERIFIED.md, CELLCLASS_STRUCT_GHIDRA_REPORT.md, TIMER_CLASSES_AND_ZONE_MAP_GHIDRA_REPORT.md, GAMEMD_ARCHITECTURE.md, OVERLAY_CLASS_SYSTEM_GHIDRA_REPORT.md
+BRIDGE_SYSTEM.md, [SHROUD_SYSTEM_COMPLETE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SHROUD_SYSTEM_COMPLETE.md), [ZONE_PASSABILITY_VERIFIED.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/ZONE_PASSABILITY_VERIFIED.md), CELLCLASS_STRUCT_GHIDRA_REPORT.md, [TIMER_CLASSES_AND_ZONE_MAP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TIMER_CLASSES_AND_ZONE_MAP_GHIDRA_REPORT.md), GAMEMD_ARCHITECTURE.md, [OVERLAY_CLASS_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/OVERLAY_CLASS_SYSTEM_GHIDRA_REPORT.md)
 
 ### INI files checked
 rulesmd.ini ([CrateRules], [SpecialFlags], [MultiplayerDialogSettings])

@@ -127,7 +127,7 @@ Every detail below must survive in the implementation. Each cites its source.
 | 8 | Height diffs: 0 (passable), 1 (per SlopeIndex), **4 only** (bridge ramp). 2/3/5+ **always blocked** | BRIDGE_SYSTEM.md §"CheckBridgeTraversal" + GHIDRA 0x4D9C60 |
 | 9 | Bit 0x80 (= `bridge_walkable` flag analog in PathCell) marks body cells; set during map initialization (upstream of SetBridgeDirection — specific load path not traced), NOT by SetBridgeDirection's direction-parity logic at runtime | AUDIT_LOG entries 2026-05-11 |
 | 10 | A* dual closed lists: a cell can be visited at BOTH ground and bridge levels with different parents/costs. Layer determined by `is_at_bridge_level(current.height, neighbor)` | BRIDGE_SYSTEM.md §"A* Pathfinding — Dual-Layer Bridge Support" |
-| 11 | gamemd's `Can_Enter_Cell` is two-pass with mid-check layer switch. Our pre-decided `target_layer` matches this output IF the layer pre-decision is correct (fixed by G2) | UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md §"Phase 6" |
+| 11 | gamemd's `Can_Enter_Cell` is two-pass with mid-check layer switch. Our pre-decided `target_layer` matches this output IF the layer pre-decision is correct (fixed by G2) | [UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md) §"Phase 6" |
 | 12 | `SetBridgeDirection_NESW` (0x47E040) and `SetBridgeDirection_NWSE` (0x47E470) are byte-identical — irrelevant to this design; no Rust SetBridgeDirection port exists | AUDIT_LOG entry 2026-05-11 |
 | 13 | Predicate's two conditions are mutually exclusive in retail data (both require contradictory dst.flag state) but the implementation MUST evaluate them independently — the audit caught a doc pseudocode bug where they were structured as if/else | AUDIT_LOG entry 2026-05-11 |
 | 14 | Diagonal body-to-body transition (both have 0x100): entry doesn't fire (heights equal, not `src - 4`); exit doesn't fire (dst has 0x100). `NoChange` — unit stays on bridge | derived from #1 + #2 |
@@ -438,7 +438,7 @@ Items NOT addressed by this design — explicitly out of scope, but flagged here
 ## Sources & References
 
 - **Gap-scan:** [docs/gap-scans/2026-05-11-disparity-scan-bridge-pathfinding.md](../gap-scans/2026-05-11-disparity-scan-bridge-pathfinding.md) (G2 §64-79, G3 §81-99, G4 §100-112, G6 §134-152)
-- **Verified gamemd invariants:** [ra2-rust-game-docs/AUDIT_LOG.md](../../../ra2-rust-game-docs/AUDIT_LOG.md) entries dated 2026-05-11
+- **Verified gamemd invariants:** [ra2-rust-game-docs/AUDIT_LOG.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AUDIT_LOG.md) entries dated 2026-05-11
 - **Bridge system reference:** [ra2-rust-game-docs/BRIDGE_SYSTEM.md](../../../ra2-rust-game-docs/BRIDGE_SYSTEM.md) §"Bridge Ramp Detection", §"CheckBridgeTraversal", §"A* Pathfinding — Dual-Layer Bridge Support", §"RecalcAttributes Bridge Correction"
 - **Can_Enter_Cell two-pass:** ra2-rust-game-docs/UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md §"Phase 6"
 - **gamemd.exe addresses (in audit log, not in code):**

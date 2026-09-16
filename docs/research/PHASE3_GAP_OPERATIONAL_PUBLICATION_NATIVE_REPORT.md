@@ -129,7 +129,7 @@ that path. No eight-frame delayed-death behavior was introduced. Selling or
 ## Delivery boundary and limits
 
 The existing shroud counter and per-viewer gap receipt owner remain applicable;
-see [the current-sight report](PHASE3_SHROUD_CURRENT_SIGHT_NATIVE_REPORT.md).
+see [the current-sight report](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_SHROUD_CURRENT_SIGHT_NATIVE_REPORT.md).
 The selected delivery covers operational edges, ownership and Limbo ordering,
 SpySat rechecks, and persistence. House/cache refresh must not substitute a new
 power classification for a Building event.

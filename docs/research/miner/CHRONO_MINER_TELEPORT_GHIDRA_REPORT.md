@@ -14,7 +14,7 @@ correction boxes atop Sections 14 and 21): the function at 0x47EBA0 is `CellClas
 (checks `WhatAmI()==1`), not `FindFirstBuilding`, and "destination cell has no unit" is
 necessary but NOT sufficient for a warp -- the warp additionally requires Teleport's own
 `HeadToCoord` to be invoked while Teleport is the ACTIVE locomotor. See
-`docs/research/miner/CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md` for the current
+[docs/research/miner/CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md) for the current
 understanding and its open item.
 
 ---
@@ -648,7 +648,7 @@ Only 4 locations write it: state machine phases 0/7 (clear to 0), ChronoSphere h
 > slot. `get_function_by_address 0x00718b70` confirms its body is 00718b70-007192bd, ending
 > exactly where `TeleportLocomotionClass__StateMachineTick` (0x007192F0, the real per-tick
 > `ILocomotion::Process` at vtable+0x40 -- see Section 19) begins. Per
-> `CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md` §1.2, this function's only caller is
+> [CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md) §1.2, this function's only caller is
 > `HeadToCoord` (0x718100) via a direct call, and it is absent from the ILocomotion vtable
 > entirely. Do not cite 0x718B70 as "the per-tick Process."
 
@@ -1343,8 +1343,8 @@ ILocomotion::vtable[17] (0x718100)  -- Head_To_Coord (new destination)
 ## 14. Mission_Harvest State 2 -- Teleport vs Drive Decision (0x73E5E0)
 
 > **CORRECTION (2026-07-19, verify-doc-fix-swarm slot 4) -- supersedes the 2026-07-18 flag
-> below.** `docs/research/miner/CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md` (this session,
-> building on `CHRONO_MINER_SET_DESTINATION_GATE_GHIDRA_REPORT.md`) closes most of the
+> below.** [docs/research/miner/CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md) (this session,
+> building on [CHRONO_MINER_SET_DESTINATION_GATE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/CHRONO_MINER_SET_DESTINATION_GATE_GHIDRA_REPORT.md)) closes most of the
 > 2026-07-18 flag's open item and REFUTES this section's "empty cell -> FindFirstBuilding
 > NULL -> stays Teleport -> warps" framing outright, not just the function name. Re-verified
 > live this session: `get_function_by_address 0x0047eba0` confirms `CellClass__FindFirstUnit`
@@ -1367,7 +1367,7 @@ ILocomotion::vtable[17] (0x718100)  -- Head_To_Coord (new destination)
 > which takes the Teleporter predicate's default "prefer Drive" branch -- that specific call
 > can NEVER arm a warp, regardless of distance. The exact call that supplies a DockUnload-flagged
 > building as the OLD NavCom (the actual precondition for a warp) remains OPEN --
-> see `CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md` §2 and §6 for the traced candidates
+> see [CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md) §2 and §6 for the traced candidates
 > (Mission_Enter's CAN_DOCK reassert, `Receive_Radio` case 0x12, the Dock=-list re-target
 > block) and why none is independently confirmed yet. Treat "Scenario 1" and "Scenario 2"
 > below, and Section 21's parallel "Complete Call Chain," as SUPERSEDED narrative pending that
@@ -1588,7 +1588,7 @@ box, 2026-07-19):**
 
 1. **Harvest return (far from refinery) -- WRONG, refuted this session.** This scenario
    claimed the state-2 fallback Set_Destination call (with an empty dock-adjacent cell)
-   triggers the warp. `CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md` §1.5 proves NavCom is
+   triggers the warp. [CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md) §1.5 proves NavCom is
    always NULL at that specific call site (`decompile_function 0x0073E5E0`, state 2's
    fallback branch is gated by `if (param_1[0x169] != 0) goto default;`), which forces the
    Teleporter predicate's default "prefer Drive" branch every time. This call can NEVER arm
@@ -1598,7 +1598,7 @@ box, 2026-07-19):**
    claim that the eventual Set_Destination-to-refinery-cell call is what drives the unit is
    plausible (a unit IS present there, so FindFirstUnit is non-NULL and Drive piggyback is
    taken) but the exact accepted-dock call sequence was not independently traced this pass --
-   see `CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md` §2/§6 open item.
+   see [CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md) §2/§6 open item.
 
 3. **Player move order**: Right-clicking on empty ground calls Set_Destination with an
    empty cell. FindFirstUnit [corrected 2026-07-19: was "FindFirstBuilding", see correction
@@ -1836,7 +1836,7 @@ if (piggy && piggy->Is_Ok_To_End()) {
 
 > **UPDATE (2026-07-19, verify-doc-fix-swarm slot 4).** The 2026-07-18 flag below correctly
 > identified the FindFirstUnit/FindFirstBuilding mislabel but left the actual mechanism
-> UNVERIFIED. `docs/research/miner/CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md` (this session)
+> UNVERIFIED. [docs/research/miner/CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md) (this session)
 > closes most of that gap and REFUTES this section's title claim -- there is no single
 > "definitive" trigger at the Set_Destination level. Re-verified live this session:
 > `get_function_by_address 0x0047eba0` = `CellClass__FindFirstUnit` (0047eba0-0047ebe2);
@@ -1939,7 +1939,7 @@ Mission_Harvest state 2 computes a **docking cell adjacent to the refinery** (us
 `BuildingTypeClass->DockOffset` at +0x1618/+0x161C). This cell is next to the refinery
 building, NOT on it — so `FindFirstUnit` [corrected 2026-07-19: was "FindFirstBuilding"]
 returns NULL, the Drive swap would be skipped for THIS specific call -- but per
-`CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md` §1.5, this specific Set_Destination call
+[CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md) §1.5, this specific Set_Destination call
 (Mission_Harvest state 2's fallback branch) always has NavCom==NULL, which forces the
 Teleporter predicate's default "prefer Drive" branch before this check is even reached.
 The claim that this call "triggers the warp" is REFUTED.
@@ -2079,7 +2079,7 @@ For units warped by the Chronosphere superweapon, the visual process IS gradual:
    can teleport), but the mechanism this item originally proposed ("skips Drive piggyback
    when distance > ChronoHarvTooFarDistance, because the destination cell has no building")
    is REFUTED, not just unverified.
-   [updated 2026-07-19: `CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md` §1.5 proves Mission_Harvest
+   [updated 2026-07-19: [CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/CHRONO_MINER_WARP_TRIGGER_GHIDRA_REPORT.md) §1.5 proves Mission_Harvest
    state 2's fallback Set_Destination call always has NavCom==NULL, which forces the
    Teleporter predicate's "prefer Drive" default -- that call cannot arm a warp regardless of
    distance. If/when the miner does warp on return, current evidence points to a short

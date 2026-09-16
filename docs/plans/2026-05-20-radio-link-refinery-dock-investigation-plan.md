@@ -38,47 +38,47 @@ Out of scope:
 | Report | Scope | Conf | Gaps |
 |---|---|---|---|
 | `RADIO_CLASS_PROTOCOL_GHIDRA_REPORT.md` | Full RadioClass spec, ctor `0x0065A750`, Receive_Radio `0x0065A820`, Transmit_Radio_Impl `0x0065A970`, Set_Contact_Count `0x0065AE60`, Broadcast_Radio_ToAll `0x0065ACE0`, every case 0x01-0x24, RadioHistory dedup, Contacts[] vector | HIGH | None at the protocol layer; case meanings IN REFINERY DOCK CONTEXT not always traced. |
-| `BUILDINGCLASS_MISSILE_AND_RADIO_GHIDRA_REPORT.md` (Part 2) | BuildingClass::Receive_Radio top-level switch `0x0043C2D0`, TechnoClass::Receive_Radio `0x006F4AB0`, +0x16xx flag table | HIGH | Per-case bodies not all decompiled. |
+| [BUILDINGCLASS_MISSILE_AND_RADIO_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_MISSILE_AND_RADIO_GHIDRA_REPORT.md) (Part 2) | BuildingClass::Receive_Radio top-level switch `0x0043C2D0`, TechnoClass::Receive_Radio `0x006F4AB0`, +0x16xx flag table | HIGH | Per-case bodies not all decompiled. |
 
 ### Refinery-dock cases (HIGH on what's covered)
 | Report | Scope | Conf | Gaps |
 |---|---|---|---|
-| `REFINERY_RADIO_DOCKING_ACCEPTANCE_QUEUE_GHIDRA_REPORT.md` | HELLO(0x02) acceptance only; `BuildingClass::Receive_Radio @0x0043C2D0` slot **+0x194 (not +0x274)**, ctor `0x0043B740`, UndockUnit `0x4593A0`, Mission_Harvest send site `0x73E5E0` | HIGH | Open: unit/building `+0x2E4` layout coincidence (MEDIUM); cases 0x07/0x08/0x09 not detailed. |
+| [REFINERY_RADIO_DOCKING_ACCEPTANCE_QUEUE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/REFINERY_RADIO_DOCKING_ACCEPTANCE_QUEUE_GHIDRA_REPORT.md) | HELLO(0x02) acceptance only; `BuildingClass::Receive_Radio @0x0043C2D0` slot **+0x194 (not +0x274)**, ctor `0x0043B740`, UndockUnit `0x4593A0`, Mission_Harvest send site `0x73E5E0` | HIGH | Open: unit/building `+0x2E4` layout coincidence (MEDIUM); cases 0x07/0x08/0x09 not detailed. |
 | `RECEIVE_RADIO_CASE_0x0E_CAN_DOCK_GHIDRA_REPORT.md` | CAN_DOCK(0x0E) accept/reject filter chain; queue cell **hardcoded `(X+3,Y+1)` not from QueueingCell**; reply sequence MOVE_TO_CELL(0x12)→ENTER_DOCK(0x18)→TIMING_SYNC(0x16); `CanDock @0x457CE0` is NOT called from case 0x0E | HIGH | Sound cue branch (`DAT_0089c848` on 0x16 reply≠1) — player-visible cue unidentified. |
-| `RADIO_0x16_SENDER_BUILDINGCLASS_CASE_0x0E_GHIDRA_REPORT.md` | 0x16 sender side; resolves "TIMING_SYNC" naming vs old "FACE_DOCK" | HIGH | None. |
-| `RADIO_0x16_RECEIVER_UNITCLASS_CASE_16_GHIDRA_REPORT.md` | `UnitClass::Receive_Radio @0x00737430`; sets `FootClass+0x388` RateTimer to `0x4000` via `ILocomotion vtable+0x4C`; cascade sends TIMING_SYNC_BACK(0x15) | HIGH | Cases other than 0x16 in that override not decompiled. |
+| [RADIO_0x16_SENDER_BUILDINGCLASS_CASE_0x0E_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADIO_0x16_SENDER_BUILDINGCLASS_CASE_0x0E_GHIDRA_REPORT.md) | 0x16 sender side; resolves "TIMING_SYNC" naming vs old "FACE_DOCK" | HIGH | None. |
+| [RADIO_0x16_RECEIVER_UNITCLASS_CASE_16_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADIO_0x16_RECEIVER_UNITCLASS_CASE_16_GHIDRA_REPORT.md) | `UnitClass::Receive_Radio @0x00737430`; sets `FootClass+0x388` RateTimer to `0x4000` via `ILocomotion vtable+0x4C`; cascade sends TIMING_SYNC_BACK(0x15) | HIGH | Cases other than 0x16 in that override not decompiled. |
 
 ### Mission-state & unload side (HIGH after corrections)
 | Report | Scope | Conf | Gaps |
 |---|---|---|---|
-| `MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md` + `_VERIFICATION_NOTES.md` | `UnitClass::Mission_Enter` (= `PerCellProcess @0x739EC0`); state 0 vs state 2; ore overlay destroy on dock cell; piggyback CLSID_WalkLocomotion swap; dock-link write `unit+0x254` (FootClass+0x84 = DockLink); `FUN_00500200` AI wander-to-queue helper | HIGH (post-correction) | Branch identity confirmed inverted in original; helper FUN_00500200 not fully decompiled. |
-| `HARVESTER_DOCK_UNLOAD_SEQUENCE.md` + `HARVESTER_DOCK_UNLOAD.md` | Lifecycle narrative; `EnterTransport @0x70FD70`, `Find_Nearest_Dock @0x004DFCB0`, `CanDock @0x457CE0` | HIGH (85%) | Stale "FACE_DOCK 0x16" claim — superseded by 0x16 docs. |
-| `BUILDING_UNDOCKUNIT_0x4593A0_CHRONO_MINER_GHIDRA_REPORT.md` | UndockUnit is **interrupt-only** (Sell/ReceiveDamage/Temporal); normal exit is ReleaseDockedHarvester; hardcoded `(-0x80, +0x80)` leptons + track 0x47 | HIGH | None. |
-| `RELEASEDOCKEDHARVESTER_0x4595C0_GHIDRA_REPORT.md` | Normal post-dump exit; sole caller `Mission_Deploy_Building @0x0073D630`; Step 10 anchor `(NW.x-1, NW.y+1)` is vestigial; visible "east exit" is Mission_Harvest case-0 SCAN downstream | HIGH (2026-05-20 resolution) | Does 0x19 LEAVE_DOCK fire here? Unverified. |
+| [MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md) + `_VERIFICATION_NOTES.md` | `UnitClass::Mission_Enter` (= `PerCellProcess @0x739EC0`); state 0 vs state 2; ore overlay destroy on dock cell; piggyback CLSID_WalkLocomotion swap; dock-link write `unit+0x254` (FootClass+0x84 = DockLink); `FUN_00500200` AI wander-to-queue helper | HIGH (post-correction) | Branch identity confirmed inverted in original; helper FUN_00500200 not fully decompiled. |
+| [HARVESTER_DOCK_UNLOAD_SEQUENCE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/HARVESTER_DOCK_UNLOAD_SEQUENCE.md) + `HARVESTER_DOCK_UNLOAD.md` | Lifecycle narrative; `EnterTransport @0x70FD70`, `Find_Nearest_Dock @0x004DFCB0`, `CanDock @0x457CE0` | HIGH (85%) | Stale "FACE_DOCK 0x16" claim — superseded by 0x16 docs. |
+| [BUILDING_UNDOCKUNIT_0x4593A0_CHRONO_MINER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/BUILDING_UNDOCKUNIT_0x4593A0_CHRONO_MINER_GHIDRA_REPORT.md) | UndockUnit is **interrupt-only** (Sell/ReceiveDamage/Temporal); normal exit is ReleaseDockedHarvester; hardcoded `(-0x80, +0x80)` leptons + track 0x47 | HIGH | None. |
+| [RELEASEDOCKEDHARVESTER_0x4595C0_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/RELEASEDOCKEDHARVESTER_0x4595C0_GHIDRA_REPORT.md) | Normal post-dump exit; sole caller `Mission_Deploy_Building @0x0073D630`; Step 10 anchor `(NW.x-1, NW.y+1)` is vestigial; visible "east exit" is Mission_Harvest case-0 SCAN downstream | HIGH (2026-05-20 resolution) | Does 0x19 LEAVE_DOCK fire here? Unverified. |
 
 ### Multi-dock + reconciliation
 | Report | Scope | Conf | Gaps |
 |---|---|---|---|
-| `BUILDING_DOCK_AND_HEAL_STATE_MACHINES.md` | Hospital/Armory/UnitRepair timer state machine `MissionRepairAndProduce @0x44B780`; refinery branch deferred | HIGH (hospital), NOT-COVERED (refinery dump) | Refinery dump path explicitly out of scope. |
-| `BUILDING_DOCKING_SYSTEM_GHIDRA_REPORT.md` | BuildingTypeClass flag/offset table; `GetDockCoord @0x447B20`; per-building DockingOffset table | HIGH | "QueueingCell drives queue position" assertion misleading — case 0x0E hardcodes it. |
-| `DOCK_ARRIVAL_PIVOT_SEQUENCE_GHIDRA_REPORT.md` | End-to-end approach→stop→dump→exit, 4-function chain; settles 0x16 naming | HIGH | None. |
-| `FIND_DOCKING_BAY_FALLBACK_ARG3_GHIDRA_REPORT.md` | `FootClass::Find_Docking_Bay @0x004DF040` is fallback only; arg3=0/1 reservation-skip semantics; `AircraftClass::FindBuildingToDock @0x0041BC17` | HIGH | None. |
-| `MINER_DOCK_GAPS_RESEARCH.md` | Piggyback swap-back via `FootClass::AI @0x4DA530`; building destroyed mid-unload (ore retained); AI wander-when-queued | HIGH (post 2026-05-19) | None. |
-| `NUMBEROFDOCKS_VS_DOCKOFFSET_RECONCILE_GHIDRA_REPORT.md` | `+0x1618/+0x161C QueueingCell` (art) vs `+0x1780 NumberOfDocks` / `+0x1788 DockingOffset%d`; refinery uses only QueueingCell | HIGH | None. |
+| [BUILDING_DOCK_AND_HEAL_STATE_MACHINES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/BUILDING_DOCK_AND_HEAL_STATE_MACHINES.md) | Hospital/Armory/UnitRepair timer state machine `MissionRepairAndProduce @0x44B780`; refinery branch deferred | HIGH (hospital), NOT-COVERED (refinery dump) | Refinery dump path explicitly out of scope. |
+| [BUILDING_DOCKING_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/BUILDING_DOCKING_SYSTEM_GHIDRA_REPORT.md) | BuildingTypeClass flag/offset table; `GetDockCoord @0x447B20`; per-building DockingOffset table | HIGH | "QueueingCell drives queue position" assertion misleading — case 0x0E hardcodes it. |
+| [DOCK_ARRIVAL_PIVOT_SEQUENCE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/DOCK_ARRIVAL_PIVOT_SEQUENCE_GHIDRA_REPORT.md) | End-to-end approach→stop→dump→exit, 4-function chain; settles 0x16 naming | HIGH | None. |
+| [FIND_DOCKING_BAY_FALLBACK_ARG3_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/FIND_DOCKING_BAY_FALLBACK_ARG3_GHIDRA_REPORT.md) | `FootClass::Find_Docking_Bay @0x004DF040` is fallback only; arg3=0/1 reservation-skip semantics; `AircraftClass::FindBuildingToDock @0x0041BC17` | HIGH | None. |
+| [MINER_DOCK_GAPS_RESEARCH.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MINER_DOCK_GAPS_RESEARCH.md) | Piggyback swap-back via `FootClass::AI @0x4DA530`; building destroyed mid-unload (ore retained); AI wander-when-queued | HIGH (post 2026-05-19) | None. |
+| [NUMBEROFDOCKS_VS_DOCKOFFSET_RECONCILE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/NUMBEROFDOCKS_VS_DOCKOFFSET_RECONCILE_GHIDRA_REPORT.md) | `+0x1618/+0x161C QueueingCell` (art) vs `+0x1780 NumberOfDocks` / `+0x1788 DockingOffset%d`; refinery uses only QueueingCell | HIGH | None. |
 
 ### Stale — must be verified or marked
 | Report | Scope | Conf | Status |
 |---|---|---|---|
-| `DOCKMANAGER_STATE_MACHINE_FUN_006AF6C0_GHIDRA_REPORT.md` | Claims `FUN_006AF6C0` is a refinery dock-queue processor | **STALE** | Scoping pass confirms `0x006AF6C0 = SlaveManagerClass::AI_Update`. There is NO standalone DockManager class. **The investigation must re-verify and the executor must either replace the doc or move it to a deprecated/ folder.** |
+| [DOCKMANAGER_STATE_MACHINE_FUN_006AF6C0_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/DOCKMANAGER_STATE_MACHINE_FUN_006AF6C0_GHIDRA_REPORT.md) | Claims `FUN_006AF6C0` is a refinery dock-queue processor | **STALE** | Scoping pass confirms `0x006AF6C0 = SlaveManagerClass::AI_Update`. There is NO standalone DockManager class. **The investigation must re-verify and the executor must either replace the doc or move it to a deprecated/ folder.** |
 
 ### In-repo plans
 - `docs/plans/2026-05-06-refinery-dock-gamemd-parity-design.md` + `-plan.md` — 4-phase Rust rewrite around `Mission_Deploy_Building @0x73D630`. Implementation plan; not RE.
 
 ### Traces (fidelity slot-by-slot, all 2026-05-19)
-- `CHRONO_MINER_REFINERY_UNDOCK_TRACE.md` (22 stages U01–U22)
-- `CHRONO_MINER_TELEPORT_DOCK_APPROACH_TRACE.md`
-- `CHRONO_MINER_ORE_DUMP_DEPOSIT_TRACE.md` (20 stages)
-- `CHRONO_MINER_MISSION_HARVEST_TRACE.md`, `_LOCOMOTION_DRIVE_PHASE_TRACE.md`, `_FORCE_TRACK_0X47_BIB_STEP_TRACE.md`, `_POST_DUMP_EXIT_WALK_RETRACE.md`, `_PAD_PIVOT_TO_EAST_TRACE.md`, `_TELEPORT_INBOUND_VISUAL_CHAIN_TRACE.md`, `_TOO_FAR_THRESHOLD_BRANCH_TRACE.md`
+- [CHRONO_MINER_REFINERY_UNDOCK_TRACE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/traces/CHRONO_MINER_REFINERY_UNDOCK_TRACE.md) (22 stages U01–U22)
+- [CHRONO_MINER_TELEPORT_DOCK_APPROACH_TRACE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/traces/CHRONO_MINER_TELEPORT_DOCK_APPROACH_TRACE.md)
+- [CHRONO_MINER_ORE_DUMP_DEPOSIT_TRACE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/traces/CHRONO_MINER_ORE_DUMP_DEPOSIT_TRACE.md) (20 stages)
+- [CHRONO_MINER_MISSION_HARVEST_TRACE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/traces/CHRONO_MINER_MISSION_HARVEST_TRACE.md), `_LOCOMOTION_DRIVE_PHASE_TRACE.md`, `_FORCE_TRACK_0X47_BIB_STEP_TRACE.md`, `_POST_DUMP_EXIT_WALK_RETRACE.md`, `_PAD_PIVOT_TO_EAST_TRACE.md`, `_TELEPORT_INBOUND_VISUAL_CHAIN_TRACE.md`, `_TOO_FAR_THRESHOLD_BRANCH_TRACE.md`
 
 **Conflicts between reports:**
 - "FACE_DOCK 0x16" (old HARVESTER_DOCK_UNLOAD) ↔ "TIMING_SYNC 0x16" (RADIO_0x16_*) — new wins.
@@ -335,7 +335,7 @@ Carry these into the executor's must-resolve list:
 9. **Is `Mission_Unload @0x00740EF0` reachable in YR, or fully dead?**
 10. **What sound cue does case 0x0E play when the 0x16 reply ≠ 1?** (Open from RECEIVE_RADIO_CASE_0x0E.)
 11. **Is the case-0x0E queue-cell hardcode `(NW.x+3, NW.y+1)`** width-dependent? Test a hypothetical 6-wide refinery (mod hypothetical).
-12. **Re-verify `DOCKMANAGER_STATE_MACHINE_FUN_006AF6C0_GHIDRA_REPORT.md`** — confirm `0x006AF6C0` is `SlaveManagerClass::AI_Update` and not a dock manager; flag the doc to be deprecated.
+12. **Re-verify [DOCKMANAGER_STATE_MACHINE_FUN_006AF6C0_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/DOCKMANAGER_STATE_MACHINE_FUN_006AF6C0_GHIDRA_REPORT.md)** — confirm `0x006AF6C0` is `SlaveManagerClass::AI_Update` and not a dock manager; flag the doc to be deprecated.
 13. **Re-verify `BuildingClass::Receive_Radio` is dispatched via vtable+0x194 (not +0x274)** by reading the BuildingClass vtable bytes directly (vtable-binding verification per CLAUDE.md feedback memory).
 
 ## 10. Execution Strategy
@@ -358,7 +358,7 @@ Carry these into the executor's must-resolve list:
   - Agent 9: `GetDockCellForObject @0x0044EFB0` + `CreateAnimForSlot @0x00451890` + `SetAnimSlotImage @0x00451750` + `ClearAnimSlot @0x00451E40` — items #16, #17, #18, #19
   - Agent 10: TS-legacy sweep — items #20, #21, #22, #24, #25, #26, #27 (each LIGHT; one agent can cover them all)
 
-- **Phase 3 (Synthesis)**: single executor pass merges the 10 agent reports into `RADIO_LINK_REFINERY_DOCK_STATE_MACHINE_GHIDRA_REPORT.md`, resolves all 13 open questions, and ships the deprecation note for the stale DOCKMANAGER doc.
+- **Phase 3 (Synthesis)**: single executor pass merges the 10 agent reports into [RADIO_LINK_REFINERY_DOCK_STATE_MACHINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/RADIO_LINK_REFINERY_DOCK_STATE_MACHINE_GHIDRA_REPORT.md), resolves all 13 open questions, and ships the deprecation note for the stale DOCKMANAGER doc.
 
 Single-session `/re-investigate` is also workable but slower; given the scope and the heavy use of prior docs, batched is more efficient.
 
@@ -372,7 +372,7 @@ The executed research document must:
 - For every function decompiled, state **"Active in YR: Yes / No / Conditional (on flag X)"** with the verification call cited inline.
 - Cite Ghidra MCP calls inline for every address, offset, vtable slot, and case-body claim (CLAUDE.md "Cite the verification call inline" rule).
 - Include a single state-machine diagram (Mermaid or ASCII) showing both the harvester-side and refinery-side state across one full dock cycle, with every radio case labeled in tick order.
-- Include a deprecation note for `DOCKMANAGER_STATE_MACHINE_FUN_006AF6C0_GHIDRA_REPORT.md` (recommend moving to `deprecated/` or rewriting as `SLAVE_MANAGER_AI_UPDATE_GHIDRA_REPORT.md`).
+- Include a deprecation note for [DOCKMANAGER_STATE_MACHINE_FUN_006AF6C0_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/DOCKMANAGER_STATE_MACHINE_FUN_006AF6C0_GHIDRA_REPORT.md) (recommend moving to `deprecated/` or rewriting as `SLAVE_MANAGER_AI_UPDATE_GHIDRA_REPORT.md`).
 - Cross-link to all prior HIGH-confidence reports in Section 2 rather than re-deriving their findings.
 - Confidence label per claim (HIGH / MEDIUM / LOW) with the 3 axes from `feedback_research_confidence_axes`: content, identity, binding.
 

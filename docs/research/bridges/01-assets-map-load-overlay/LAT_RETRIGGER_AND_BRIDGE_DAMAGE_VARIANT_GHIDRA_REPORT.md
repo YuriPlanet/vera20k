@@ -135,7 +135,7 @@ warhead hits wall cell
 
 ### 3.2 `PostDestructionWallCleanup` internals (from prior report — verified)
 
-Verified against the prior `WALL_CONNECTION_AND_DESTRUCTION_GHIDRA_REPORT.md`. The function walks `DAT_0081CC70 = [0, 2, 4, 6, -1]` — 4 cardinals + self. For each visited cell with a wall overlay, rebuilds the connectivity nibble, applies the per-type auto-destruct safety-net, and then calls `RecalcAttributes`. If the cell auto-destructs it additionally calls `AssignOrphanedCellZone` and decrements the 8-neighbor OreNeighborCount.
+Verified against the prior [WALL_CONNECTION_AND_DESTRUCTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WALL_CONNECTION_AND_DESTRUCTION_GHIDRA_REPORT.md). The function walks `DAT_0081CC70 = [0, 2, 4, 6, -1]` — 4 cardinals + self. For each visited cell with a wall overlay, rebuilds the connectivity nibble, applies the per-type auto-destruct safety-net, and then calls `RecalcAttributes`. If the cell auto-destructs it additionally calls `AssignOrphanedCellZone` and decrements the 8-neighbor OreNeighborCount.
 
 ### 3.3 What this means for the Rust implementation
 
@@ -267,7 +267,7 @@ So the `0x2000` bit tracks a **separate, sticky damage visual** from the tile-id
 
 ## 5. `MapClass::SetOverlayAndPropagate` — the tile-id flood-fill (already documented)
 
-Covered in prior `PAVEMENT_AND_TILE_PROPAGATION_GHIDRA_REPORT.md` §2. Re-verified via xrefs for this pass:
+Covered in prior [PAVEMENT_AND_TILE_PROPAGATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PAVEMENT_AND_TILE_PROPAGATION_GHIDRA_REPORT.md) §2. Re-verified via xrefs for this pass:
 - Signature `(coord, new_tid, old_tid, z_fudge, suppress_dirty)`
 - 8-neighbor recursion
 - Calls `RecalcAttributes` on every visited cell (confirmed in the xref list for 0x47D2B0 — `00 56 EC 80 in MapClass__SetOverlayAndPropagate`)
@@ -397,11 +397,11 @@ Wall destroy LAT re-flow is a free ride on #1 — no new primitive needed for wa
 - `RecalcAttributes` @ `0x0047D2B0` — 71 xrefs (full categorized list in §2.2)
 
 **Prior reports cross-verified:**
-- `WALL_CONNECTION_AND_DESTRUCTION_GHIDRA_REPORT.md` (wall destroy chain)
-- `PAVEMENT_AND_TILE_PROPAGATION_GHIDRA_REPORT.md` (SetOverlayAndPropagate + ToggleBridgePavement overview)
+- [WALL_CONNECTION_AND_DESTRUCTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WALL_CONNECTION_AND_DESTRUCTION_GHIDRA_REPORT.md) (wall destroy chain)
+- [PAVEMENT_AND_TILE_PROPAGATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PAVEMENT_AND_TILE_PROPAGATION_GHIDRA_REPORT.md) (SetOverlayAndPropagate + ToggleBridgePavement overview)
 - `HIGH_BRIDGE_DAMAGE_STATE_MACHINE_GHIDRA_REPORT.md` (bridge damage state machine)
 - `ISOMETRIC_TILE_TYPE_CLASS_GHIDRA_REPORT.md` (TMP flag 0x04, LAT algorithm, Flags bit 13)
-- `BRIDGE_RENDERING_GHIDRA_REPORT.md`, `BRIDGE_SYSTEM.md`, `CELLCLASS_STRUCT_GHIDRA_REPORT.md`
+- [BRIDGE_RENDERING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/06-render-presentation-audio/BRIDGE_RENDERING_GHIDRA_REPORT.md), `BRIDGE_SYSTEM.md`, `CELLCLASS_STRUCT_GHIDRA_REPORT.md`
 
 **Rust source audited:**
 - [src/map/lat.rs](src/map/lat.rs) (load-only LAT)

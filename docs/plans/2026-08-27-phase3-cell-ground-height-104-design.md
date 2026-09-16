@@ -8,7 +8,7 @@ slope evaluator, and the Rust consumers currently routed through the false
 90-lepton duplicate evaluator
 
 **Evidence:**
-`docs/research/PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md`
+[docs/research/PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md)
 
 **Integration rebase (2026-08-30):** This design was authored on the source
 branch, where a separate naval-placement slice existed and the accumulated
@@ -257,7 +257,7 @@ rebaselined only where the verified 104 result flows into them.
 Update the load-bearing wrong claims in:
 
 - `docs/research/PARTICLE_SPARK_LIVE_COLLISION_INPUTS_GHIDRA_REPORT.md`;
-- `docs/research/PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md`;
+- [docs/research/PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md);
 - `docs/plans/2026-07-18-spark-native-float-and-point-compositor-design.md`;
 - `docs/plans/2026-07-18-spark-live-collision-adapter-and-owner-design.md`.
 

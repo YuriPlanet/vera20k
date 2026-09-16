@@ -12,7 +12,7 @@ slice adds named lifecycle methods that *delegate* to those primitives so member
 structural (a future spawn path can't silently forget to register) instead of hand-wired per site.
 It is the safe foundation for Slice 2 (routing object phases through logic order).
 
-**Design doc:** `docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md` §6 (boundary), §8 (Slice 1);
+**Design doc:** [docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md) §6 (boundary), §8 (Slice 1);
 `docs/plans/2026-05-28-logicclass-object-lifecycle-spine-design.md` (Chosen Approach → Lifecycle helpers).
 
 ---
@@ -310,7 +310,7 @@ record it as a finding** in this plan's results — adding/removing a reveal is 
 needs the user's sign-off and its own task (not part of the parity-neutral slice).
 
 **Step 4:** Write the coverage table into
-`docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md` under a new "Slice 1 coverage audit"
+[docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md) under a new "Slice 1 coverage audit"
 appendix (docs are local-only; no commit needed for `docs/`).
 
 **Step 5: Verify** — no code changed; `cargo check` still green.
@@ -480,7 +480,7 @@ this slice.
 
 **Why:** Close the slice and mark it done in the substrate study.
 
-**Step 1:** Update `docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md` §8 Slice 1 to
+**Step 1:** Update [docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md) §8 Slice 1 to
 "DONE (2026-05-29)" with a one-line result (call sites migrated, invariant added, hash unchanged).
 (`docs/` is local-only — no commit for the doc.)
 
@@ -493,7 +493,7 @@ this slice.
 
 ## Sources & References
 
-- **Design / study:** `docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md` (§4.1 primitive
+- **Design / study:** [docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md) (§4.1 primitive
   fidelity, §6 boundary, §7 retire list, §8 Slice 1); `docs/plans/2026-05-28-logicclass-object-lifecycle-spine-design.md`
   (Lifecycle helpers, Chosen Approach); `docs/plans/2026-05-28-logicclass-scheduler-live-pass-contract.md`
   (primitive already built).

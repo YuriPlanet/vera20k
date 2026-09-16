@@ -31,9 +31,9 @@ The asset dump also resolves several stale assumptions: Soviet `POWERP.SHP` is `
   - `RadarTransitionMovie_SHPLoad @ 0x0072D830` selects `g_MinimapMovie_SHP` by side and `g_ScreenWidth == 0x280`.
 - Prior fresh reports used as loader/string evidence:
   - `SIDEBAR_SOVIET_SHP_LOAD_PATH_FUN_006D02B0_GHIDRA_REPORT.md`
-  - `SOVIET_RADAR_LEFT_PANEL_SHP_SELECTORS_FOLLOWUP_GHIDRA_REPORT.md`
-  - `SIDEBAR_INIT_LAYOUT_GLOBALS_EXACT_RECHECK_GHIDRA_REPORT.md`
-  - `SIDEBAR_POWER_CREDITS_READY_TEXT_LAYOUT_GHIDRA_REPORT.md`
+  - [SOVIET_RADAR_LEFT_PANEL_SHP_SELECTORS_FOLLOWUP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SOVIET_RADAR_LEFT_PANEL_SHP_SELECTORS_FOLLOWUP_GHIDRA_REPORT.md)
+  - [SIDEBAR_INIT_LAYOUT_GLOBALS_EXACT_RECHECK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_INIT_LAYOUT_GLOBALS_EXACT_RECHECK_GHIDRA_REPORT.md)
+  - [SIDEBAR_POWER_CREDITS_READY_TEXT_LAYOUT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_POWER_CREDITS_READY_TEXT_LAYOUT_GHIDRA_REPORT.md)
 
 ## 3. Main Soviet Sidebar Assets
 
@@ -59,14 +59,14 @@ Active in YR: Yes. Evidence: `SidebarClass__LoadSHPs @ 0x006A5840` plus prior `F
 Tiny details that matter:
 
 - All main Soviet sidebar chrome/control files sampled here have zero `frame_x/frame_y`; layout offsets come from binary layout globals, not embedded SHP offsets.
-- `SIDE1/SIDE2/SIDE3/ADDON` use 168px canvases, while `SIDEBAR_INIT_LAYOUT_GLOBALS_EXACT_RECHECK_GHIDRA_REPORT.md` proves native layout width `g_SidebarWidth = 158`.
+- `SIDE1/SIDE2/SIDE3/ADDON` use 168px canvases, while [SIDEBAR_INIT_LAYOUT_GLOBALS_EXACT_RECHECK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_INIT_LAYOUT_GLOBALS_EXACT_RECHECK_GHIDRA_REPORT.md) proves native layout width `g_SidebarWidth = 158`.
 - `POWERP.SHP` has height 2, but `PowerClass__Draw @ 0x0063FB20` advances draw y by 3 per segment. The missing third pixel is native spacing, not asset height.
 - `GCLOCK2.SHP` frame 0 is an empty zero-size frame. Prior progress draw reports that use `progress + 1` are consistent with retail frame 1 being the first full 60x48 image.
 - Soviet `SELL/REPAIR` are smaller than Allied retail `SELL/REPAIR` (`52x32` vs `64x31`), so Allied-size comments cannot be reused for Soviet layout.
 
 ## 4. Soviet Radar / Transition Assets
 
-Active in YR: Conditional by side and screen width. Evidence: `RadarBackground_SHPLoad @ 0x0072D460`; `RadarTransitionMovie_SHPLoad @ 0x0072D830`; selector strings and side/screen-width branch details are documented in `SOVIET_RADAR_LEFT_PANEL_SHP_SELECTORS_FOLLOWUP_GHIDRA_REPORT.md`.
+Active in YR: Conditional by side and screen width. Evidence: `RadarBackground_SHPLoad @ 0x0072D460`; `RadarTransitionMovie_SHPLoad @ 0x0072D830`; selector strings and side/screen-width branch details are documented in [SOVIET_RADAR_LEFT_PANEL_SHP_SELECTORS_FOLLOWUP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SOVIET_RADAR_LEFT_PANEL_SHP_SELECTORS_FOLLOWUP_GHIDRA_REPORT.md).
 
 | Asset | Retail source | Activation condition | File canvas | Frames | Per-frame header summary |
 |---|---|---|---:|---:|---|
@@ -83,7 +83,7 @@ Important radar detail:
 
 - `SSCRTMD.SHP` is not a 632x568 asset despite the `MD` suffix. The dumped retail file is `472x448`, matching `SSCRTSM`. The background/movie large assets (`SSCRBKMD`, `MPSSCRNL`) are `632x568`.
 - `MPSSCRNL.SHP` exists in both base `neutral.mix` and YR `ntrlmd.mix`. The YR duplicate has the same file canvas/frame geometry but uses SHP format 2 and a slightly larger byte size.
-- Every sampled radar frame has zero `frame_x/frame_y`; the `+80` offset split proven in `SOVIET_RADAR_RECT_AND_SSCR_PLACEMENT_GHIDRA_REPORT.md` is a draw-position rule, not an embedded SHP-frame offset.
+- Every sampled radar frame has zero `frame_x/frame_y`; the `+80` offset split proven in [SOVIET_RADAR_RECT_AND_SSCR_PLACEMENT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SOVIET_RADAR_RECT_AND_SSCR_PLACEMENT_GHIDRA_REPORT.md) is a draw-position rule, not an embedded SHP-frame offset.
 
 ## 5. Command Button Assets
 
@@ -121,7 +121,7 @@ Do not interpret the missing `Button12..24` as proof that the binary skips them.
 
 - `[RESOLVED] OQ-1 - Are main Soviet sidebar SHPs physically 168px wide? -> Yes for SIDE1/SIDE2/SIDE3/ADDON; each has 168px canvas.` (evidence: retail `ra2.mix -> sidec02.mix`)
 - `[RESOLVED] OQ-2 - Do main Soviet SHPs use embedded frame offsets? -> No for sampled main files; all dumped frames have `frame_x=0, frame_y=0`.` (evidence: SHP frame headers)
-- `[RESOLVED] OQ-3 - Is layout width equal to asset width? -> No; prior binary layout report proves `g_SidebarWidth=158` while assets are often 168px.` (evidence: `SIDEBAR_INIT_LAYOUT_GLOBALS_EXACT_RECHECK_GHIDRA_REPORT.md`)
+- `[RESOLVED] OQ-3 - Is layout width equal to asset width? -> No; prior binary layout report proves `g_SidebarWidth=158` while assets are often 168px.` (evidence: [SIDEBAR_INIT_LAYOUT_GLOBALS_EXACT_RECHECK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_INIT_LAYOUT_GLOBALS_EXACT_RECHECK_GHIDRA_REPORT.md))
 - `[RESOLVED] OQ-4 - What is Soviet `POWERP.SHP` native size? -> `16x2`, five frames, all zero-offset.` (evidence: retail `ra2.mix -> sidec02.mix`)
 - `[RESOLVED] OQ-5 - Is `GCLOCK2.SHP` 54 or 55 frames? -> 55 frames; frame 0 is zero-size, frames 1+ are 60x48 sampled full frames.` (evidence: retail `ra2.mix -> sidec02.mix`)
 - `[RESOLVED] OQ-6 - Are Soviet sell/repair same as Allied? -> No; Soviet is `52x32` two frames; Allied sidec01 dump is `64x31` two frames.` (evidence: retail `sidec02.mix` and `sidec01.mix`)
@@ -193,7 +193,7 @@ Do not interpret the missing `Button12..24` as proof that the binary skips them.
 - `src/sidebar/mod.rs`: replace the module layout sentence `radar (168x110) -> side1 (168x69) -> tabs (168x16) -> side2 tiled (168x50) -> side3 (168x26)` with `For the Soviet in-game sidebar, main strip chrome is SIDE1 168x69, repeated SIDE2 168x50, SIDE3 168x26, ADDON 168x63; Soviet radar uses separate SSCR*/MPSSCRN* assets rather than a 168x110 radar.shp block.`
 - `src/render/sidebar_chrome.rs`: replace the art-piece comments `repair.shp (64x31)`, `sell.shp (64x31)`, and `power.shp (27x30)` with `Soviet repair/sell retail SHPs are 52x32 with 2 frames; the binary-proven power meter asset is POWERP.SHP, 16x2 with 5 frames for Soviet.`
 - `src/sidebar/sidebar_layout.ron`: replace approximate `side1_height: 65.0`, `side2_height: 175.0`, `side3_height: 0.0` with wording in a future config/doc pass that these are non-native approximation fields; retail Soviet SHP heights are `SIDE1=69`, `SIDE2=50`, `SIDE3=26`, `ADDON=63`, and visible row count is binary-formula-driven.
-- `docs/research/traces/POWER_BAR_PIXEL_RENDERING_LAYOUT_TRACE.md`: replace `POWERP.SHP width not directly measured here but assumed ~8-10px` with `Retail Soviet POWERP.SHP is 16x2, five zero-offset frames; native PowerClass draws at Soviet x=0,y=227 and advances y by 3, so the inter-segment gap is a draw cadence detail, not SHP height.`
+- [docs/research/traces/POWER_BAR_PIXEL_RENDERING_LAYOUT_TRACE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/traces/POWER_BAR_PIXEL_RENDERING_LAYOUT_TRACE.md): replace `POWERP.SHP width not directly measured here but assumed ~8-10px` with `Retail Soviet POWERP.SHP is 16x2, five zero-offset frames; native PowerClass draws at Soviet x=0,y=227 and advances y by 3, so the inter-segment gap is a draw cadence detail, not SHP height.`
 
 ## Sources
 
@@ -206,6 +206,6 @@ Do not interpret the missing `Button12..24` as proof that the binary skips them.
 - `<ra2-install>/ra2md.mix -> ntrlmd.mix`
 - `C:/Program Files (x86)/XCC/Utilities/global mix database.dat`
 - `docs/research/SIDEBAR_SOVIET_SHP_LOAD_PATH_FUN_006D02B0_GHIDRA_REPORT.md`
-- `docs/research/SOVIET_RADAR_LEFT_PANEL_SHP_SELECTORS_FOLLOWUP_GHIDRA_REPORT.md`
-- `docs/research/SIDEBAR_INIT_LAYOUT_GLOBALS_EXACT_RECHECK_GHIDRA_REPORT.md`
-- `docs/research/SIDEBAR_POWER_CREDITS_READY_TEXT_LAYOUT_GHIDRA_REPORT.md`
+- [docs/research/SOVIET_RADAR_LEFT_PANEL_SHP_SELECTORS_FOLLOWUP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SOVIET_RADAR_LEFT_PANEL_SHP_SELECTORS_FOLLOWUP_GHIDRA_REPORT.md)
+- [docs/research/SIDEBAR_INIT_LAYOUT_GLOBALS_EXACT_RECHECK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_INIT_LAYOUT_GLOBALS_EXACT_RECHECK_GHIDRA_REPORT.md)
+- [docs/research/SIDEBAR_POWER_CREDITS_READY_TEXT_LAYOUT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_POWER_CREDITS_READY_TEXT_LAYOUT_GHIDRA_REPORT.md)

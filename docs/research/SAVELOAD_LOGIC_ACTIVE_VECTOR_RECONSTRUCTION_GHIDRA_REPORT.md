@@ -104,7 +104,7 @@ None. No INI key controls savegame active-vector reconstruction.
   `Map`-singleton load (`ECX=0x87F7E8; CALL 0x00581F50`) → `Logic.Load` → release of the `0x00887324` object.
 - **Pointer-remap DB `DAT_00b0c110`** consumes the swizzle registrations from `Logic.Load` and `ObjectClass::Load`.
 - This is the savegame path only; fresh scenario start uses `ScenarioClass::Full_Init` reveal-timing
-  (see `ACTIVE_OBJECT_ORDER_SOURCE_LOAD_REVEAL_SPAWN_GHIDRA_REPORT.md`).
+  (see [ACTIVE_OBJECT_ORDER_SOURCE_LOAD_REVEAL_SPAWN_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ACTIVE_OBJECT_ORDER_SOURCE_LOAD_REVEAL_SPAWN_GHIDRA_REPORT.md)).
 
 ## 6. Current Rust Implementation Status
 
@@ -135,10 +135,10 @@ None. No INI key controls savegame active-vector reconstruction.
 
 ### Stale Docs / Follow-up
 
-- `ACTIVE_OBJECT_ORDER_SOURCE_LOAD_REVEAL_SPAWN_GHIDRA_REPORT.md` OQ-AOOS-011 ("rebuild owner unknown") is now
+- [ACTIVE_OBJECT_ORDER_SOURCE_LOAD_REVEAL_SPAWN_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ACTIVE_OBJECT_ORDER_SOURCE_LOAD_REVEAL_SPAWN_GHIDRA_REPORT.md) OQ-AOOS-011 ("rebuild owner unknown") is now
   RESOLVED: the owner is `DynamicVectorClass::Load @ 0x00551B90` via Load_Game `FUN_0067e730`. The post-load
   `+0x98` setter remains the only open sub-question.
-- `LOGICCLASS_OBJECT_LIFECYCLE_SPINE_SYSTEM_MODEL_SYNTHESIS.md` claim 13 should be upgraded from
+- [LOGICCLASS_OBJECT_LIFECYCLE_SPINE_SYSTEM_MODEL_SYNTHESIS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOGICCLASS_OBJECT_LIFECYCLE_SPINE_SYSTEM_MODEL_SYNTHESIS.md) claim 13 should be upgraded from
   NEEDS_REINVESTIGATE to IMPLEMENTATION_SAFE for the rebuild mechanism and order; keep the `+0x98` post-load
   state as the lone deferred item.
 
@@ -150,6 +150,6 @@ None. No INI key controls savegame active-vector reconstruction.
   `get_function_callers 0x0055BAA0`; `search_byte_patterns 88 86 98 00 00 00`,
   `C6 80 98 00 00 00 01` (no matches), `C6 86 98 00 00 00 01` (`0x006396a5`/`0x0063977b`, both in
   `FUN_00639740` — a different struct's span triplet, re-confirmed 2026-05-29).
-- Prior docs: `ACTIVE_OBJECT_ORDER_SOURCE_LOAD_REVEAL_SPAWN_GHIDRA_REPORT.md`,
-  `LOGICCLASS_OBJECT_LIFECYCLE_SPINE_SYSTEM_MODEL_SYNTHESIS.md`, `LOGICCLASS_VS_MAPCLASS_GHIDRA_REPORT.md`.
+- Prior docs: [ACTIVE_OBJECT_ORDER_SOURCE_LOAD_REVEAL_SPAWN_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ACTIVE_OBJECT_ORDER_SOURCE_LOAD_REVEAL_SPAWN_GHIDRA_REPORT.md),
+  [LOGICCLASS_OBJECT_LIFECYCLE_SPINE_SYSTEM_MODEL_SYNTHESIS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOGICCLASS_OBJECT_LIFECYCLE_SPINE_SYSTEM_MODEL_SYNTHESIS.md), [LOGICCLASS_VS_MAPCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOGICCLASS_VS_MAPCLASS_GHIDRA_REPORT.md).
 - Rust: `src/sim/world/mod.rs`.

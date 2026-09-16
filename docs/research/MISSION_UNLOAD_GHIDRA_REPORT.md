@@ -99,7 +99,7 @@ undefined4 thunk_FUN_005B2EF0(void) {
 
 Returns 450 frames. **This is the "Mission_Unload base stub" — FootClass doesn't actually unload**, it just sets a long timer. UnitClass overrides it (above) with the real behaviour.
 
-Per `FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md`: FootClass overrides 12 of 28 mission handler slots. Mission 16 (Unload) is one of the slots FootClass leaves to subclasses.
+Per [FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md): FootClass overrides 12 of 28 mission handler slots. Mission 16 (Unload) is one of the slots FootClass leaves to subclasses.
 
 **Subtle detail:** **InfantryClass also doesn't override Mission_Unload.** Only UnitClass overrides it. So:
 - A vehicle transport (Amphibious Transport, IFV, Battle Fortress) → UnitClass::Mission_Unload
@@ -272,7 +272,7 @@ Spot-checked typical transports:
 
 2. **`vtable+0x488` = "Eject_Passenger"** — full body not decompiled. Need to verify the passenger Z-set, cell-occupancy assignment, and parachute-anim spawn logic.
 
-3. **Paradrop parachute mechanics** — the AnimClass that's spawned when a passenger is ejected from a high-altitude cargo plane. Cross-reference with `PARACHUTE_SHP_RENDERING_GHIDRA_REPORT.md`.
+3. **Paradrop parachute mechanics** — the AnimClass that's spawned when a passenger is ejected from a high-altitude cargo plane. Cross-reference with [PARACHUTE_SHP_RENDERING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARACHUTE_SHP_RENDERING_GHIDRA_REPORT.md).
 
 4. **Aircraft Carrier's launch mechanism** — does it use Mission_Unload, ParaDrop missions, or something else? Probably uses a different mission since launched Hornets are NOT passengers (they're spawned via SpawnManager).
 
@@ -319,11 +319,11 @@ Spot-checked typical transports:
 - `0x84396C` "Crewed"
 
 **Companion docs:**
-- `FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md` — the 28-mission dispatch table at FootClass level
-- `MISSIONCLASS_STATE_MACHINE.md` — Mission_Dispatch mechanism
-- `MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md` — Mission_Enter (the queued follow-up)
-- `MISSION_ENTER_CROSSWALK_AND_GAPS_GHIDRA_REPORT.md` — Mission_Enter cross-reference
-- `FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md` — Mission_Move (assigned in step 3b)
+- [FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md) — the 28-mission dispatch table at FootClass level
+- [MISSIONCLASS_STATE_MACHINE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MISSIONCLASS_STATE_MACHINE.md) — Mission_Dispatch mechanism
+- [MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md) — Mission_Enter (the queued follow-up)
+- [MISSION_ENTER_CROSSWALK_AND_GAPS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MISSION_ENTER_CROSSWALK_AND_GAPS_GHIDRA_REPORT.md) — Mission_Enter cross-reference
+- [FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md) — Mission_Move (assigned in step 3b)
 
 ---
 

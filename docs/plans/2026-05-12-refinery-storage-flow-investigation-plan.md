@@ -33,24 +33,24 @@ After this investigation we must be able to answer, with binary evidence:
 
 | Report | Scope | Confidence | Known Gaps |
 |--------|-------|------------|------------|
-| `ORE_VALUE_CREDIT_DEPOSIT_GHIDRA_REPORT.md` | StorageClass struct (4 floats per tib type), AddAmount/GetTotalAmount signatures @ 0x6C9xxx | HIGH | per-bale credit formula not traced; harvester→deposit flow missing |
+| [ORE_VALUE_CREDIT_DEPOSIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/ORE_VALUE_CREDIT_DEPOSIT_GHIDRA_REPORT.md) | StorageClass struct (4 floats per tib type), AddAmount/GetTotalAmount signatures @ 0x6C9xxx | HIGH | per-bale credit formula not traced; harvester→deposit flow missing |
 | `HARVESTER_DOCK_UNLOAD.md` | Dock pad coords, CanDock conditions, dock queue mechanics | MED | `DepositOreFromStorage` not analysed; credit-award path incomplete |
-| `HARVESTER_DOCK_UNLOAD_SEQUENCE.md` | Full unload lifecycle (link→approach→unload loop→undock); MissionRepairAndProduce @ 0x44B780 | HIGH | smoke particle spawning, per-bale visual VFX, AI difficulty multiplier |
-| `BUILDING_DOCKING_SYSTEM_GHIDRA_REPORT.md` | BuildingTypeClass docking fields (DockingOffset, NumberOfDocks, DockUnload, Refinery flags), CanDock @ 0x457CE0 | HIGH | `Storage=` field NOT mapped; per-building stored ore state |
-| `BUILDINGCLASS_UPDATE_ANIMATION_GHIDRA_REPORT.md` | UpdateAnimation @ 0x4509D0 phase F (Refinery tier-display), slots 3–6 (ActiveAnim..ActiveAnimFour = GAREFNL1..L4) | HIGH | tier formula re-verified in last conversation: `tier = (stored*4)/Storage` |
+| [HARVESTER_DOCK_UNLOAD_SEQUENCE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/HARVESTER_DOCK_UNLOAD_SEQUENCE.md) | Full unload lifecycle (link→approach→unload loop→undock); MissionRepairAndProduce @ 0x44B780 | HIGH | smoke particle spawning, per-bale visual VFX, AI difficulty multiplier |
+| [BUILDING_DOCKING_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/BUILDING_DOCKING_SYSTEM_GHIDRA_REPORT.md) | BuildingTypeClass docking fields (DockingOffset, NumberOfDocks, DockUnload, Refinery flags), CanDock @ 0x457CE0 | HIGH | `Storage=` field NOT mapped; per-building stored ore state |
+| [BUILDINGCLASS_UPDATE_ANIMATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_UPDATE_ANIMATION_GHIDRA_REPORT.md) | UpdateAnimation @ 0x4509D0 phase F (Refinery tier-display), slots 3–6 (ActiveAnim..ActiveAnimFour = GAREFNL1..L4) | HIGH | tier formula re-verified in last conversation: `tier = (stored*4)/Storage` |
 | `REFINERY_DOCK_ANIM_SLOTS_GHIDRA_REPORT.md` | SetAnimSlotImage on slots 7/10/8 during dock; 4-point smoke burst (vtable+0x468) | HIGH | slot 10 gate condition; first-bale timing — both now fixed in our impl |
-| `BUILDING_ANIM_STATE_MACHINE.md` | 21-slot table structure | HIGH | tier-switching rules covered separately by UpdateAnimation report |
-| `AI_DIFFICULTY_SYSTEM.md` | DifficultyClass struct (9 doubles + 3 bools @ 0x66D270), Firepower/Cost/BuildTime multipliers | HIGH | **`AIVirtualPurifiers` and `PurifierBonus` formula NOT present** in this doc |
-| `MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md` | Harvester refinery dock-enter FSM | HIGH | no storage/tier/purifier logic; deferred (prerequisite: this plan) |
+| [BUILDING_ANIM_STATE_MACHINE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_ANIM_STATE_MACHINE.md) | 21-slot table structure | HIGH | tier-switching rules covered separately by UpdateAnimation report |
+| [AI_DIFFICULTY_SYSTEM.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AI_DIFFICULTY_SYSTEM.md) | DifficultyClass struct (9 doubles + 3 bools @ 0x66D270), Firepower/Cost/BuildTime multipliers | HIGH | **`AIVirtualPurifiers` and `PurifierBonus` formula NOT present** in this doc |
+| [MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md) | Harvester refinery dock-enter FSM | HIGH | no storage/tier/purifier logic; deferred (prerequisite: this plan) |
 | `FACTORY_CREDIT_SYSTEM_GHIDRA_REPORT.md` | HouseClass credits counter increment (unrelated path) | LOW | tangential |
-| `RULESCLASS_GHIDRA_REPORT.md` | RulesClass struct; `AIVirtualPurifiers` at `RulesClass+0x1B7C` (3 ints "4,2,0") | HIGH | **`PurifierBonus` formula NOT decompiled** |
-| `MINER_DOCK_GAPS_RESEARCH.md` | Focused gap audit on miner dock | HIGH | cross-refs storage gaps but defers |
+| [RULESCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RULESCLASS_GHIDRA_REPORT.md) | RulesClass struct; `AIVirtualPurifiers` at `RulesClass+0x1B7C` (3 ints "4,2,0") | HIGH | **`PurifierBonus` formula NOT decompiled** |
+| [MINER_DOCK_GAPS_RESEARCH.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MINER_DOCK_GAPS_RESEARCH.md) | Focused gap audit on miner dock | HIGH | cross-refs storage gaps but defers |
 | `docs/plans/2026-05-12-miner-multi-bale-extraction-{design,plan}.md` | Multi-bale harvest + first-bale dock fix (just shipped) | HIGH | follow-ups: tier display, AI bonus, purifier formula — this plan |
 | `docs/gap-scans/2026-05-12-gap-scan-miner-deep.md` | Disparity audit (11 findings) | HIGH | findings #7 (tier), #8 (AIVirtualPurifiers), #16 (PurifierBonus) — this plan covers all three |
 
 **Conflicts between reports:**
 
-- `REFINERY_DOCK_ANIM_SLOTS.md` says "ActiveAnim slots 3–6 are always-on loop from moment building placed." `BUILDINGCLASS_UPDATE_ANIMATION_GHIDRA_REPORT.md` phase F says conditional create/clear based on storage tier. The latter is correct (I re-decompiled phase F last conversation and confirmed the tier-gated `ClearAnimSlot` + `CreateAnimForSlot` pattern). Mark `REFINERY_DOCK_ANIM_SLOTS_GHIDRA_REPORT.md` for a verify pass after this investigation.
+- `REFINERY_DOCK_ANIM_SLOTS.md` says "ActiveAnim slots 3–6 are always-on loop from moment building placed." [BUILDINGCLASS_UPDATE_ANIMATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_UPDATE_ANIMATION_GHIDRA_REPORT.md) phase F says conditional create/clear based on storage tier. The latter is correct (I re-decompiled phase F last conversation and confirmed the tier-gated `ClearAnimSlot` + `CreateAnimForSlot` pattern). Mark `REFINERY_DOCK_ANIM_SLOTS_GHIDRA_REPORT.md` for a verify pass after this investigation.
 
 **Correction to gap-scan miner-deep (worth recording in the report):**
 
@@ -234,7 +234,7 @@ Consolidated list to cross-check during execution. Each item names the flag/path
 
 These are explicitly NOT resolved by the scoping pass and must be answered during execution:
 
-1. **Conflicting AIVirtualPurifiers offset:** Agent D says `RulesClass+0x1324`; prior `RULESCLASS_GHIDRA_REPORT.md` says `+0x1B7C`. Resolve by reading the writer at `RulesClass::ReadGeneral` site `0x67055F`.
+1. **Conflicting AIVirtualPurifiers offset:** Agent D says `RulesClass+0x1324`; prior [RULESCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RULESCLASS_GHIDRA_REPORT.md) says `+0x1B7C`. Resolve by reading the writer at `RulesClass::ReadGeneral` site `0x67055F`.
 2. **YAREFN tier display:** YAREFN lacks `Refinery=yes` per Agent B's INI scan. What renders its storage indicator in gamemd, if anything? (Or do Yuri refineries simply not have one?)
 3. **Storage cap clamp vs overflow:** what does `AddAmount` do when `stored + amount > cap`?
 4. **`storageFacilities` semantics:** the Agent D snippet says `int storageFacilities = *(owner + 0x538C); if (!IsHuman && g_GameMode != 0) storageFacilities += AIVirtualPurifiers[difficulty];`. So `storageFacilities` is a COUNT, not an amount. What counts as "1 storage facility"? Every owned refinery? Every owned Ore Purifier? Both? Confirm.

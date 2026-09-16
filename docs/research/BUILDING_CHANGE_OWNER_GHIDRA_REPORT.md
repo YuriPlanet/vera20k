@@ -255,7 +255,7 @@ via live Ghidra decompilation.*
 
 ## 9. Verification Pass (2026-04-24)
 
-Triggered because `GARRISON_SYSTEM_GHIDRA_REPORT.md` §4 Step 5 incorrectly
+Triggered because [GARRISON_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GARRISON_SYSTEM_GHIDRA_REPORT.md) §4 Step 5 incorrectly
 claimed ownership transfer happens inside `AddGarrisonOccupant` (0x00522910).
 Re-verified this doc's core claims against the live binary to confirm the
 actual mechanism.
@@ -346,10 +346,10 @@ behavior table in §1 is still accurate; just the size estimate is stale.
 
 ### 9.4 Cross-doc impact
 
-- `GARRISON_SYSTEM_GHIDRA_REPORT.md` §4 Step 5 item 6 ("Transfer building
+- [GARRISON_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GARRISON_SYSTEM_GHIDRA_REPORT.md) §4 Step 5 item 6 ("Transfer building
   ownership to infantry's owner") is **WRONG in location** — not in
   AddGarrisonOccupant. The actual transfer is here, one tick later.
-- `GARRISON_SYSTEM_GHIDRA_REPORT.md` §16 row for `0x00458200`
+- [GARRISON_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GARRISON_SYSTEM_GHIDRA_REPORT.md) §16 row for `0x00458200`
   (`CheckAutoSellOrCivilian | Per-tick ownership reconciliation`) is
   accurate and matches this doc.
 

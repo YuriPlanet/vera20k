@@ -115,7 +115,7 @@ This slice is complete only if all of the following are closed: direct caller/xr
 - `ASSET_PARSING_BRIDGES_GHIDRA_REPORT.md` rows calling `0xED/0xEE` “Low bridge variant” are wrong: they are active high `BRIDGEB1/2` Mark anchors.
 - `docs/plans/bridge-movement-matrix.md` X-11's “Zero cells ... TS heritage” is too strong. Replace with: “zero cells in the scanned stock loose-map corpus; active YR retail-rules-declared authored-content path, therefore content-conditional, not dormant.”
 - Any wording that the `.SED` branch “does not call Full_Init/ReadMapOverlayPacks” is misleading. It calls synthetic `Full_Init` **before generation**; omission/default `NewINIFormat=0` makes the overlay reader inert. The exact negative is: no ordinary file reader in the random arm and no pack/Mark replay after direct stamping.
-- `BRIDGE_MAP_LOAD_AND_BRIDGEHEAD_TRANSITIONS_GHIDRA_REPORT.md`'s low-bridge “deserves a separate pass” caveat is superseded for activation/order by this report; its low inner-algorithm caveat remains valid.
+- [BRIDGE_MAP_LOAD_AND_BRIDGEHEAD_TRANSITIONS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/01-assets-map-load-overlay/BRIDGE_MAP_LOAD_AND_BRIDGEHEAD_TRANSITIONS_GHIDRA_REPORT.md)'s low-bridge “deserves a separate pass” caveat is superseded for activation/order by this report; its low inner-algorithm caveat remains valid.
 
 ## Annotation candidates (not applied)
 

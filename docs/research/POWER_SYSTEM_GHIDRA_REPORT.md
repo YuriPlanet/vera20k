@@ -48,7 +48,7 @@ via Ghidra MCP live decompilation.
 | +0x5794 | 4 | DamageDelayTimerDuration | Written in constructor, NEVER READ (vestigial) |
 
 **Previous doc corrections:** +0x53A4 and +0x53A8 were previously labeled
-"AttackPowerSum" and "DefensePowerSum" in HOUSECLASS_GHIDRA_REPORT.md. They are
+"AttackPowerSum" and "DefensePowerSum" in [HOUSECLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/HOUSECLASS_GHIDRA_REPORT.md). They are
 actually the power output and drain totals used by the power system.
 
 ---
@@ -1442,10 +1442,10 @@ Detailed deep-dives are in separate files:
 
 - [POWER_BAR_RENDERING.md](POWER_BAR_RENDERING.md) — POWERP.SHP frames, segment
   calculation, flash/interpolation animation, drawing coordinates
-- [SPECIAL_BUILDINGS_POWER_SYSTEM.md](SPECIAL_BUILDINGS_POWER_SYSTEM.md) — Gap
+- [SPECIAL_BUILDINGS_POWER_SYSTEM.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPECIAL_BUILDINGS_POWER_SYSTEM.md) — Gap
   Generator state machine, Cloak Generator, Laser Fence, Psychic Sensor, super
   weapon pause/resume details
-- [POWER_INI_PARSING_AND_LIFECYCLE.md](POWER_INI_PARSING_AND_LIFECYCLE.md) — Power=
+- [POWER_INI_PARSING_AND_LIFECYCLE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/POWER_INI_PARSING_AND_LIFECYCLE.md) — Power=
   parsing, ExtraPower=, building lifecycle (construction, sell, capture), mission IDs
-- [POWER_EDGE_CASES.md](POWER_EDGE_CASES.md) — AI power management, EMP, Iron
+- [POWER_EDGE_CASES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/POWER_EDGE_CASES.md) — AI power management, EMP, Iron
   Curtain, Chronoshift, crates, ForceShield, Powered=yes edge cases

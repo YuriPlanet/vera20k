@@ -554,7 +554,7 @@ was run.
 
 ## Stale-document wording to replace
 
-1. `docs/research/CELLCLASS_PLACETIBERIUM_FUN_00487190_GHIDRA_REPORT.md`
+1. [docs/research/CELLCLASS_PLACETIBERIUM_FUN_00487190_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELLCLASS_PLACETIBERIUM_FUN_00487190_GHIDRA_REPORT.md)
    correctly says authored map load does not call `PlaceTiberium`, but lines
    `234..236` overextend that into “no map-load seed caller” and call
    `0x004818E0` a spread-queue post-germination step. Replace with:
@@ -565,17 +565,17 @@ was run.
    > helper derives the current real cell's initial state from eight current
    > same-TiberiumClass neighbors and has no direct queue effect.
 
-2. `docs/research/OVERLAY_CLASS_SYSTEM_GHIDRA_REPORT.md` lines `564..568` say the
+2. [docs/research/OVERLAY_CLASS_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/OVERLAY_CLASS_SYSTEM_GHIDRA_REPORT.md) lines `564..568` say the
    helper is xref'd/called from the spread-queue processor. Replace caller
    provenance with the exact two xrefs: `OverlayClass::Mark @ 0x005FD0EC` and
    `MapClass::InitCellAttributes @ 0x00568DD8`. Its density pseudocode is broadly
    correct but needs persistent-dummy and argument-0 reachability notes.
-3. `docs/research/PAVEMENT_AND_TILE_PROPAGATION_GHIDRA_REPORT.md` lines
+3. [docs/research/PAVEMENT_AND_TILE_PROPAGATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PAVEMENT_AND_TILE_PROPAGATION_GHIDRA_REPORT.md) lines
    `173..186` and `341..343` infer that `SpreadCellGerminate` grows ore and should
    call/retrigger Recalc/LAT. Replace with: the helper only derives the receiver
    state byte and return value; its complete body has no Recalc/LAT/dirty/queue
    call. Surrounding Mark or runtime placement owners may recalculate separately.
-4. `docs/research/ORE_OVERLAY_SYSTEM_GHIDRA_REPORT.md` density table remains
+4. [docs/research/ORE_OVERLAY_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ORE_OVERLAY_SYSTEM_GHIDRA_REPORT.md) density table remains
    correct. Add exact authored caller provenance, same-class/dummy semantics,
    zero-argument no-RNG behavior, and the fact that queue rebuild consumes rather
    than generates the byte.
@@ -607,7 +607,7 @@ Ghidra metadata mutation was made.
   `Shrapnel.mmx`; repository retail overlay golden.
 - `docs/research/bridges/01-assets-map-load-overlay/AUTHORED_OVERLAYPACK_INLINE_TRANSACTION_REINVESTIGATION_GHIDRA_REPORT.md`.
 - `docs/research/bridges/01-assets-map-load-overlay/OVERLAYPACK_SHARED_DUMMY_FINAL_RECALC_FIELDS_REINVESTIGATION_GHIDRA_REPORT.md`.
-- `docs/research/bridges/01-assets-map-load-overlay/GDIRECTIONOFFSETS_0089F688_BRIDGE_MARKER_PATH_GHIDRA_REPORT.md`.
-- `docs/research/TIBERIUMCLASS_MAP_LOAD_QUEUE_SEEDING_GHIDRA_REPORT.md`.
+- [docs/research/bridges/01-assets-map-load-overlay/GDIRECTIONOFFSETS_0089F688_BRIDGE_MARKER_PATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/01-assets-map-load-overlay/GDIRECTIONOFFSETS_0089F688_BRIDGE_MARKER_PATH_GHIDRA_REPORT.md).
+- [docs/research/TIBERIUMCLASS_MAP_LOAD_QUEUE_SEEDING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TIBERIUMCLASS_MAP_LOAD_QUEUE_SEEDING_GHIDRA_REPORT.md).
 - `C:\Users\enok\Documents\OpenTS\code\overlay.cpp` and `code\cell.cpp`
   (navigation lead only).

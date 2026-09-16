@@ -410,7 +410,7 @@ These symbols are actual successful constructor event counts. They are source an
 prestate inputs, not estimates.
 
 The active-stock cold owner entering the first noncampaign prepass is now closed by
-`LOAD_GAME_RULES_COLD_START_NATIVE_REGISTRY_PRESTATE_REINVESTIGATION_GHIDRA_REPORT.md`:
+[LOAD_GAME_RULES_COLD_START_NATIVE_REGISTRY_PRESTATE_REINVESTIGATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/01-assets-map-load-overlay/LOAD_GAME_RULES_COLD_START_NATIVE_REGISTRY_PRESTATE_REINVESTIGATION_GHIDRA_REPORT.md):
 startup produces 1,070 ID-bearing Type events and retained registry state, but its
 event vector predates the Scenario cursor reset and is not part of `E_multi`. Against
 that retained state, Countries -> General -> live HouseType bodies emits exactly 51

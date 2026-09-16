@@ -52,7 +52,7 @@ For `WeaponsFactory=yes` and `Naval=no`, `BuildingClass::ExitObject_Main @ 0x004
 
 Existing sibling reports independently verify `GetExitCoord @ 0x0044F640` adds `Type+0xEC8/+0xECC/+0xED0`; stock WFs use `ExitCoord=512,256,0`, i.e. NW+(2,1) in cells.
 
-**Active in YR:** Yes. Evidence: `BUILDING_GETDOCKCELLFOROBJECT_STOCK_WAR_FACTORY_EXIT_GHIDRA_REPORT.md`; stock `rulesmd.ini` entries above.
+**Active in YR:** Yes. Evidence: [BUILDING_GETDOCKCELLFOROBJECT_STOCK_WAR_FACTORY_EXIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_GETDOCKCELLFOROBJECT_STOCK_WAR_FACTORY_EXIT_GHIDRA_REPORT.md); stock `rulesmd.ini` entries above.
 
 ### 4. Blocked vehicle exit preserves the completed object and does not restart the queue
 
@@ -102,7 +102,7 @@ Remaining Rust deltas:
 - Do not treat factory-complete frame 648 as the visible spawned-Grizzly frame. Delivery is later `Place_Production`/`ExitObject` work. Evidence: `StripClass::AI`, `EventClass::Execute`, `HouseClass::Place_Production`.
 - Do not call `CompletedProduction` before successful vehicle `ExitObject`. Evidence: `0x004FB560..0x004FB663`.
 - Do not refund, abandon, pop, or start the next queued vehicle when the stock land WF `ExitCoord` is blocked. Evidence: `0x004FB589..0x004FB5BA`.
-- Do not route a blocked completed Grizzly through another war factory or neighboring cell. Evidence: stock WF `ExitObject` uses `GetExitCoord` and returns failure on `Unlimbo` failure; sibling `BUILDING_GETDOCKCELLFOROBJECT_STOCK_WAR_FACTORY_EXIT_GHIDRA_REPORT.md`.
+- Do not route a blocked completed Grizzly through another war factory or neighboring cell. Evidence: stock WF `ExitObject` uses `GetExitCoord` and returns failure on `Unlimbo` failure; sibling [BUILDING_GETDOCKCELLFOROBJECT_STOCK_WAR_FACTORY_EXIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_GETDOCKCELLFOROBJECT_STOCK_WAR_FACTORY_EXIT_GHIDRA_REPORT.md).
 - Do not model `FUN_00734250` as the actual exit/spawn algorithm; it only stores the completed vehicle pointer in the land/naval pending delivery globals. Evidence: `0x00734250..0x0073426C`.
 
 ## Remaining Uncertainty
@@ -113,7 +113,7 @@ Remaining Rust deltas:
 
 ## Stale Docs / Replacement Wording
 
-- `timing/unit-build-time.md` should distinguish the 648-frame factory-complete state from final Grizzly delivery:
+- [timing/unit-build-time.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/timing/unit-build-time.md) should distinguish the 648-frame factory-complete state from final Grizzly delivery:
 
 > Stock MTNK reaches factory-complete state after the 54th 12-frame production step, but the produced vehicle is not consumed/spawned by `FactoryClass::AI` itself. Sidebar/command delivery later runs `HouseClass::Place_Production`; successful stock land war-factory `ExitObject` unlimbo at `ExitCoord=512,256,0` then calls `FactoryClass::CompletedProduction -> FUN_004FAA10`, which may start the next queued item in the same command execution. If the vehicle exit is blocked, `Place_Production` returns before `CompletedProduction` and before queue restart, leaving the completed Grizzly pending.
 
@@ -125,7 +125,7 @@ Remaining Rust deltas:
 
 - Ghidra read-only decompile: `0x004FB0E0`, `0x00443C60`, `0x004CA1A0`, `0x004FAA10`, `0x004CA5A0`, `0x006A8B30`, `0x00734250`.
 - Ghidra read-only assembly/context: `0x004C710B`, `0x004FB560..0x004FB663`, `0x00444583..0x00444594`, `0x004FABA4..0x004FABB2`, `0x006A8DC6..0x006A8E48`, `0x00734250..0x0073426C`.
-- Existing reports: `GRIZZLY_FACTORY_STEP_CADENCE_GHIDRA_REPORT.md`, `STRIP_AI_FACTORY_DELIVERY_GLOBALS_AND_QUEUE_RESTART_GHIDRA_REPORT.md`, `HOUSE_PLACE_PRODUCTION_BLOCKED_WAR_FACTORY_EXIT_GHIDRA_REPORT.md`, `BUILDING_GETDOCKCELLFOROBJECT_STOCK_WAR_FACTORY_EXIT_GHIDRA_REPORT.md`, `WAR_FACTORY_EXIT_CONTACT_ROW_SKIP_GHIDRA_REPORT.md`.
+- Existing reports: `GRIZZLY_FACTORY_STEP_CADENCE_GHIDRA_REPORT.md`, [STRIP_AI_FACTORY_DELIVERY_GLOBALS_AND_QUEUE_RESTART_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/STRIP_AI_FACTORY_DELIVERY_GLOBALS_AND_QUEUE_RESTART_GHIDRA_REPORT.md), `HOUSE_PLACE_PRODUCTION_BLOCKED_WAR_FACTORY_EXIT_GHIDRA_REPORT.md`, [BUILDING_GETDOCKCELLFOROBJECT_STOCK_WAR_FACTORY_EXIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_GETDOCKCELLFOROBJECT_STOCK_WAR_FACTORY_EXIT_GHIDRA_REPORT.md), [WAR_FACTORY_EXIT_CONTACT_ROW_SKIP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WAR_FACTORY_EXIT_CONTACT_ROW_SKIP_GHIDRA_REPORT.md).
 - INI: `ini/rulesmd.ini` stock `GAWEAP`, `NAWEAP`, `YAWEAP`.
 - Rust scan: `src/sim/production/production_queue.rs`, `src/sim/production/production_spawn.rs`, `src/sim/production/production_placement_tests.rs`, `src/sim/production/production_types.rs`.
 

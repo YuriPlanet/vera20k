@@ -19,7 +19,7 @@ spawn-fallback ring search). This plan derives the diamond's five bound fields f
 `PlayfieldBounds` on `Simulation`, threads it into the production-spawn path, and proves the net effect.
 Pure `sim/` — no render/ui/sidebar/audio/net dependency.
 
-**Design Doc / source of truth:** `docs/research/CELLCLASS_MAPCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md`
+**Design Doc / source of truth:** [docs/research/CELLCLASS_MAPCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELLCLASS_MAPCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md)
 (§5 C-GRID 1–3, §6 boundary, 2026-06-04 refresh "IMPLEMENTED-BUT-UNWIRED").
 
 ---
@@ -137,7 +137,7 @@ Pure `sim/` — no render/ui/sidebar/audio/net dependency.
 
 ### Task 1: Extract the Size/LocalSize → 5-field diamond formula (RESEARCH — blocks all) — ✅ DONE 2026-06-04
 
-**RESULT (binary-VERIFIED, `docs/research/CELLCLASS_PLAYFIELD_BOUNDS_FROM_LOCALSIZE_GHIDRA_REPORT.md`):**
+**RESULT (binary-VERIFIED, [docs/research/CELLCLASS_PLAYFIELD_BOUNDS_FROM_LOCALSIZE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELLCLASS_PLAYFIELD_BOUNDS_FROM_LOCALSIZE_GHIDRA_REPORT.md)):**
 `base (+0xf4) = Size.width` (= `MapHeader.width`), set unconditionally by `MapClass::Resize 0x00565c10`;
 `+0xfc/+0x100/+0x104/+0x108 = LocalSize.{left,top,width,height}` verbatim, set by the map loader
 `Read_Map_Section_And_IsoMapPacks 0x004ad76b` via `INIClass::ReadRect 0x00527cc0` (`sscanf "%d,%d,%d,%d"`).
@@ -165,7 +165,7 @@ capturing sign and any `*2` doubling. Cite the setter address + decompile lines.
 keeps vs clips. Repeat for one square map. Disagreement ⇒ formula wrong ⇒ iterate.
 
 **Step 4: Record** the formula + Dustbowl worked example + setter citation to
-`docs/research/CELLCLASS_PLAYFIELD_BOUNDS_FROM_LOCALSIZE_GHIDRA_REPORT.md` (+ one-line pointer from study §9).
+[docs/research/CELLCLASS_PLAYFIELD_BOUNDS_FROM_LOCALSIZE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELLCLASS_PLAYFIELD_BOUNDS_FROM_LOCALSIZE_GHIDRA_REPORT.md) (+ one-line pointer from study §9).
 Mark VERIFIED only after Step 3 passes.
 
 **Step 5: Verify** the doc has all 5 expressions, the setter address, and the Dustbowl numbers with citations.
@@ -342,7 +342,7 @@ The diamond cannot govern these by flipping `None` → `Some(bounds)`; each need
 
 ## Sources & References
 
-- **Design doc:** `docs/research/CELLCLASS_MAPCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md` (§5 C-GRID 1–3, §6, 2026-06-04 refresh).
+- **Design doc:** [docs/research/CELLCLASS_MAPCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELLCLASS_MAPCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md) (§5 C-GRID 1–3, §6, 2026-06-04 refresh).
 - **gamemd.exe (verified this session):** `Is_Cell_In_Playfield 0x00578460`, `IsRectInPlayfield 0x00578390`
   (diamond, bit-exact vs cell_rect.rs:479); `Get_CellClass 0x005657A0` (never-null). Diamond fields
   `MapClass+0xf4/+0xfc/+0x100/+0x104/+0x108` (singleton `0x0087F7E8`). Ruled-out writers: `FUN_006851f0`,

@@ -19,10 +19,10 @@ LIGHT × 12).
 
 **Prior Research:**
 - [BRIDGE_SYSTEM.md](../../../ra2-rust-game-docs/BRIDGE_SYSTEM.md) — has §CheckBridgeTraversal and §SetBridgeDirection; primary source for current claims
-- [AUDIT_LOG.md](../../../ra2-rust-game-docs/AUDIT_LOG.md) (2026-05-11 entries) — claims RecalcAttributes writes +0x11B at 0x47D94E; conflicts with fresh scoping read
+- [AUDIT_LOG.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AUDIT_LOG.md) (2026-05-11 entries) — claims RecalcAttributes writes +0x11B at 0x47D94E; conflicts with fresh scoping read
 - [UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md](../../../ra2-rust-game-docs/UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md) — Phase 6 documents the two-pass switch condition
 - [CELLCLASS_STRUCT_GHIDRA_REPORT.md](../../../ra2-rust-game-docs/CELLCLASS_STRUCT_GHIDRA_REPORT.md) — offset table for CellClass fields
-- [LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md](../../../ra2-rust-game-docs/LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md) — TMP_ReadSlopeType @ 0x005471B0
+- [LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md) — TMP_ReadSlopeType @ 0x005471B0
 - [docs/gap-scans/2026-05-11-disparity-scan-bridge-pathfinding.md](../gap-scans/2026-05-11-disparity-scan-bridge-pathfinding.md) — G2/G3/G4/G6 origin, G6 = the two-pass gap
 - [docs/plans/2026-05-11-bridge-locomotor-layer-correctness-design.md](2026-05-11-bridge-locomotor-layer-correctness-design.md) §"Known Parity Boundary" §1-5 — deferral list
 
@@ -87,8 +87,8 @@ without observable consequence don't need a Rust port.
 | BRIDGE_SYSTEM.md §CheckBridgeTraversal | Height-diff 0/1/4 rules at 0x4D9C60 | HIGH | Says +0x11C = SlopeIndex; conflicts with fresh Ghidra (+0x11A) — must resolve |
 | BRIDGE_SYSTEM.md §SetBridgeDirection | Function-pair behavior, byte-identity | HIGH | Caller graph incomplete; 3 uncategorized sites in 0x5FC region |
 | BRIDGE_SYSTEM.md §RecalcAttributes Bridge Correction | Says +0x11B is the bridge-height byte | MEDIUM | Doesn't enumerate write sites; AUDIT_LOG claim at 0x47D94E conflicts with fresh read |
-| AUDIT_LOG.md 2026-05-11 | RecalcAttributes writes +0x11B at 0x47D94E | HIGH (claimed) | Possibly wrong — Agent D's fresh scope says +0x11A. Re-verify the instruction at 0x47D94E. |
-| AUDIT_LOG.md 2026-05-11 | NESW/NWSE byte-identical | HIGH | Verified, no gap |
+| [AUDIT_LOG.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AUDIT_LOG.md) 2026-05-11 | RecalcAttributes writes +0x11B at 0x47D94E | HIGH (claimed) | Possibly wrong — Agent D's fresh scope says +0x11A. Re-verify the instruction at 0x47D94E. |
+| [AUDIT_LOG.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AUDIT_LOG.md) 2026-05-11 | NESW/NWSE byte-identical | HIGH | Verified, no gap |
 | UNIT_CAN_ENTER_CELL §Phase 6 | Two-pass switch condition (`prevFacing == cell.height + 4 AND flags & 0x100`) | HIGH | Doesn't decompile UnitClass__Can_Enter_Cell at 0x73F0A0 end-to-end — only summarizes Phase 6. Need full pass-1/pass-2 state diff. |
 | CELLCLASS_STRUCT_GHIDRA_REPORT | Offset table: +0x11A=sub_type, +0x11B=height, +0x11C=slope_type | HIGH (claimed) | Same conflict as above; the offset table may be the canonical source but fresh read disagrees. |
 | LAT_GROUPS_AND_SLOPE_FIXUP | TMP_ReadSlopeType at 0x005471B0, writes "result to cell+0x11C" | HIGH (claimed) | Conflicts with Agent D's claim that the write site is +0x11A; must verify with disassembly at 0x47D2B0's TMP_ReadSlopeType call. |
@@ -479,10 +479,10 @@ The executed research document must:
   0x572400, 0x572800, 0x572D00, 0x573200, 0x576200, 0x56EFD0, 0x56F370,
   0x56F940, 0x56FD10, 0x570AE0, 0x5FC5F0, 0x5FC600, 0x5FC62C.
   Vtable DATA xrefs: 0x7E2454, 0x7E8E44, 0x7EB208, 0x7F5E20.
-- **Docs searched:** BRIDGE_SYSTEM.md, AUDIT_LOG.md (2026-05-11 entries),
-  UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md, CELLCLASS_STRUCT_GHIDRA_REPORT.md,
-  CELLCLASS_ZONES_SPEED_BRIDGES.md, LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md,
-  PATHFINDERCLASS_GHIDRA_REPORT.md, HIGH_BRIDGE_DAMAGE_STATE_MACHINE_GHIDRA_REPORT.md.
+- **Docs searched:** BRIDGE_SYSTEM.md, [AUDIT_LOG.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AUDIT_LOG.md) (2026-05-11 entries),
+  [UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md), CELLCLASS_STRUCT_GHIDRA_REPORT.md,
+  [CELLCLASS_ZONES_SPEED_BRIDGES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/CELLCLASS_ZONES_SPEED_BRIDGES.md), [LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LAT_GROUPS_AND_SLOPE_FIXUP_GHIDRA_REPORT.md),
+  [PATHFINDERCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/PATHFINDERCLASS_GHIDRA_REPORT.md), HIGH_BRIDGE_DAMAGE_STATE_MACHINE_GHIDRA_REPORT.md.
 - **In-repo plans/gap-scans:**
   docs/plans/2026-05-11-bridge-locomotor-layer-correctness-design.md,
   docs/gap-scans/2026-05-11-disparity-scan-bridge-pathfinding.md.

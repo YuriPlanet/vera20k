@@ -811,7 +811,7 @@ without contaminating the merged Rules INI or its hash.
   Active stock has no LANGRULE and skips that call. Every later pass reads the
   same `g_ArtINI`; Rust must pass fixed Art independently of Rules layers.
   (evidence: `0x0052D00F..0x0052D317`,
-  `LOAD_GAME_RULES_COLD_START_NATIVE_REGISTRY_PRESTATE_REINVESTIGATION_GHIDRA_REPORT.md`,
+  [LOAD_GAME_RULES_COLD_START_NATIVE_REGISTRY_PRESTATE_REINVESTIGATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/01-assets-map-load-overlay/LOAD_GAME_RULES_COLD_START_NATIVE_REGISTRY_PRESTATE_REINVESTIGATION_GHIDRA_REPORT.md),
   `0x00679A10`)
 - `[RESOLVED] OQ-16` — Section 7 gives the live Rust match/omit/misorder table.
 - `[RESOLVED] OQ-17` — Final registry lengths cannot reconstruct member-major
@@ -953,7 +953,7 @@ The narrow implementation suite must include:
 - Active startup topology: `Load_Game_Rules @ 0x0052CD70`, optional
   stack-local LANGRULE Process call `0x0052D317`, fixed
   `g_ArtINI @ 0x00887180`, then the caller's live Anim and Building sweeps;
-  see `LOAD_GAME_RULES_COLD_START_NATIVE_REGISTRY_PRESTATE_REINVESTIGATION_GHIDRA_REPORT.md`.
+  see [LOAD_GAME_RULES_COLD_START_NATIVE_REGISTRY_PRESTATE_REINVESTIGATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/01-assets-map-load-overlay/LOAD_GAME_RULES_COLD_START_NATIVE_REGISTRY_PRESTATE_REINVESTIGATION_GHIDRA_REPORT.md).
 - Native name owner: `AbstractTypeClass::Constructor @ 0x00410800`;
   `AbstractClass::AssignUniqueID @ 0x00410230`; `SideClass::Constructor @
   0x006A4550`; Side scan `0x006A46D0`.
@@ -961,9 +961,9 @@ The narrow implementation suite must include:
   `ini/art.ini` used only for negative active-root comparison.
 - Prior binary-backed context:
   `docs/research/bridges/01-assets-map-load-overlay/FULL_INIT_AND_PREVIEW_NATIVE_ID_PREFIX_REINVESTIGATION_GHIDRA_REPORT.md`,
-  `docs/research/RULESCLASS_GHIDRA_REPORT.md`,
-  `docs/research/ANIM_CLASS_GHIDRA_REPORT.md`, and
-  `docs/research/BULLETTYPECLASS_GHIDRA_REPORT.md`.
+  [docs/research/RULESCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RULESCLASS_GHIDRA_REPORT.md),
+  [docs/research/ANIM_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ANIM_CLASS_GHIDRA_REPORT.md), and
+  [docs/research/BULLETTYPECLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLETTYPECLASS_GHIDRA_REPORT.md).
 - Current Rust ownership and processor:
   `src/rules/ini_parser.rs`, `src/rules/ini_parser_tests.rs`,
   `src/app/loading/init_helpers.rs`, `src/app/loading/init.rs`, and

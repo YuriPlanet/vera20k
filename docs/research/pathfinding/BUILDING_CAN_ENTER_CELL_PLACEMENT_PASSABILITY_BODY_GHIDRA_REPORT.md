@@ -57,7 +57,7 @@ Branch B, default branch:
 
 | Integration point | Status | Active in YR | Evidence |
 |---|---|---|---|
-| BuildingClass vtable `+0x1AC` binding | Verified | Yes | `BRIDGE_CAN_ENTER_CELL_HIERARCHY_GHIDRA_REPORT.md` direct read `0x007E4068 -> 0x00449440`; current decompile |
+| BuildingClass vtable `+0x1AC` binding | Verified | Yes | [BRIDGE_CAN_ENTER_CELL_HIERARCHY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/03-traversal-pathfinding-entry/BRIDGE_CAN_ENTER_CELL_HIERARCHY_GHIDRA_REPORT.md) direct read `0x007E4068 -> 0x00449440`; current decompile |
 | Building type placement virtual `+0xA8` | Verified | Yes | `0x004494A3` call; `0x00716150` decompile |
 | Per-cell placement helper `0x0047C620` | Verified | Yes | `0x00449482`, `0x00716209`, and existing preview/execution caller docs |
 | Runtime unit A* around building occupants | Boundary only | Yes, but not through `0x00449440` | Unit/Infantry vtable `+0x1AC` bindings point to `0x0073F0A0`/`0x0051BF90`, not BuildingClass, in prior hierarchy report |
@@ -128,5 +128,5 @@ Relevant surfaces:
 - Ghidra assembly context: `0x00449440..0x004494B2`
 - Ghidra decompile: `Cell_passability_building_placement @ 0x0047C620`
 - Ghidra decompile: building-type placement virtual `0x00716150`
-- Existing docs: `BRIDGE_CAN_ENTER_CELL_HIERARCHY_GHIDRA_REPORT.md`, `CELL_PASSABILITY_BUILDING_PLACEMENT_FLAGS_GHIDRA_REPORT.md`, `BUILDING_PLACEMENT_VALIDATOR_FOUNDATION_HEIGHT_OCCUPY_GHIDRA_REPORT.md`, `SPEEDTYPE_LANDTYPE_TABLE_GHIDRA_REPORT.md`
+- Existing docs: [BRIDGE_CAN_ENTER_CELL_HIERARCHY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/03-traversal-pathfinding-entry/BRIDGE_CAN_ENTER_CELL_HIERARCHY_GHIDRA_REPORT.md), `CELL_PASSABILITY_BUILDING_PLACEMENT_FLAGS_GHIDRA_REPORT.md`, `BUILDING_PLACEMENT_VALIDATOR_FOUNDATION_HEIGHT_OCCUPY_GHIDRA_REPORT.md`, [SPEEDTYPE_LANDTYPE_TABLE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPEEDTYPE_LANDTYPE_TABLE_GHIDRA_REPORT.md)
 - Rust scan: `src/sim/production/production_placement.rs`, `src/sim/pathfinding/core.rs`, `src/rules/object_type.rs`, `src/rules/terrain_rules.rs`

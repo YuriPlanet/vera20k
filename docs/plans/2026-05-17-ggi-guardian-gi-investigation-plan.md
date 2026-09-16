@@ -1,6 +1,6 @@
 # Guardian GI (GGI) — Investigation Plan
 
-> **Status: EXECUTED 2026-05-17.** Output: [`GGI_GHIDRA_REPORT.md`](../../../ra2-rust-game-docs/GGI_GHIDRA_REPORT.md)
+> **Status: EXECUTED 2026-05-17.** Output: [`GGI_GHIDRA_REPORT.md`](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GGI_GHIDRA_REPORT.md)
 > — 9 sections, ~55KB, covers parse path, deploy state machine, fire/AA gate,
 > crush gate, BFRT/IFV routing, weapon/projectile/warhead readers, damage
 > formula with verified rounding mode, missile homing flight curve. Includes
@@ -16,7 +16,7 @@
 deployer: walks with M60 (anti-infantry), deploys stationary to fire
 `MissileLauncher` (`AAHeatSeeker2`, AA+AG capable) at 8-cell range. Distinct
 unit from the basic GI (`E1`, M60+Para sandbag), already covered in
-`GI_GHIDRA_REPORT.md`.
+[GI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GI_GHIDRA_REPORT.md).
 
 **Scope Size:** Medium — ~24 functions in inventory, ~52 GGI-specific rules
 keys + ~20 art/sequence keys, 4 weapons (`M60` + `M60E` + `MissileLauncher` +
@@ -27,19 +27,19 @@ keys + ~20 art/sequence keys, 4 weapons (`M60` + `M60E` + `MissileLauncher` +
 × 20 min, ~12 MEDIUM × 8 min, ~6 LIGHT × 3 min, plus synthesis).
 
 **Prior Research:**
-- `GI_GHIDRA_REPORT.md` — complete E1 dossier, **reusable** for shared
+- [GI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GI_GHIDRA_REPORT.md) — complete E1 dossier, **reusable** for shared
   InfantryClass infrastructure (AI loop, fire pipeline, panic/fear, sub-cell,
   mind control, render, voice, crush). Do NOT redo this surface.
-- `IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md` — `OpenTransportWeapon=1`
+- [IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md) — `OpenTransportWeapon=1`
   path verified; GGI fires missile from BFRT confirmed. **Reusable.**
-- `WEAPONTYPECLASS_FULL_STRUCT_LAYOUT.md`, `WARHEADTYPECLASS_FULL_STRUCT_LAYOUT.md`,
-  `BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md` — generic. **Reusable.**
-- `FIRE_AT_PIPELINE_GHIDRA_REPORT.md` — generic infantry firing. **Reusable.**
+- [WEAPONTYPECLASS_FULL_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WEAPONTYPECLASS_FULL_STRUCT_LAYOUT.md), [WARHEADTYPECLASS_FULL_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WARHEADTYPECLASS_FULL_STRUCT_LAYOUT.md),
+  [BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md) — generic. **Reusable.**
+- [FIRE_AT_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FIRE_AT_PIPELINE_GHIDRA_REPORT.md) — generic infantry firing. **Reusable.**
 - `2026-05-16 disparity-scan-gi-unit.md` — already flags
   `DeployedCrushable=no` as missing in Rust; informs GGI scope.
 
 **Expected Output:** research document at
-`docs/research/GGI_GHIDRA_REPORT.md`
+[docs/research/GGI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GGI_GHIDRA_REPORT.md)
 
 **Next Pipeline Step:** `/brainstorm` GGI-specific Rust integration → then
 `/write-plan` for implementation. Most plumbing (deploy state, secondary
@@ -77,17 +77,17 @@ every observable-behavior question about GGI:
 
 | Report | Scope | Confidence | Known Gaps re: GGI |
 |--------|-------|------------|---------------------|
-| `GI_GHIDRA_REPORT.md` | E1 dossier: parse, AI loop, fire, damage, XP, panic, sub-cell, garrison, IFV, weapon validators, locomotor, render, voice, cursor | HIGH | Title misleadingly says "Guardian GI / E1" but covers E1 only. No GGI specifics; no MissileLauncher; no AAHeatSeeker2; no GUARDWH; no IFVMode=16 BFRT path. |
-| `IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md` | `OpenTransportWeapon` and IFV gunner system | HIGH | Confirms GGI's `OpenTransportWeapon=1` semantics. Does NOT cover BFRT-side IFVMode lookup table. |
-| `FIRE_AT_PIPELINE_GHIDRA_REPORT.md` | Infantry `Fire_At_Target` + animation sync | HIGH | Doesn't distinguish primary vs secondary path; does not cover deployed-fire weapon select. |
-| `WEAPONTYPECLASS_FULL_STRUCT_LAYOUT.md` | WeaponTypeClass offsets | HIGH | Generic. Reusable for MissileLauncher fields. |
-| `WARHEADTYPECLASS_FULL_STRUCT_LAYOUT.md` | WarheadTypeClass offsets | HIGH | Generic. Reusable for SA, GUARDWH layout. |
-| `BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md` | Projectile creation pipeline | HIGH | Generic. Reusable for AAHeatSeeker2 init. |
-| `TECHNOCLASS_COMBAT_WEAPON_SYSTEMS_REPORT.md` | `SelectWeaponAgainst`, weapon-by-target | HIGH | Generic. Reusable for GGI primary/secondary decision. |
+| [GI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GI_GHIDRA_REPORT.md) | E1 dossier: parse, AI loop, fire, damage, XP, panic, sub-cell, garrison, IFV, weapon validators, locomotor, render, voice, cursor | HIGH | Title misleadingly says "Guardian GI / E1" but covers E1 only. No GGI specifics; no MissileLauncher; no AAHeatSeeker2; no GUARDWH; no IFVMode=16 BFRT path. |
+| [IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md) | `OpenTransportWeapon` and IFV gunner system | HIGH | Confirms GGI's `OpenTransportWeapon=1` semantics. Does NOT cover BFRT-side IFVMode lookup table. |
+| [FIRE_AT_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FIRE_AT_PIPELINE_GHIDRA_REPORT.md) | Infantry `Fire_At_Target` + animation sync | HIGH | Doesn't distinguish primary vs secondary path; does not cover deployed-fire weapon select. |
+| [WEAPONTYPECLASS_FULL_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WEAPONTYPECLASS_FULL_STRUCT_LAYOUT.md) | WeaponTypeClass offsets | HIGH | Generic. Reusable for MissileLauncher fields. |
+| [WARHEADTYPECLASS_FULL_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WARHEADTYPECLASS_FULL_STRUCT_LAYOUT.md) | WarheadTypeClass offsets | HIGH | Generic. Reusable for SA, GUARDWH layout. |
+| [BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md) | Projectile creation pipeline | HIGH | Generic. Reusable for AAHeatSeeker2 init. |
+| [TECHNOCLASS_COMBAT_WEAPON_SYSTEMS_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_COMBAT_WEAPON_SYSTEMS_REPORT.md) | `SelectWeaponAgainst`, weapon-by-target | HIGH | Generic. Reusable for GGI primary/secondary decision. |
 | `2026-05-16 disparity-scan-gi-unit.md` (in-repo) | E1 + GGI parity audit vs Rust | n/a | Already flags `DeployedCrushable=no` Rust gap for GGI. Reference for what's broken in Rust today. |
 
 **Conflicts between reports:** None found. The only inaccuracy is the title
-of `GI_GHIDRA_REPORT.md` claiming to cover Guardian GI; the body is E1 only.
+of [GI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GI_GHIDRA_REPORT.md) claiming to cover Guardian GI; the body is E1 only.
 
 ## 3. Function Inventory
 
@@ -196,7 +196,7 @@ the INI but not read by either path, flag it as parsed-but-unused.
 - InfantryTypeClass offsets: `Deployer`, `Crushable`, `DeployedCrushable`,
   `Pip`, secondary weapon ptr.
 - WeaponTypeClass offsets relevant to MissileLauncher (already in
-  WEAPONTYPECLASS_FULL_STRUCT_LAYOUT.md — verify only).
+  [WEAPONTYPECLASS_FULL_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WEAPONTYPECLASS_FULL_STRUCT_LAYOUT.md) — verify only).
 - WarheadTypeClass `Verses` array offset (extract the byte/int width).
 - BulletTypeClass `AA`/`AG`/`ROT`/`Arm` offsets.
 
@@ -480,7 +480,7 @@ These the scoping pass couldn't resolve — Phase 1/2/3 must answer them:
   branches).
 - **Phase 3 batch** (mix of MEDIUM/LIGHT): #12, #15, #16, #18, #19, #20,
   #21, #22, #23, #24. Caller resolutions for vtable dispatches go here.
-- **Synthesis**: produce the final `GGI_GHIDRA_REPORT.md`.
+- **Synthesis**: produce the final [GGI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GGI_GHIDRA_REPORT.md).
 
 The plan is too large for a single `/re-investigate` session; the batching
 above keeps each agent's scope to ≤3 functions and lets the synthesis pass
@@ -506,7 +506,7 @@ The executed research document must:
   caller traces per [[feedback_caller_trace_before_finding]].
 - Filter every finding for TS-legacy reachability — no claim survives
   without "is this hot in YR skirmish?" answered.
-- Cross-link to `GI_GHIDRA_REPORT.md` for every shared-with-E1 fact rather
+- Cross-link to [GI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GI_GHIDRA_REPORT.md) for every shared-with-E1 fact rather
   than restating; only document GGI deltas.
 
 ## Sources
@@ -517,10 +517,10 @@ The executed research document must:
   `0x00521b20`, `0x005206b0`, `0x0051df70`, `0x005218e0`, `0x006f3330`,
   `0x0070e140`, `0x006f3970`, `0x006f77b0`, `0x0051cdb0`, `0x0051cba0`,
   `0x0070fec0`, `0x0051e3b0`, `0x0051f800`, `0x004526f0`.
-- **Docs searched:** `GI_GHIDRA_REPORT.md`, `IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md`,
-  `FIRE_AT_PIPELINE_GHIDRA_REPORT.md`, `TECHNOCLASS_COMBAT_WEAPON_SYSTEMS_REPORT.md`,
-  `WEAPONTYPECLASS_FULL_STRUCT_LAYOUT.md`, `WARHEADTYPECLASS_FULL_STRUCT_LAYOUT.md`,
-  `BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md`, `2026-05-16-disparity-scan-gi-unit.md`.
+- **Docs searched:** [GI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GI_GHIDRA_REPORT.md), [IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md),
+  [FIRE_AT_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FIRE_AT_PIPELINE_GHIDRA_REPORT.md), [TECHNOCLASS_COMBAT_WEAPON_SYSTEMS_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_COMBAT_WEAPON_SYSTEMS_REPORT.md),
+  [WEAPONTYPECLASS_FULL_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WEAPONTYPECLASS_FULL_STRUCT_LAYOUT.md), [WARHEADTYPECLASS_FULL_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WARHEADTYPECLASS_FULL_STRUCT_LAYOUT.md),
+  [BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md), `2026-05-16-disparity-scan-gi-unit.md`.
 - **INI files checked:** `ini/rulesmd.ini` `[GGI]` 3863, `[M60]` 22922,
   `[M60E]` 25281, `[MissileLauncher]` 22569, `[MissileLauncherE]` 25123,
   `[SA]` 26466, `[GUARDWH]` 26902, `[InvisibleLow]` 25385,

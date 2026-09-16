@@ -397,7 +397,7 @@ Read-only worker: no metadata was changed or saved.
 - `docs/research/bridges/01-assets-map-load-overlay/LOW_OVERLAY_MARK_ALL_LOAD_CONTEXT_SCENARIO_RNG_LIFECYCLE_GHIDRA_REPORT.md`.
 - `docs/research/bridges/01-assets-map-load-overlay/LOW_OVERLAY_MARK_SCENARIO_LOAD_ACTIVATION_BOUNDARY_GHIDRA_REPORT.md`.
 - `docs/research/bridges/01-assets-map-load-overlay/LOW_OVERLAY_MARK_FIXED_MAP_STAMP_RNG_TRANSACTION_GHIDRA_REPORT.md`.
-- `docs/research/bridges/00-system-models/SCENARIO_PREFIX_PLAN_INELIGIBLE_FALLBACK_REINVESTIGATION_GHIDRA_REPORT.md`.
+- [docs/research/bridges/00-system-models/SCENARIO_PREFIX_PLAN_INELIGIBLE_FALLBACK_REINVESTIGATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/00-system-models/SCENARIO_PREFIX_PLAN_INELIGIBLE_FALLBACK_REINVESTIGATION_GHIDRA_REPORT.md).
 - `docs/plans/2026-08-28-active-retail-bridge-parity-design.md` and current living inventory.
 - Current Rust owners on merged P0-R1 ancestry: `src/app/frontend/list_maps.rs`, `src/app/loading/init.rs`, `src/app/loading/pump.rs`, `src/match_bootstrap.rs`, `src/map/basic.rs`, `src/map/map_file.rs`, `src/map/resolved_terrain.rs`, `src/sim/scenario_bootstrap.rs`, `src/headless_scenario.rs`, `src/app/persistence/mod.rs`, `src/sim/snapshot.rs`, `src/sim/replay.rs`.
 - Installed YR retail map/`.SED` data census described above.

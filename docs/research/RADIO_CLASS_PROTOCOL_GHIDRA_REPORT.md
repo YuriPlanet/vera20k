@@ -312,7 +312,7 @@ Only three RADIO_* names survive as literal strings in the binary, all inside
 
 Names for codes without string literals are inferred from behavior and use of the codes
 in the decompiled switch handlers (see the master dock-protocol report cross-references
-in `BUILDINGCLASS_MISSILE_AND_RADIO_GHIDRA_REPORT.md` §2.1 where the existing TS-era
+in [BUILDINGCLASS_MISSILE_AND_RADIO_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_MISSILE_AND_RADIO_GHIDRA_REPORT.md) §2.1 where the existing TS-era
 enum is documented).
 
 ### 5.2 YR activity of Carryall-protocol codes (new, 2026-04-24 verification)
@@ -368,7 +368,7 @@ switch (this->CurrentMission /* +0x2B * 4 = +0xAC, MissionClass field */) {
 }
 ```
 
-Mission-enum mapping verified against `MISSIONCLASS_STATE_MACHINE.md` (the canonical
+Mission-enum mapping verified against [MISSIONCLASS_STATE_MACHINE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MISSIONCLASS_STATE_MACHINE.md) (the canonical
 binary-verified table). All five gated missions are **aircraft-specific flight modes**:
 one emergency (Retreat) and two pairs of scripted overfly sequences (Paradrop, Spyplane).
 The common thread — these are missions where the aircraft is in a scripted path that
@@ -466,7 +466,7 @@ RadioClass::Set_Contact_Count(1);
 ```
 
 `BuildingTypeClass+0x1780` is the computed **dock count** (size of the `Dock=` list in
-rulesmd.ini; see `BUILDING_DOCKING_SYSTEM_GHIDRA_REPORT.md` and `READINI_FIELD_MAPS.md`).
+rulesmd.ini; see [BUILDING_DOCKING_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/BUILDING_DOCKING_SYSTEM_GHIDRA_REPORT.md) and [READINI_FIELD_MAPS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/READINI_FIELD_MAPS.md)).
 For a standard YR refinery `Dock=NAREFN` → 1 dock slot; for helipads and naval yards with
 multiple landing pads the count grows.
 
@@ -593,7 +593,7 @@ is zero. `field_0xA5` is at offset `0x294` on the object (int-index 0xA5 of a `i
 - `FootClass::Constructor` @ `0x004D31E0` writes many fields (0x148–0x1AE in int-index,
   corresponding to +0x520–+0x6B8 byte range) but **not 0xA5 / +0x294** either.
 - Mission-state enum mapping for the five guard cases (per canonical
-  `MISSIONCLASS_STATE_MACHINE.md` table): 4 = Retreat, 0x1A = Paradrop Approach (26),
+  [MISSIONCLASS_STATE_MACHINE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MISSIONCLASS_STATE_MACHINE.md) table): 4 = Retreat, 0x1A = Paradrop Approach (26),
   0x1B = Paradrop Overfly (27), 0x1E = Spyplane Approach (30), 0x1F = Spyplane Overfly
   (31). The state-specific mission handlers (`AircraftClass::Mission_ParaDropApproach`
   @ `0x004155F0`, `Mission_ParaDropOverfly` @ `0x004157C0`, `Mission_SpyPlane` @
@@ -635,7 +635,7 @@ broadcasts BREAK to all radio contacts when it enters limbo.**
    broadcast on carryall death mid-flight, producing the "dropped cargo" visual.
 4. For buildings specifically — `BuildingClass::Limbo` was not found by name in this
    pass; the vtable slot for the Limbo virtual has its own override. See
-   `BUILDING_DAMAGE_DESTRUCTION_GHIDRA_REPORT.md` for the building destruction path and
+   [BUILDING_DAMAGE_DESTRUCTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_DAMAGE_DESTRUCTION_GHIDRA_REPORT.md) for the building destruction path and
    whether it reaches Broadcast_Radio_ToAll or sends individual BREAKs (preliminary
    inspection of `TechnoClass::Limbo_Helper` suggests `param_1->vtable[0x2C0]()` returns
    the cargo count which, if positive, is used as a side loop — the broadcast still
@@ -904,13 +904,13 @@ and address summary (§12) all re-verified cleanly against this pass.
   `0x0065ACE0`, `0x0065AD90`, `0x0065AE60`, `0x0040DD70`, `0x005F5320`, `0x006F4AB0`,
   `0x004D8FB0`, `0x00737430`, `0x004190B0`, `0x0043C2D0`, `0x0043BCD0`.
 - Existing reports cross-referenced and extended, **not** duplicated:
-  - `BUILDINGCLASS_MISSILE_AND_RADIO_GHIDRA_REPORT.md` — BuildingClass::Receive_Radio cases & ResponseType enum
-  - `MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md` — harvester dock handshake sequence
-  - `HARVESTER_DOCK_UNLOAD_SEQUENCE.md` — in-depth refinery unload choreography
-  - `IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md` — IFV gunner swap mechanics (non-radio)
-  - `BUILDING_DOCK_AND_HEAL_STATE_MACHINES.md` — hospital/armory healing cycle
-  - `TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md` — confirms 0xD4–0xED RadioClass fields
-  - `ABSTRACTCLASS_GHIDRA_REPORT.md` — inheritance chain
+  - [BUILDINGCLASS_MISSILE_AND_RADIO_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_MISSILE_AND_RADIO_GHIDRA_REPORT.md) — BuildingClass::Receive_Radio cases & ResponseType enum
+  - [MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md) — harvester dock handshake sequence
+  - [HARVESTER_DOCK_UNLOAD_SEQUENCE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/HARVESTER_DOCK_UNLOAD_SEQUENCE.md) — in-depth refinery unload choreography
+  - [IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md) — IFV gunner swap mechanics (non-radio)
+  - [BUILDING_DOCK_AND_HEAL_STATE_MACHINES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/BUILDING_DOCK_AND_HEAL_STATE_MACHINES.md) — hospital/armory healing cycle
+  - [TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md) — confirms 0xD4–0xED RadioClass fields
+  - [ABSTRACTCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ABSTRACTCLASS_GHIDRA_REPORT.md) — inheritance chain
 - Binary strings: `0x00817C14`, `0x00817E04`, `0x00817E58` (Carryall debug traces naming
   `RADIO_HELLO`, `RADIO_ROGER`, `RADIO_NEED_TO_MOVE`, `RADIO_WANT_RIDE`).
 - INI key mapping: `ini/rulesmd.ini` §Dock*/Passengers/SizeLimit/Gunner keys.

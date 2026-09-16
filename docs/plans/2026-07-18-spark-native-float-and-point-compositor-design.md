@@ -3,7 +3,7 @@ title: Spark Native-Float Compatibility and Tactical Integer Point Compositor De
 date: 2026-07-18
 status: design approved; implementation remains gated by the explicit native/runtime prerequisites
 scope: Behavior-3 per-particle x87-compatible state and arithmetic, collision tick, and tactical u16 A/Z single-pixel consumer/committer contract. Spark burst production, persistent lights, exact A/Z production, and unresolved runtime values remain separate prerequisites.
-source: docs/research/PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md plus docs/contracts/2026-07-18-spark-collision-pixel-compositor-implementation-contract.md and the live Ghidra x87 startup/conversion chain recorded in this design.
+source: [docs/research/PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md) plus docs/contracts/2026-07-18-spark-collision-pixel-compositor-implementation-contract.md and the live Ghidra x87 startup/conversion chain recorded in this design.
 ---
 
 # Spark Native-Float Compatibility and Tactical Integer Point Compositor Design
@@ -53,9 +53,9 @@ owns burst production and persistent-light lifecycle. This design owns only:
 
 Primary evidence:
 
-- docs/research/PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md
-- docs/research/PARTICLE_TIMING_SPARK_RAILGUN_NORMALIZED_GHIDRA_REPORT.md
-- docs/research/PARTICLE_RNG_CLASSIFICATION_GHIDRA_REPORT.md
+- [docs/research/PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md)
+- [docs/research/PARTICLE_TIMING_SPARK_RAILGUN_NORMALIZED_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARTICLE_TIMING_SPARK_RAILGUN_NORMALIZED_GHIDRA_REPORT.md)
+- [docs/research/PARTICLE_RNG_CLASSIFICATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARTICLE_RNG_CLASSIFICATION_GHIDRA_REPORT.md)
 - docs/contracts/2026-07-18-spark-collision-pixel-compositor-implementation-contract.md
 - Live Ghidra roots 0x0062C6E0 and 0x0062CEC0.
 - Live x87 startup and conversion chain at 0x007CD80F, 0x007CBDAF,
@@ -146,7 +146,7 @@ is not production simulation code.
 
 - Standard YR dispatches particle behavior 3 to the Spark AI root and stock
   Spark, WeldingSpark, FirestormSpark, and LargeSpark activate that behavior.
-  [doc: PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md
+  [doc: [PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md)
   §Active-YR reachability]
 - Authoritative widths are signed i32 coordinates/index, f32 X/Y/Z velocities,
   f64 accumulator, RGB bytes, signed i16 lifetime, and a deletion byte.
@@ -174,7 +174,7 @@ is not production simulation code.
 - Structural crossing checks the old or candidate cell live bit 0x100. The
   plane is G+416; descending and ascending equality sides differ; ascending
   commits G+396. These corrected numeric values come from
-  `PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md`.
+  [PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md).
   [doc: same §Collision decision table]
 - Near-ground clamping is strict: G-100 is not clamped. Building/wall contact
   is exactly [G,G+150).

@@ -1,7 +1,7 @@
 # Core Service Profile — LogicClass (per-tick update scheduler / tick spine)
 
 **Slug:** `logicclass`
-**Primary doc:** `docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md` (2026-05-29, study/design,
+**Primary doc:** [docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md) (2026-05-29, study/design,
 binary→Ghidra→docs, every load-bearing claim re-verified live that session).
 **Role in the graph:** the *spine*. This service defines the ORDER in which every other per-tick
 service runs. Almost every other core service is an INCOMING dependent — they are invoked *from*

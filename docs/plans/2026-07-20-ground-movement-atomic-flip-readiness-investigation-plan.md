@@ -27,12 +27,12 @@ The approved production decision is not being reopened:
 
 ## Why More Research Is Required
 
-Static scheduling is resolved. `OBJECT_PASS_DRIVE_INVOCATION_SCHEDULING_GHIDRA_REPORT.md` proves one main live-object pass per reached Main_Tick, one locomotor Process opportunity per eligible Foot turn, no separate 15 Hz Drive movement gate, and a late `g_CurrentFrameCounter` increment.
+Static scheduling is resolved. [OBJECT_PASS_DRIVE_INVOCATION_SCHEDULING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/OBJECT_PASS_DRIVE_INVOCATION_SCHEDULING_GHIDRA_REPORT.md) proves one main live-object pass per reached Main_Tick, one locomotor Process opportunity per eligible Foot turn, no separate 15 Hz Drive movement gate, and a late `g_CurrentFrameCounter` increment.
 
 Checkpoint A closed the first two evidence gaps below; their current-Rust disparities remain real but no longer block the inert harness. The production blockers are now Checkpoints B–E:
 
 1. **Evidence CLOSED; Rust DRIFT remains.** Current Rust does not implement the now-verified segmented Techno/Mission/Foot host. It uses an empty `techno_common_pre`, an alive check at the wrong semantic point, a `derived_mission` projection instead of actual Mission_Dispatch/Mission_Move timer behavior, a damage-Spark-only `techno_common_post`, no guard E, and no authoritative Foot gate bracket.
-2. **CLOSED.** `FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md` was corrected for Scenario RNG ownership, API-call/raw-draw distinction, timer-count language, Unit binding, Infantry width/slot semantics, and the `Is_Moving` slot.
+2. **CLOSED.** [FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md) was corrected for Scenario RNG ownership, API-call/raw-draw distinction, timer-count language, Unit binding, Infantry width/slot semantics, and the `Is_Moving` slot.
 3. Exact `FootClass::GetCurrentSpeed`, RawTrack metadata/accepted-chain initialization, and retry-visible speed-state semantics are not fully reconciled.
 4. The complete Phase-1 population and current global post-effects do not yet have verified one-object owners.
 5. No executable retail oracle certifies the state/order changes.
@@ -86,22 +86,22 @@ Checkpoint A closed the first two evidence gaps below; their current-Rust dispar
 
 | Existing source | Current use | Gap this plan owns |
 |---|---|---|
-| `OBJECT_PASS_DRIVE_INVOCATION_SCHEDULING_GHIDRA_REPORT.md` | Authoritative static owner/call schedule | Do not redo; use as fixed spine and only measure runtime timing in the oracle phase. |
-| `TECHNOCLASS_AI_UPDATE_BODY_GHIDRA_REPORT.md` | Verified body map, guard B/E placement, Scenario RNG evidence | Re-verify load-bearing instruction ranges while building the exact host contract; reconcile simplified design/Rust bracket. |
-| `TECHNOCLASS_AI_UPDATE_BODY_SYNTHESIS.md` | Navigation summary | Derivative only; correct any flattened pre/post interpretation in the new contract report. |
-| `FOOTCLASS_AI_GHIDRA_REPORT.md` | Broad Foot body navigation | Re-verify only the post-Techno alive check, locomotor gates/call, post-Process alive check, and active tube/special bypasses. |
-| `FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md` | Mission/timer navigation | Two-pass audit and correction are mandatory before it can be cited as authority. |
-| `S2_MISSION_DISPATCH_VS_PASSIVE_ACQUIRE_ORDERING.md` | Confirms passive acquire after dispatch | Reconcile with guard E placement and current Rust's partial post helper. |
-| `DRIVE_PROCESS_DRIVE_TRACK_SPEED_BUDGET_RESIDUAL_GHIDRA_REPORT.md` | Point cost, strict bound, residual, speed branch | Extend only into exact GetCurrentSpeed and retry pre-budget side effects. |
-| `DRIVE_APPLY_TRACK_DELTA_POINT_RESIDUAL_GHIDRA_REPORT.md` | Apply_Track_Delta and accepted-chain claims | Re-verify disputed RawTrack names, receiver bases, and initializer values. |
-| `DRIVE_TRACK_TABLES_DEEP_DECODE.md` | Raw bytes and older role names | Treat role prose as conflicted until every active read is re-derived. |
-| `WALK_LOCOMOTION_CLASS_GHIDRA_REPORT.md` and `E2_STATIC_WALL_WALK_RETRACE_20260720.md` | Walk process and visible current drift | Use as coverage map; research only scheduler/owner/readiness gaps, not full A* parity. |
+| [OBJECT_PASS_DRIVE_INVOCATION_SCHEDULING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/OBJECT_PASS_DRIVE_INVOCATION_SCHEDULING_GHIDRA_REPORT.md) | Authoritative static owner/call schedule | Do not redo; use as fixed spine and only measure runtime timing in the oracle phase. |
+| [TECHNOCLASS_AI_UPDATE_BODY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_AI_UPDATE_BODY_GHIDRA_REPORT.md) | Verified body map, guard B/E placement, Scenario RNG evidence | Re-verify load-bearing instruction ranges while building the exact host contract; reconcile simplified design/Rust bracket. |
+| [TECHNOCLASS_AI_UPDATE_BODY_SYNTHESIS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_AI_UPDATE_BODY_SYNTHESIS.md) | Navigation summary | Derivative only; correct any flattened pre/post interpretation in the new contract report. |
+| [FOOTCLASS_AI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_AI_GHIDRA_REPORT.md) | Broad Foot body navigation | Re-verify only the post-Techno alive check, locomotor gates/call, post-Process alive check, and active tube/special bypasses. |
+| [FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md) | Mission/timer navigation | Two-pass audit and correction are mandatory before it can be cited as authority. |
+| [S2_MISSION_DISPATCH_VS_PASSIVE_ACQUIRE_ORDERING.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/S2_MISSION_DISPATCH_VS_PASSIVE_ACQUIRE_ORDERING.md) | Confirms passive acquire after dispatch | Reconcile with guard E placement and current Rust's partial post helper. |
+| [DRIVE_PROCESS_DRIVE_TRACK_SPEED_BUDGET_RESIDUAL_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_PROCESS_DRIVE_TRACK_SPEED_BUDGET_RESIDUAL_GHIDRA_REPORT.md) | Point cost, strict bound, residual, speed branch | Extend only into exact GetCurrentSpeed and retry pre-budget side effects. |
+| [DRIVE_APPLY_TRACK_DELTA_POINT_RESIDUAL_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_APPLY_TRACK_DELTA_POINT_RESIDUAL_GHIDRA_REPORT.md) | Apply_Track_Delta and accepted-chain claims | Re-verify disputed RawTrack names, receiver bases, and initializer values. |
+| [DRIVE_TRACK_TABLES_DEEP_DECODE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_TRACK_TABLES_DEEP_DECODE.md) | Raw bytes and older role names | Treat role prose as conflicted until every active read is re-derived. |
+| [WALK_LOCOMOTION_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WALK_LOCOMOTION_CLASS_GHIDRA_REPORT.md) and [E2_STATIC_WALL_WALK_RETRACE_20260720.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/traces/E2_STATIC_WALL_WALK_RETRACE_20260720.md) | Walk process and visible current drift | Use as coverage map; research only scheduler/owner/readiness gaps, not full A* parity. |
 | `HOVER_LOCOMOTION_CLASS_GHIDRA_REPORT.md` | Recently re-verified Hover algorithms and Rules offsets | Verify one-object integration, idle invocation, vertical placement, and tube precedence. |
-| `SHIP_LOCOMOTION_CLASS_GHIDRA_REPORT.md` | Full Ship class map | Selectively re-verify active Process/track/tube/completion ownership and current Rust mapping. |
+| [SHIP_LOCOMOTION_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SHIP_LOCOMOTION_CLASS_GHIDRA_REPORT.md) | Full Ship class map | Selectively re-verify active Process/track/tube/completion ownership and current Rust mapping. |
 | low-bridge TubeClass reports under `docs/research/bridges/04-locomotion-height-tubes/` | Active tube producers/consumers | Reconcile leaf early paths and atomic population precedence; do not conflate TS subterranean paths. |
-| `CONVOY_FORMATION_SYSTEM_GHIDRA_REPORT.md` | Older convoy/team map | Re-audit only the current Rust formation-speed mutation's alleged native owner and active stock reachability. |
+| [CONVOY_FORMATION_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CONVOY_FORMATION_SYSTEM_GHIDRA_REPORT.md) | Older convoy/team map | Re-audit only the current Rust formation-speed mutation's alleged native owner and active stock reachability. |
 | miner system model/reports under `docs/research/miner/` | Harvest/dock/radio state machines | Prove one-object extraction and exact same-pass ordering without redoing settled dock formulas. |
-| `CRUSH_SYSTEM_GHIDRA_REPORT.md`, PerCellProcess reports, and object lifecycle synthesis | Movement-visible kill/lifecycle map | Reconcile immediate per-object effects with Rust's deferred removal and global tail. |
+| [CRUSH_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CRUSH_SYSTEM_GHIDRA_REPORT.md), PerCellProcess reports, and object lifecycle synthesis | Movement-visible kill/lifecycle map | Reconcile immediate per-object effects with Rust's deferred removal and global tail. |
 
 Before execution, compare modification times and search for newer reports covering the same exact questions. Extend newer work rather than duplicate it.
 
@@ -163,7 +163,7 @@ The inventory has fewer than 50 primary entries. If call expansion creates more 
 
 1. Confirm the active Ghidra program is the retail `gamemd.exe`, PE x86, image base `0x00400000`.
 2. Record current modification times for every prior-work document and search for newer exact-topic reports.
-3. Enumerate every load-bearing claim in `FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md` before editing it.
+3. Enumerate every load-bearing claim in [FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md) before editing it.
 4. Classify each claim as CONFIRMED, WRONG, STALE, or UNVERIFIABLE against current binary evidence.
 5. Do not trust local Ghidra labels. Verify boundaries, receiver pointers, calls, vtable slots, and data references.
 
@@ -183,8 +183,8 @@ The inventory has fewer than 50 primary entries. If call expansion creates more 
 5. Reconstruct the exact Foot tail from Techno return through alive check, the concrete pre-Process gates, locomotor `+0x40`, immediate alive check, and later eligible work.
 6. Trace Unit/Infantry special early paths that bypass this normal spine, especially active tubes.
 7. Compare the result to current `unit_techno_bracket` and enumerate every missing/misplaced behavior without proposing Rust code.
-8. Correct `FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md` immediately after facts are verified, including its RNG-owner and cadence language, and record the audit result according to the project's audit workflow.
-9. Produce `docs/research/TECHNO_MISSION_MOVE_FOOT_LOCOMOTOR_HOST_CONTRACT_GHIDRA_REPORT.md` with a Rust handoff limited to an inert/cloned-fixture harness boundary.
+8. Correct [FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md) immediately after facts are verified, including its RNG-owner and cadence language, and record the audit result according to the project's audit workflow.
+9. Produce [docs/research/TECHNO_MISSION_MOVE_FOOT_LOCOMOTOR_HOST_CONTRACT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNO_MISSION_MOVE_FOOT_LOCOMOTOR_HOST_CONTRACT_GHIDRA_REPORT.md) with a Rust handoff limited to an inert/cloned-fixture harness boundary.
 
 #### Checkpoint A exit criteria
 
@@ -206,10 +206,10 @@ The inventory has fewer than 50 primary entries. If call expansion creates more 
 4. Re-check both DriveTrack call sites and prove the retry repeats pre-budget speed-state work before masking fresh integer speed.
 5. Inventory every read of RawTrack and TurnTrack metadata in the five named Drive functions. Normalize object base versus ILocomotion subobject base before naming a field.
 6. Build a table for fresh normal, accepted-chain, forced, short/reverse, and tube-related initialization: selector, cursor, residual, head-to, destination, marking, and first consumable point.
-7. Reconcile `DRIVE_TRACK_TABLES_DEEP_DECODE.md`, `DRIVE_APPLY_TRACK_DELTA_POINT_RESIDUAL_GHIDRA_REPORT.md`, and the July 20 traces. Mark stale prose explicitly.
+7. Reconcile [DRIVE_TRACK_TABLES_DEEP_DECODE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_TRACK_TABLES_DEEP_DECODE.md), [DRIVE_APPLY_TRACK_DELTA_POINT_RESIDUAL_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_APPLY_TRACK_DELTA_POINT_RESIDUAL_GHIDRA_REPORT.md), and the July 20 traces. Mark stale prose explicitly.
 8. Produce:
    - `docs/research/FOOTCLASS_GET_CURRENT_SPEED_EXACT_GHIDRA_REPORT.md`;
-   - `docs/research/DRIVE_RAWTRACK_METADATA_INITIALIZER_RECONCILIATION_GHIDRA_REPORT.md`.
+   - [docs/research/DRIVE_RAWTRACK_METADATA_INITIALIZER_RECONCILIATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_RAWTRACK_METADATA_INITIALIZER_RECONCILIATION_GHIDRA_REPORT.md).
 
 #### Checkpoint B exit criteria
 
@@ -227,7 +227,7 @@ The inventory has fewer than 50 primary entries. If call expansion creates more 
 5. Map the native Harvest/Enter/dock/unload path into a one-live-miner ordered contract. Reuse existing miner reports for settled formulas; focus on snapshot removal, same-pass visibility, and authority handoff.
 6. Re-audit the native convoy/team mechanisms against Rust `sync_formation_speeds`. Classify the Rust mutation as MATCH, DRIFT, or UNCHECKED, and name its native owner if one exists.
 7. Compare against current Rust category routing and list every Phase-1 entity state that the future ground dispatcher must process exactly once.
-8. Produce `docs/research/GROUND_PHASE1_LOCOMOTOR_POPULATION_AND_PRECEDENCE_GHIDRA_REPORT.md`.
+8. Produce [docs/research/GROUND_PHASE1_LOCOMOTOR_POPULATION_AND_PRECEDENCE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GROUND_PHASE1_LOCOMOTOR_POPULATION_AND_PRECEDENCE_GHIDRA_REPORT.md).
 
 #### Checkpoint C exit criteria
 
@@ -256,7 +256,7 @@ The inventory has fewer than 50 primary entries. If call expansion creates more 
 4. Trace one nonlethal occupancy contention fixture, one scatter fixture, one arrival fixture, and one gate/factory-contact fixture.
 5. Specify cache invalidation facts after occupancy, lifecycle, wall, bridge, or passability mutations. Do not infer equivalence from current generation counters alone.
 6. Classify every current deferred vector/list. A gameplay-bearing deferral with no binary proof is DRIFT.
-7. Produce `docs/research/GROUND_MOVEMENT_LIFECYCLE_EFFECT_OWNERSHIP_GHIDRA_REPORT.md`.
+7. Produce [docs/research/GROUND_MOVEMENT_LIFECYCLE_EFFECT_OWNERSHIP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GROUND_MOVEMENT_LIFECYCLE_EFFECT_OWNERSHIP_GHIDRA_REPORT.md).
 
 #### Checkpoint D exit criteria
 
@@ -361,12 +361,12 @@ For every new binary claim:
 
 Required research outputs after execution:
 
-1. corrected `docs/research/FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md` plus audit record;
-2. `docs/research/TECHNO_MISSION_MOVE_FOOT_LOCOMOTOR_HOST_CONTRACT_GHIDRA_REPORT.md`;
+1. corrected [docs/research/FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md) plus audit record;
+2. [docs/research/TECHNO_MISSION_MOVE_FOOT_LOCOMOTOR_HOST_CONTRACT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNO_MISSION_MOVE_FOOT_LOCOMOTOR_HOST_CONTRACT_GHIDRA_REPORT.md);
 3. `docs/research/FOOTCLASS_GET_CURRENT_SPEED_EXACT_GHIDRA_REPORT.md`;
-4. `docs/research/DRIVE_RAWTRACK_METADATA_INITIALIZER_RECONCILIATION_GHIDRA_REPORT.md`;
-5. `docs/research/GROUND_PHASE1_LOCOMOTOR_POPULATION_AND_PRECEDENCE_GHIDRA_REPORT.md`;
-6. `docs/research/GROUND_MOVEMENT_LIFECYCLE_EFFECT_OWNERSHIP_GHIDRA_REPORT.md`;
+4. [docs/research/DRIVE_RAWTRACK_METADATA_INITIALIZER_RECONCILIATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_RAWTRACK_METADATA_INITIALIZER_RECONCILIATION_GHIDRA_REPORT.md);
+5. [docs/research/GROUND_PHASE1_LOCOMOTOR_POPULATION_AND_PRECEDENCE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GROUND_PHASE1_LOCOMOTOR_POPULATION_AND_PRECEDENCE_GHIDRA_REPORT.md);
+6. [docs/research/GROUND_MOVEMENT_LIFECYCLE_EFFECT_OWNERSHIP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GROUND_MOVEMENT_LIFECYCLE_EFFECT_OWNERSHIP_GHIDRA_REPORT.md);
 7. `docs/research/GROUND_MOVEMENT_EXECUTABLE_NATIVE_ORACLE_CAPTURE_REPORT.md` and machine-readable native captures;
 8. updated design/implementation contract only if verified evidence changes a premise or closes a blocker.
 

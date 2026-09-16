@@ -187,7 +187,7 @@ save/restore rejects `None` (or advances the version if a `None` v114 save escap
 
 - `[RESOLVED] OQ-001 - Is the read-side gate active in standard YR? -> Yes; it is in AStar_main_loop and guarded only by the hierarchy flag.` (evidence: `0x00429EB1..0x00429EC1`)
 - `[RESOLVED] OQ-002 - Are wall overlays count sources? -> Yes, only wall-gated overlay lifecycle writes the counter.` (evidence: `0x005FC570`, `0x00480CB0`, `OverlayTypeClass+0x2A8`)
-- `[RESOLVED] OQ-003 - Are ore overlays count sources? -> No; the observed overlay count writer is wall-gated, while ore reports show ore placement does not touch `+0x122`.` (evidence: `0x005FC570`; `CELLCLASS_REDUCE_TIBERIUM_FUN_00480A80_GHIDRA_REPORT.md`)
+- `[RESOLVED] OQ-003 - Are ore overlays count sources? -> No; the observed overlay count writer is wall-gated, while ore reports show ore placement does not touch `+0x122`.` (evidence: `0x005FC570`; [CELLCLASS_REDUCE_TIBERIUM_FUN_00480A80_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELLCLASS_REDUCE_TIBERIUM_FUN_00480A80_GHIDRA_REPORT.md))
 - `[RESOLVED] OQ-004 - Are building counts 8-neighbor-per-footprint-cell? -> No; building placement/removal writes one expanded `(width+2)*(height+2)` rectangle.` (evidence: `0x00440580`, `0x00445880`, assembly `0x00440CD9`, `0x00445D11`)
 - `[RESOLVED] OQ-005 - Do foot units update counts on movement? -> Yes; per-cell process decrements old cell neighbors, stores current cell, then increments new cell neighbors.` (evidence: `0x004D85D0`, assembly `0x004D86D8`, `0x004D8745`)
 - `[RESOLVED] OQ-006 - Do limbo/unlimbo update foot counts? -> Yes; successful unlimbo increments and non-limboed limbo decrements.` (evidence: `0x004D7170`, `0x004DB260`)
@@ -237,7 +237,7 @@ save/restore rejects `None` (or advances the version if a `None` v114 save escap
 
 ## 13. Stale Docs / Follow-up Docs
 
-Replace the over-broad statement in `CELL_0X122_WRITER_TIMING_FLAT_ASTAR_GHIDRA_REPORT.md` that says all semantic writer sites share the same 8-neighbor source pattern with:
+Replace the over-broad statement in [CELL_0X122_WRITER_TIMING_FLAT_ASTAR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/CELL_0X122_WRITER_TIMING_FLAT_ASTAR_GHIDRA_REPORT.md) that says all semantic writer sites share the same 8-neighbor source pattern with:
 
 > Most single-cell object sources for `CellClass+0x122` use an 8-neighbor INC/DEC lifecycle (walls, foot objects, terrain objects, and aircraft descent). Buildings are the important exception: `BuildingClass::Unlimbo/Limbo` writes a single expanded foundation rectangle `(width+2)*(height+2)`, once per cell, rather than adding 8-neighbor contributions for every foundation cell.
 
@@ -254,7 +254,7 @@ Older docs that call `+0x122` fog/shroud, ore-neighbor, or TS legacy should be s
 - Ghidra decompiled/read-only: `0x00429A90`, `0x005FC570`, `0x00480630`, `0x00480CB0`, `0x00440580`, `0x00445880`, `0x004D7170`, `0x004DB260`, `0x004D85D0`, `0x0071C930`, `0x0071D000`, `0x004CE840`, `0x0047E8A0`, `0x0047EA90`.
 - Ghidra assembly contexts: `0x00429EB1`, `0x005FC762`, `0x004809DD`, `0x00481070`, `0x00440CD9`, `0x00445D11`, `0x004D729A`, `0x004DB2D7`, `0x004D86D8`, `0x004D8745`, `0x004CEDA4`, `0x004CEE18`, `0x004CEE8B`, `0x0071C9A6`, `0x0071D085`.
 - Authored wall chronology, ScenarioInit reachability, compact retail IDs, active-winner census, and fixed-map counter aliases: `docs/research/bridges/01-assets-map-load-overlay/AUTHORED_OVERLAY_WALL_SCENARIOINIT_ACCEPTANCE_REINVESTIGATION_GHIDRA_REPORT.md`.
-- Referenced docs: `CELL_0X122_WRITER_TIMING_FLAT_ASTAR_GHIDRA_REPORT.md`, `CELL_0x122_CAN_ENTER_CELL_SEMANTIC_GHIDRA_REPORT.md`, `BRIDGE_OCCUPANCY_OBJECT_LISTS_GHIDRA_REPORT.md`, `CELLCLASS_REDUCE_TIBERIUM_FUN_00480A80_GHIDRA_REPORT.md`, `TIBTRE_TERRAIN_OBJECT_LIFECYCLE_AND_SEEDING_GHIDRA_REPORT.md`.
+- Referenced docs: [CELL_0X122_WRITER_TIMING_FLAT_ASTAR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/CELL_0X122_WRITER_TIMING_FLAT_ASTAR_GHIDRA_REPORT.md), [CELL_0x122_CAN_ENTER_CELL_SEMANTIC_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/CELL_0x122_CAN_ENTER_CELL_SEMANTIC_GHIDRA_REPORT.md), `BRIDGE_OCCUPANCY_OBJECT_LISTS_GHIDRA_REPORT.md`, [CELLCLASS_REDUCE_TIBERIUM_FUN_00480A80_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELLCLASS_REDUCE_TIBERIUM_FUN_00480A80_GHIDRA_REPORT.md), [TIBTRE_TERRAIN_OBJECT_LIFECYCLE_AND_SEEDING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TIBTRE_TERRAIN_OBJECT_LIFECYCLE_AND_SEEDING_GHIDRA_REPORT.md).
 - Rust scan: `src/sim/pathfinding/core.rs`, `src/sim/pathfinding/zone_search.rs`, `src/sim/movement/movement_path.rs`, `src/sim/movement/bump_crush.rs`, `src/map/resolved_terrain.rs`.
 
 ## Status

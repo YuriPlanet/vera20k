@@ -6,7 +6,7 @@
 
 **Native evidence:**
 
-- `docs/research/PHASE3_HOUSECLASS_ORDINARY_BASE_PLACEMENT_005060B0_GHIDRA_REPORT.md`, especially sections 7.6.1, 7.6.2, 7.6.8, 7.6.9, 7.6.10, 9, 11.1 item 10, and 11.2.
+- [docs/research/PHASE3_HOUSECLASS_ORDINARY_BASE_PLACEMENT_005060B0_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_HOUSECLASS_ORDINARY_BASE_PLACEMENT_005060B0_GHIDRA_REPORT.md), especially sections 7.6.1, 7.6.2, 7.6.8, 7.6.9, 7.6.10, 9, 11.1 item 10, and 11.2.
 - Active-retail `BaseClass`/House/Building routines cited there: `0x0042E6F0`, `0x0042EBE0`, `0x0042ED60`, `0x0042F180`, `0x0042F260`, `0x0042F380`, `0x00440580`, `0x00443C60`, and `0x0050A490`.
 
 ## Verdict

@@ -1,8 +1,8 @@
 <!--
 Provenance: assembled 2026-06-01 by workflow wf_1b44ffd1-c27
   (5 binary verifiers V1–V5 + 7 per-slice planners P0–P6 + synthesizer)
-  from docs/research/MISSION_RADIO_SUBSTRATE_SERVICE_DESIGN.md (the design).
-Companion: docs/research/MISSION_RADIO_SUBSTRATE_BINARY_VERIFICATIONS.md (the §9 Ghidra resolutions).
+  from [docs/research/MISSION_RADIO_SUBSTRATE_SERVICE_DESIGN.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MISSION_RADIO_SUBSTRATE_SERVICE_DESIGN.md) (the design).
+Companion: [docs/research/MISSION_RADIO_SUBSTRATE_BINARY_VERIFICATIONS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MISSION_RADIO_SUBSTRATE_BINARY_VERIFICATIONS.md) (the §9 Ghidra resolutions).
 Status: DRAFTED, not approved or executed. Review before implementing; execute
   slice-by-slice (§D linearized path 0→{1,2,3}→{4,5}→{6,7}→8), build + test gated.
 -->

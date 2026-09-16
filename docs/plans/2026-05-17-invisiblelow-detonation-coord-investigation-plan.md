@@ -8,7 +8,7 @@
 **Scope Size:** Medium - 22 functions, 14 primary INI keys.
 **Est. Effort:** ~5-7 hours of `/re-investigate` work.
 **Prior Research:** Partial. Several HIGH-confidence BulletClass reports exist, but they leave exact `InvisibleLow` impact CoordStruct edge cases and stale-doc corrections to verify.
-**Expected Output:** research document at `docs/research/INVISIBLELOW_DETONATION_COORDSTRUCT_GHIDRA_REPORT.md`.
+**Expected Output:** research document at [docs/research/INVISIBLELOW_DETONATION_COORDSTRUCT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/INVISIBLELOW_DETONATION_COORDSTRUCT_GHIDRA_REPORT.md).
 **Next Pipeline Step:** `/write-plan` directly if the report resolves all CoordStruct rules; otherwise a smaller follow-up `/plan-investigation` for the unresolved branch.
 
 ---
@@ -24,21 +24,21 @@ The output should be implementation-ready but not a verbatim port: Rust can keep
 | Report | Scope | Confidence | Known Gaps |
 |--------|-------|------------|------------|
 | `docs/fidelity-checks/2026-05-17-gi-small-arms-warhead-impact-placement.md` | Rust trace plus binary spot checks for GI `PIFFPIFF` placement | MEDIUM-HIGH | Confirms sub-cell effect payload fix, but not full `BulletClass` raycast / wall / cliff / building override behavior. |
-| `BULLET_PROJECTILE_SYSTEM_CONSOLIDATED_REPORT.md` | End-to-end BulletType parse, `BulletClass::Fire`, Inviso path, proximity, detonation-position corrections | HIGH overall | Explicitly flags stale older claims and leaves `BulletClass::Fire` uninit stack slots / exact edge behavior worth targeted verification. |
-| `BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md` | Bullet allocation/init/fire launch path | HIGH | Generic bullet launch; does not fully enumerate `InvisibleLow` edge cases by target kind. |
-| `BULLET_CLASS_AI_GHIDRA_REPORT.md` | Main BulletClass AI loop and bounce/proximity consumers | HIGH | Mostly in-flight bullets; Inviso bullets short-circuit in `Fire`, but BounceCheck helpers still matter for shared wall/cliff behavior. |
-| `BULLETCLASS_TRAJECTORY_AND_HOMING.md` | Trajectory, homing, proximity, BounceCheck | HIGH for covered functions | Contains stale wording about close-target handling as direct `ReceiveDamage`; consolidated report says vtable+0xA4 is CoordStruct output. Verify conflict. |
-| `BULLET_CLASS_LAYOUT_GHIDRA_REPORT.md` | BulletClass fields and BulletType pointers | HIGH | Layout only; needs consumer confirmation for this specific path. |
-| `BULLETTYPECLASS_GHIDRA_REPORT.md` | BulletType ReadINI offsets/defaults | HIGH | Relevant keys parsed; no runtime CoordStruct behavior. |
-| `WARHEAD_DETONATE_GHIDRA_REPORT.md` | Warhead/Bullet detonation dispatch and AnimList creation | HIGH with corrections | Good for consuming CoordStruct, not for producing it. |
-| `ANIMCLASS_SPAWN_PATHS_GHIDRA_REPORT.md` | AnimClass constructor sites, including impact anims and muzzle anims | HIGH | Confirms passed CoordStruct is used; does not compute bullet impact CoordStruct. |
-| `BRIDGE_OBJECT_ONBRIDGE_EXTRA_WRITERS_GHIDRA_REPORT.md` | Object/Bullet OnBridge runtime writers | HIGH for hit classification | `TechnoClass::Fire_At @ 0x006FF0B0` copies OnBridge for `Inviso=yes` bullets; needs inclusion in bridge impact coordinate story. |
-| `WEAPONTYPECLASS_VERIFICATION_AND_CONSUMERS_GHIDRA_REPORT.md` | WeaponType parse and `Fire_At` consumers | HIGH | Useful to verify `Projectile=`/`Warhead=` handoff into BulletClass. |
+| [BULLET_PROJECTILE_SYSTEM_CONSOLIDATED_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLET_PROJECTILE_SYSTEM_CONSOLIDATED_REPORT.md) | End-to-end BulletType parse, `BulletClass::Fire`, Inviso path, proximity, detonation-position corrections | HIGH overall | Explicitly flags stale older claims and leaves `BulletClass::Fire` uninit stack slots / exact edge behavior worth targeted verification. |
+| [BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md) | Bullet allocation/init/fire launch path | HIGH | Generic bullet launch; does not fully enumerate `InvisibleLow` edge cases by target kind. |
+| [BULLET_CLASS_AI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLET_CLASS_AI_GHIDRA_REPORT.md) | Main BulletClass AI loop and bounce/proximity consumers | HIGH | Mostly in-flight bullets; Inviso bullets short-circuit in `Fire`, but BounceCheck helpers still matter for shared wall/cliff behavior. |
+| [BULLETCLASS_TRAJECTORY_AND_HOMING.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLETCLASS_TRAJECTORY_AND_HOMING.md) | Trajectory, homing, proximity, BounceCheck | HIGH for covered functions | Contains stale wording about close-target handling as direct `ReceiveDamage`; consolidated report says vtable+0xA4 is CoordStruct output. Verify conflict. |
+| [BULLET_CLASS_LAYOUT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLET_CLASS_LAYOUT_GHIDRA_REPORT.md) | BulletClass fields and BulletType pointers | HIGH | Layout only; needs consumer confirmation for this specific path. |
+| [BULLETTYPECLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLETTYPECLASS_GHIDRA_REPORT.md) | BulletType ReadINI offsets/defaults | HIGH | Relevant keys parsed; no runtime CoordStruct behavior. |
+| [WARHEAD_DETONATE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WARHEAD_DETONATE_GHIDRA_REPORT.md) | Warhead/Bullet detonation dispatch and AnimList creation | HIGH with corrections | Good for consuming CoordStruct, not for producing it. |
+| [ANIMCLASS_SPAWN_PATHS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ANIMCLASS_SPAWN_PATHS_GHIDRA_REPORT.md) | AnimClass constructor sites, including impact anims and muzzle anims | HIGH | Confirms passed CoordStruct is used; does not compute bullet impact CoordStruct. |
+| [BRIDGE_OBJECT_ONBRIDGE_EXTRA_WRITERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/BRIDGE_OBJECT_ONBRIDGE_EXTRA_WRITERS_GHIDRA_REPORT.md) | Object/Bullet OnBridge runtime writers | HIGH for hit classification | `TechnoClass::Fire_At @ 0x006FF0B0` copies OnBridge for `Inviso=yes` bullets; needs inclusion in bridge impact coordinate story. |
+| [WEAPONTYPECLASS_VERIFICATION_AND_CONSUMERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WEAPONTYPECLASS_VERIFICATION_AND_CONSUMERS_GHIDRA_REPORT.md) | WeaponType parse and `Fire_At` consumers | HIGH | Useful to verify `Projectile=`/`Warhead=` handoff into BulletClass. |
 
 **Conflicts between reports:**
 
-- `BULLETCLASS_TRAJECTORY_AND_HOMING.md` describes close-target branches as direct `ReceiveDamage`.
-- `BULLET_PROJECTILE_SYSTEM_CONSOLIDATED_REPORT.md` corrects that: vtable+0xA4 is `GetCoords_OutputParam`, producing a detonation CoordStruct. This investigation must re-check the live binary and mark the older wording stale or conditional.
+- [BULLETCLASS_TRAJECTORY_AND_HOMING.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLETCLASS_TRAJECTORY_AND_HOMING.md) describes close-target branches as direct `ReceiveDamage`.
+- [BULLET_PROJECTILE_SYSTEM_CONSOLIDATED_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLET_PROJECTILE_SYSTEM_CONSOLIDATED_REPORT.md) corrects that: vtable+0xA4 is `GetCoords_OutputParam`, producing a detonation CoordStruct. This investigation must re-check the live binary and mark the older wording stale or conditional.
 
 ## 3. Function Inventory
 
@@ -133,7 +133,7 @@ Out of scope for this investigation:
 - **Airburst/shrapnel/cluster branches:** active for specific YR weapons but not GI `InvisibleLow`; do not let these branches expand the scope beyond CoordStruct production.
 - **`SubjectToElevation` wording:** INI comment says height bonus and no effect on homing projectiles; runtime may also affect path over varying terrain. Verify exact YR-active consumers.
 - **Bridge ground height:** several docs warn `GetGroundHeight` returns ground-only, while object `OnBridge` state is separate. Confirm `InvisibleLow` detonation on bridge targets before assuming bridge deck Z.
-- **Older ReceiveDamage wording:** treat `BULLETCLASS_TRAJECTORY_AND_HOMING.md` close-target wording as suspect until `0x00468D80` and `0x0041BDD0` are re-verified.
+- **Older ReceiveDamage wording:** treat [BULLETCLASS_TRAJECTORY_AND_HOMING.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLETCLASS_TRAJECTORY_AND_HOMING.md) close-target wording as suspect until `0x00468D80` and `0x0041BDD0` are re-verified.
 - **Non-GI `Inviso=yes` variants:** `Invisible`, `InvisibleMedium`, `InvisibleHigh`, `InvisibleAll`, `Psychic`, `FlakProj`, and Tesla/comet projectiles may share flags but have different `ROT`, `AA`, `AG`, or `FlakScatter`; document only enough to avoid misapplying GI findings.
 
 ## 8. Current Rust Implementation Surface
@@ -188,16 +188,16 @@ The executed research document must:
   - `0x0041BDD0`, `0x006FDD50`, `0x004666E0` - assembly start/context sampled.
 - Docs searched:
   - `docs/fidelity-checks/2026-05-17-gi-small-arms-warhead-impact-placement.md`
-  - `docs/research/BULLET_PROJECTILE_SYSTEM_CONSOLIDATED_REPORT.md`
-  - `docs/research/BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md`
-  - `docs/research/BULLET_CLASS_AI_GHIDRA_REPORT.md`
-  - `docs/research/BULLETCLASS_TRAJECTORY_AND_HOMING.md`
-  - `docs/research/BULLET_CLASS_LAYOUT_GHIDRA_REPORT.md`
-  - `docs/research/BULLETTYPECLASS_GHIDRA_REPORT.md`
-  - `docs/research/WARHEAD_DETONATE_GHIDRA_REPORT.md`
-  - `docs/research/ANIMCLASS_SPAWN_PATHS_GHIDRA_REPORT.md`
+  - [docs/research/BULLET_PROJECTILE_SYSTEM_CONSOLIDATED_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLET_PROJECTILE_SYSTEM_CONSOLIDATED_REPORT.md)
+  - [docs/research/BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md)
+  - [docs/research/BULLET_CLASS_AI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLET_CLASS_AI_GHIDRA_REPORT.md)
+  - [docs/research/BULLETCLASS_TRAJECTORY_AND_HOMING.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLETCLASS_TRAJECTORY_AND_HOMING.md)
+  - [docs/research/BULLET_CLASS_LAYOUT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLET_CLASS_LAYOUT_GHIDRA_REPORT.md)
+  - [docs/research/BULLETTYPECLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLETTYPECLASS_GHIDRA_REPORT.md)
+  - [docs/research/WARHEAD_DETONATE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WARHEAD_DETONATE_GHIDRA_REPORT.md)
+  - [docs/research/ANIMCLASS_SPAWN_PATHS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ANIMCLASS_SPAWN_PATHS_GHIDRA_REPORT.md)
   - `docs/research/BRIDGE_OBJECT_ONBRIDGE_EXTRA_WRITERS_GHIDRA_REPORT.md`
-  - `docs/research/WEAPONTYPECLASS_VERIFICATION_AND_CONSUMERS_GHIDRA_REPORT.md`
+  - [docs/research/WEAPONTYPECLASS_VERIFICATION_AND_CONSUMERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WEAPONTYPECLASS_VERIFICATION_AND_CONSUMERS_GHIDRA_REPORT.md)
 - INI files checked:
   - `ini/rulesmd.ini`
   - `ini/rules.ini`

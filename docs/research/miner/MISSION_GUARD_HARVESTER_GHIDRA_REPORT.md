@@ -103,7 +103,7 @@ if HouseClass__IsPlayerControl(owner) AND TypeClass+0xCD4 (Teleporter=yes):
 
 `param_1[0x19d]` = offset `0x19D * 4 = 0x674` = the `Locomotor*` field on FootClass.
 `vtable+0x10` on the locomotor interface = `Is_Ok_To_End` from IPiggyback (confirmed
-from CHRONO_MINER_SYSTEM_OVERVIEW.md §IPiggyback table).
+from [CHRONO_MINER_SYSTEM_OVERVIEW.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/CHRONO_MINER_SYSTEM_OVERVIEW.md) §IPiggyback table).
 `BuildingTypeClass+0x16BB` — the flag checked is a "dock-capable/refinery" flag on
 building type. Exact name not independently verified but the adjacent-refinery context
 is unambiguous.
@@ -216,7 +216,7 @@ Yes. Confirmed `Teleporter=yes` (`TypeClass+0xCD4`) check in sub-block B. The br
 
 ---
 
-## 5. Relation to MISSION_GUARD_AREAGUARD_GHIDRA_REPORT.md
+## 5. Relation to [MISSION_GUARD_AREAGUARD_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MISSION_GUARD_AREAGUARD_GHIDRA_REPORT.md)
 
 Mission_Guard_Harvester at 0x740810 is distinct from generic Guard/AreaGuard:
 - It overrides vtable+0x21C in UnitClass (guard mission slot) only for UnitClass objects.

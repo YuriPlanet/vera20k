@@ -799,6 +799,47 @@ class ReliabilityContractTests(unittest.TestCase):
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_default_corpus_excludes_plans_and_cli_resets_an_opt_in_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            files = {
+                "docs/research/CURRENT.md": "# Current\nRetainedEvidenceMarker\n",
+                "docs/plans/OLD.md": "# Plan\nHistoricalPlanMarker\n",
+                "ini/rulesmd.ini": "[General]\nRetailRulesMarker=yes\n",
+            }
+            for relative, content in files.items():
+                path = workspace / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+            db_path = workspace / "research.db"
+
+            refresh_index(db_path, workspace)
+            self.assertTrue(search(db_path, "RetainedEvidenceMarker"))
+            self.assertTrue(search(db_path, "RetailRulesMarker"))
+            self.assertEqual(search(db_path, "HistoricalPlanMarker"), [])
+
+            refresh_index(db_path, workspace, roots=["docs/plans"])
+            self.assertTrue(search(db_path, "HistoricalPlanMarker"))
+            self.assertEqual(ensure_fresh(db_path, workspace)["roots"], ["docs/plans"])
+
+            reset = subprocess.run(
+                [
+                    sys.executable,
+                    str(TOOL_ROOT / "index.py"),
+                    "--workspace", str(workspace),
+                    "--db", str(db_path),
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            self.assertEqual(reset.returncode, 0, reset.stderr)
+            self.assertEqual(search(db_path, "HistoricalPlanMarker"), [])
+            self.assertTrue(search(db_path, "RetainedEvidenceMarker"))
+            self.assertTrue(search(db_path, "RetailRulesMarker"))
+            self.assertEqual(inspect_index(db_path, workspace)["roots"], ["docs/research", "ini"])
+
     def test_refresh_detects_and_repairs_changed_added_and_removed_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -1263,17 +1304,17 @@ class MCPServerSmokeTests(unittest.TestCase):
         cls.mcp_server = mcp_server
 
     def test_research_search_returns_text(self) -> None:
-        out = self.mcp_server.research_search(query="BridgeRepairHut", limit=3)
+        out = self.mcp_server.research_search(query="CellClass::BlowUpBridge", system="bridges", limit=3)
         self.assertIn("docs/research/bridges", out)
 
     def test_research_search_json_round_trips(self) -> None:
-        out = self.mcp_server.research_search(query="BridgeRepairHut", limit=3, format="json")
+        out = self.mcp_server.research_search(query="CellClass::BlowUpBridge", system="bridges", limit=3, format="json")
         rows = json.loads(out)
         self.assertIsInstance(rows, list)
 
     def test_research_search_empty_result_returns_hint(self) -> None:
         # Runtime-generated query guarantees no index entry. A hard-coded
-        # miss string would be indexed when docs/plans/ is reindexed,
+        # miss string could appear in a retained report or an opt-in plan,
         # turning this assertion into a self-reference hit (Phase 1
         # finding).
         miss_query = secrets.token_hex(16)
@@ -1281,7 +1322,7 @@ class MCPServerSmokeTests(unittest.TestCase):
         self.assertTrue(out.startswith("No results for"))
 
     def test_research_related_returns_text(self) -> None:
-        out = self.mcp_server.research_related(target="BridgeRepairHut", by="term", limit=3)
+        out = self.mcp_server.research_related(target="CellClass::BlowUpBridge", by="term", limit=3)
         self.assertNotEqual(out.strip(), "")
 
     def test_research_related_empty_result_returns_hint(self) -> None:
@@ -1292,7 +1333,7 @@ class MCPServerSmokeTests(unittest.TestCase):
     def test_research_graph_doc_mode_returns_text(self) -> None:
         out = self.mcp_server.research_graph(
             mode="evidence",
-            target="BridgeRepairHut",
+            target="CellClass::BlowUpBridge",
             limit=3,
         )
         self.assertNotEqual(out.strip(), "")
@@ -1300,7 +1341,7 @@ class MCPServerSmokeTests(unittest.TestCase):
     def test_research_graph_json_round_trips(self) -> None:
         out = self.mcp_server.research_graph(
             mode="evidence",
-            target="BridgeRepairHut",
+            target="CellClass::BlowUpBridge",
             limit=3,
             format="json",
         )
@@ -1312,7 +1353,7 @@ class MCPServerSmokeTests(unittest.TestCase):
         self.assertNotEqual(out.strip(), "")
 
     def test_research_handoff_returns_text(self) -> None:
-        out = self.mcp_server.research_handoff(query="BridgeRepairHut", limit=3)
+        out = self.mcp_server.research_handoff(query="CellClass::BlowUpBridge", limit=3)
         self.assertNotEqual(out.strip(), "")
 
     def test_research_validate_returns_text(self) -> None:
@@ -1320,12 +1361,12 @@ class MCPServerSmokeTests(unittest.TestCase):
         self.assertNotEqual(out.strip(), "")
 
     def test_research_brief_returns_text(self) -> None:
-        out = self.mcp_server.research_brief(query="BridgeRepairHut", limit=3)
+        out = self.mcp_server.research_brief(query="CellClass::BlowUpBridge", limit=3)
         self.assertNotEqual(out.strip(), "")
 
     def test_research_brief_with_anchors_normalizes_none(self) -> None:
         # anchors=None should normalize to [] without exception.
-        out = self.mcp_server.research_brief(query="BridgeRepairHut", anchors=None, limit=3)
+        out = self.mcp_server.research_brief(query="CellClass::BlowUpBridge", anchors=None, limit=3)
         self.assertNotEqual(out.strip(), "")
 
     def test_research_health_reports_live_generation(self) -> None:

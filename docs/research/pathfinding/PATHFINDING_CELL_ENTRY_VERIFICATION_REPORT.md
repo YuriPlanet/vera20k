@@ -7,10 +7,10 @@
 
 This report verifies and expands the pathfinding cell-entry cost system against
 gamemd.exe. It cross-references the four existing reports:
-- `PATHFINDERCLASS_GHIDRA_REPORT.md`
+- [PATHFINDERCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/PATHFINDERCLASS_GHIDRA_REPORT.md)
 - `PATHFINDING_ASTAR_GHIDRA_REPORT.md`
-- `PATHFINDING_STANDALONE_FUNCTIONS_GHIDRA_REPORT.md`
-- `TERRAIN_COST_FACTSHEET.md`
+- [PATHFINDING_STANDALONE_FUNCTIONS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/PATHFINDING_STANDALONE_FUNCTIONS_GHIDRA_REPORT.md)
+- [TERRAIN_COST_FACTSHEET.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TERRAIN_COST_FACTSHEET.md)
 
 For each finding: **CONFIRMS**, **CORRECTS**, or **EXPANDS** existing documentation.
 

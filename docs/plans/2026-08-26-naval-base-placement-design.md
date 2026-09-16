@@ -8,9 +8,9 @@ state. Ordinary non-naval BasePlan/perimeter selection remains a separate open m
 
 Primary evidence:
 
-- `docs/research/PHASE3_HOUSECLASS_ORDINARY_BASE_PLACEMENT_005060B0_GHIDRA_REPORT.md` section 8;
-- `docs/research/PHASE3_NAVAL_BASE_PLACEMENT_LIFECYCLE_GHIDRA_REPORT.md`;
-- `docs/research/PHASE3_AI_BASE_PLACEMENT_VECTOR_SELECTOR_005060B0_GHIDRA_REPORT.md` for the shared
+- [docs/research/PHASE3_HOUSECLASS_ORDINARY_BASE_PLACEMENT_005060B0_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_HOUSECLASS_ORDINARY_BASE_PLACEMENT_005060B0_GHIDRA_REPORT.md) section 8;
+- [docs/research/PHASE3_NAVAL_BASE_PLACEMENT_LIFECYCLE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_NAVAL_BASE_PLACEMENT_LIFECYCLE_GHIDRA_REPORT.md);
+- [docs/research/PHASE3_AI_BASE_PLACEMENT_VECTOR_SELECTOR_005060B0_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_AI_BASE_PLACEMENT_VECTOR_SELECTOR_005060B0_GHIDRA_REPORT.md) for the shared
   nearby-cell selector;
 - completed prerequisite design and critic closure in
   `docs/plans/2026-08-26-fnpc-forward-bridge-projection-design.md`;
@@ -157,7 +157,7 @@ state versioning is needed.
   boundary.
 - Candidate Z: the common `ground_height_leptons` authority at center subcell, the active-runtime
   verified 104-lepton CellClass terrain surface. See
-  `PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md`.
+  [PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md).
 - Yard X/Y: start from the live entity's stored north-west anchor coordinate and apply
   `BuildingClass::GetCoords` foundation centering, `(width - 1) * 128` and
   `(height - 1) * 128`, with wrapped i32 arithmetic. Yard Z preserves the live object's exact

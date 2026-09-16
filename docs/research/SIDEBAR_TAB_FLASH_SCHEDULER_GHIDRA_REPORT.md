@@ -16,7 +16,7 @@
 
 This is **completely distinct from the BUTTON_FADE_EFFECT family** (which animates Windows dialog buttons in the main menu and network-lobby), and **also distinct from the SidebarClass+0x5394/+0x5398 frame-animation system** (which iterates frames of `DAT_00b0b478` — a SHP never loaded in YR).
 
-The disparity-scan addendum (2026-05-20) that identified `FUN_0069DFC0` as the "real in-game cameo/tab flash trigger" was correct in spirit but slightly off in detail: the flash is on the **tab button**, not the cameo. There is no per-cameo flash mechanism that fires in YR — `CameoEntry.FlashEndFrame` (the cameo-level pulse) is dead code per `CAMEO_FLASH_END_FRAME_WRITER_GHIDRA_REPORT.md`.
+The disparity-scan addendum (2026-05-20) that identified `FUN_0069DFC0` as the "real in-game cameo/tab flash trigger" was correct in spirit but slightly off in detail: the flash is on the **tab button**, not the cameo. There is no per-cameo flash mechanism that fires in YR — `CameoEntry.FlashEndFrame` (the cameo-level pulse) is dead code per [CAMEO_FLASH_END_FRAME_WRITER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CAMEO_FLASH_END_FRAME_WRITER_GHIDRA_REPORT.md).
 
 ---
 
@@ -36,7 +36,7 @@ The gadget-local `+0x1e` byte (the `IsDisabled` flag from `SIDEBAR_INIT_GADGET_P
 
 ### Field-name conflict notice
 
-`+0x34` was previously documented in `SIDEBAR_REPAIR_SELL_BUTTON_GHIDRA_REPORT.md` (2026-05-20) as the "is being mouse-down pressed RIGHT NOW" flag, read by `SBGadgetClass::Draw` to select frame 3/4 over 0/1. **Both purposes use the same byte.** For Repair/Sell, only the mouse-down handler writes it; for tabs, only Flash_AI writes it. Both gadget classes share the field and both behaviours can coexist because tabs are not pressed-clicked-down for ≥10 ticks in normal play. Semantically the byte is "draw me as pressed-looking" — the *cause* (mouse-down vs flash toggle) differs by gadget.
+`+0x34` was previously documented in [SIDEBAR_REPAIR_SELL_BUTTON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_REPAIR_SELL_BUTTON_GHIDRA_REPORT.md) (2026-05-20) as the "is being mouse-down pressed RIGHT NOW" flag, read by `SBGadgetClass::Draw` to select frame 3/4 over 0/1. **Both purposes use the same byte.** For Repair/Sell, only the mouse-down handler writes it; for tabs, only Flash_AI writes it. Both gadget classes share the field and both behaviours can coexist because tabs are not pressed-clicked-down for ≥10 ticks in normal play. Semantically the byte is "draw me as pressed-looking" — the *cause* (mouse-down vs flash toggle) differs by gadget.
 
 ---
 
@@ -401,7 +401,7 @@ None of these are blocked by other systems — they can be done immediately.
 - `[RESOLVED] FN-3 — FUN_0069E010 layout and tick logic.` → 0-arg __fastcall, ECX=gadget; gated by +0x1e (IsDisabled); decrements +0x3c, on hit-zero toggles +0x34 and resets +0x3c=+0x38. (evidence: decompile_function 0x0069E010)
 - `[RESOLVED] FN-4 — Callers of FUN_0069DFC0.` → Sole caller: StripClass::AI @ 0x006A8B30. (evidence: get_function_callers)
 - `[RESOLVED] FN-5 — Callers of FUN_0069E010.` → Sole caller: SidebarClass::Action @ 0x006A7780. (evidence: get_function_callers)
-- `[RESOLVED] FN-6 — Flash-struct field offsets.` → +0x34 (state byte), +0x38 (period / sentinel), +0x3c (countdown). Inside SBGadgetClass. (evidence: function bodies; SIDEBAR_REPAIR_SELL_BUTTON_GHIDRA_REPORT.md §2)
+- `[RESOLVED] FN-6 — Flash-struct field offsets.` → +0x34 (state byte), +0x38 (period / sentinel), +0x3c (countdown). Inside SBGadgetClass. (evidence: function bodies; [SIDEBAR_REPAIR_SELL_BUTTON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_REPAIR_SELL_BUTTON_GHIDRA_REPORT.md) §2)
 - `[RESOLVED] FN-7 — "this" pointer in Start_Flash call.` → Per-tab SBGadgetClass at `0xb07c48 + strip.TabIndex * 0x60`. (evidence: disasm 006a8e85-006a8e95)
 - `[RESOLVED] FN-8 — Relationship to SidebarClass+0x5394/+0x5398.` → Separate, parallel system; fields live but animates DAT_00b0b478 which is null in YR. See §10. (evidence: SidebarClass::Action body; SIDEBAR_CONSTRUCTION §10)
 - `[RESOLVED] FN-9 — StripClass::AI case-6 trigger.` → Aircraft completion + SW-ready trigger Start_Flash; no trigger → Stop_Flash. (evidence: disasm 006a8d23-006a8d9a)
@@ -447,9 +447,9 @@ None of these are blocked by other systems — they can be done immediately.
 - `SIDEBAR_TIMING_AND_TOOLTIPS_GHIDRA_REPORT.md §4.3-4.4` (partial pseudocode; this report supersedes the arg-mapping interpretation)
 - `SIDEBAR_CONSTRUCTION_GHIDRA_REPORT.md §10` (DAT_00b0b478 nullity claim — settled in §10 of this report)
 - `SIDEBAR_REPAIR_SELL_BUTTON_GHIDRA_REPORT.md §2, §5` (SBGadgetClass field map; Draw frame-selection logic)
-- `CAMEO_FLASH_END_FRAME_WRITER_GHIDRA_REPORT.md` (confirms cameo-level pulse is dead code; tab-level pulse described here is independent and live)
-- `SIDEBAR_INIT_GADGET_POSITIONING_GHIDRA_REPORT.md` (tab gadget base 0xb07c48 + stride 0x60 confirmed)
+- [CAMEO_FLASH_END_FRAME_WRITER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CAMEO_FLASH_END_FRAME_WRITER_GHIDRA_REPORT.md) (confirms cameo-level pulse is dead code; tab-level pulse described here is independent and live)
+- [SIDEBAR_INIT_GADGET_POSITIONING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_INIT_GADGET_POSITIONING_GHIDRA_REPORT.md) (tab gadget base 0xb07c48 + stride 0x60 confirmed)
 - `BUTTON_FADE_EFFECT_*_GHIDRA_REPORT.md` (confirmed unrelated — BFE is for HWND dialog buttons only)
-- `TICK_ANIMATION_VISIBLE_LEFTOVERS_GHIDRA_REPORT.md` (cross-confirms tab flash scheduling at 10-frame boundary)
+- [TICK_ANIMATION_VISIBLE_LEFTOVERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TICK_ANIMATION_VISIBLE_LEFTOVERS_GHIDRA_REPORT.md) (cross-confirms tab flash scheduling at 10-frame boundary)
 
 **No mutations made** (read-only Ghidra static analysis; no `.rs` files written; no INI changes).
