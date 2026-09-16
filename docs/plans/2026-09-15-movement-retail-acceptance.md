@@ -118,3 +118,24 @@ harness green), `OPEN` (not started), `IN PROGRESS`.
   2× at 30 fps, appearing as slow motion rather than gamemd's frame-dropping.
   Frequency: continuous. Downstream risk: any future wall-clock parity measurement
   reads this ceiling rather than the pacer.
+- Deferred, both fully evidenced and neither authored by the increment that found
+  them (2026-09-16). First: the **I9c row above is malformed** — it carries seven
+  unescaped pipes in a five-pipe table, because the Rust expression
+  `omni_crusher || MovementZone in {Crusher, AmphibiousCrusher, CrusherAll}` was
+  transcribed with a bare `||` at offsets 554/555, so the row renders with two
+  spurious columns. Fix is `\|\|`. Landed in `47f769b6` (PR #380). Second:
+  `src/rules/object_type.rs:281` reads "Fraction of max speed gained per tick
+  (`AccelerationFactor=`). Default 0.03. **At 15 fps, reaches max speed in ~2
+  seconds**". The per-tick wording is right and matches native — gamemd adds the
+  factor directly to the fraction once per Drive frame
+  (`FLD [ESI+0x308]; FADD [ECX+0x578]` at `0x004B11A3`, per
+  `DRIVE_ACCELERATES_TRUE_FALSE_SPEED_RAMP_GHIDRA_REPORT.md:119`) — but the
+  seconds gloss assumes the dead 15 fps premise that row I13 retires; at stock
+  admission (~62.5 frames/s) the same 0.03 reaches full speed in ~0.5 s. That
+  report already flags `object_type.rs` comment drift at its line 173.
+- Verified **true** while auditing, and recorded so it is not "corrected" later:
+  A5's `ten-entry cap`. `CellClass__Scatter_Objects 0x00481670` gates its
+  collection loop on `FUN_0040ce50(10, 0)` and builds up to ten occupants before
+  scattering them in collected order. VERA's `MAX_SCATTER_DIRECTIONS = 351` and
+  `MAX_SPIRAL_RADIUS = 10` (`scatter.rs`) are the spiral *destination* search, a
+  different mechanism; comparing the two is what made the criterion look wrong.
