@@ -513,27 +513,38 @@ pub(super) fn find_move_path_with_marker_detailed(
     //
     // `None` where the mover has no owner keeps the old search exactly: the
     // wall arm needs a house to compare, and an unowned mover answers 7.
-    let wall_classifier = ctx.wall_tables.zip(facts.owner).map(|(tables, owner)| {
-        crate::sim::pathfinding::cell_entry::WallSearchCostClassifier {
-            wall: crate::sim::pathfinding::cell_entry::WallArmContext {
-                overlay_grid: tables.overlay_grid,
-                overlay_registry: tables.overlay_registry,
-                alliances: tables.alliances,
-                interner: tables.interner,
-                mover_owner: Some(owner),
-                is_armed: facts.is_armed,
-                warhead_wall: facts.warhead_wall,
-                warhead_wood: facts.warhead_wood,
+    // `interner.is_some()` is part of the gate, not an afterthought: the arm
+    // fails closed without it and would answer 7 for every refused neighbour,
+    // while still paying a full `evaluate_can_enter_cell` per call - two cost
+    // grid reads, bridge lookups, overlay and registry probes. A* refuses far
+    // more neighbours than it accepts, so at 20k movers that is pure waste.
+    // Review caught it: the two Drive contexts set the tables but leave the
+    // interner `None`, so every blocked repath was paying it for a guaranteed 7.
+    let wall_classifier = ctx
+        .wall_tables
+        .filter(|tables| tables.interner.is_some())
+        .zip(facts.owner)
+        .map(
+            |(tables, owner)| crate::sim::pathfinding::cell_entry::WallSearchCostClassifier {
+                wall: crate::sim::pathfinding::cell_entry::WallArmContext {
+                    overlay_grid: tables.overlay_grid,
+                    overlay_registry: tables.overlay_registry,
+                    alliances: tables.alliances,
+                    interner: tables.interner,
+                    mover_owner: Some(owner),
+                    is_armed: facts.is_armed,
+                    warhead_wall: facts.warhead_wall,
+                    warhead_wood: facts.warhead_wood,
+                },
+                path_grid: Some(grid),
+                resolved_terrain,
+                terrain_costs,
+                movement_zone,
+                speed_type: facts.speed_type,
+                is_infantry: facts.is_infantry,
+                mover_is_crusher: facts.mover_is_crusher,
             },
-            path_grid: Some(grid),
-            resolved_terrain,
-            terrain_costs,
-            movement_zone,
-            speed_type: facts.speed_type,
-            is_infantry: facts.is_infantry,
-            mover_is_crusher: facts.mover_is_crusher,
-        }
-    });
+        );
     let wall_cost = wall_classifier
         .as_ref()
         .map(|c| c as &dyn crate::sim::pathfinding::SearchCellCostClassifier);
@@ -1339,6 +1350,12 @@ mod tests {
         }
         let terrain = ResolvedTerrainGrid::from_cells(5, 3, cells);
         let grid = PathGrid::from_resolved_terrain(&terrain);
+        // A REAL cost grid, because its absence is what hid the defect this
+        // test was written to prove. `Wall=yes` sets `overlay_blocks`, which
+        // `TerrainCostGrid` turns into `COST_BLOCKED` for every SpeedType, so
+        // the first version of this test - which passed `None` here - went green
+        // while production still refused every wall a few lines further on.
+        let costs = TerrainCostGrid::from_resolved_terrain(&terrain, SpeedType::Track);
 
         let registry = crate::map::overlay_types::OverlayTypeRegistry::from_ini(
             &IniFile::from_str("[OverlayTypes]\n0=GAWALL\n\n[GAWALL]\nWall=yes\n"),
@@ -1372,7 +1389,7 @@ mod tests {
                 (0, 1),
                 MovementLayer::Ground,
                 (4, 1),
-                None,
+                Some(&costs),
                 None,
                 None,
                 None,

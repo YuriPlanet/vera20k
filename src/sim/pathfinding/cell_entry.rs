@@ -865,7 +865,14 @@ fn evaluate_shared_cell_leaf(
         // 0.0`); a zero row returns 7 at `0x0073FAD0` whatever the arm
         // accumulated, and `InfantryClass` does the same at `0x0051C7D0`. So a
         // wall overlay on terrain whose speed row refuses this mover answers 7,
-        // not 4/5 — the classes survive only where the terrain itself admits.
+        // not 4/5 - the classes survive only where the LAND ROW admits, which
+        // is not the same as the terrain beneath. Review corrected this:
+        // `OverlayTypeFlags::no_use_tile_land_type` defaults **true**, so a
+        // stock wall overlay writes its own `Clear` row into the cell and a
+        // wall over water or rock reads as passable here. Native reads the
+        // same stored LandType at `0x0073FAB5`, so this is plausibly parity
+        // rather than a defect, and stock maps do not place walls on water -
+        // but what the code checks is the stored row, not the ground.
         //
         // `land_row_passable` is that row alone, deliberately not
         // `land_passable`: see this function's doc for why the wider term would

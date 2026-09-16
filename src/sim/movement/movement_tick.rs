@@ -4099,13 +4099,13 @@ pub(crate) fn begin_movement_with_grids_scoped(
             overlay_grid,
             overlay_registry,
             alliances: Some(alliances),
-                // NOT `Some(interner)`: these two sites hold it `&mut` for
-                // `advance_ordinary_mover`, and storing a shared borrow on the
-                // `Copy` context outlives the call. The wall arm therefore stays
-                // off on this route until that borrow is untangled - the search
-                // behaves exactly as it did before, and `walk_path` (which holds
-                // the interner shared) already gets the live classifier.
-                interner: None,
+            // NOT `Some(interner)`: these two sites hold it `&mut` for
+            // `advance_ordinary_mover`, and storing a shared borrow on the
+            // `Copy` context outlives the call. The wall arm therefore stays
+            // off on this route until that borrow is untangled - the search
+            // behaves exactly as it did before, and `walk_path` (which holds
+            // the interner shared) already gets the live classifier.
+            interner: None,
         }),
         path_grid,
         zone_grid,

@@ -41,8 +41,7 @@ use crate::util::lepton::CELL_CENTER_LEPTON;
 
 use super::{
     CLIFF_HEIGHT_THRESHOLD, MovementConfig, MovementTickStats, MoverPathFacts, MoverSnapshot,
-    PATH_STUCK_INIT,
-    PathfindingContext,
+    PATH_STUCK_INIT, PathfindingContext,
 };
 
 fn shared_track_kind(locomotor: &Option<LocomotorState>) -> Option<LocomotorKind> {
