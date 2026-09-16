@@ -5946,7 +5946,7 @@ fn crusher_driveover_destroys_wall_but_noncrusher_does_not() {
          [BuildingTypes]\n0=GAWALL\n\
          [OverlayTypes]\n0=GASAND\n1=CYCL\n2=GAWALL\n\
          [GAWALL]\nStrength=400\nArmor=concrete\nWall=yes\nDamageLevels=4\n\
-         [BFRT]\nCrusher=yes\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+         [BFRT]\nCrusher=yes\nMovementZone=CrusherAll\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
          [MTNK]\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
     );
     let rules = RuleSet::from_ini(&ini).expect("rules parse");
@@ -6049,7 +6049,7 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
          [GAWALL]\nStrength=400\nArmor=concrete\nWall=yes\nDamageLevels=4\n\
          [CAFNCB]\nStrength=100\nArmor=wood\nWall=yes\nCrushable=yes\nCrushSound=WallCrushBlack\n\
          [ROBO]\nCrusher=yes\nLocomotor={4A582742-9839-11D1-B709-00A024DDAFD1}\n\
-         [BFRT]\nCrusher=yes\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
+         [BFRT]\nCrusher=yes\nMovementZone=CrusherAll\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
     );
     let rules = RuleSet::from_ini(&ini).expect("rules parse");
     let registry = OverlayTypeRegistry::from_ini(&ini, None);
@@ -6109,14 +6109,18 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
     );
     assert_eq!(crush_sounds(&sim), vec!["WallCrushBlack".to_string()]);
 
-    // Hover crusher over a concrete wall: the wall arm needs Drive.
+    // Crusher over a concrete wall WITHOUT MovementZone=CrusherAll: survives.
     let mut sim = build("ROBO", 2);
     sim.apply_wall_crush_on_driveover(Some(&rules), Some(&registry));
     sim.flush_pending_delete();
-    assert!(wall_present(&sim), "a plain wall needs a Drive crusher");
+    assert!(
+        wall_present(&sim),
+        "a plain wall needs MovementZone=CrusherAll, not merely Crusher=yes"
+    );
     assert!(crush_sounds(&sim).is_empty());
 
-    // Drive crusher over a concrete wall without a CrushSound: crushed, silent.
+    // CrusherAll vehicle over a concrete wall without a CrushSound: crushed,
+    // silent. Exactly one stock vehicle qualifies - BFRT, the Battle Fortress.
     let mut sim = build("BFRT", 2);
     sim.apply_wall_crush_on_driveover(Some(&rules), Some(&registry));
     sim.flush_pending_delete();
