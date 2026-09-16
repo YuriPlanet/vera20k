@@ -106,7 +106,7 @@ pub(super) fn drive_entity_nav_targets(
 pub(super) fn compute_drive_target_speed_fraction(
     speed_type: SpeedType,
     locomotor_kind: LocomotorKind,
-    current_cell: (u16, u16),
+    mover_world: (i32, i32),
     next_cell: (u16, u16),
     terrain: &ResolvedTerrainGrid,
     config: &TerrainSpeedConfig,
@@ -115,7 +115,7 @@ pub(super) fn compute_drive_target_speed_fraction(
     terrain_speed::compute_cell_speed_modifier(
         speed_type,
         locomotor_kind,
-        current_cell,
+        mover_world,
         next_cell,
         terrain,
         config,

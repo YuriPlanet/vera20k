@@ -156,7 +156,7 @@ impl TerrainSpeedConfig {
 pub fn compute_cell_speed_modifier(
     speed_type: SpeedType,
     locomotor_kind: LocomotorKind,
-    current_cell: (u16, u16),
+    mover_world: (i32, i32),
     next_cell: (u16, u16),
     terrain: &ResolvedTerrainGrid,
     config: &TerrainSpeedConfig,
@@ -166,10 +166,12 @@ pub fn compute_cell_speed_modifier(
         return SIM_ONE;
     }
     let terrain_factor = terrain_speed_factor(speed_type, next_cell, terrain);
+    // Two sampled ground heights, as native does: the mover's exact position
+    // against the destination cell's own coordinate.
     let slope_factor = slope_factor_for(
         speed_type,
-        cell_level(current_cell, terrain),
-        cell_level(next_cell, terrain),
+        ground_height_at_world(mover_world, terrain),
+        ground_height_at_world(cell_centre_world(next_cell), terrain),
         config,
     );
 
@@ -207,6 +209,40 @@ fn cell_level(cell: (u16, u16), terrain: &ResolvedTerrainGrid) -> u8 {
     terrain.cell(cell.0, cell.1).map(|c| c.level).unwrap_or(0)
 }
 
+/// Ground height in leptons under an exact world position.
+///
+/// `CellClass::ComputeGroundHeightAtCoord 0x0047B3A0`, through the evaluator
+/// that `tools/ramp_height_vectors.json` already pins against 158 native
+/// fixtures. The low bytes of the world coordinates carry the sub-cell offset,
+/// which is the whole point: on a ramp, two positions in one cell have
+/// different ground heights.
+///
+/// Falls back to the cell's flat base when the position is off-grid or the
+/// slope is one the evaluator does not model, which is the behaviour this
+/// function replaced (a pure level-byte reading) and so cannot regress.
+fn ground_height_at_world(world: (i32, i32), terrain: &ResolvedTerrainGrid) -> i32 {
+    let cell = (
+        crate::sim::cell_kernel::world_to_cell_trunc(world.0),
+        crate::sim::cell_kernel::world_to_cell_trunc(world.1),
+    );
+    let (level, slope) = match (u16::try_from(cell.0), u16::try_from(cell.1)) {
+        (Ok(x), Ok(y)) => terrain
+            .cell(x, y)
+            .map_or((0, 0), |c| (c.level, c.slope_type)),
+        _ => (0, 0),
+    };
+    crate::sim::cell_kernel::cell_floor_height(level, slope, world.0, world.1).unwrap_or_else(
+        |_| i32::from(level as i8) * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
+    )
+}
+
+/// The centre of a cell, in world leptons - what native samples for the
+/// destination (`0x004B3CEC` passes the destination coordinate, not the
+/// mover's).
+fn cell_centre_world(cell: (u16, u16)) -> (i32, i32) {
+    (i32::from(cell.0) * 256 + 128, i32::from(cell.1) * 256 + 128)
+}
+
 /// Factor 1: terrain type speed from INI land-type percentages.
 ///
 /// Looks up the *destination* cell's terrain speed for the unit's SpeedType.
@@ -229,27 +265,35 @@ fn terrain_speed_factor(
     }
 }
 
-/// Pick the slope coefficient for a mover stepping from `cur_level` to `next_level`.
+/// Pick the slope coefficient from two sampled ground heights, in leptons.
 ///
-/// Destination higher than current = uphill; lower = downhill; equal = no change.
-/// Track SpeedType uses the tracked pair, every other SpeedType the wheeled pair —
-/// matching the original engine's `SpeedType == Track` test (infantry are handled
-/// by a separate precomputed-foot mechanism and don't reach this vehicle path).
+/// Destination higher than the mover = uphill; lower = downhill; equal = no
+/// change. Track SpeedType uses the tracked pair, every other SpeedType the
+/// wheeled pair — matching the original engine's `SpeedType == Track` test
+/// (infantry are handled by a separate precomputed-foot mechanism and don't
+/// reach this vehicle path).
+///
+/// These are **heights**, not cell level bytes. Native compares two
+/// `GetGroundHeight` results (`0x004B3CEC` destination, `0x004B3D1A` the mover's
+/// own coordinate, compared at `0x004B3D21`), and the two differ exactly where a
+/// mover is partway down a ramp whose cell level already equals the flat cell it
+/// is leaving for — which is about half of all ramp-to-flat adjacencies on the
+/// stock maps, so it is the ordinary case rather than a corner.
 fn slope_factor_for(
     speed_type: SpeedType,
-    cur_level: u8,
-    next_level: u8,
+    cur_height: i32,
+    next_height: i32,
     config: &TerrainSpeedConfig,
 ) -> SimFixed {
     let tracked = speed_type == SpeedType::Track;
-    if next_level > cur_level {
+    if next_height > cur_height {
         // Uphill.
         if tracked {
             config.tracked_uphill
         } else {
             config.wheeled_uphill
         }
-    } else if next_level < cur_level {
+    } else if next_height < cur_height {
         // Downhill.
         if tracked {
             config.tracked_downhill
@@ -265,6 +309,66 @@ fn slope_factor_for(
 mod tests {
     use super::*;
     use crate::rules::terrain_rules::SpeedCostProfile;
+
+    /// A8 D1: leaving a ramp onto a flat cell at the ramp's own level is
+    /// downhill, and reading level bytes cannot see that.
+    ///
+    /// Native compares two `GetGroundHeight` samples - the destination's
+    /// coordinate at `0x004B3CEC` and the mover's own at `0x004B3D1A`, compared
+    /// at `0x004B3D21`. This port compared the two cells' integer `level` bytes,
+    /// which are equal in exactly this shape, so it applied 1.0 where gamemd
+    /// applies `Tracked/WheeledDownhill`.
+    ///
+    /// Stated without assuming which way a given ramp faces: somewhere inside a
+    /// ramp cell there is a position whose ground height differs from the flat
+    /// neighbour's, while the two cells' level bytes are identical. That is the
+    /// whole defect, and the sampled comparison sees it.
+    #[test]
+    fn a_ramp_position_differs_in_height_from_a_flat_cell_at_the_same_level() {
+        use crate::util::lepton::ground_height_leptons;
+
+        const LEVEL: u8 = 3;
+        let flat = ground_height_leptons(LEVEL, 0, 5 * 256 + 128, 5 * 256 + 128)
+            .expect("a flat cell is always evaluable");
+
+        // Sample across one ramp cell of each modelled slope.
+        let mut found_any = false;
+        for slope in 1..=20u8 {
+            let Ok(corner) = ground_height_leptons(LEVEL, slope, 4 * 256 + 8, 4 * 256 + 8) else {
+                continue;
+            };
+            let Ok(opposite) = ground_height_leptons(LEVEL, slope, 4 * 256 + 248, 4 * 256 + 248)
+            else {
+                continue;
+            };
+            if corner == flat && opposite == flat {
+                continue;
+            }
+            found_any = true;
+
+            // The level bytes are equal, so the old level-byte comparison called
+            // every one of these flat.
+            let config = TerrainSpeedConfig::default();
+            let by_level = slope_factor_for(
+                SpeedType::Track,
+                i32::from(LEVEL),
+                i32::from(LEVEL),
+                &config,
+            );
+            assert_eq!(by_level, SIM_ONE, "equal levels always read as flat");
+
+            let sampled = slope_factor_for(SpeedType::Track, corner, flat, &config);
+            let sampled_other = slope_factor_for(SpeedType::Track, opposite, flat, &config);
+            assert!(
+                sampled != SIM_ONE || sampled_other != SIM_ONE,
+                "slope {slope}: sampling must see a grade the level bytes hide"
+            );
+        }
+        assert!(
+            found_any,
+            "no modelled slope varied the height inside a cell; the premise is wrong"
+        );
+    }
 
     #[test]
     fn speed_multiplier_for_normal_terrain() {
