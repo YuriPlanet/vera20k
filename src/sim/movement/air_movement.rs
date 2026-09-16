@@ -29,7 +29,6 @@ use crate::sim::components::MovementTarget;
 use crate::sim::debug_event_log::DebugEventKind;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::movement::facing_from_delta;
-use crate::sim::movement::jumpjet_movement;
 use crate::sim::movement::locomotor::{AirMovePhase, LocomotorState, MovementLayer};
 use crate::util::fixed_math::{
     SIM_HALF, SIM_ONE, SIM_ZERO, SimFixed, native_movement_frame_fraction,
@@ -209,7 +208,15 @@ pub fn tick_air_movement(
             .filter(|&id| {
                 entities.get(id).is_some_and(|e| {
                     e.locomotor.as_ref().is_some_and(|loco| {
-                        loco.layer == MovementLayer::Air && loco.kind != LocomotorKind::Rocket
+                        // Jumpjets are driven by their own locomotor:
+                        // `world::jumpjet_cruise` runs `Process 0x0054AEC0`,
+                        // which owns their state, altitude, facing and speed.
+                        // This adapter must not touch them, or the two
+                        // authorities fight (an idle one used to cycle takeoff
+                        // and landing every 102 frames).
+                        loco.layer == MovementLayer::Air
+                            && loco.kind != LocomotorKind::Rocket
+                            && loco.kind != LocomotorKind::Jumpjet
                     })
                 })
             })
@@ -231,19 +238,7 @@ pub fn tick_air_movement(
         };
 
         let air_phase_before = loco.air_phase;
-        let is_jumpjet: bool = loco.kind == LocomotorKind::Jumpjet;
-        // Original Process54AEC0 state0 calls54B980 only for IsMoving.
-        // The independent retained query state never comes from AirMovePhase.
-        if let Some(state) = loco.jumpjet_runtime_mut() {
-            state.activate();
-        }
-        if is_jumpjet {
-            jumpjet_movement::tick_jumpjet_altitude(loco, dt);
-            let has_mt: bool = entity.movement_target.is_some();
-            jumpjet_movement::tick_jumpjet_acceleration(loco, dt, has_mt);
-        } else {
-            tick_altitude(loco, dt);
-        }
+        tick_altitude(loco, dt);
         let air_phase_after = loco.air_phase;
         if air_phase_after != air_phase_before {
             let from = format!("{:?}", air_phase_before);
@@ -399,10 +394,8 @@ pub fn tick_air_movement(
         }
 
         // Speed ramping for Fly aircraft (after altitude and movement).
-        if !is_jumpjet {
-            if let Some(ref mut loco) = entity.locomotor {
-                ramp_fly_speed(loco);
-            }
+        if let Some(ref mut loco) = entity.locomotor {
+            ramp_fly_speed(loco);
         }
     }
 
@@ -419,13 +412,6 @@ pub fn tick_air_movement(
                 LocomotorKind::Fly => {
                     // Fly units stay at altitude until given another order.
                     loco.air_phase = AirMovePhase::Cruising;
-                }
-                LocomotorKind::Jumpjet => {
-                    loco.air_phase = AirMovePhase::Hovering;
-                    // BalloonHover=false: begin landing immediately after arrival.
-                    if jumpjet_movement::should_land(loco) {
-                        loco.air_phase = AirMovePhase::Descending;
-                    }
                 }
                 _ => {}
             }
@@ -457,35 +443,7 @@ pub fn tick_air_movement(
         }
         if let Some(ref mut loco) = entity.locomotor {
             let idle_phase_before = loco.air_phase;
-            if loco.kind == LocomotorKind::Jumpjet {
-                // Idle jumpjets: ascend to hover altitude if not already there.
-                if loco.air_phase == AirMovePhase::Landed {
-                    loco.air_phase = AirMovePhase::Ascending;
-                }
-                // BalloonHover=false idle jumpjets begin landing.
-                if jumpjet_movement::should_land(loco) {
-                    loco.air_phase = AirMovePhase::Descending;
-                }
-                jumpjet_movement::tick_jumpjet_altitude(loco, dt);
-                // State 4's landing (0x0054C8CB..C8DC): NullCoord destination,
-                // moving byte clear, state 0. Only a hold or descent the native
-                // cruise handed over carries state 2 or 4 here.
-                if loco.air_phase == AirMovePhase::Landed
-                    && let Some(state) = loco.jumpjet_runtime_mut()
-                    && matches!(
-                        state.phase,
-                        super::jumpjet_flight::STATE_HOLD | super::jumpjet_flight::STATE_DESCEND
-                    )
-                {
-                    state.phase = super::jumpjet_flight::STATE_GROUND;
-                    state.destination = jumpjet_movement::JumpjetRuntime::NULL;
-                    state.moving = false;
-                }
-                // Decelerate to zero while idle.
-                jumpjet_movement::tick_jumpjet_acceleration(loco, dt, false);
-            } else {
-                tick_altitude(loco, dt);
-            }
+            tick_altitude(loco, dt);
             let idle_phase_after = loco.air_phase;
             if idle_phase_after != idle_phase_before {
                 let from = format!("{:?}", idle_phase_before);

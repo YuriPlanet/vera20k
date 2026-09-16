@@ -32,6 +32,10 @@ pub struct JumpjetRuntime {
     pub params: super::jumpjet_flight::JumpjetFlightParams,
     /// Facing, speeds, target height and bob (`+0x54..+0x8C`).
     pub flight: super::jumpjet_flight::JumpjetFlight,
+    /// Locomotor `+0x90`: State 4 sets this once it has admitted a landing, so
+    /// later descent frames stop re-testing the cell. Touchdown clears it.
+    #[serde(default)]
+    pub landing_latched: bool,
 }
 
 impl Default for JumpjetRuntime {
@@ -42,6 +46,7 @@ impl Default for JumpjetRuntime {
             phase: 0,
             params: Default::default(),
             flight: Default::default(),
+            landing_latched: false,
         }
     }
 }
@@ -94,6 +99,13 @@ impl JumpjetRuntime {
 
     /// State0 handler54B980, after its owner callbacks. House53A130 is the
     /// original constantfalse leaf, not a house-policy input.
+    ///
+    /// Test-only since the locomotor took over the tick. Production reaches the
+    /// same promotion through [`super::jumpjet_flight::state0_ground`], which
+    /// `world::jumpjet_cruise` dispatches from `Process 0x0054AEC0`; that is the
+    /// single authority. This mirror survives only because the
+    /// `jumpjet_coordinates` corpus drives `activate` as one of its actions.
+    #[cfg(test)]
     pub(crate) fn activate(&mut self) {
         if self.phase == 0 && self.moving {
             self.phase = 1;

@@ -653,6 +653,7 @@ impl Simulation {
             schema.includes_raw_infantry_owners(),
         );
         self.substrate.fold_hidden_occupation(&mut hasher);
+        self.substrate.fold_air_slots(&mut hasher);
         self.substrate.fold_base_reservations(&mut hasher);
         if schema.includes(HashFeature::CellMembership) {
             self.substrate.occupancy.hash_memberships(&mut hasher);
@@ -4842,6 +4843,7 @@ mod bridge161_hash_projection_tests {
                 3 => state.flight.target_height = 7,
                 4 => state.flight.current_speed_bits = 1.0f64.to_bits(),
                 5 => state.params.speed = 99,
+                6 => state.landing_latched = true,
                 _ => unreachable!(),
             },
             _ => unreachable!("supplied bridge payload only"),
@@ -4855,7 +4857,7 @@ mod bridge161_hash_projection_tests {
         for (kind, fields) in [
             (LocomotorKind::Walk, 4),
             (LocomotorKind::Hover, 1),
-            (LocomotorKind::Jumpjet, 6),
+            (LocomotorKind::Jumpjet, 7),
         ] {
             for stashed in [false, true] {
                 for field in 0..fields {

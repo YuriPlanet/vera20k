@@ -569,6 +569,61 @@ impl HiddenOccupationGrid {
     }
 }
 
+/// `CellClass+0xE0`, the single airborne object a cell holds (the AltObject
+/// slot).
+///
+/// gamemd-derived: `0x004135A0` answers whether the slot holds an object other
+/// than the caller, and `0x00487D70` writes it — a zero argument clears it, and
+/// a claim is refused while a different object holds it. One hovering Jumpjet
+/// owns a cell's air slot; the next one to reach cruise height over that cell
+/// scatters to a neighbour instead (`JumpjetLocomotionClass` States 1, 3 and 4).
+///
+/// Serialized verbatim alongside the raw occupation planes: which owner holds a
+/// slot, and when it was released, is not reconstructible from entity positions
+/// or locomotor phase.
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AirSlotGrid {
+    cells: BTreeMap<(u16, u16), u64>,
+}
+
+impl AirSlotGrid {
+    /// The object holding the cell's slot, if any.
+    pub(crate) fn holder(&self, rx: u16, ry: u16) -> Option<u64> {
+        self.cells.get(&(rx, ry)).copied()
+    }
+
+    /// `0x00487D70(cell, owner)`. Refused while another object holds the slot,
+    /// which is how the original keeps one hoverer per cell.
+    pub(crate) fn claim(&mut self, rx: u16, ry: u16, owner: u64) -> bool {
+        match self.cells.get(&(rx, ry)) {
+            Some(&held) if held != owner => false,
+            _ => {
+                self.cells.insert((rx, ry), owner);
+                true
+            }
+        }
+    }
+
+    /// `0x00487D70(cell, 0)`.
+    pub(crate) fn release(&mut self, rx: u16, ry: u16) {
+        self.cells.remove(&(rx, ry));
+    }
+
+    /// Drop every slot an object still holds. A Jumpjet removed while hovering
+    /// never runs State 4's release, so lifecycle teardown owns this.
+    pub(crate) fn release_owner(&mut self, owner: u64) {
+        self.cells.retain(|_, held| *held != owner);
+    }
+
+    pub(crate) fn entry_count(&self) -> usize {
+        self.cells.len()
+    }
+
+    pub(crate) fn entries(&self) -> impl Iterator<Item = (u16, u16, u64)> + '_ {
+        self.cells.iter().map(|(&(rx, ry), &owner)| (rx, ry, owner))
+    }
+}
+
 fn hidden_diagonal_cells(
     origin: (u16, u16),
     foundation: &str,
