@@ -438,7 +438,7 @@ These existing reports contain verified CellClass field information:
 | [ZONE_PASSABILITY_VERIFIED.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/ZONE_PASSABILITY_VERIFIED.md) | ZoneType (0x4C), passability matrix |
 | [COORDINATE_ATOMS_AUDIT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/COORDINATE_ATOMS_AUDIT.md) | Level (0x11B), height-to-pixel conversion |
 | VOXEL_SLOPE_TILT_SYSTEM.md | SlopeIndex (0x11C), slope types 0-20 |
-| CLIFF_OBJECTS_GHIDRA_REPORT.md | CliffBackImpassability in RecalcAttributes, GetEffectiveHeight |
+| [CLIFF_OBJECTS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/CLIFF_OBJECTS_GHIDRA_REPORT.md) | CliffBackImpassability in RecalcAttributes, GetEffectiveHeight |
 | [CELL_OCCUPATION_MARKING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELL_OCCUPATION_MARKING_GHIDRA_REPORT.md) | OccupationFlags (0x124), AltOccupationFlags (0x128) |
 | [SHROUD_SYSTEM_COMPLETE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SHROUD_SYSTEM_COMPLETE.md) | Shroud-related fields, VisibleToHouses (0x78) |
 | [INFANTRY_SUBCELL_POSITIONING.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/INFANTRY_SUBCELL_POSITIONING.md) | Sub-cell occupation bits in OccupationFlags |

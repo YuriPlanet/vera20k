@@ -8,7 +8,7 @@ This is the current investigation frontier, not a completed mechanism census.
 ## Rows
 
 Historical registry values below are native evidence / Rust implementation / parity from
-[registry.v2.json](../../system-map/registry.v2.json). They are inherited status,
+[registry.v2.json](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/system-map/registry.v2.json). They are inherited status,
 not newly established equivalence. The System Map was retired on 2026-09-10;
 do not maintain these inherited values as current status. Paths are representative owners;
 references are starting evidence whose applicability must be checked per mechanism.
@@ -34,7 +34,7 @@ references are starting evidence whose applicability must be checked per mechani
 
 ## Loops
 
-The archived [topology](../../system-map/topology.v2.json) records representative
+The archived [topology](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/system-map/topology.v2.json) records representative
 connections, not an exhaustive Phase 3 loop inventory:
 
 - `LOOP-005-BUILD-PLACE`: cell passability and occupancy, stages 10–11.

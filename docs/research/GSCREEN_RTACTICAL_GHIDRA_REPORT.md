@@ -12,7 +12,7 @@
 **Active in YR:** Yes — this is the top-level render/input pipeline for every in-game frame.
 
 > This report fills the gap left by the existing docs ([TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md),
-> `SIDEBAR_SYSTEM_GHIDRA_REPORT.md`, [MouseClass_research.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MouseClass_research.md), [ScrollClass_research.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ScrollClass_research.md),
+> [SIDEBAR_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/SIDEBAR_SYSTEM_GHIDRA_REPORT.md), [MouseClass_research.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MouseClass_research.md), [ScrollClass_research.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ScrollClass_research.md),
 > `MAPCLASS_GHIDRA_REPORT.md`) by focusing on **GScreenClass itself** (the empty base that
 > is never instantiated standalone) and the **orchestration contract** between the display
 > chain (`g_DisplayChain` = `MouseClass*` at `0x00887640`) and the sibling tactical object
@@ -651,7 +651,7 @@ does NOT need to expose the surface-swap / dirty-bit plumbing the original uses.
 
 **Doc files cross-referenced:**
 - [TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md) — three-pass internals of `TacticalClass::Draw`
-- `SIDEBAR_SYSTEM_GHIDRA_REPORT.md` — SidebarClass vtable, input dispatch chain, class hierarchy
+- [SIDEBAR_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/SIDEBAR_SYSTEM_GHIDRA_REPORT.md) — SidebarClass vtable, input dispatch chain, class hierarchy
 - [MouseClass_research.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MouseClass_research.md) — MouseClass override methods, cursor state
 - [ScrollClass_research.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ScrollClass_research.md) — Edge scroll, RMB drag, scroll coasting
 - `MAPCLASS_GHIDRA_REPORT.md` — MapClass field layout (the largest chain member)

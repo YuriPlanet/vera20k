@@ -644,7 +644,7 @@ round trip proving the installed word persists without an extra draw.
   [SKIRMISH_RANDOM_COLOR_AND_SETTINGS_PERSISTENCE_TRIGGER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_RANDOM_COLOR_AND_SETTINGS_PERSISTENCE_TRIGGER_GHIDRA_REPORT.md).
 - Design-review follow-up decompile/call-order census: `0x00599650`, `0x00686B20`,
   `0x0058F2C0`, `0x005A6C10`, and `0x00686890`; reconciled against
-  `SKIRMISH_START_TO_FULL_INIT_SPAWN_TRACE.md`.
+  [SKIRMISH_START_TO_FULL_INIT_SPAWN_TRACE.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/skirmish-ui/SKIRMISH_START_TO_FULL_INIT_SPAWN_TRACE.md).
 - Revision-5 follow-up: caller/xref and pointer-byte census for `0x005A5020`, `0x005A6510`,
   `0x005A82E0`, and `0x005A91E0`; authored constructor/loader decompiles
   `0x006F2B90`, `0x004D31E0`, `0x00743270`, `0x0041B110`, `0x0051FB00`, and

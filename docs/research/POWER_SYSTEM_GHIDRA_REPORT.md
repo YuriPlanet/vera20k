@@ -1440,7 +1440,7 @@ The EMP counter at +0x504 decrements each tick until it reaches 0.
 
 Detailed deep-dives are in separate files:
 
-- [POWER_BAR_RENDERING.md](POWER_BAR_RENDERING.md) — POWERP.SHP frames, segment
+- [POWER_BAR_RENDERING.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/POWER_BAR_RENDERING.md) — POWERP.SHP frames, segment
   calculation, flash/interpolation animation, drawing coordinates
 - [SPECIAL_BUILDINGS_POWER_SYSTEM.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPECIAL_BUILDINGS_POWER_SYSTEM.md) — Gap
   Generator state machine, Cloak Generator, Laser Fence, Psychic Sensor, super

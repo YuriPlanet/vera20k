@@ -205,4 +205,4 @@ The executed research document must:
   - `ini/art.ini`
 - Related plans:
   - `docs/plans/2026-05-10-warhead-detonation-smudge-spawn-plan.md`
-  - `docs/plans/2026-05-17-ggi-guardian-gi-investigation-plan.md`
+  - [docs/plans/2026-05-17-ggi-guardian-gi-investigation-plan.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/plans/2026-05-17-ggi-guardian-gi-investigation-plan.md)

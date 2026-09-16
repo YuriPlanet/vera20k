@@ -495,7 +495,7 @@ this slice.
 
 - **Design / study:** [docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md) (§4.1 primitive
   fidelity, §6 boundary, §7 retire list, §8 Slice 1); `docs/plans/2026-05-28-logicclass-object-lifecycle-spine-design.md`
-  (Lifecycle helpers, Chosen Approach); `docs/plans/2026-05-28-logicclass-scheduler-live-pass-contract.md`
+  (Lifecycle helpers, Chosen Approach); [docs/plans/2026-05-28-logicclass-scheduler-live-pass-contract.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/plans/2026-05-28-logicclass-scheduler-live-pass-contract.md)
   (primitive already built).
 - **gamemd.exe (verified this session, kept out of Rust comments):** `ObjectClass::Reveal 0x005F4EC0`
   → register `0x0055BAA0`; `ObjectClass::Conceal 0x005F4D30` → remover `0x0055BAE0`; `ObjectClass::UnInit

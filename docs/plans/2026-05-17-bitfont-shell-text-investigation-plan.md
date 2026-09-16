@@ -30,7 +30,7 @@ ListBox, Edit) get from a `wchar_t*` to pixels on the 16-bit display surface, us
   documents flag `0x04` = vertical center; horizontal align bits `0x01` center,
   `0x02` right; color conversion via `g_DD_*Loss/Shift`. **Open question 3** in
   that doc: font identity not named beyond `g_GAME_FNT`/bitfont state.
-- `CREDITS_COUNTER_SYSTEM.md`, [ADDRESS_MAP.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ADDRESS_MAP.md) — incidental.
+- [CREDITS_COUNTER_SYSTEM.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/CREDITS_COUNTER_SYSTEM.md), [ADDRESS_MAP.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ADDRESS_MAP.md) — incidental.
 
 **Conflicts to resolve:**
 - `SIDEBAR_READY_TEXT_RENDERING.md` claims FNT header `[0x08] = 3 = inter-char
@@ -286,7 +286,7 @@ The executed research document must:
   - `docs/research/SKIRMISH_SHELL_ACTIVE_RENDER_PATH_LIVE_GHIDRA_REPORT.md` §0x00621040
   - [docs/research/TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md)
   - `docs/research/SELECTION_BRACKETS_PIPS_DRAW_ORDER_GHIDRA_REPORT.md`
-  - `docs/research/CREDITS_COUNTER_SYSTEM.md`
+  - [docs/research/CREDITS_COUNTER_SYSTEM.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/CREDITS_COUNTER_SYSTEM.md)
   - [docs/research/ADDRESS_MAP.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ADDRESS_MAP.md)
 - INI files checked: none — bitfont has no INI surface
 - Rust files inspected: `src/assets/fnt_file.rs`, `src/render/sidebar_text.rs`
