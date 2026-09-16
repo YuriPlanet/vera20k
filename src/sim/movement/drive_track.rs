@@ -148,6 +148,20 @@ pub struct DriveTrackState {
     pub raw_track_index: u8,
     /// Current position within the track's point array.
     pub point_index: u16,
+    /// The curve has not occupied its first point yet.
+    ///
+    /// Native's cursor (`[EBP+0x5C]`) is a signed dword that the step loop reads
+    /// *before* incrementing (`0x004B1596` read, `0x004B1F4F INC` at the tail),
+    /// so a fresh selection starting at zero (`0x004B4659`) occupies
+    /// `points[0]` on its first paid step. VERA's cursor is unsigned and doubles
+    /// as "the point we are standing on", so it has no way to spell native's
+    /// pre-start state; this flag is that state.
+    ///
+    /// A chained curve installs `entry_index - 1` and leaves this clear, because
+    /// native's chain rejoins the loop at the tail increment and so renders
+    /// `points[entry_index]` first.
+    #[serde(default)]
+    pub before_first_point: bool,
     /// Movement budget remaining from the previous tick. The original engine
     /// carries leftover budget across ticks so
     /// faster vehicles process more track points and fractional progress isn't
@@ -3894,6 +3908,7 @@ pub fn begin_selected_drive_track(plan: &DriveTrackPlan) -> Option<DriveTrackSta
         plan.selection.target_facing,
     )?;
     state.point_index = 0;
+    state.before_first_point = true;
     Some(state)
 }
 
@@ -4023,6 +4038,10 @@ pub fn begin_drive_track_with_head_offset(
     Some(DriveTrackState {
         raw_track_index,
         point_index: meta.entry_index,
+        // Chained adoption overwrites both of these at the install site; a
+        // fresh curve goes through `track_head::begin_fresh`, which sets the
+        // flag. Defaulting to clear keeps the chain path's meaning.
+        before_first_point: false,
         residual: 0,
         transform_flags: transform_flags & 0x07, // only lower 3 bits
         head_offset_x,
@@ -4140,9 +4159,30 @@ fn advance_drive_track_with_budget_mode(
     let mut budget: i32 = fresh_budget + *residual_budget;
 
     // Consume track points at TRACK_STEP_COST each.
-    while budget > TRACK_STEP_COST && state.point_index < last_index {
-        state.point_index += 1;
+    //
+    // Native pays for the point it is about to read, reads `points[cursor]`
+    // (`0x004B1596`, after `0x004B159D SUB EDI,0x7`), and increments only at the
+    // loop tail (`0x004B1F4F`), so the first paid step of a fresh curve occupies
+    // `points[0]`. The curve ends when that read lands on the stored `(0, 0)`
+    // sentinel one slot past the real points (`0x004B15C0..0x004B15C8` tests x
+    // and y both zero at a non-zero cursor); the sentinel read costs its 7 like
+    // any other step and then credits part of it back. VERA's arrays stop before
+    // the sentinel, so "read the sentinel" is "the next index is past the end".
+    let mut finished = false;
+    while budget > TRACK_STEP_COST {
         budget -= TRACK_STEP_COST;
+        let next = if state.before_first_point {
+            0
+        } else {
+            state.point_index.saturating_add(1)
+        };
+        if next > last_index || usize::from(next) >= points.len() {
+            budget += terminal_budget_credit(points, state.point_index, state.transform_flags);
+            finished = true;
+            break;
+        }
+        state.before_first_point = false;
+        state.point_index = next;
 
         // Coordinate-based cell detection: transform the track point and
         // check if the resulting sub-cell position is outside [0, 256).
@@ -4177,7 +4217,9 @@ fn advance_drive_track_with_budget_mode(
     state.residual = budget;
     *residual_budget = budget;
 
-    let finished = state.point_index >= last_index;
+    // `finished` is set by the sentinel branch above, not by arriving at the
+    // last real point: native occupies that point and only ends the curve on the
+    // following read, which is one more paid step.
     // Track completion retains the canonical owner residual and its synchronized
     // detached-state mirror for the caller's next movement decision.
 
@@ -4240,6 +4282,30 @@ fn advance_drive_track_with_budget_mode(
 // ---------------------------------------------------------------------------
 // Sub-step interpolation
 // ---------------------------------------------------------------------------
+
+/// Budget credited back when the step loop reads the end-of-track sentinel.
+///
+/// `0x004B1FD0..0x004B1FF9`: native takes the manhattan distance from the object
+/// to the track head in leptons, then `FILD` / `FMUL [0x007E7FB8]` (1/11) /
+/// `FSUBR [0x007E1718]` (1.0) / `FMUL [0x007E7FB0]` (7.0) / `ftol`, and
+/// `ADD EBX,EAX` puts the result back into the running budget. All three
+/// constants were read from the binary.
+///
+/// The head is where the sentinel `(0, 0)` maps to, so an object standing on
+/// `last_point` is exactly the transformed point's own offset away from it.
+/// The arithmetic is done in `f64` in native's operation order: these are IEEE
+/// doubles either way, and gamemd runs with the x87 precision control at 53
+/// bits, so the sequence rounds the same.
+fn terminal_budget_credit(points: &[TrackPoint], last_point: u16, transform_flags: u8) -> i32 {
+    let Some(point) = points.get(usize::from(last_point)) else {
+        return 0;
+    };
+    let (tx, ty, _) = transform_track_point(point.x, point.y, point.facing, transform_flags);
+    let manhattan = i32::from(tx).abs() + i32::from(ty).abs();
+    // `Math::ftol @ 0x007C5F00` truncates toward zero, which is what `as i32`
+    // does for an f64 in range.
+    ((1.0_f64 - f64::from(manhattan) / 11.0) * 7.0) as i32
+}
 
 /// Step cost denominator. The original engine consumes 7 budget units per
 /// track point; residual budget after the step loop is in `0..=7` and feeds

@@ -56,6 +56,7 @@ fn fixture() -> (Simulation, RuleSet) {
 
 fn curve() -> DriveTrackState {
     DriveTrackState {
+        before_first_point: false,
         raw_track_index: 1,
         point_index: 3,
         residual: 5,

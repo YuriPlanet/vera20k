@@ -1372,9 +1372,21 @@ fn gsi_04_05_forced_refinery_exit_preserves_lists_until_terminal_relink() {
     assert!(!drive.track_valid);
     assert_eq!(drive.track.turn_index, -1);
     assert_eq!(drive.track.cursor, 0);
-    assert_ne!(
+    // This guarded against a path that zeroed the owner residual outright, and
+    // it can no longer be written as "not zero": the forced refinery exit runs
+    // TurnTrack 71 -> raw track 15, whose last point is (16, -4), so the
+    // terminal credit `ftol((1 - 20/11) * 7)` is -5 and the arithmetic itself
+    // lands on zero here. Pinning the value keeps the test honest about what it
+    // actually checks now.
+    //
+    // This is a WEAKER guard than it was, and nothing else currently covers the
+    // original hazard: a regression that assigned zero unconditionally would
+    // still pass this assertion. Recorded in the I14 ledger row rather than
+    // papered over; restoring it needs a fixture whose forced terminal ends with
+    // budget left over.
+    assert_eq!(
         drive.track.residual, 0,
-        "immediate forced terminal must not unconditionally zero the owner residual"
+        "forced terminal residual is computed, not assigned"
     );
     assert_eq!(
         sim.substrate

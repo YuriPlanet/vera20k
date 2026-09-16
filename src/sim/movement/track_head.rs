@@ -70,7 +70,13 @@ pub(super) fn begin_fresh(
         plan.selection.target_facing,
     )?;
     // Fresh acceptance stores zero; RawTrack.entry is for chained adoption.
+    //
+    // `before_first_point` is what makes the first paid step occupy
+    // `points[0]` rather than `points[1]`: native's cursor starts at zero
+    // (`0x004B4659`) and its loop reads before incrementing, so point zero is
+    // paid for. See `DriveTrackState::before_first_point`.
     curve.point_index = 0;
+    curve.before_first_point = true;
     Some((head, curve))
 }
 

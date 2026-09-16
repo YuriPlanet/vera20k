@@ -321,8 +321,13 @@ fn drive_track_finish_preserves_residual_for_same_tick_retry() {
 
     assert!(advance.finished);
     assert_eq!(state.point_index, last_index);
-    assert_eq!(state.residual, 13);
-    assert_eq!(residual, 13);
+    // 20 buys two steps, not one: the first occupies `last_index`, the second
+    // reads the end-of-track sentinel and ends the curve. 20 - 7 - 7 = 6, then
+    // the terminal credit. Track 15's last point is (16, -4), so manhattan is
+    // 20 and `ftol((1 - 20/11) * 7)` is -5 - the curve ends far enough from the
+    // head that the final snap is charged for rather than refunded.
+    assert_eq!(state.residual, 1);
+    assert_eq!(residual, 1);
 }
 
 #[test]
@@ -1537,4 +1542,88 @@ fn track_tables_match_the_retail_bytes_entry_for_entry() {
             "RAW_TRACKS[{index}] disagrees with gamemd 0x007E7A28 + {index} * 16",
         );
     }
+}
+
+/// A fresh curve occupies `points[0]`, and a whole cell costs what gamemd
+/// charges for it.
+///
+/// Both numbers come from the native loop, not from running this port:
+///
+/// - the loop is entered and repeated only on `budget > 7` (`0x004B1510
+///   CMP EDX,7 / JLE`, and `0x004B1F50`/`0x004B1F56`);
+/// - each pass pays first (`0x004B159D SUB EDI,0x7`) and then reads
+///   `points[cursor]` (`0x004B1596`), incrementing only at the tail
+///   (`0x004B1F4F`), so a fresh cursor of 0 (`0x004B4659`) occupies point 0;
+/// - the curve ends when that read lands on the `(0, 0)` sentinel stored one
+///   slot past the real points (`0x004B15C0..0x004B15C8`), which costs its 7
+///   like any other pass;
+/// - and `0x004B1FD0..0x004B1FF9` then credits `ftol((1 - manhattan/11) * 7)`
+///   back, which for track 1's last point `(0, 3)` is `ftol(5.09) = 5`.
+///
+/// Raw track 1 stores 23 points, so crossing the cell is 23 paid steps (161)
+/// plus the sentinel read (168) less the credit: **163**. Before this test's
+/// change the port spent 154, about 5.5% cheap, on every fresh curve.
+#[test]
+fn fresh_curve_occupies_point_zero_and_a_cell_costs_the_native_budget() {
+    // Exactly what `track_head::begin_fresh` installs for a fresh acceptance.
+    let fresh = || {
+        let mut state = begin_drive_track(1, 0, 0, 0, 0).expect("track 1");
+        state.point_index = 0;
+        state.before_first_point = true;
+        state
+    };
+
+    // One affordable step (8 > 7) must land on point 0, not point 1.
+    let mut state = fresh();
+    let mut residual = 0;
+    let advance = advance_drive_track_with_budget(&mut state, 8, &mut residual);
+    assert_eq!(state.point_index, 0, "the first paid step occupies point 0");
+    assert!(!state.before_first_point);
+    assert!(!advance.finished);
+    assert_eq!(residual, 1);
+
+    // 169 is the least budget that affords all 23 points and the sentinel read:
+    // pass 24 needs `169 - 7 * 23 = 8 > 7`.
+    //
+    // The step loop also breaks partway when the curve carries the mover into
+    // the next cell, so the traversal is fed budget until the curve ends rather
+    // than assumed to complete in one call. What is being measured is the total
+    // spend across the curve, which is where the 163 lives.
+    let points = raw_track_points(1);
+    let last = u16::try_from(points.len() - 1).expect("track 1 fits u16");
+    let mut state = fresh();
+    let mut residual = 169;
+    let mut passes = 0;
+    loop {
+        let advance = advance_drive_track_with_budget(&mut state, 0, &mut residual);
+        if advance.finished {
+            break;
+        }
+        passes += 1;
+        assert!(passes < 40, "curve did not end; residual {residual}");
+    }
+    assert_eq!(
+        state.point_index, last,
+        "it ends standing on the last point"
+    );
+    assert_eq!(residual, 6);
+    assert_eq!(169 - residual, 163, "gamemd spends 163 to cross this cell");
+
+    // One less cannot afford the sentinel read, so the curve is still running
+    // with the mover parked on its last point - which is what native does too,
+    // rather than finishing early.
+    let mut state = fresh();
+    let mut residual = 168;
+    let mut passes = 0;
+    while !advance_drive_track_with_budget(&mut state, 0, &mut residual).finished {
+        passes += 1;
+        if residual <= TRACK_STEP_COST {
+            break;
+        }
+        assert!(passes < 40, "curve did not settle; residual {residual}");
+    }
+    assert_eq!(state.point_index, last);
+    // 23 passes at 7 leaves exactly 7, and the loop needs strictly more than
+    // 7 to take another - so the sentinel read waits for the next tick.
+    assert_eq!(residual, 7, "168 buys the 23 points and stops one short");
 }
