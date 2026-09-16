@@ -268,18 +268,31 @@ fn update_vehicle_speed_fraction(
     distance_to_goal: SimFixed,
 ) {
     // The locomotor-owned target fraction is **not** clamped in gamemd.
-    // `Process_Movement` @ `0x004B2630` writes `drive+0x50` raw, so a healthy
-    // tracked mover going downhill on a 100% land row legitimately carries 1.2
-    // — the terrain chain's own tests assert the combined value exceeds 1.0.
-    // The only native clamp is inside `TechnoClass::SetSpeedFraction` @
-    // `0x004D3710`, on the owner's `+0x578`.
+    // `Process_Movement` @ `0x004B2630` writes `drive+0x50` raw on its ordinary
+    // arm — `0x004B3DFA CMP [drive+0x58],0x40` / `JGE`, so the raw `FSTP` at
+    // `0x004B3E00` is the `< 0x40` side, i.e. everything that is not a
+    // `Force_Track` curve (the bunker family above). So a healthy tracked mover
+    // going downhill on a 100% land row legitimately carries 1.2 — the terrain
+    // chain's own tests assert the combined value exceeds 1.0. The only native
+    // clamp is inside `TechnoClass::SetSpeedFraction` @ `0x004D3710`, on the
+    // owner's `+0x578`.
     //
-    // That clamp is still reached: **every** arm of `Process_Drive_Track` @
-    // `0x004B0F20` terminates in `SetSpeedFraction` through vtable `+0x544`, so
-    // gamemd discards the above-1.0 portion one step later and the mover does
-    // not actually go faster downhill. Keeping this slot unclamped matches
-    // where the native clamp lives, and matters only to anything that reads the
-    // *target* fraction rather than the owner's; it is not a speed change.
+    // That clamp still governs the speed the player sees, because `+0x578` —
+    // not this slot — is the accumulator: `Process_Drive_Track` @ `0x004B0F20`
+    // reads it at `0x004B11D1` and every arm that *writes* it goes through
+    // vtable `+0x544`. Corrected after review: it is **not** true that every
+    // arm calls it. `0x004B11DF JNZ 0x004B1218` skips the call outright when
+    // the owner's current fraction is already at or below the target, which
+    // leaves the previous — already clamped — value standing. Either way gamemd
+    // discards the above-1.0 portion and the mover does not go faster downhill.
+    // Keeping this slot unclamped matches where the native clamp lives, and
+    // matters only to anything that reads the *target* fraction rather than the
+    // owner's; it is not a speed change.
+    //
+    // It is a speed change for a **damaged** mover, which is why that path is
+    // modelled separately: `0x004B3DF0 FMUL [0x007E7FC0]` applies 0.75 after
+    // the slope and before any clamp, so 1.2 and 1.0 targets become 0.9 and
+    // 0.75 and both survive.
     *target_slot = target_fraction;
     if !accelerates {
         *current_slot = target_fraction.clamp(SIM_ZERO, SIM_ONE);
@@ -727,11 +740,12 @@ mod tests {
 
     #[test]
     fn a_downhill_target_stays_above_one_but_the_owner_fraction_does_not() {
-        // `Process_Movement` @ 0x004B2630 writes `drive+0x50` unclamped, so a
-        // 1.2 downhill product survives on the locomotor-owned slot; the only
-        // native clamp is `TechnoClass::SetSpeedFraction` @ 0x004D3710, which
-        // every arm of `Process_Drive_Track` reaches, so the owner's fraction
-        // never exceeds 1.
+        // `Process_Movement` @ 0x004B2630 writes `drive+0x50` unclamped on its
+        // ordinary `drive+0x58 < 0x40` arm (`0x004B3E00`), so a 1.2 downhill
+        // product survives on the locomotor-owned slot; the only native clamp is
+        // `TechnoClass::SetSpeedFraction` @ 0x004D3710, and every arm of
+        // `Process_Drive_Track` that writes the owner's fraction goes through
+        // it, so that fraction never exceeds 1.
         let mut owner_speed = FootSpeedState {
             applied_fraction: SIM_ZERO,
             ..Default::default()
