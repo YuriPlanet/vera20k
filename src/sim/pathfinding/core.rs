@@ -878,6 +878,31 @@ pub trait SearchCellCostClassifier {
     fn classify(&self, from: (u16, u16), candidate: (u16, u16), bridge: bool) -> u8;
 }
 
+/// The mover facts the A* cost evaluation consults for every neighbour.
+///
+/// These four travel together through every search entry, so they travel as
+/// one value. `urgency` drives the code-2 escalation, `mover_is_crusher` and
+/// `is_infantry` select the `Can_Enter_Cell` class arm, and `wall_cost` is the
+/// optional producer for the Foot `+0x1AC` cost class (ledger I9b).
+///
+/// This deliberately excludes `allow_zone_hierarchy` and `playfield_bounds`
+/// (hierarchy admission, not per-neighbour cost) and both movement-zone
+/// parameters: `mz` selects the zone map/hierarchy to consult, while
+/// `movement_zone` is the mover's own zone for passability, and
+/// `movement_zone.unwrap_or(mz)` is the documented fallback between them.
+/// Deliberately **not** `Default`. A defaulted value would mean
+/// `mover_is_crusher: false`, and ledger row I9c records exactly that shape as a
+/// landed regression: five first searches passed a literal `false` and crushers
+/// detoured around sandbags their own crossing would drive through. Every
+/// construction site names every field, so the facts always come from a mover.
+#[derive(Clone, Copy)]
+pub struct MoverSearchFacts<'a> {
+    pub urgency: u8,
+    pub mover_is_crusher: bool,
+    pub is_infantry: bool,
+    pub wall_cost: Option<&'a dyn SearchCellCostClassifier>,
+}
+
 fn emit_astar_trace(options: &AStarOptions<'_>, step: BridgeOracleAStarStep) {
     let Some(sink) = options.trace_sink else {
         return;
@@ -2834,10 +2859,12 @@ pub fn find_path_with_costs(
         resolved_terrain,
         entity_block_map,
         None,
-        urgency,
-        mover_is_crusher,
-        is_infantry,
-        None,
+        MoverSearchFacts {
+            urgency,
+            mover_is_crusher,
+            is_infantry,
+            wall_cost: None,
+        },
     )
 }
 
@@ -2852,10 +2879,7 @@ pub fn find_path_with_costs_marker(
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     entity_block_map: Option<&LayeredEntityBlockMap>,
     marker_overlay: Option<&SearchMarkerOverlay>,
-    urgency: u8,
-    mover_is_crusher: bool,
-    is_infantry: bool,
-    wall_cost: Option<&dyn SearchCellCostClassifier>,
+    facts: MoverSearchFacts<'_>,
 ) -> Option<Vec<(u16, u16)>> {
     let steps = astar_search(
         grid,
@@ -2867,10 +2891,10 @@ pub fn find_path_with_costs_marker(
             entity_blocks,
             entity_block_map,
             marker_overlay,
-            urgency,
-            mover_is_crusher,
-            is_infantry,
-            search_cost_classifier: wall_cost,
+            urgency: facts.urgency,
+            mover_is_crusher: facts.mover_is_crusher,
+            is_infantry: facts.is_infantry,
+            search_cost_classifier: facts.wall_cost,
             movement_zone,
             resolved_terrain,
             ..Default::default()
@@ -2907,10 +2931,12 @@ pub fn find_path_with_costs_corridor(
         resolved_terrain,
         entity_block_map,
         None,
-        urgency,
-        mover_is_crusher,
-        is_infantry,
-        None,
+        MoverSearchFacts {
+            urgency,
+            mover_is_crusher,
+            is_infantry,
+            wall_cost: None,
+        },
     )
 }
 
@@ -2927,10 +2953,7 @@ pub fn find_path_with_costs_corridor_marker(
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     entity_block_map: Option<&LayeredEntityBlockMap>,
     marker_overlay: Option<&SearchMarkerOverlay>,
-    urgency: u8,
-    mover_is_crusher: bool,
-    is_infantry: bool,
-    wall_cost: Option<&dyn SearchCellCostClassifier>,
+    facts: MoverSearchFacts<'_>,
 ) -> Option<Vec<(u16, u16)>> {
     let steps = astar_search(
         grid,
@@ -2943,10 +2966,10 @@ pub fn find_path_with_costs_corridor_marker(
             corridor: Some((zone_map, allowed_zones)),
             entity_block_map,
             marker_overlay,
-            urgency,
-            mover_is_crusher,
-            is_infantry,
-            search_cost_classifier: wall_cost,
+            urgency: facts.urgency,
+            mover_is_crusher: facts.mover_is_crusher,
+            is_infantry: facts.is_infantry,
+            search_cost_classifier: facts.wall_cost,
             movement_zone,
             resolved_terrain,
             ..Default::default()
@@ -2989,10 +3012,12 @@ pub(crate) fn find_path_with_costs_hierarchy_marker(
             resolved_terrain,
             entity_block_map,
             marker_overlay,
-            urgency,
-            mover_is_crusher,
-            is_infantry,
-            None,
+            MoverSearchFacts {
+                urgency,
+                mover_is_crusher,
+                is_infantry,
+                wall_cost: None,
+            },
         )?
         .path,
     )
@@ -3020,10 +3045,7 @@ pub(crate) fn find_path_with_costs_hierarchy_marker_progress(
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     entity_block_map: Option<&LayeredEntityBlockMap>,
     marker_overlay: Option<&SearchMarkerOverlay>,
-    urgency: u8,
-    mover_is_crusher: bool,
-    is_infantry: bool,
-    wall_cost: Option<&dyn SearchCellCostClassifier>,
+    facts: MoverSearchFacts<'_>,
 ) -> Option<HierarchyMarkerPathResult> {
     let progress = HierarchyProgressTracker::new(start, level0_path);
     let steps = astar_search(
@@ -3042,10 +3064,10 @@ pub(crate) fn find_path_with_costs_hierarchy_marker_progress(
             hierarchy_progress: Some(&progress),
             entity_block_map,
             marker_overlay,
-            urgency,
-            mover_is_crusher,
-            is_infantry,
-            search_cost_classifier: wall_cost,
+            urgency: facts.urgency,
+            mover_is_crusher: facts.mover_is_crusher,
+            is_infantry: facts.is_infantry,
+            search_cost_classifier: facts.wall_cost,
             movement_zone,
             resolved_terrain,
             ..Default::default()
@@ -3075,10 +3097,7 @@ pub(crate) fn find_layered_path_hierarchy_marker(
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     entity_block_map: Option<&LayeredEntityBlockMap>,
     marker_overlay: Option<&SearchMarkerOverlay>,
-    urgency: u8,
-    mover_is_crusher: bool,
-    is_infantry: bool,
-    wall_cost: Option<&dyn SearchCellCostClassifier>,
+    facts: MoverSearchFacts<'_>,
 ) -> Option<Vec<LayeredPathStep>> {
     if !matches!(start_layer, MovementLayer::Ground | MovementLayer::Bridge) {
         return None;
@@ -3102,10 +3121,10 @@ pub(crate) fn find_layered_path_hierarchy_marker(
             hierarchy_progress: Some(&progress),
             entity_block_map,
             marker_overlay,
-            urgency,
-            mover_is_crusher,
-            is_infantry,
-            search_cost_classifier: wall_cost,
+            urgency: facts.urgency,
+            mover_is_crusher: facts.mover_is_crusher,
+            is_infantry: facts.is_infantry,
+            search_cost_classifier: facts.wall_cost,
             movement_zone,
             ..Default::default()
         },
@@ -3187,10 +3206,12 @@ pub fn find_layered_path(
         resolved_terrain,
         entity_block_map,
         None,
-        urgency,
-        mover_is_crusher,
-        is_infantry,
-        None,
+        MoverSearchFacts {
+            urgency,
+            mover_is_crusher,
+            is_infantry,
+            wall_cost: None,
+        },
     )
 }
 
@@ -3207,10 +3228,7 @@ pub fn find_layered_path_marker(
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     entity_block_map: Option<&LayeredEntityBlockMap>,
     marker_overlay: Option<&SearchMarkerOverlay>,
-    urgency: u8,
-    mover_is_crusher: bool,
-    is_infantry: bool,
-    wall_cost: Option<&dyn SearchCellCostClassifier>,
+    facts: MoverSearchFacts<'_>,
 ) -> Option<Vec<LayeredPathStep>> {
     if !matches!(start_layer, MovementLayer::Ground | MovementLayer::Bridge) {
         return None;
@@ -3233,10 +3251,10 @@ pub fn find_layered_path_marker(
             bridge_blocks,
             entity_block_map,
             marker_overlay,
-            urgency,
-            mover_is_crusher,
-            is_infantry,
-            search_cost_classifier: wall_cost,
+            urgency: facts.urgency,
+            mover_is_crusher: facts.mover_is_crusher,
+            is_infantry: facts.is_infantry,
+            search_cost_classifier: facts.wall_cost,
             ..Default::default()
         },
     )
