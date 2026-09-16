@@ -561,6 +561,10 @@ fn handle_path_exhaustion(
                     let saved_decel = target.decel_factor;
                     let saved_slowdown = target.slowdown_distance;
                     let saved_group = target.group_id;
+                    // Survives the repath: the wall arm's second refusal lands
+                    // after this replan, and resetting here would mean the
+                    // Override never fires.
+                    let saved_wall_refusal = target.wall_refusal_cell;
                     *target = MovementTarget {
                         path: new_path,
                         path_layers: new_layers,
@@ -577,6 +581,7 @@ fn handle_path_exhaustion(
                         group_id: saved_group,
                         ignore_terrain_cost: false,
                         bypass_grid: false,
+                        wall_refusal_cell: saved_wall_refusal,
                     };
                     let walk = locomotor
                         .as_ref()
@@ -1828,6 +1833,7 @@ fn advance_ordinary_mover(
     // and layer, break out of the while loop, release the borrow, then handle
     // the check in a separate scope below.
     let mut deferred_cell_check: Option<DeferredCellCheck> = None;
+    let mut deferred_wall_override: Option<(u16, u16)> = None;
     let mut deferred_drive_track_chain: Option<DeferredDriveTrackChain> = None;
     let mut deferred_drive_selection_block: Option<movement_step::DriveSelectionRefusal> = None;
     let mut already_finished: bool = false;
@@ -1999,6 +2005,7 @@ fn advance_ordinary_mover(
                     stats,
                     finished_entities,
                     rng,
+                    interner,
                     ctx,
                     mcfg,
                     sim_tick,
@@ -2010,6 +2017,7 @@ fn advance_ordinary_mover(
                 entity.runtime_bridge_transition = admission.runtime_bridge_transition;
                 if !admission.walk_head_admitted {
                     deferred_cell_check = admission.deferred_cell_check;
+                    deferred_wall_override = admission.deferred_wall_override;
                     aborted_for_stuck = admission.aborted_for_stuck;
                     debug_events.extend(admission.debug_events);
                     if deferred_cell_check.is_none() {
@@ -2964,6 +2972,7 @@ fn advance_ordinary_mover(
                     stats,
                     finished_entities,
                     rng,
+                    interner,
                     ctx,
                     mcfg,
                     sim_tick,
@@ -2981,6 +2990,7 @@ fn advance_ordinary_mover(
                     return;
                 }
                 deferred_cell_check = crossing.deferred_cell_check;
+                deferred_wall_override = crossing.deferred_wall_override;
                 pending_bridge_update = crossing.pending_bridge_update;
                 active_layer = crossing.active_layer;
                 debug_events.extend(crossing.debug_events);
@@ -3151,6 +3161,19 @@ fn advance_ordinary_mover(
     // --- Deferred occupancy check (unified vehicle + infantry) ---
     // Runs outside the mutable entity borrow so classify_occupied_cell()
     // can do immutable EntityStore lookups for blocker properties.
+    // The wall-attack Override, outside the entity borrow the crossing held.
+    //
+    // `finished_entities` is what makes this fire once per block rather than
+    // every tick: a second Override with an empty queue archives the CURRENT
+    // mission, so a mover that re-entered next tick would overwrite its archived
+    // Move with Attack and every later Restore would hand it back Attack instead
+    // of its order.
+    if let Some(cell) = deferred_wall_override
+        && crate::sim::mission::authority::override_mission_on_wall_cell(entities, entity_id, cell)
+    {
+        finished_entities.push(entity_id);
+    }
+
     if let Some(check) = deferred_cell_check {
         let rejected_xy = entities
             .get(entity_id)

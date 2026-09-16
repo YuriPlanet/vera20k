@@ -2322,6 +2322,13 @@ pub(super) struct CrossingOutput {
     pub walk_head_admitted: bool,
     /// If set, the caller must handle deferred occupancy outside the entity borrow.
     pub deferred_cell_check: Option<DeferredCellCheck>,
+    /// If set, the mover was refused a second time at this cell by a wall it can
+    /// shoot, and the caller must run the wall-attack Override there.
+    ///
+    /// Deferred rather than fired inline: this function holds decomposed `&mut`
+    /// fields and has neither `&mut EntityStore` nor `&mut GameEntity`, and the
+    /// Override needs to write `mission`, `attack_target` and `navigation`.
+    pub deferred_wall_override: Option<(u16, u16)>,
     /// Bridge render state to apply after the loop. Predicate-driven; see movement_bridge.rs.
     pub pending_bridge_update: super::movement_bridge::BridgeStateUpdate,
     /// The resolved movement layer after all crossings.
@@ -2372,6 +2379,11 @@ pub(super) fn process_cell_crossings(
     stats: &mut MovementTickStats,
     finished_entities: &mut Vec<u64>,
     rng: &mut SimRng,
+    // Borrowed for this call only. The wall arm needs it to resolve house names
+    // for the ally test, and a per-call borrow is what keeps it off
+    // `PathfindingContext`, which outlives the pass and would collide with the
+    // `&mut StringInterner` the pass still needs.
+    interner: &crate::sim::intern::StringInterner,
     ctx: PathfindingContext<'_>,
     mcfg: MovementConfig,
     sim_tick: u64,
@@ -2386,6 +2398,7 @@ pub(super) fn process_cell_crossings(
     let mut walk_boundary = None;
     let mut debug_events: Vec<(u32, DebugEventKind)> = Vec::new();
     let mut deferred_cell_check: Option<DeferredCellCheck> = None;
+    let mut deferred_wall_override: Option<(u16, u16)> = None;
     let mut runtime_bridge_transition = snap.runtime_bridge_transition;
     let mut pending_bridge_update: super::movement_bridge::BridgeStateUpdate =
         super::movement_bridge::BridgeStateUpdate::Unchanged;
@@ -2523,6 +2536,10 @@ pub(super) fn process_cell_crossings(
             }
 
             // --- Terrain walkability check (static map data) ---
+            // Set when the Ground arm refuses because of a wall this mover could
+            // shoot (`Can_Enter_Cell` 4 or 5 rather than 7). Recorded here and
+            // consumed by the refusal block; ledger row I9b.
+            let mut ground_wall_class: Option<u8> = None;
             let layer_walkable = match layer_context.terrain_layer {
                 MovementLayer::Ground => {
                     // Water movers (ships) bypass PathGrid — water cells are
@@ -2538,23 +2555,49 @@ pub(super) fn process_cell_crossings(
                     // sub-cell view of terrain objects has to hold here too —
                     // otherwise A* plans through a tree cell the step-in refuses
                     // and the mover block/repath-loops onto the identical route.
-                    let grid_ok: bool = match path_grid {
-                    Some(grid) => crate::sim::pathfinding::is_cell_passable_for_category_on_layer(
-                        grid,
-                        nx,
-                        ny,
-                        MovementLayer::Ground,
-                        Some(snap.movement_zone),
-                        snap.speed_type,
-                        resolved_terrain,
-                        cost_grid,
-                        target.bypass_grid,
-                        crate::sim::pathfinding::cell_entry::TerrainEntryMode::RuntimeTransition,
-                        category == EntityCategory::Infantry,
-                        snap.regular_crusher,
-                    ),
-                    None => true,
-                };
+                    // Result-preserving: the bool form flattens the wall
+                    // arm's 4 and 5 into the same refusal as a hard 7, and the
+                    // Override needs that distinction. With no wall tables the
+                    // context is `None` and this is the previous predicate
+                    // exactly - see `evaluate_cell_entry_for_category_on_layer`.
+                    let entry = match path_grid {
+                        Some(grid) => {
+                            crate::sim::pathfinding::evaluate_cell_entry_for_category_on_layer(
+                                grid,
+                                nx,
+                                ny,
+                                MovementLayer::Ground,
+                                Some(snap.movement_zone),
+                                snap.speed_type,
+                                resolved_terrain,
+                                cost_grid,
+                                target.bypass_grid,
+                                crate::sim::pathfinding::cell_entry::TerrainEntryMode::RuntimeTransition,
+                                category == EntityCategory::Infantry,
+                                snap.regular_crusher,
+                                ctx.wall_tables.map(|tables| {
+                                    crate::sim::pathfinding::cell_entry::WallArmContext {
+                                        overlay_grid: tables.overlay_grid,
+                                        overlay_registry: tables.overlay_registry,
+                                        alliances: tables.alliances,
+                                        interner: Some(interner),
+                                        mover_owner: Some(snap.owner),
+                                        is_armed: snap.is_armed,
+                                        warhead_wall: snap.warhead_wall,
+                                        warhead_wood: snap.warhead_wood,
+                                    }
+                                }),
+                            )
+                        }
+                        None => crate::sim::pathfinding::cell_entry::CanEnterCellResult::Clear,
+                    };
+                    if let crate::sim::pathfinding::cell_entry::CanEnterCellResult::WallBlocked {
+                        cost_class,
+                    } = entry
+                    {
+                        ground_wall_class = Some(cost_class);
+                    }
+                    let grid_ok: bool = entry.is_clear();
                     let terrain_ok: bool = true;
                     layer_grid_ok = Some(grid_ok);
                     layer_terrain_ok = Some(terrain_ok);
@@ -2614,6 +2657,35 @@ pub(super) fn process_cell_crossings(
                     );
                 }
                 *drive_track_state = None;
+
+                // Wall arm (ledger I9b). `Can_Enter_Cell` answered 4 or 5: a wall
+                // this mover is armed against and whose warhead admits it. Native
+                // does not Override on the first refusal - it drops the path and
+                // retries within the same call (`0x004B3ADB` -> `0x004B4552`,
+                // `arg2 = 0`), and the Override at `0x004B3BE9` fires only when
+                // the repathed first step is refused 4/5 again. So the first
+                // refusal repaths exactly as any other block does, and only a
+                // repeat at the same cell attacks.
+                match ground_wall_class {
+                    Some(_) if target.wall_refusal_cell == Some((nx, ny)) => {
+                        // Second refusal at the same cell: attack it. No
+                        // `handle_blocked_tick` - that would scatter, re-arm the
+                        // blockage timer and start another repath, which is the
+                        // loop this arm exists to break.
+                        deferred_wall_override = Some((nx, ny));
+                        target.wall_refusal_cell = None;
+                        break;
+                    }
+                    Some(_) => {
+                        target.wall_refusal_cell = Some((nx, ny));
+                    }
+                    None => {
+                        // An ordinary block clears the memo, so two unrelated
+                        // refusals can never be read as a repeat.
+                        target.wall_refusal_cell = None;
+                    }
+                }
+
                 // Terrain-blocked (building/cliff) — the path is stale.
                 // Force immediate repath by clearing movement_delay.
                 path_runtime.start_movement(mcfg.binary_frame, 0, walk);
@@ -2956,6 +3028,7 @@ pub(super) fn process_cell_crossings(
     }
 
     CrossingOutput {
+        deferred_wall_override,
         walk_boundary,
         walk_head_admitted,
         deferred_cell_check,

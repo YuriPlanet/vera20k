@@ -150,7 +150,6 @@ pub(crate) fn override_mission_on_blocked_step(
 // Unwired until the crossing's wall arm lands; see ledger row I9b in
 // docs/plans/2026-09-15-movement-retail-acceptance.md. Kept rather than deleted
 // because the producer it pairs with is already in the tree.
-#[allow(dead_code)]
 pub(crate) fn override_mission_on_wall_cell(
     entities: &mut crate::sim::entity_store::EntityStore,
     mover: u64,
