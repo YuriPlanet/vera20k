@@ -1436,4 +1436,109 @@ mod tests {
             "an unarmed mover must still find the wall line impassable"
         );
     }
+
+    /// A wall line that **disconnects** the map is still refused, and that is
+    /// the production gate stack — not the A* arm the test above exercises.
+    ///
+    /// Review caught the headline this work was published under: "a mover whose
+    /// only route crossed a wall line got no path at all" is still true after
+    /// pricing the wall, because the search never reaches A*.
+    /// `zone_search` compares the start and goal base zone labels and returns
+    /// `Err` without calling `astar_search`; a non-crushable `Wall=yes` reduces
+    /// to `zone_class::WALL`, which the zone flood fill treats as impassable, so
+    /// a line across the only route puts the endpoints in different zones.
+    ///
+    /// Native rejects on the same comparison and under the same condition:
+    /// `0x0042CB2A CMP EAX,EDX` / `0x0042CB2C MOV AL,[ESP+0x4C]` /
+    /// `0x0042CB30 JZ` (labels equal, continue) / `0x0042CB34 JZ 0x0042CB8B`
+    /// (hierarchy unusable, fall through) / `0x0042CB39 XOR EAX,EAX; RET`. VERA
+    /// guards its own rejection on `hierarchy_counts_available` and a live
+    /// level-0 hierarchy, which is the same shape.
+    ///
+    /// So what the cost class actually buys is a wall the mover can shoot that
+    /// does **not** disconnect the map — where 20x still beats the detour. This
+    /// test pins the disconnecting case so that claim cannot drift again.
+    #[test]
+    fn a_wall_line_that_disconnects_the_map_is_refused_before_the_cost_class_runs() {
+        use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zone_class};
+        use crate::rules::ini_parser::IniFile;
+        use std::collections::BTreeMap;
+
+        let mut cells = Vec::with_capacity(15);
+        for ry in 0..3u16 {
+            for rx in 0..5u16 {
+                let mut cell = ResolvedTerrainCell::clear_for_test(rx, ry);
+                cell.speed_costs.track = Some(100);
+                if rx == 2 {
+                    cell.zone_type = zone_class::WALL;
+                    cell.overlay_zone_type = Some(zone_class::WALL);
+                    cell.overlay_blocks = true;
+                }
+                cells.push(cell);
+            }
+        }
+        let terrain = ResolvedTerrainGrid::from_cells(5, 3, cells);
+        let grid = PathGrid::from_resolved_terrain(&terrain);
+        let costs = TerrainCostGrid::from_resolved_terrain(&terrain, SpeedType::Track);
+        let zone_grid = ZoneGrid::build(&grid, &BTreeMap::new(), 5, 3);
+        let counts = crate::sim::pathfinding::BlockerNeighborCounts::new(5, 3);
+
+        let registry = crate::map::overlay_types::OverlayTypeRegistry::from_ini(
+            &IniFile::from_str("[OverlayTypes]\n0=GAWALL\n\n[GAWALL]\nWall=yes\n"),
+            None,
+        );
+        let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(5, 3);
+        for ry in 0..3u16 {
+            overlays.cell_mut(2, ry).overlay_id = Some(0);
+        }
+        let mover = crate::sim::intern::test_intern("Americans");
+        let interner = crate::sim::intern::test_interner();
+        let alliances = crate::map::houses::HouseAllianceMap::new();
+
+        let armed = MoverPathFacts {
+            urgency: 0,
+            mover_is_crusher: false,
+            is_infantry: true,
+            speed_type: Some(SpeedType::Track),
+            owner: Some(mover),
+            is_armed: true,
+            warhead_wall: true,
+            warhead_wood: false,
+        };
+        let path = find_move_path(
+            PathfindingContext {
+                wall_tables: Some(crate::sim::pathfinding::cell_entry::WallArmTables {
+                    overlay_grid: Some(&overlays),
+                    overlay_registry: Some(&registry),
+                    alliances: Some(&alliances),
+                    interner: Some(&interner),
+                }),
+                path_grid: Some(&grid),
+                zone_grid: Some(&zone_grid),
+                resolved_terrain: Some(&terrain),
+                playfield_bounds: None,
+                blocker_neighbor_counts: Some(&counts),
+            },
+            false,
+            (0, 1),
+            MovementLayer::Ground,
+            (4, 1),
+            Some(&costs),
+            None,
+            None,
+            None,
+            MovementZone::Normal,
+            Some(MovementZone::Normal),
+            false,
+            None,
+            armed,
+            true,
+        );
+        assert!(
+            path.is_none(),
+            "a wall line that splits the map is refused by the zone comparison \
+             before the cost class is consulted; pricing the wall does not change \
+             that, and the published claim that it did was wrong: {path:?}"
+        );
+    }
 }
