@@ -241,11 +241,19 @@ impl Simulation {
                     Some(rules),
                 )
             });
+            let wall_alliances = crate::sim::pathfinding::cell_entry::WallAllianceLookup::build(
+                &self.house_alliances,
+                &self.interner,
+            );
             request.search(
                 goal,
                 &self.substrate.entities,
                 super::PathfindingContext {
-                    wall_cost: None,
+                    wall_tables: Some(crate::sim::pathfinding::cell_entry::WallArmTables {
+                        overlay_grid: self.overlay_grid.as_ref(),
+                        overlay_registry: registry,
+                        alliances: Some(&wall_alliances),
+                    }),
                     path_grid: grid,
                     zone_grid: self.zone_grid.as_ref(),
                     resolved_terrain: self.resolved_terrain.as_ref(),

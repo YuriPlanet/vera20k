@@ -393,6 +393,86 @@ pub struct CanEnterCellContext<'a> {
     pub wall: Option<WallArmContext<'a>>,
 }
 
+/// Alliance answers keyed by [`InternedId`], resolved once per movement pass.
+///
+/// [`crate::map::houses::is_allied_with`] takes house *names* and normalizes
+/// both sides through `normalize_house_name`, i.e. two `String` allocations per
+/// query — and the wall arm queries it once per refused neighbour, inside the
+/// A* expansion loop. At the 20,000-mover scale target that is the same class of
+/// per-tick allocation churn that forced commit `2b877fec` to revert the first
+/// attempt at caching mover facts. Resolving the answers once per pass turns it
+/// into an allocation-free ordered-set probe.
+///
+/// It is also closer to native than the string compare was:
+/// `HouseClass::Is_Ally_ByIndex @ 0x004F9A10` indexes the asker's own ally
+/// bitfield by house index. This keys on `InternedId` for the same reason.
+///
+/// Directionality follows `is_allied_with`, not `are_houses_friendly`: gamemd
+/// reads only the asker's bitfield, so alliance is one-way until both houses set
+/// their bit. A house is always its own ally.
+#[derive(Default, Debug, Clone)]
+pub struct WallAllianceLookup {
+    allied: std::collections::BTreeSet<(
+        crate::sim::intern::InternedId,
+        crate::sim::intern::InternedId,
+    )>,
+}
+
+impl WallAllianceLookup {
+    /// Resolve every `(asker, other)` pair the alliance map names, once.
+    ///
+    /// Houses the interner has never seen are skipped rather than interned: this
+    /// takes `&StringInterner`, so it cannot mutate, and a house that has not
+    /// been interned owns nothing on the map and so can own no wall.
+    pub fn build(
+        alliances: &crate::map::houses::HouseAllianceMap,
+        interner: &crate::sim::intern::StringInterner,
+    ) -> Self {
+        let mut allied = std::collections::BTreeSet::new();
+        for (asker, others) in alliances {
+            let Some(asker_id) = interner.get(asker) else {
+                continue;
+            };
+            for other in others {
+                if let Some(other_id) = interner.get(other) {
+                    allied.insert((asker_id, other_id));
+                }
+            }
+        }
+        Self { allied }
+    }
+
+    /// `HouseClass::Is_Ally_ByIndex @ 0x004F9A10`.
+    pub fn is_allied(
+        &self,
+        asker: crate::sim::intern::InternedId,
+        other: crate::sim::intern::InternedId,
+    ) -> bool {
+        asker == other || self.allied.contains(&(asker, other))
+    }
+}
+
+/// The map-global tables the wall arm needs, carried once per movement pass.
+///
+/// Split from [`WallArmContext`] deliberately, and the split is the whole point
+/// of the seam. These three are identical for every mover in a pass, so they ride
+/// on `PathfindingContext` and no caller ever supplies them. The *mover* facts
+/// (`owner`, `is_armed`, the two warhead bools) have a different lifetime — one
+/// per mover — and are resolved by exactly two authorities, `snapshot_mover` on
+/// the tick path and `resolve_move_info` on the order path.
+///
+/// Ledger row I9c is the counter-example this shape exists to avoid: a mover
+/// fact (`mover_is_crusher`) was derived independently at each call site, and the
+/// sites lacking context silently passed `false`, so the same unit behaved
+/// differently depending on which function issued its move. Tables that no
+/// caller passes cannot diverge that way.
+#[derive(Clone, Copy)]
+pub struct WallArmTables<'a> {
+    pub overlay_grid: Option<&'a crate::sim::overlay_grid::OverlayGrid>,
+    pub overlay_registry: Option<&'a crate::map::overlay_types::OverlayTypeRegistry>,
+    pub alliances: Option<&'a WallAllianceLookup>,
+}
+
 /// Everything the wall arm of `Can_Enter_Cell` reads that terrain alone cannot
 /// supply: the overlay at the target cell, the house that owns it, and whether
 /// the mover can shoot a wall at all.
@@ -403,8 +483,7 @@ pub struct CanEnterCellContext<'a> {
 pub struct WallArmContext<'a> {
     pub overlay_grid: Option<&'a crate::sim::overlay_grid::OverlayGrid>,
     pub overlay_registry: Option<&'a crate::map::overlay_types::OverlayTypeRegistry>,
-    pub alliances: Option<&'a crate::map::houses::HouseAllianceMap>,
-    pub interner: Option<&'a crate::sim::intern::StringInterner>,
+    pub alliances: Option<&'a WallAllianceLookup>,
     /// The mover's owning house, compared with the wall's owner through
     /// `HouseClass::Is_Ally_ByIndex @ 0x004F9A10`.
     pub mover_owner: Option<crate::sim::intern::InternedId>,
@@ -452,16 +531,12 @@ impl WallArmContext<'_> {
     /// `HouseClass::Is_Ally_ByIndex @ 0x004F9A10`: true for the mover's own
     /// house, false for an unowned wall (index -1), else the ally bitfield.
     fn owner_is_ally(&self, wall_owner: Option<crate::sim::intern::InternedId>) -> bool {
-        let (Some(alliances), Some(interner), Some(mover), Some(wall)) =
-            (self.alliances, self.interner, self.mover_owner, wall_owner)
+        let (Some(alliances), Some(mover), Some(wall)) =
+            (self.alliances, self.mover_owner, wall_owner)
         else {
             return false;
         };
-        crate::map::houses::is_allied_with(
-            alliances,
-            interner.resolve(mover),
-            interner.resolve(wall),
-        )
+        alliances.is_allied(mover, wall)
     }
 
     /// The accumulated wall code, or `None` when the arm answers 7.
@@ -502,7 +577,7 @@ impl WallArmContext<'_> {
         // sites: a site wired without tables then refuses walls instead of
         // silently mis-pricing them. An unowned wall (`wall_owner: None` with
         // the tables present) still takes 5 — native's index -1.
-        if self.alliances.is_none() || self.interner.is_none() || self.mover_owner.is_none() {
+        if self.alliances.is_none() || self.mover_owner.is_none() {
             return None;
         }
         Some(if self.owner_is_ally(wall_owner) { 4 } else { 5 })
@@ -2935,11 +3010,7 @@ mod tests {
     /// `tables` carries the alliance context the arm needs to answer the ally
     /// test; `None` models a caller that has not wired it, which the arm treats
     /// as a reason to decline rather than to guess.
-    type AllianceTables<'a> = (
-        &'a HouseAllianceMap,
-        &'a crate::sim::intern::StringInterner,
-        crate::sim::intern::InternedId,
-    );
+    type AllianceTables<'a> = (&'a WallAllianceLookup, crate::sim::intern::InternedId);
 
     fn wall_arm<'a>(
         tables: Option<AllianceTables<'a>>,
@@ -2950,9 +3021,8 @@ mod tests {
         WallArmContext {
             overlay_grid: None,
             overlay_registry: None,
-            alliances: tables.map(|(alliances, _, _)| alliances),
-            interner: tables.map(|(_, interner, _)| interner),
-            mover_owner: tables.map(|(_, _, owner)| owner),
+            alliances: tables.map(|(alliances, _)| alliances),
+            mover_owner: tables.map(|(_, owner)| owner),
             is_armed,
             warhead_wall,
             warhead_wood,
@@ -2979,7 +3049,8 @@ mod tests {
         let mover = crate::sim::intern::test_intern("Americans");
         let interner = crate::sim::intern::test_interner();
         let alliances = HouseAllianceMap::new();
-        let tables = Some((&alliances, &interner, mover));
+        let lookup = WallAllianceLookup::build(&alliances, &interner);
+        let tables = Some((&lookup, mover));
         let arm = |armed, wall, wood| wall_arm(tables, armed, wall, wood);
 
         // Wood= against a wooden wall: the vehicle routes, the infantryman does not.
@@ -3103,6 +3174,7 @@ mod tests {
         let mover = crate::sim::intern::test_intern("Americans");
         let interner = crate::sim::intern::test_interner();
         let alliances = HouseAllianceMap::new();
+        let lookup = WallAllianceLookup::build(&alliances, &interner);
 
         let entry = |track_row: Option<u8>| {
             let terrain = wall_row_fixture(track_row);
@@ -3111,8 +3183,7 @@ mod tests {
                 wall: Some(WallArmContext {
                     overlay_grid: Some(&overlays),
                     overlay_registry: Some(&registry),
-                    alliances: Some(&alliances),
-                    interner: Some(&interner),
+                    alliances: Some(&lookup),
                     mover_owner: Some(mover),
                     is_armed: true,
                     warhead_wall: true,

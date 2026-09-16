@@ -278,14 +278,18 @@ pub(super) struct PathfindingContext<'a> {
     pub resolved_terrain: Option<&'a ResolvedTerrainGrid>,
     pub playfield_bounds: Option<PlayfieldBounds>,
     pub blocker_neighbor_counts: Option<&'a crate::sim::pathfinding::BlockerNeighborCounts>,
-    /// Per-mover wall-arm cost producer for the A* `search_cost_classifier`
-    /// seam (ledger I9b).
+    /// Map-global tables the wall arm reads, carried once per pass (ledger I9b).
     ///
     /// The search calls the Foot `+0x1AC` slot per neighbour and prices the
     /// returned class through `AStar_compute_edge_cost @ 0x00429830`; a wall
     /// answers 4 or 5, which expand at 60x and 20x rather than blocking. `None`
     /// keeps the pre-I9b search, where a wall is simply impassable.
-    pub wall_cost: Option<&'a dyn crate::sim::pathfinding::SearchCellCostClassifier>,
+    ///
+    /// This carries the *tables*, not a built classifier: the classifier is
+    /// per mover and is constructed at the search boundary from these plus the
+    /// mover's own facts. Holding a per-mover `&dyn` on a per-pass `Copy` struct
+    /// was a granularity mismatch.
+    pub wall_tables: Option<crate::sim::pathfinding::cell_entry::WallArmTables<'a>>,
 }
 
 /// Movement timing/threshold config derived from rules.ini [General] section.

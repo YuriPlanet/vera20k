@@ -3822,8 +3822,14 @@ impl PendingMovementPass {
                 rules,
             )
         });
+        let wall_alliances =
+            crate::sim::pathfinding::cell_entry::WallAllianceLookup::build(alliances, interner);
         let ctx = PathfindingContext {
-            wall_cost: None,
+            wall_tables: Some(crate::sim::pathfinding::cell_entry::WallArmTables {
+                overlay_grid,
+                overlay_registry,
+                alliances: Some(&wall_alliances),
+            }),
             path_grid,
             zone_grid,
             resolved_terrain: terrain,
@@ -3992,8 +3998,17 @@ pub(crate) fn begin_movement_with_grids_scoped(
                     rules,
                 )
             });
+    // Resolved once per pass, not per mover: see `WallAllianceLookup`. Built
+    // from `&*interner`, and the lookup owns its data, so the immutable borrow
+    // ends here and `interner` stays `&mut` for the rest of the pass.
+    let wall_alliances =
+        crate::sim::pathfinding::cell_entry::WallAllianceLookup::build(alliances, interner);
     let ctx = PathfindingContext {
-        wall_cost: None,
+        wall_tables: Some(crate::sim::pathfinding::cell_entry::WallArmTables {
+            overlay_grid,
+            overlay_registry,
+            alliances: Some(&wall_alliances),
+        }),
         path_grid,
         zone_grid,
         resolved_terrain,
