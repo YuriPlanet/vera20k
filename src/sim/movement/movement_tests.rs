@@ -2566,7 +2566,7 @@ fn gsi_06_01_code_two_grace_window_still_repaths_at_urgency_one() {
 /// different consumer, and the value `handle_blocked_tick` would have written
 /// had the code-2 dispatch not already raised `path_blocked` itself.
 #[test]
-fn code_two_post_scatter_wait_rearms_on_every_pass_while_the_block_holds() {
+fn code_two_arms_blockage_path_delay_once_and_never_scatters() {
     const WAIT: u16 = crate::sim::movement::bump_crush::POST_SCATTER_WAIT_FRAMES;
     // `[AI] BlockagePathDelay` as this harness supplies it. `handle_blocked_tick`
     // writes this value on a `path_blocked` 0 -> 1 transition, but the code-2
@@ -2709,22 +2709,28 @@ fn code_two_post_scatter_wait_rearms_on_every_pass_while_the_block_holds() {
          got {} readings: {waits:?}",
         waits.len()
     );
-    assert!(
-        !waits.contains(&HARNESS_BLOCKAGE_PATH_DELAY),
-        "the code-2 wait must be the post-scatter constant, never BlockagePathDelay; \
-         series: {waits:?}"
+    assert_eq!(
+        waits[0], HARNESS_BLOCKAGE_PATH_DELAY,
+        "the code-2 wait is armed from BlockagePathDelay (Rules+0x1768, read at \
+         0x004B367E), not from a hardcoded constant; series: {waits:?}"
     );
-    for (i, &wait) in waits.iter().take(REQUIRED_SAMPLES).enumerate() {
-        // Each pass through the block re-arms the wait, so the reading is a
-        // sawtooth with period WAIT that never rests at zero. Gating the write
-        // on first entry gives 10, 9, … 1, 0, 0, 0, … instead.
-        let expected = WAIT - (i as u16 % WAIT);
-        assert_eq!(
-            wait, expected,
-            "post-scatter wait at blocked tick {i} should be {expected}; \
-             full series: {waits:?}"
+    // Armed once, behind the latch: native's store sits after
+    // `0x004B3661 JNZ 0x004B3690`, which skips it whenever `+0x6B7` is already
+    // raised, so a re-arm would show up here as a rise.
+    for pair in waits.windows(2) {
+        assert!(
+            pair[1] <= pair[0],
+            "the code-2 wait must never re-arm while the block holds; series: {waits:?}"
         );
     }
+    // It counts all the way down rather than resetting: the fixture runs 60
+    // ticks, so the series ends near zero instead of at it. What matters is the
+    // total fall, which a re-arming timer could never show.
+    let last = *waits.last().expect("samples");
+    assert!(
+        last < HARNESS_BLOCKAGE_PATH_DELAY / 2,
+        "the wait must run down, not reset; series: {waits:?}"
+    );
 }
 
 /// GSI-07.03: the blocked-step Override fires exactly ONCE per block, and the

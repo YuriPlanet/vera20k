@@ -1127,14 +1127,29 @@ pub(super) fn handle_deferred_occupancy(
                 CellEntryResult::TemporaryOccupation => None,
                 _ => unreachable!(),
             };
-            // Drive moving-friendly response: scatter the BLOCKER, then wait.
-            // Walk bypasses that block below and only waits/repaths.
-            // Original Drive locomotor calls CellClass::Scatter_Objects with
-            // force=1 regardless of whether blocker is moving or stationary,
-            // and writes its 10-frame wait into the mover *immediately after*
-            // that call. So the nudge comes first and the wait is what follows
-            // it; arming the wait before the first scatter would delay the first
-            // nudge by the whole wait, which has no source in the original.
+            // Drive moving-friendly response: raise the latch, arm the wait
+            // once, repath. **No scatter** - native's code-2 arm nudges nobody.
+            //
+            // `get_xrefs_to CellClass::Scatter_Objects 0x00481670` gives exactly
+            // four sites inside `Process_Movement` (`0x004B2DC0`, `0x004B327D`,
+            // `0x004B393A`, `0x004B4437`) and the code-2 entry at `0x004B364D`
+            // reaches none of them - the one numerically inside this region,
+            // `0x004B393A`, ends `JMP 0x004B3607`, before the code-2 test, so it
+            // belongs to an earlier arm. What code 2 does is:
+            //
+            //   0x004B3659  MOV CL,[EAX+0x6B7]      the blockage latch
+            //   0x004B3661  JNZ 0x004B3690          already latched: skip
+            //   0x004B3663  MOV byte [EAX+0x6B7],1  raise it
+            //   0x004B3678  ADD EDX,0x668           the blockage timer
+            //   0x004B367E  MOV ECX,[ECX+0x1768]    BlockagePathDelay
+            //   0x004B3684  MOV [EDX],EAX / +4 / +8 arm it
+            //
+            // An earlier version of this comment said the original "calls
+            // Scatter_Objects with force=1 regardless" and wrote a 10-frame wait
+            // "on EVERY pass". Both were wrong: the arming sits behind the latch,
+            // so it happens once per episode, and the 10 was never a wait - it is
+            // `Foot+0x64C = 0xA` at `0x004B3285`, a retry-counter reload consumed
+            // by the decrement at `0x004B2DC8`, on a different arm entirely.
             let mut has_target = false;
             let mut grace_expired = false;
             let mut first_block = false;
@@ -1164,62 +1179,20 @@ pub(super) fn handle_deferred_occupancy(
                 // tick field are the FootClass constructor and
                 // Set_Destination_Internal, both of which store zero). Only the
                 // blocker scatter and the peer refresh below wait for the timer.
-                let mut refreshed_marker_peers = None;
-                // Walk ProcessMovement 0x75B8A0..0x75B9F9 (code 2) only waits/repaths.
-                // The blocker scatter and ten-frame wait below belong to Drive.
-                // Native timer cases: tools/infantry_scatter_oracle.py.
-                if mover_loco_kind != LocomotorKind::Walk && (first_block || grace_expired) {
-                    // Scatter first — on the tick the block is detected, and
-                    // again once the wait has run out.
-                    if let Some(blocker_id) = blocker_id
-                        && !already_scattered.contains(&blocker_id)
-                    {
-                        let scattered = bump_crush::scatter_blocker(
-                            entities,
-                            blocker_id,
-                            path_grid,
-                            resolved_terrain,
-                            occupancy,
-                            object_list_layer,
-                            rng,
-                            rules,
-                            interner,
-                            crate::sim::movement::DestinationTiming::new(
-                                mcfg.binary_frame,
-                                mcfg.blockage_path_delay_ticks,
-                            ),
-                        );
-                        if scattered {
-                            already_scattered.insert(blocker_id);
-                            stats.scatter_successes = stats.scatter_successes.saturating_add(1);
-                        }
-                    }
+                let refreshed_marker_peers = None;
+                // Walk ProcessMovement 0x75B8A0..0x75B9F9 (code 2) only waits and
+                // repaths, and so - now - does Drive. `first_block` is this
+                // port's spelling of the `+0x6B7` latch: it is true exactly on
+                // the pass that raises it, which is the pass native arms the
+                // timer on.
+                if mover_loco_kind != LocomotorKind::Walk && first_block {
                     if let Some(entity) = entities.get_mut(entity_id) {
-                        // The wait the original writes right after the scatter
-                        // call, on EVERY pass through the block: the store sits
-                        // straight-line after the scatter with no branch between
-                        // them. Re-arming does not pin the repath urgency at 1 —
-                        // the wait expires again after its full span, so urgency
-                        // escalates to 2 once per span exactly as it does in the
-                        // original. Gating this on entry instead left the timer
-                        // at zero forever once it first expired, which made the
-                        // blocker scatter — and its scenario-stream draw — fire
-                        // every tick instead of once per span.
                         entity.navigation.path_runtime.start_blocked(
                             mcfg.binary_frame,
-                            bump_crush::POST_SCATTER_WAIT_FRAMES,
-                            mover_loco_kind == LocomotorKind::Walk,
+                            mcfg.blockage_path_delay_ticks,
+                            false,
                         );
                     }
-                    // Retail reads peer paths immediately before A*. Refresh
-                    // only at this seam because the scatter attempt above is
-                    // the sole mutation between the tick snapshot and this
-                    // immediate blocked repath.
-                    refreshed_marker_peers = marker_context.map(|_| {
-                        crate::sim::movement::path_markers::snapshot_bridge_marker_peers(
-                            entities, rules, interner,
-                        )
-                    });
                 }
                 let effective_marker_context = match refreshed_marker_peers.as_ref() {
                     Some(peers) => marker_context
