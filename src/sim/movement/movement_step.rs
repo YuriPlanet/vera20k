@@ -2456,6 +2456,18 @@ pub(super) fn process_cell_crossings(
             break;
         }
 
+        // The wall memo names the cell where a wall refused this mover on its
+        // previous attempt. The moment it attempts a different cell - because a
+        // repath found a detour - that refusal is stale, and a memo that outlived
+        // its cell would let the Override fire on a FIRST refusal later, skipping
+        // the repath native requires before its second evaluation.
+        if target
+            .wall_refusal_cell
+            .is_some_and(|cell| cell != (nx, ny))
+        {
+            target.wall_refusal_cell = None;
+        }
+
         let next_layer = target.layer_at(target.next_index);
         //75AECD..75AEF8 jumps past pathfind/admission when a head exists.
         //Only the no-head branch reaches CanEnter75B690 before75BC1A.

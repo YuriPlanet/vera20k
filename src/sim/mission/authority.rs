@@ -147,9 +147,10 @@ pub(crate) fn override_mission_on_blocked_step(
 /// Termination needs nothing new: when the wall segment dies,
 /// `expire_cell_target_references` clears every listener whose `attack_target`
 /// is that cell and runs Restore, which is the native pointer-expiry order.
-// Unwired until the crossing's wall arm lands; see ledger row I9b in
-// docs/plans/2026-09-15-movement-retail-acceptance.md. Kept rather than deleted
-// because the producer it pairs with is already in the tree.
+// Wired 2026-09-16 by the crossing's wall arm: `process_cell_crossings` defers
+// the cell through `CrossingOutput::deferred_wall_override` and
+// `advance_ordinary_mover` calls this outside the entity borrow. See ledger row
+// I9b in docs/plans/2026-09-15-movement-retail-acceptance.md.
 pub(crate) fn override_mission_on_wall_cell(
     entities: &mut crate::sim::entity_store::EntityStore,
     mover: u64,

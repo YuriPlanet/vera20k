@@ -812,7 +812,9 @@ fn evaluate_shared_cell_leaf(
         // is); `0x0073F455..F46C`: `MovementZone=CrusherAll` (+0x5B4 == 0xC)
         // enters any `Wall=`; everything else, and every infantryman
         // (`0x0051BF90` has no crusher route), takes the weapon/warhead route
-        // that answers 4/5 or 7. The 4/5 codes have no producer yet, so that
+        // that answers 4/5 or 7. The runtime crossing produces 4/5 since
+        // 2026-09-16; the A* search still does not (its classifier has no
+        // production construction site), so that
         // route is the hard block below; the allied-wall 4 and ability 0x11
         // are likewise unmodelled.
         let crushable_wall =

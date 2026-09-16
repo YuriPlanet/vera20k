@@ -984,19 +984,31 @@ const CODE_FRIENDLY_STATIONARY: u8 = 6;
 /// the wall cell, with a null destination (`EDI` is zeroed at `0x004B3B03`).
 /// The old comment even cited `JNZ 0x004B3A97` while denying what sits there.
 ///
-/// Whether the arm is same-tick is **UNCHECKED**. `[ESP+0x64]` is argument 2,
-/// the literal `1` on the first evaluation (see
-/// `docs/research/traces/AMCV_MIDROUTE_REPATH_BLOCKED_CELL_RETRACE_20260729.md`),
-/// so `0x004B3AD3 TEST AL,AL / JZ 0x004B3B03` provably takes the
-/// drop-path-and-arm-timer branch first: the Override is unreachable on that
-/// first evaluation. What is **not** established is that the `arg2 = 0`
-/// recursion at `0x004B4552` re-reaches this dispatch — the recursing branch
-/// first writes `Foot+0x5E0 = -1`, the shared entry has already nulled the
-/// head-to triple, and, unlike Hover (which calls `Find_Path` before its own
-/// recursion), Drive executes no CALL at all between `0x004B3ADB` and the
-/// recursive call. An earlier revision asserted the same-tick reach outright;
-/// a 2026-09-16 review demoted it. Closing it needs a breakpoint or an
-/// emulated trace, and it is ledger row I9b's justification, so it matters.
+/// Whether the arm is same-tick is **UNCHECKED**, now narrowed to a named gate
+/// chain rather than the whole path.
+///
+/// Established (disassembled 2026-09-16): `[ESP+0x64]` is argument 2, the literal
+/// `1` on the first evaluation, so `0x004B3AD3 TEST AL,AL / JZ 0x004B3B03`
+/// provably takes the drop-path branch first and the Override is unreachable on
+/// that evaluation. That branch is itself the producer of the retry:
+/// `0x004B3ADB` writes `Foot+0x5E0 = -1`, stamps `Foot+0x640 = Frame` with
+/// duration `0`, then `0x004B3AFE JMP 0x004B4541` lands three instructions
+/// before `CALL 0x004B2630` at `0x004B4552` with `arg2 = 0` (`PUSH 0x0` at
+/// `0x004B4546`). The stamp is an immediate expiry, not a wait: `0x004B283F JGE`
+/// reads elapsed `0` against duration `0` and proceeds.
+///
+/// **Not** established: that the recursion reaches `Find_Path` and returns to
+/// this dispatch. On re-entry `Path[0]` is `-1`, and control must pass
+/// `CALL [ECX+0x10]` (Is_Moving) at `0x004B264D` — `0x004B2652 JNZ 0x004B26D0`
+/// is taken only if it answers true, and `0x004B2654 CMP EBX,-0x1` is reached
+/// only if it answers false. The 4/5 arm writes neither Destination
+/// (`+0x34/0x38/0x3C`) nor the `+0x1D4`, `+0x1D8`, `+0x2D0` gates beyond it, so
+/// true is the expected answer, but that is argued, not executed. The repath
+/// block at `0x004B2813` is reached only from `0x004B2792`, `0x004B279C` and
+/// `0x004B27FA`, all inside the `0x004B26D0` branch.
+///
+/// Closing it needs a breakpoint at `0x004B2650` on the recursion, or an
+/// emulated trace. It is ledger row I9b's justification, so it matters.
 ///
 /// So porting it is ledger row I9b's work, and until that lands a blocked
 /// vehicle repaths here where retail would stop and shoot. Recorded as a gap,
