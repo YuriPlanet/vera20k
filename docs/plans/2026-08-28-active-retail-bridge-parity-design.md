@@ -2113,5 +2113,5 @@ builder/fresh-critic chain, focused validation, PR-readiness full suite, or merg
 - active `gamemd.exe` addresses and retail inputs enumerated by those reports
 - current Rust owners at freshly fetched `origin/main` snapshot
   `50e4b7ba4732fd3fb48e5b819e1abc55327ec557`
-- `docs/system-map/topology.v2.json` `bridge-helpers` service boundary
+- [docs/system-map/topology.v2.json](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/system-map/topology.v2.json) `bridge-helpers` service boundary
 - `C:\Users\enok\Documents\OpenTS` correspondence ledger, as navigation leads only

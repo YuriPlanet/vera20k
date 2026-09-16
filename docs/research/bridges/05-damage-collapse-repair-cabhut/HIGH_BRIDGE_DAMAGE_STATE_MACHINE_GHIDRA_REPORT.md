@@ -2668,13 +2668,13 @@ InfantryTypeClass**, not on the target building's BuildingTypeClass.
 | Offset | Type | Name | Source |
 |--------|------|------|--------|
 | `+0xEB4` | bool | `Occupier=` (can garrison civilian buildings) | [GARRISON_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GARRISON_SYSTEM_GHIDRA_REPORT.md) |
-| `+0xEB5` | bool | `Assaulter=` (can storm garrisoned bldgs) | `BUILDING_CHANGE_OWNER_GHIDRA_REPORT.md` |
+| `+0xEB5` | bool | `Assaulter=` (can storm garrisoned bldgs) | [BUILDING_CHANGE_OWNER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/BUILDING_CHANGE_OWNER_GHIDRA_REPORT.md) |
 | `+0xEBC` | bool | `Fearless=` | [INFANTRYCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/INFANTRYCLASS_GHIDRA_REPORT.md) line 120 |
 | `+0xEBE` | bool | Team-related flag (convoy reassign) | [CONVOY_FORMATION_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CONVOY_FORMATION_SYSTEM_GHIDRA_REPORT.md) |
 | `+0xEBF` | bool | `Fraidycat=` | [INFANTRYCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/INFANTRYCLASS_GHIDRA_REPORT.md) line 119 |
 | `+0xEC2` | bool | `Infiltrate=` (spy infiltrate cap.) | [FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md) line 286 |
 | `+0xEC3` | bool | `Engineer=` (capture capability) | [FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md) line 285 |
-| `+0xEC5` | bool | Possibly `Engineer=` (conflicts with +0xEC3) | `ENGINEER_CAPTURE_GHIDRA_REPORT.md` line 30 |
+| `+0xEC5` | bool | Possibly `Engineer=` (conflicts with +0xEC3) | [ENGINEER_CAPTURE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/ENGINEER_CAPTURE_GHIDRA_REPORT.md) line 30 |
 | `+0xEC6` | bool | `C4=` (bomb plant capability) | [FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md) line 287 |
 | `+0xEC9` | bool | `Crawls=` (prone-capable) | [TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md) line 716 |
 

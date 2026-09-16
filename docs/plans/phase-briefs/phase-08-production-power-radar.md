@@ -11,8 +11,8 @@ The System Map was retired on 2026-09-10. Its citations and Registry column
 below are historical; revalidate claims rather than maintaining map status.
 
 Registry column is `native_evidence / rust_implementation / parity` from
-`docs/system-map/registry.v2.json` at `cca05d50`. Owners were checked to exist
-at that commit. `topology.v2.json` still lists ten `src/app_*.rs` paths that
+[docs/system-map/registry.v2.json](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/system-map/registry.v2.json) at `cca05d50`. Owners were checked to exist
+at that commit. [topology.v2.json](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/system-map/topology.v2.json) still lists ten `src/app_*.rs` paths that
 no longer exist (GSI-13.24, GSI-09.11, LOOP-005, LOOP-012); the files moved
 under `src/app/` (`presentation/`, `loading/`, `input/commands.rs`,
 `match_runtime/sim_tick.rs`).
@@ -21,7 +21,7 @@ under `src/app/` (`presentation/`, `loading/`, `input/commands.rs`,
 |---|---|---|---|---|---|
 | 166 | 04.08 | `src/sim/production/wall_placement.rs`, `src/sim/gate_runtime.rs`, `src/sim/overlay_grid.rs`, `src/map/overlay.rs` | none recorded | N/A / N/A / N/A (MIXED-SCOPE) | Wall autofill, destruction transactions and spend semantics landed (3b32fe1e, 95f77159, da38da27, PR #194). Gates and LaserFence unscanned. |
 | 167 | 05.17 | `src/sim/production/factory.rs` | none recorded | ANCHORED / PARTIAL / UNCHECKED | Factory lifecycle; save-order research exists (`FACTORYCLASS_*_RESWARM_20260528.md`). |
-| 168 | 09.07 | `src/sim/power_system.rs`, `src/sim/production/production_placement.rs` (place_ready_building), `src/sim/radar.rs` | `HouseClass::AI_AssessPower` 0x00508C30, `UpdateTacticalRadarAvailability` 0x00508DF0 (`POWER_SYSTEM_GHIDRA_REPORT.md`) | ANCHORED / PRESENT / DRIFT | Mechanism blocks MBLK-003/005/006 in `mechanisms.v1.json`. Slice 84991f14 closed live replacement-plant output and Radar=yes recovery. |
+| 168 | 09.07 | `src/sim/power_system.rs`, `src/sim/production/production_placement.rs` (place_ready_building), `src/sim/radar.rs` | `HouseClass::AI_AssessPower` 0x00508C30, `UpdateTacticalRadarAvailability` 0x00508DF0 (`POWER_SYSTEM_GHIDRA_REPORT.md`) | ANCHORED / PRESENT / DRIFT | Mechanism blocks MBLK-003/005/006 in [mechanisms.v1.json](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/system-map/mechanisms.v1.json). Slice 84991f14 closed live replacement-plant output and Radar=yes recovery. |
 | 169 | 09.08 | `src/sim/production/production_tech.rs` | [BUILDINGCLASS_PREREQUISITES_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_PREREQUISITES_GHIDRA_REPORT.md) (no anchor in topology) | UNCHECKED / PARTIAL / UNCHECKED | Prerequisite checks; the file also hosts the build-time formula that row 171 owns (see Corrections). |
 | 170 | 09.09 | `src/sim/production/factory.rs`, `production_queue.rs` | [BUILD_QUEUE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILD_QUEUE_GHIDRA_REPORT.md), `FACTORYCLASS_PRODUCTION_DEEP_DIVE.md` | ANCHORED / PRESENT / DRIFT | Abandon/cancel semantics partly fixed (front-most removal); `AbandonProduction` 0x004C9FF0 residual labelled at `factory.rs:283`. |
 | 171 | 09.10 | `src/sim/production/factory.rs` (per-step charge), `production_queue.rs` (enqueue, `total_base_frames`), `production_tech.rs` (`build_time_base_frames`) | [FACTORY_CLASS_BUILD_SPEED_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FACTORY_CLASS_BUILD_SPEED_GHIDRA_REPORT.md), `FACTORY_CREDIT_SYSTEM_GHIDRA_REPORT.md`, `GRIZZLY_FACTORY_STEP_CADENCE_GHIDRA_REPORT.md` | ANCHORED / PRESENT / DRIFT | Per-step charge present; same-tick money order and cancel-refund cost timing inherited from Phase 7 (below). |
@@ -41,7 +41,7 @@ under `src/app/` (`presentation/`, `loading/`, `input/commands.rs`,
 
 ## Loops
 
-Historical references from the archived `topology.v2.json`:
+Historical references from the archived [topology.v2.json](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/system-map/topology.v2.json):
 
 - **LOOP-005-BUILD-PLACE**: 14.10 (1) → 09.08 (2) → 09.09 (3) → 09.10 (4) → 13.24 (6) → 14.08 (7) → 09.11 (9, 12) → 09.12 (14) → 09.07 (15).
 - **LOOP-006-FACTORY-EXIT**: 14.10 → 09.08 → 09.09 → 09.10 → 07.41 (6).
@@ -84,7 +84,7 @@ Do not trust these until re-read against the binary:
   `factory.rs:397` but still live: `production_queue.rs:191` calls it at
   enqueue and stores `total_base_frames`. Re-derive from `FactoryClass` build
   speed before touching row 171.
-- `mechanisms.v1.json` `MBLK-002-SELL-REFUND-COMMIT` once claimed a
+- [mechanisms.v1.json](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/system-map/mechanisms.v1.json) `MBLK-002-SELL-REFUND-COMMIT` once claimed a
   RefundPercent-driven VERIFIED refund; Phase 7 (audit R7) relabelled it
   "Rust DRIFT" (line 249: native uses type cost, owner modifiers and
   RefundPercent at 0x00711F60, no health term for a human house). Code uses
@@ -105,7 +105,7 @@ Do not trust these until re-read against the binary:
 ## Inherited residuals
 
 From the Phase 7 final audit Part C
-(`../../gap-scans/2026-09-06-phase7-closure/reverse-audit-phase7-final.md`):
+([../../gap-scans/2026-09-06-phase7-closure/reverse-audit-phase7-final.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/gap-scans/2026-09-06-phase7-closure/reverse-audit-phase7-final.md)):
 
 - **R4** same-tick money ordering: repair/depot spend runs after the factory
   step; native runs it before. Visible only near zero balance; every tick both

@@ -1,7 +1,7 @@
 # Harvester Mission_Harvest State Machine — Ghidra Research Report
 
 Reverse-engineered from `gamemd.exe` via Ghidra MCP. All addresses reference the
-YR executable. Extends findings from HARVESTER_DOCK_UNLOAD.md and
+YR executable. Extends findings from [HARVESTER_DOCK_UNLOAD.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/miner/HARVESTER_DOCK_UNLOAD.md) and
 CHRONO_MINER_TELEPORT_GHIDRA_REPORT.md.
 
 **2026-07-24 timer correction:** Live disassembly of
@@ -537,7 +537,7 @@ Value = base value per overlay type * (density + 1).
 
 ## 13. Notes on Prior Report Corrections
 
-The HARVESTER_DOCK_UNLOAD.md report contains a misidentification:
+The [HARVESTER_DOCK_UNLOAD.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/miner/HARVESTER_DOCK_UNLOAD.md) report contains a misidentification:
 - `0x004D9290` was labeled `UnitClass__Mission_Harvest` — it is actually
   **FootClass__Mission_Enter** (mission 7 = Enter)
 - `0x00739EC0` was labeled `UnitClass__Mission_Enter` — this may be a different function

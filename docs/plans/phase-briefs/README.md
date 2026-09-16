@@ -8,9 +8,16 @@ same phase; the plan is only the dependency order.
 
 Briefs are written when a phase is first targeted and updated by the session
 that changes the phase's state (a merged PR, a corrected claim, a new residual).
-Closed phases keep their brief and link the closure record under
-`docs/gap-scans/`. Phases closed before briefs existed (Phase 7) have only
-their closure record; phases never targeted have no brief yet.
+Briefs link historical closure records even when those records move to the
+archive. Phases never targeted have no brief yet.
+
+Phase 7 predates these briefs. Its [historical closure record](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/gap-scans/2026-09-06-phase7-closure/README.md)
+and [final audit, residuals and coverage limits](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/gap-scans/2026-09-06-phase7-closure/reverse-audit-phase7-final.md#part-c--consolidated-remaining-findings-all-thirteen-rows-ranked)
+remain starting evidence for harvesting, economy and audio work. The audit
+describes `d7733d37`, not current source; its executable-native-comparison gap
+and residuals are not resolved by archival. The [Phase 8 brief](phase-08-production-power-radar.md#inherited-residuals)
+already carries its inherited findings. For other Phase 7 work, recheck the
+original residuals and coverage before selecting a mechanism or claiming parity.
 
 ## Template
 

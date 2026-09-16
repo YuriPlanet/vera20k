@@ -213,10 +213,10 @@ tiles and sprites are the case to decide on; note the choice in the shader.
 ### 5. Obsolete after this lands
 
 - The `select(0.0002, ...)` fallback in `zdepth_shader.wgsl`.
-- The "sprite passthrough is the native contract" sentences in
+- Recheck the "sprite passthrough is the native contract" claim in
   [DRAWING_HELPERS_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRAWING_HELPERS_ENGINE_SUBSTRATE_SERVICE_STUDY.md) and the depth summary
-  in `docs/system-map/` if it states it (run `python -m tools.system_map
-  check` after editing).
+  in the [archived System Map](https://github.com/YuriPlanet/vera20k/tree/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/system-map), if present. Record corrections beside the current
+  implementation; the retired map checker is no longer a validation step.
 - The `BUILDNGZ.SHA — Removed` subsection of `ZBUFFER_DEPTH_SYSTEM.md`
   section 10 becomes the implemented-status entry.
 

@@ -196,7 +196,7 @@ Phase 0 describes standing contracts that apply throughout the work.
 
 ## Phase 7 — Harvesting and economy
 
-Prior work and findings: [Phase 7 record](../gap-scans/2026-09-06-phase7-closure/README.md).
+Prior work and findings: [Phase 7 record](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/gap-scans/2026-09-06-phase7-closure/README.md).
 
 153. **GSI-09.01** — Credits, transactions and displayed money
 154. **GSI-09.02** — Storage, silos and resource loss

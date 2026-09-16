@@ -80,7 +80,7 @@ The doc must classify every finding as **Active in YR / TS-legacy / dormant**
 
 | Report | Relevant Scope | Confidence | Known Gaps |
 |--------|---------------|------------|------------|
-| `ENGINEER_CAPTURE_GHIDRA_REPORT.md` §5 ("C4 / Sabotage") | C4 vs. capture distinction; says C4 flag at `InfantryType+0xEC2` | HIGH on capture, MEDIUM on C4 | Conflicts with Agent D's finding that C4 uses `+0xebe` (likely two distinct flags with overlapping semantics) |
+| [ENGINEER_CAPTURE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/ENGINEER_CAPTURE_GHIDRA_REPORT.md) §5 ("C4 / Sabotage") | C4 vs. capture distinction; says C4 flag at `InfantryType+0xEC2` | HIGH on capture, MEDIUM on C4 | Conflicts with Agent D's finding that C4 uses `+0xebe` (likely two distinct flags with overlapping semantics) |
 | [FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md) §9 | `Mission_Capture` at `0x004D4B20` handles BOTH Capture (mission enum 8) AND Sabotage (enum 17) | HIGH on the function existing | Does NOT decompile the Sabotage branch internals |
 | [FOOTCLASS_MISSION_ATTACK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_ATTACK_GHIDRA_REPORT.md) §10 | Open question: TypeClass+0x695 unnamed flag; suspected C4/melee marker | MEDIUM | Resolution deferred — re-evaluate |
 | [BUILDINGCLASS_MASTER_GHIDRA_REPORT_V2.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_MASTER_GHIDRA_REPORT_V2.md) / `_V3.md` | `CanC4=` at `BuildingTypeClass+0x1577` | HIGH | — |
@@ -496,7 +496,7 @@ plus xrefs from string `"CHARGE"`, `"CHARGEN"`, `"C4Warhead"`,
 `"DestroysBuildings"`, `"CanC4"`, `"Assaulter"`.
 
 **Docs searched (`docs/research/`):**
-`ENGINEER_CAPTURE_GHIDRA_REPORT.md`,
+[ENGINEER_CAPTURE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/ENGINEER_CAPTURE_GHIDRA_REPORT.md),
 [FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md),
 [FOOTCLASS_MISSION_ATTACK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_ATTACK_GHIDRA_REPORT.md),
 [BUILDINGCLASS_MASTER_GHIDRA_REPORT_V2.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_MASTER_GHIDRA_REPORT_V2.md),

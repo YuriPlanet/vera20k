@@ -1,6 +1,6 @@
 ---
 name: RadarEventClass Research Report
-description: Event queue that drives minimap pulsing diamonds — type table, callers, lifecycle, and INI-vs-binary reconciliation. Companion to [RADAR_MINIMAP_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADAR_MINIMAP_DEEP_DIVE.md) and RADAR_MINIMAP_RENDERING.md.
+description: Event queue that drives minimap pulsing diamonds — type table, callers, lifecycle, and INI-vs-binary reconciliation. Companion to [RADAR_MINIMAP_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADAR_MINIMAP_DEEP_DIVE.md) and [RADAR_MINIMAP_RENDERING.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/RADAR_MINIMAP_RENDERING.md).
 ---
 
 # RadarEventClass — Ghidra Research Report
@@ -67,7 +67,7 @@ Re-stated from [RADAR_MINIMAP_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20
 
 ## 3. Global state
 
-From `RADAR_MINIMAP_RENDERING.md` §"Event creation" — previously verified:
+From [RADAR_MINIMAP_RENDERING.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/RADAR_MINIMAP_RENDERING.md) §"Event creation" — previously verified:
 
 | Address | Type | Name |
 |---------|------|------|
@@ -118,7 +118,7 @@ The dim color for explicit cases is always the bright color with each RGB channe
 
 **This explains the apparent contradiction with in-game behavior.** Bullet impacts (type 13) and super-weapon launches (also type 13) don't paint the minimap with diamonds — they push silent ring-buffer entries. The visible "incoming nuke" minimap effect comes from a different mechanism (likely the warhead anim or a SuperClass-specific overlay), not from RadarEventClass. **Only types 0–5 and 11–12 actually draw a diamond.**
 
-**Earlier label mistake corrected.** The earlier `RADAR_MINIMAP_RENDERING.md` (line 844–856) and the first revision of this doc inferred labels for rows 6–12 from the (wrong) assumption that all default types pulse yellow. The verified caller→EVA mapping from §8 supersedes that — semantic labels for types 6–16 now come from each caller's EVA string, not from color guessing. The first revision also stopped at 13 rows; the actual table extends to row 16.
+**Earlier label mistake corrected.** The earlier [RADAR_MINIMAP_RENDERING.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/RADAR_MINIMAP_RENDERING.md) (line 844–856) and the first revision of this doc inferred labels for rows 6–12 from the (wrong) assumption that all default types pulse yellow. The verified caller→EVA mapping from §8 supersedes that — semantic labels for types 6–16 now come from each caller's EVA string, not from color guessing. The first revision also stopped at 13 rows; the actual table extends to row 16.
 
 ---
 
@@ -174,7 +174,7 @@ The comment numbers are 1-indexed. **In code they are 0-indexed:**
 
 ## 6. Core logic — tick lifecycle
 
-Pseudocode of `TickRadarEvent` (FUN_0065FE00) from `RADAR_MINIMAP_RENDERING.md` §"TickRadarEvent" (previously verified):
+Pseudocode of `TickRadarEvent` (FUN_0065FE00) from [RADAR_MINIMAP_RENDERING.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/RADAR_MINIMAP_RENDERING.md) §"TickRadarEvent" (previously verified):
 
 ```text
 if (!event->needs_draw) return                         # +0x3D == 0 → dead
@@ -404,13 +404,13 @@ None statically. All 25 xrefs to `CreateRadarEvent` (`0x0065FA70`) load a non-ze
 
 **Existing Ghidra reports referenced (all in `docs/research/`):**
 - [RADAR_MINIMAP_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADAR_MINIMAP_DEEP_DIVE.md) — event struct layout, per-tick lifecycle, DrawViewportRect coupling
-- `RADAR_MINIMAP_RENDERING.md` — type-config table values, color switch, event creation flow, full address map
+- [RADAR_MINIMAP_RENDERING.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/RADAR_MINIMAP_RENDERING.md) — type-config table values, color switch, event creation flow, full address map
 - [RADAR_SYSTEM_COMPREHENSIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADAR_SYSTEM_COMPREHENSIVE.md) — event globals, field offsets
 - [EVA_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/EVA_SYSTEM_GHIDRA_REPORT.md) §5 / §6 — BaseUnderAttack rate-limit coupling; EVA trigger table
 - `EVA_SYSTEM_DEEP_DIVE_GHIDRA_REPORT.md` §4 — 75-entry PlayEVA xref table
 - [BULLET_CLASS_AI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLET_CLASS_AI_GHIDRA_REPORT.md) — impact radar blip
 - [CHRONOSPHERE_SUPERWEAPON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CHRONOSPHERE_SUPERWEAPON_GHIDRA_REPORT.md) — ChronoWarp dual-event
-- `NUKE_SUPERWEAPON_GHIDRA_REPORT.md` — special detonation radar blip
+- [NUKE_SUPERWEAPON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/NUKE_SUPERWEAPON_GHIDRA_REPORT.md) — special detonation radar blip
 - [LIGHTNING_STORM_SUPERWEAPON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LIGHTNING_STORM_SUPERWEAPON_GHIDRA_REPORT.md) — storm start radar blip
 - [PSYCHIC_DOMINATOR_SUPERWEAPON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PSYCHIC_DOMINATOR_SUPERWEAPON_GHIDRA_REPORT.md) — launch radar blip
 - [ION_BLAST_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ION_BLAST_CLASS_GHIDRA_REPORT.md) — genetic mutator detonation

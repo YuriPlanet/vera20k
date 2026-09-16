@@ -246,7 +246,7 @@ The existing test `skirmish_mcv_start_uses_radius_fallback_when_start_cell_block
 ### Related documents requiring a later independent audit
 
 - [`SKIRMISH_SPAWN_PLACEMENT_AFTER_ASSIGNED_START_GHIDRA_REPORT.md`](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_SPAWN_PLACEMENT_AFTER_ASSIGNED_START_GHIDRA_REPORT.md) still describes the clamp globals without their initializer and has stale Rust status. This audit does not mutate it because the `audit` workflow owns one report at a time.
-- [`SKIRMISH_START_TO_FULL_INIT_SPAWN_TRACE.md`](SKIRMISH_START_TO_FULL_INIT_SPAWN_TRACE.md) should consume this corrected bounds split when it is next audited.
+- [`SKIRMISH_START_TO_FULL_INIT_SPAWN_TRACE.md`](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/skirmish-ui/SKIRMISH_START_TO_FULL_INIT_SPAWN_TRACE.md) should consume this corrected bounds split when it is next audited.
 
 ## 9. Negative Facts / Do Not Do
 

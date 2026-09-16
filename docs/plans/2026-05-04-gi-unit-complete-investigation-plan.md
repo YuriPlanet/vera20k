@@ -74,7 +74,7 @@ Specifically the report must let an implementer answer without further research:
 | [CHAOS_DRONE_BERSERK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CHAOS_DRONE_BERSERK_GHIDRA_REPORT.md) | HIGH | Berserk flag 0x298, Psychedelic warhead | Berserk vs fear interaction undocumented |
 | [MAGNETRON_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAGNETRON_SYSTEM_GHIDRA_REPORT.md) | HIGH | SizeWeight gate excludes infantry | OK |
 | [MCV_DEPLOY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MCV_DEPLOY_GHIDRA_REPORT.md) | HIGH | Deploy state machine for vehicles | Different code path; reference only |
-| `UNIT_MISSION_DEPLOY_BUILDING_GHIDRA_REPORT.md` | (not read) | Generic deploy mission | Reference only |
+| [UNIT_MISSION_DEPLOY_BUILDING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/UNIT_MISSION_DEPLOY_BUILDING_GHIDRA_REPORT.md) | (not read) | Generic deploy mission | Reference only |
 
 **Conflicts to resolve during /re-investigate:**
 

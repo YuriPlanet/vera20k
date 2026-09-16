@@ -78,7 +78,7 @@ The deliverable must answer, with binary evidence (Ghidra address + decompilatio
 
 | Report | Scope | Confidence | Known Gaps |
 |--------|-------|------------|------------|
-| `FOOTCLASS_PATHFINDING_AND_MOVEMENT.md` | FootClass layout, NavCom, path lifecycle | HIGH | None |
+| [FOOTCLASS_PATHFINDING_AND_MOVEMENT.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/pathfinding/FOOTCLASS_PATHFINDING_AND_MOVEMENT.md) | FootClass layout, NavCom, path lifecycle | HIGH | None |
 | [DRIVE_LOCOMOTION_CLASS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_LOCOMOTION_CLASS.md) | Drive COM object, Process_Movement, Process_Drive_Track, bridge transition flag | HIGH | Reactive height heuristic in Rust vs binary's planned-step layer |
 | [DRIVE_TRACK_SYSTEM.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_TRACK_SYSTEM.md) | TurnTrack[72], RawTrack[16], sub-step interp | HIGH | None |
 | [DRIVE_PROCESS_MOVEMENT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_PROCESS_MOVEMENT_GHIDRA_REPORT.md) | Process_Drive_Track @ 0x4b26b0, ramp detection asm sites | HIGH | None |

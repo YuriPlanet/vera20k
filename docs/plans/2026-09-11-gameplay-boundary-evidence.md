@@ -522,7 +522,7 @@ these owners, not new proof of native semantics or whole-renderer completeness.
   supports flat, frame-zero, one-section ordinary input; other cases retain fallback.
   Atlas and [unit-instance admission](../../src/app/presentation/instances/units.rs)
   additionally restrict this route to ordinary Ground-band, uncloaked Drive
-  callers. The atlas owns masking/cache state. [Shadow research](../research/VEHICLE_SHADOW_VISIBLE_MATCH.md)
+  callers. The atlas owns masking/cache state. [Shadow research](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/VEHICLE_SHADOW_VISIBLE_MATCH.md)
   separates shape/mask fixtures from final destination-darkening limitations.
   Joint destination work is conditional on actual consumers; this does not prove
   SHP, aircraft and voxel shadow geometry are interchangeable.

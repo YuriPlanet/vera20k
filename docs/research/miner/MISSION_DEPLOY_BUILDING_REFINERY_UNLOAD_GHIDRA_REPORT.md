@@ -465,7 +465,7 @@ BuildingClass::Receive_Radio case 0x15), but **Mission_Deploy_Building never sen
 Radio cmd 0x7 (DOCKING_COMPLETE) is **never transmitted from this function**. Verified by
 exhaustive search.
 
-`DOCKING_COMPLETE` (0x7) is documented in `HARVESTER_DOCK_UNLOAD.md` as being sent by
+`DOCKING_COMPLETE` (0x7) is documented in [HARVESTER_DOCK_UNLOAD.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/miner/HARVESTER_DOCK_UNLOAD.md) as being sent by
 `BuildingClass::MissionRepairAndProduce` state 1 to the docked unit. However, the refinery
 unload path in YR does NOT go through `BuildingClass::MissionRepairAndProduce` for the
 drain logic — that path is in `UnitClass::Mission_Deploy_Building` on the unit side. The
@@ -475,7 +475,7 @@ minimal (it receives radio 0x15 DOCK_NOW from `PerCellProcess` and responds by s
 unit's mission to 0x10 Unload). The drain loop, state machine, and exit handoff all live
 here in `Mission_Deploy_Building` on the **unit side**.
 
-**CORRECTION to HARVESTER_DOCK_UNLOAD.md §4a:** That doc describes `BuildingClass::MissionRepairAndProduce`
+**CORRECTION to [HARVESTER_DOCK_UNLOAD.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/miner/HARVESTER_DOCK_UNLOAD.md) §4a:** That doc describes `BuildingClass::MissionRepairAndProduce`
 as the dump handler, with a building-side state machine (field_0xBC states 0/1/2). This is
 **WRONG for standard refineries**. The drain loop for HARV/CMIN is entirely in `UnitClass::Mission_Deploy_Building`.
 The building's `MissionRepairAndProduce` only fires for UnitRepair/Bunker/Hospital/Armory/etc.
@@ -749,7 +749,7 @@ field is only used by `BuildingClass::UpdateAnimation` for the tier-display visu
 
 | Claim | Status | Notes |
 |-------|--------|-------|
-| "`BuildingClass::MissionRepairAndProduce` handles the refinery dump" (HARVESTER_DOCK_UNLOAD.md §4a) | **WRONG** | Refinery drain is entirely in `UnitClass::Mission_Deploy_Building`. `MissionRepairAndProduce` handles UnitRepair/Bunker/Hospital/etc., not Refinery/DockUnload. Already noted as CORRECTION in HARVESTER_DOCK_UNLOAD.md §2.3. |
+| "`BuildingClass::MissionRepairAndProduce` handles the refinery dump" ([HARVESTER_DOCK_UNLOAD.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/miner/HARVESTER_DOCK_UNLOAD.md) §4a) | **WRONG** | Refinery drain is entirely in `UnitClass::Mission_Deploy_Building`. `MissionRepairAndProduce` handles UnitRepair/Bunker/Hospital/etc., not Refinery/DockUnload. Already noted as CORRECTION in [HARVESTER_DOCK_UNLOAD.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/miner/HARVESTER_DOCK_UNLOAD.md) §2.3. |
 | "State machine states 0/1/3/4" | **CORROBORATED** | Jump table at `0x73E5C0` confirmed, cases 0/1/3/4 present. |
 | "FSM state at `UnitClass+0xBC`" | **CORROBORATED** | `MOV [ESI+0xBC], N` at all state-transition sites. |
 | "Per-bale drain is whole-slot" | **MECHANISM CORROBORATED; TERMINOLOGY CORRECTED** | `RemoveAmount(GetAmount(slot), slot)` drains a whole resource slot per threshold crossing, not a fixed-size bale. (corrected 2026-07-10: verified via `disassemble_function 0x0073D630` at `0x0073E3C5..0x0073E457` — INFERENCE_HARDENED) |
@@ -795,7 +795,7 @@ and [BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_NAVCOM_GHIDRA_REPORT.md](https://gith
 - **Prior-art docs read (not re-decompiled):**
   - [STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md) — 2026-05-22 canonical stock reachability correction for zero-link state-4 exit, the contact-vector predicate polarity, and conditional `ReleaseDockedHarvester` (corrected 2026-07-10: `0x0065AE30` role verified via `decompile_function 0x0065AE30`, `decompile_function 0x0065AE60`, and `decompile_function 0x0065AD90` — RTTI_LABEL_DRIFT)
   - [RELEASEDOCKEDHARVESTER_0x4595C0_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/RELEASEDOCKEDHARVESTER_0x4595C0_GHIDRA_REPORT.md) — ReleaseDockedHarvester body (HIGH confidence)
-  - `HARVESTER_DOCK_UNLOAD.md` — partial narrative; §4a building-side claim corrected here
+  - [HARVESTER_DOCK_UNLOAD.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/miner/HARVESTER_DOCK_UNLOAD.md) — partial narrative; §4a building-side claim corrected here
   - [HARVESTER_DOCK_UNLOAD_SEQUENCE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/HARVESTER_DOCK_UNLOAD_SEQUENCE.md) — lifecycle doc; §8.3 radio-0x07 claim corrected here
   - `REFINERY_DOCK_ANIM_SLOTS_GHIDRA_REPORT.md` — anim slot context (HIGH confidence, corroborated)
   - `REFINERY_STORAGE_FLOW_GHIDRA_REPORT.md` — drain flow (HIGH confidence, corroborated)

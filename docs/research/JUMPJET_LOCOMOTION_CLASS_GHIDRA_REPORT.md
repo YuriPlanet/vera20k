@@ -214,7 +214,7 @@ Non-JumpjetLocomotor types with "CanPiggyback" flag (INI `Yes`) can pick up/drop
 
 - **LayerClass** — In_Which_Layer feeds into z-order ([LAYER_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LAYER_CLASS_GHIDRA_REPORT.md) §Layer mapping). Jumpjet-driven units are z-tested against altitude threshold (0x2C) — below it sort with ground top, above it sort with top-high.
 - **FlyLocomotionClass** — shares AIRCRAFT-category units (Kirov, Nighthawk, Flak Track heli) but uses different physics. See [FLY_LOCOMOTION_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FLY_LOCOMOTION_CLASS_GHIDRA_REPORT.md).
-- **UnitClass / FootClass::Process** — dispatches to locomotor.vtable[0x40] (Process) each tick (see FOOTCLASS_PATHFINDING_AND_MOVEMENT.md and [FOOTCLASS_AI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_AI_GHIDRA_REPORT.md)).
+- **UnitClass / FootClass::Process** — dispatches to locomotor.vtable[0x40] (Process) each tick (see [FOOTCLASS_PATHFINDING_AND_MOVEMENT.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/pathfinding/FOOTCLASS_PATHFINDING_AND_MOVEMENT.md) and [FOOTCLASS_AI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_AI_GHIDRA_REPORT.md)).
 - **CellClass flag 0x100** = water cell — In_Which_Layer subtracts BridgeHeight on water cells.
 - **CellClass LandType 2/6** = Water / Beach — state 3 forces full-speed when approaching (no hovering over water).
 

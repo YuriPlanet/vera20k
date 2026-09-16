@@ -166,7 +166,7 @@ missing. No cliff implementation, rebuild or game restart was made in this revie
   calls it and does not reset that field. UnitType ReadINI `0x747620` calls
   TechnoType ReadINI `0x712170`; `0x71541C..0x715437` retains the existing value
   when the INI key is absent. Thus absence from retail rules does not mean zero.
-  The older `CLIFF_OBJECTS_GHIDRA_REPORT.md` claims of default zero and dormancy
+  The older [CLIFF_OBJECTS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/CLIFF_OBJECTS_GHIDRA_REPORT.md) claims of default zero and dormancy
   are contradicted by this live binary evidence and must not justify skipping it.
 - **Active draw consumption:** Unit vtable `0x7F5C70`, slot `+0x2EC`, resolves
   to Foot `0x4DAFC0`. Both normal composite `0x73B140` and cached `0x707480`

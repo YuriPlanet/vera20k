@@ -116,7 +116,7 @@ The chosen approach is full for this dock/unload slice:
 ## Tiny-Detail Ledger
 
 - Stock activation: `CMIN/HARV` have `Harvester=yes` and dock to `NAREFN,GAREFN`; `GAREFN/NAREFN` have `DockUnload=yes`, `Refinery=yes`. Source: `rulesmd.ini`, [UNIT_MISSION_DEPLOY_BUILDING_UNLOAD_START_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNIT_MISSION_DEPLOY_BUILDING_UNLOAD_START_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md).
-- Accepted movement target is `NW+(3,1)`, not `GetDockCoord` and not `QueueingCell`. Source: `STOCK_REFINERY_DOCK_UNLOAD_STATE_MACHINE_CURRENT_SYSTEM_MODEL_SYNTHESIS.md`.
+- Accepted movement target is `NW+(3,1)`, not `GetDockCoord` and not `QueueingCell`. Source: [STOCK_REFINERY_DOCK_UNLOAD_STATE_MACHINE_CURRENT_SYSTEM_MODEL_SYNTHESIS.md](https://github.com/YuriPlanet/vera20k/blob/1dbaf80c89c9348df493ab618dbefed8663aef96/docs/research/miner/STOCK_REFINERY_DOCK_UNLOAD_STATE_MACHINE_CURRENT_SYSTEM_MODEL_SYNTHESIS.md).
 - `QueueingCell=4,1` remains staging/fallback only. Source: `artmd.ini`, lifecycle doc map.
 - `0x18` sets contact-entered `+0x418`; it is not unload-active state and not reciprocal pad occupancy. Source: `STOCK_REFINERY_DOCK_UNLOAD_LIFECYCLE_DOC_MAP.md`.
 - First ordinary `0x16` can call active locomotor `+0x4C(0x4000)` and return `1` without sending `0x15`. Source: [DOCK_ARRIVAL_PIVOT_SEQUENCE_DOC_CONFLICT_AUDIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/DOCK_ARRIVAL_PIVOT_SEQUENCE_DOC_CONFLICT_AUDIT_GHIDRA_REPORT.md).
