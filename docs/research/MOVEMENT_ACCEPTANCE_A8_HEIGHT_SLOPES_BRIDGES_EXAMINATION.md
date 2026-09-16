@@ -222,8 +222,12 @@ survives where the destination land row is below 100 percent - CORRECTED 2026-09
 `TechnoClass::SetSpeedFraction 0x004D3710` clamps the owner's fraction at 1.0 —
 a point VERA's own `drive_locomotion.rs:262-278` already records. So on a 100%
 Clear row the divergence produces no pixel; on any sub-100% row (ore, ice, weeds,
-tiberium, and any modded road below 83) the mover leaves a ramp about 17 percent
-slower than retail for one cell.
+railroad for a wheeled mover) the mover leaves a ramp slower than retail for one
+cell, by the margin the clamp leaves. CORRECTED 2026-09-16: that margin is NOT a
+fixed 17 percent. 1/1.2 = 0.833, so the full 16.7 percent holds only on a row at
+or below 0.833; on a 0.9 row native clamps to 1.0 against VERA's 0.9 and the gap
+is 10 percent. Writing it as a constant was the 0.83 threshold restated, three
+lines after retiring it.
 
 **Frequency.** UNCHECKED — it needs the land-row distribution of the ramp-adjacent
 cells on the retail maps, which no instrument reports.

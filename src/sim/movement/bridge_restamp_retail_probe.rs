@@ -233,6 +233,7 @@ fn retail_ramp_exit_onto_equal_level_flat_census() {
             .as_ref()
             .expect("live resolved terrain");
 
+        let rules = &scenario.runtime.resources.rules;
         // Gate on the mover's own land row, NOT on `ground_walkable`. Review
         // caught the latter: `pathfinding::core` deliberately reports water as
         // ground-walkable ("SpeedType cost=0 blocks ground in A*"), and retail
@@ -334,11 +335,25 @@ fn retail_ramp_exit_onto_equal_level_flat_census() {
                 .enumerate()
                 .filter(|(_, n)| **n > 0)
                 .map(|(land, n)| {
-                    let name = u8::try_from(land)
-                        .ok()
+                    let land = u8::try_from(land).ok();
+                    let name = land
                         .and_then(crate::rules::terrain_rules::LandType::from_index)
                         .map_or("?", |land_type| land_type.section_name());
-                    format!("{name}={n}")
+                    // Review: printing the land-type INDEX alone cannot tell a
+                    // real 100% row from a row that failed to parse, because
+                    // `cost_for_speed_type` answers `None` there and
+                    // `speed_multiplier_for` turns `None` into full speed - so a
+                    // wholly collapsed table would print an identical histogram
+                    // and an identical zero. Printing the resolved percentage,
+                    // and "UNPARSED" when the row is absent, closes that.
+                    let pct = land
+                        .and_then(|land| rules.terrain_rules.semantics_for_land_type(land))
+                        .map_or("UNPARSED".to_string(), |semantics| {
+                            semantics
+                                .cost_for_speed_type(speed_type)
+                                .map_or("UNPARSED".to_string(), |cost| format!("{cost}%"))
+                        });
+                    format!("{name}={n}@{pct}")
                 })
                 .collect();
             println!(
@@ -413,6 +428,7 @@ fn retail_cliff_override_level_difference_census() {
             .as_ref()
             .expect("live resolved terrain");
 
+        let rules = &scenario.runtime.resources.rules;
         // Same correction as the D1 census: gate on the mover's own land row,
         // not on `ground_walkable`, which is deliberately true for water and so
         // admitted cells a tracked vehicle can never enter.
@@ -428,9 +444,18 @@ fn retail_cliff_override_level_difference_census() {
         // With the diverging count resting on single-digit populations on two
         // of three maps, one such pair moves the answer, so both stock ground
         // defaults are measured.
+        // `Float` is here because the override is NOT unique to Drive:
+        // `ShipLocomotionClass::Process_Movement 0x006A1C80` carries a
+        // byte-identical copy at `0x006A2BDD` / `0x006A2BED` / `0x006A2BF0`.
+        // Review pointed out that the water census this needs is not a new
+        // harness at all - `passable` is `row > 0`, and with Float that admits
+        // exactly Water and deletes all eleven other land rows, because retail
+        // sets Float to 0% on every one of them. So the gate is not blind to
+        // the Ship site; only the Track/Wheel instantiations were.
         for speed_type in [
             crate::rules::locomotor_type::SpeedType::Track,
             crate::rules::locomotor_type::SpeedType::Wheel,
+            crate::rules::locomotor_type::SpeedType::Float,
         ] {
             let track_row = |cell: &crate::map::resolved_terrain::ResolvedTerrainCell| {
                 cell.speed_costs.speed_multiplier_for(speed_type)
@@ -438,10 +463,30 @@ fn retail_cliff_override_level_difference_census() {
             let passable = |cell: &crate::map::resolved_terrain::ResolvedTerrainCell| {
                 !cell.outside_playfield && track_row(cell) > crate::util::fixed_math::SIM_ZERO
             };
-            // Road is row 1, which the override forces. A destination already at
-            // full speed for this SpeedType diverges by nothing.
-            let full_speed = |cell: &crate::map::resolved_terrain::ResolvedTerrainCell| {
-                track_row(cell) >= crate::util::fixed_math::SIM_ONE
+            // **Read the Road row; do not assume it is 100%.** This predicate
+            // used to be `dest_row >= 1.0`, which silently hard-codes
+            // Road = full speed. Retail Road is 100% for Foot, Track, Wheel and
+            // Amphibious but **Hover 75% and Float 0%**, so the old form is
+            // right for the two ground defaults and wrong for exactly the Ship
+            // run above: it would have reported 0 diverging on every map while
+            // every qualifying water pair in fact diverges. What the override
+            // does is force land row 1 and index it by the mover's own
+            // SpeedType (`0x004B3C88 MOV ESI,1`, `LEA ECX,[ESI+ESI*8]` into the
+            // table at `0x0089EA40`; the Ship copy at `0x006A32D7` is the same
+            // shape), so the comparison is Road[SpeedType] against the
+            // destination's own row for that SpeedType.
+            let road_row = rules
+                .terrain_rules
+                .semantics_by_name("Road")
+                .map_or(crate::util::fixed_math::SIM_ONE, |road| {
+                    road.speed_costs.speed_multiplier_for(speed_type)
+                });
+            let diverges = |cell: &crate::map::resolved_terrain::ResolvedTerrainCell| {
+                // The exact-zero substitution is applied to the COMBINED value
+                // (`0x004B3DB0`, Ship `0x006A3403`), so a 0% forced row and a
+                // 0% destination row both land on 0.5 and agree; any other
+                // inequality is a real divergence.
+                road_row != track_row(cell)
             };
 
             let (mut pairs, mut forced, mut diverging) = (0u32, 0u32, 0u32);
@@ -487,7 +532,7 @@ fn retail_cliff_override_level_difference_census() {
                         if delta >= 2 {
                             forced += 1;
                             dest_rows[usize::from(neighbour.land_type.min(11))] += 1;
-                            if !full_speed(neighbour) {
+                            if diverges(neighbour) {
                                 diverging += 1;
                             }
                         }
@@ -508,27 +553,45 @@ fn retail_cliff_override_level_difference_census() {
                 .enumerate()
                 .filter(|(_, n)| **n > 0)
                 .map(|(land, n)| {
-                    let name = u8::try_from(land)
-                        .ok()
+                    let land = u8::try_from(land).ok();
+                    let name = land
                         .and_then(crate::rules::terrain_rules::LandType::from_index)
                         .map_or("?", |land_type| land_type.section_name());
-                    format!("{name}={n}")
+                    // Review: printing the land-type INDEX alone cannot tell a
+                    // real 100% row from a row that failed to parse, because
+                    // `cost_for_speed_type` answers `None` there and
+                    // `speed_multiplier_for` turns `None` into full speed - so a
+                    // wholly collapsed table would print an identical histogram
+                    // and an identical zero. Printing the resolved percentage,
+                    // and "UNPARSED" when the row is absent, closes that.
+                    let pct = land
+                        .and_then(|land| rules.terrain_rules.semantics_for_land_type(land))
+                        .map_or("UNPARSED".to_string(), |semantics| {
+                            semantics
+                                .cost_for_speed_type(speed_type)
+                                .map_or("UNPARSED".to_string(), |cost| format!("{cost}%"))
+                        });
+                    format!("{name}={n}@{pct}")
                 })
                 .collect();
             println!(
                 "A8 cliff-override census {map_name} [{speed_type:?}]: of {pairs} passable \
              adjacency PAIRS (both cells inside the playfield and above \
              {speed_type:?}=0%), {forced} differ by two or more levels ({:.2}% of \
-             pairs), and {diverging} of those have a destination row below full speed \
-             ({:.2}% of those). Destination rows of the {forced}: {}. Only the \
-             {diverging} can diverge, because the override forces the Road row. That is \
-             an upper bound for an UNDAMAGED mover: the slope coefficient multiplies \
-             both sides, so a row at or above 1/1.2 still reaches the SetSpeedFraction \
-             clamp from both directions and shows nothing. NOT MEASURED HERE, and both \
-             would raise it: the bridge arm, which adds 4 to the mover's side on every \
-             step of a deck crossing; and the Ship copy of this override at \
-             0x006A2BDD/0x006A2BED/0x006A2BF0, which lives on exactly the water cells \
-             this gate removes. Pairs, not traversals; ground vehicles only.",
+             pairs), and {diverging} of those have a destination row differing from the \
+             forced row ({:.2}% of those). Destination rows of the {forced}: {}. The \
+             test is Road[{speed_type:?}] against the destination's own row for the same \
+             SpeedType, NOT an assumption that Road is 100 percent - it is not for Hover \
+             (75) or Float (0). That count is an upper bound for an UNDAMAGED mover: the \
+             slope coefficient multiplies both sides, so a row at or above 1/1.2 still \
+             reaches the SetSpeedFraction clamp from both directions and shows nothing. \
+             The Float pass MEASURES the Ship copy of this override \
+             (ShipLocomotionClass::Process_Movement 0x006A1C80, test at \
+             0x006A2BDD/0x006A2BED/0x006A2BF0), because Float is 0 percent on every land \
+             row but Water, so this same gate reduces the Float pass to the water cells. \
+             STILL NOT MEASURED, and it would raise the figure: the bridge arm, which \
+             adds 4 to the mover's side on every step of a deck crossing. Pairs, not \
+             traversals.",
                 share(forced, pairs),
                 share(diverging, forced),
                 rows.join(" ")
