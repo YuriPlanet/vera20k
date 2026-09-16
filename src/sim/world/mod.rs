@@ -5234,12 +5234,32 @@ impl Simulation {
                 continue;
             };
             // `0x0073B013..B034`: a `Crushable=` overlay is crushed by any
-            // crusher; a `Wall=` overlay additionally needs the Drive
-            // locomotor (`TechnoType+0x5B4 == 0xC`). Check the primary kind so
-            // a transient piggyback (e.g. the chrono-miner's temporary Drive)
-            // does not change the gate.
-            let drive = e.locomotor.as_ref().map(|l| l.effective_kind()) == Some(LocomotorKind::Drive);
-            if !(flags.crushable || (flags.wall && drive)) {
+            // crusher; a `Wall=` overlay additionally needs
+            // `MovementZone=CrusherAll`.
+            //
+            // `0x0073B027` loads the type pointer from `+0x6C4` and `0x0073B02D`
+            // compares `TechnoTypeClass+0x5B4` against `0xC`, `JNZ` out. That
+            // field is **MovementZone**, not the locomotor: `ReadINI 0x0071605E`
+            // reads the key "MovementZone" (`0x008431C8`) through
+            // `CCINIClass::ReadMovementZone 0x00474E40` against the name table at
+            // `0x0081BA88`, where index 12 is `CrusherAll`. This gate used to
+            // test `LocomotorKind::Drive` while its own comment named `+0x5B4`.
+            //
+            // Read from the entity's locomotor where native reads the type.
+            // Equivalent because `piggyback` captures and restores
+            // `movement_zone` across a temporary locomotor swap - which is
+            // what the comment this replaced meant by "the primary kind".
+            //
+            // The difference is not academic: exactly **one** stock vehicle
+            // carries `MovementZone=CrusherAll` - `BFRT`, the Battle Fortress -
+            // where `Crusher=yes` covers 29. So every crusher tank was flattening
+            // walls by driving over them, and retail lets only the Battle
+            // Fortress do it. `Crushable=` overlays (sandbags, fences) are
+            // unaffected: they fall to any crusher through the first clause.
+            let crusher_all = e.locomotor.as_ref().is_some_and(|l| {
+                l.movement_zone == crate::rules::locomotor_type::MovementZone::CrusherAll
+            });
+            if !(flags.crushable || (flags.wall && crusher_all)) {
                 continue;
             }
             // `CellClass::DestroyOverlay @ 0x00480CB0` acts only on a `Wall=`

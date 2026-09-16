@@ -5946,7 +5946,7 @@ fn crusher_driveover_destroys_wall_but_noncrusher_does_not() {
          [BuildingTypes]\n0=GAWALL\n\
          [OverlayTypes]\n0=GASAND\n1=CYCL\n2=GAWALL\n\
          [GAWALL]\nStrength=400\nArmor=concrete\nWall=yes\nDamageLevels=4\n\
-         [BFRT]\nCrusher=yes\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+         [BFRT]\nCrusher=yes\nMovementZone=CrusherAll\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
          [MTNK]\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
     );
     let rules = RuleSet::from_ini(&ini).expect("rules parse");
@@ -6036,7 +6036,7 @@ fn crusher_driveover_destroys_wall_but_noncrusher_does_not() {
 
 /// `UnitClass::PerCellProcess @ 0x0073B013..B034`: a `Crushable=yes` overlay
 /// (fences, sandbags) falls to any crusher whatever its locomotor, a plain
-/// `Wall=yes` overlay only to a Drive crusher; the overlay type's
+/// `Wall=yes` overlay only to a `MovementZone=CrusherAll` one; the overlay
 /// `CrushSound=` is queued at the crusher (`0x0073B045..B04D`).
 #[test]
 fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
@@ -6049,7 +6049,7 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
          [GAWALL]\nStrength=400\nArmor=concrete\nWall=yes\nDamageLevels=4\n\
          [CAFNCB]\nStrength=100\nArmor=wood\nWall=yes\nCrushable=yes\nCrushSound=WallCrushBlack\n\
          [ROBO]\nCrusher=yes\nLocomotor={4A582742-9839-11D1-B709-00A024DDAFD1}\n\
-         [BFRT]\nCrusher=yes\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
+         [BFRT]\nCrusher=yes\nMovementZone=CrusherAll\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
     );
     let rules = RuleSet::from_ini(&ini).expect("rules parse");
     let registry = OverlayTypeRegistry::from_ini(&ini, None);
@@ -6109,14 +6109,18 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
     );
     assert_eq!(crush_sounds(&sim), vec!["WallCrushBlack".to_string()]);
 
-    // Hover crusher over a concrete wall: the wall arm needs Drive.
+    // Crusher over a concrete wall WITHOUT MovementZone=CrusherAll: survives.
     let mut sim = build("ROBO", 2);
     sim.apply_wall_crush_on_driveover(Some(&rules), Some(&registry));
     sim.flush_pending_delete();
-    assert!(wall_present(&sim), "a plain wall needs a Drive crusher");
+    assert!(
+        wall_present(&sim),
+        "a plain wall needs MovementZone=CrusherAll, not merely Crusher=yes"
+    );
     assert!(crush_sounds(&sim).is_empty());
 
-    // Drive crusher over a concrete wall without a CrushSound: crushed, silent.
+    // CrusherAll vehicle over a concrete wall without a CrushSound: crushed,
+    // silent. Exactly one stock vehicle qualifies - BFRT, the Battle Fortress.
     let mut sim = build("BFRT", 2);
     sim.apply_wall_crush_on_driveover(Some(&rules), Some(&registry));
     sim.flush_pending_delete();
@@ -9636,4 +9640,76 @@ fn shroud_current_sight_concealed_transient_rejects_combat_fire() {
             "concealed transient source psychic={psychic}"
         );
     }
+}
+
+/// A Drive `Crusher=yes` vehicle that is not `CrusherAll` leaves a plain wall
+/// standing.
+///
+/// This is the case the change is about, and the one the sibling tests cannot
+/// isolate: BFRT is Drive *and* CrusherAll, so it crushed under the old
+/// locomotor gate too, and ROBO is Hover *and* not CrusherAll, so it differs on
+/// both axes. HTNK differs on exactly one - Drive, `Crusher=yes`, and NOT
+/// `CrusherAll` - so reverting the gate to `LocomotorKind::Drive` makes this
+/// fail and nothing else in the suite notices.
+///
+/// Native: `0x0073B027` loads the type from `+0x6C4`, `0x0073B02D` compares
+/// `TechnoTypeClass+0x5B4` (MovementZone) against `0xC` (CrusherAll), and
+/// `0x0073B034 JNZ` leaves the wall alone.
+#[test]
+fn a_drive_crusher_without_crusherall_leaves_a_plain_wall_standing() {
+    let ini = IniFile::from_str(
+        "[InfantryTypes]\n\
+         [VehicleTypes]\n0=HTNK\n1=BFRT\n\
+         [AircraftTypes]\n\
+         [BuildingTypes]\n0=GAWALL\n\
+         [OverlayTypes]\n0=GASAND\n1=CYCL\n2=GAWALL\n\
+         [GAWALL]\nStrength=400\nArmor=concrete\nWall=yes\nDamageLevels=4\n\
+         [HTNK]\nCrusher=yes\nMovementZone=Destroyer\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+         [BFRT]\nCrusher=yes\nMovementZone=CrusherAll\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
+    );
+    let rules = RuleSet::from_ini(&ini).expect("wall crush rules");
+    let registry = OverlayTypeRegistry::from_ini(&ini, None);
+
+    // Same construction the sibling wall-crush tests use.
+    let build = |veh_type: &str| -> Simulation {
+        let mut sim = Simulation::new();
+        let mut grid = OverlayGrid::new(10, 10);
+        grid.place_overlay(5, 5, 2, 0);
+        sim.overlay_grid = Some(grid);
+        let owner_id = sim.interner.intern("Test");
+        let obj = rules.object(veh_type).expect("veh object");
+        let veh_type_id = sim.interner.intern(veh_type);
+        let mut veh = GameEntity::test_default(2, veh_type, "Test", 5, 5);
+        veh.owner = owner_id;
+        veh.type_ref = veh_type_id;
+        veh.regular_crusher = obj.crusher;
+        veh.locomotor =
+            Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(obj, 0, 0));
+        sim.substrate.entities.insert(veh);
+        sim.substrate.entities.rebuild_owner_index();
+        sim
+    };
+
+    let wall_present = |sim: &Simulation| -> bool {
+        sim.overlay_grid
+            .as_ref()
+            .map(|g| g.cell(5, 5).overlay_id == Some(2))
+            .unwrap_or(false)
+    };
+
+    let mut tank = build("HTNK");
+    tank.apply_wall_crush_on_driveover(Some(&rules), Some(&registry));
+    tank.flush_pending_delete();
+    assert!(
+        wall_present(&tank),
+        "a Rhino is Crusher=yes and Drive, but MovementZone=Destroyer: the wall stands"
+    );
+
+    let mut fortress = build("BFRT");
+    fortress.apply_wall_crush_on_driveover(Some(&rules), Some(&registry));
+    fortress.flush_pending_delete();
+    assert!(
+        !wall_present(&fortress),
+        "the Battle Fortress is CrusherAll, so the same wall falls to it"
+    );
 }

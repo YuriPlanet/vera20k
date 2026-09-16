@@ -688,14 +688,15 @@ impl CrushTarget {
 /// smudge, no RNG.
 ///
 /// RESIDUAL (GSI-08.17) — two real gaps sit underneath it.
-/// - **Overlay crushing.** `Per_Cell_Process @ 0x0073AFD4` flattens any overlay
-///   whose `ObjectTypeClass::Crushable=` (`+0x22D`) is set: a `Crusher=yes` tank
-///   drives through sandbags and all three fence types, and a
+/// - **Overlay crushing — CLOSED.** `Per_Cell_Process @ 0x0073AFD4` flattens any
+///   overlay whose `ObjectTypeClass::Crushable=` (`+0x22D`) is set, and a
 ///   `MovementZone=CrusherAll` type (stock: the Battle Fortress alone) also
-///   flattens the eight `Wall=yes` overlays. Trigger: any tank driving over a
-///   wall line. Player effect: walls that should fall stop the tank instead.
-///   Frequency: routine. This one writes the overlay grid and the zone graph,
-///   so it is a movement gap rather than a cosmetic one.
+///   flattens `Wall=yes` overlays. Both halves are implemented:
+///   `Simulation::apply_wall_crush_on_driveover` landed the `Crushable=` half
+///   (PR #375) and the `CrusherAll` gate (`+0x5B4 == 0xC` at `0x0073B02D`).
+///   This block previously described the rule correctly while listing it as
+///   open, and the gate it describes was for a while implemented as a Drive
+///   locomotor test instead.
 /// - **Mind-control release.** A crushed controller does not free its captives
 ///   here, so their ownership stays with a dead object.
 pub fn can_crush(capability: CrushCapability, target: CrushTarget) -> bool {
