@@ -570,7 +570,10 @@ pub fn evaluate_can_enter_cell(ctx: CanEnterCellContext<'_>) -> CanEnterCellResu
             let bridge_walkable = ctx.path_grid.is_some_and(|grid| {
                 grid.is_walkable_on_layer(ctx.target.0, ctx.target.1, MovementLayer::Bridge)
             });
-            evaluate_shared_cell_leaf(ctx, bridge_walkable)
+            // The deck branch never reaches the land row: `0x0073FA92` tests the
+            // deck flag and jumps past the read (`JNZ 0x0073FC24`), so the row
+            // cannot refuse a bridge-layer entry.
+            evaluate_shared_cell_leaf(ctx, bridge_walkable, true)
         }
         // Air and underground locomotors are admitted by their dedicated
         // locomotion state machines, not this ground/bridge terrain slice.
@@ -586,7 +589,11 @@ fn evaluate_ground_cell_entry(ctx: CanEnterCellContext<'_>) -> CanEnterCellResul
             .resolved_terrain
             .and_then(|terrain| terrain.cell(x, y))
             .is_some_and(|cell| is_water_surface_cell_passable(cell, movement_zone));
-        return evaluate_shared_cell_leaf(ctx, land_passable);
+        // A water mover's surface test above already stands in for the row on
+        // this VERA-internal branch; native has one path and would read the row
+        // here too. UNCHECKED, and inert in practice (walls are not placed on
+        // open water), so the row is not made to refuse anything extra.
+        return evaluate_shared_cell_leaf(ctx, land_passable, true);
     }
 
     let grid_ok = ctx.path_grid.map_or(true, |grid| {
@@ -626,7 +633,11 @@ fn evaluate_ground_cell_entry(ctx: CanEnterCellContext<'_>) -> CanEnterCellResul
         None => true,
     };
 
-    evaluate_shared_cell_leaf(ctx, grid_ok && speed_passable && terrain_cost_passable)
+    evaluate_shared_cell_leaf(
+        ctx,
+        grid_ok && speed_passable && terrain_cost_passable,
+        speed_passable,
+    )
 }
 
 /// Whether the target carries the native `CellClass+0x140 & 0x100` stamp.
@@ -640,9 +651,22 @@ fn target_has_structural_bridge(ctx: CanEnterCellContext<'_>) -> bool {
             .is_some_and(|cell| cell.bridge_facts.has_structural_bridge())
 }
 
+/// The shared tail of both `Can_Enter_Cell` implementations.
+///
+/// `land_passable` is VERA's coarse "may this mover stand here at all" answer:
+/// the path grid, the speed row and the cost grid folded together.
+///
+/// `land_row_passable` is the **terrain's own land row** and nothing else —
+/// `speed_type_allows_cell`, the analogue of native's `FLD [ECX*4 + 0x89EA40]`
+/// / `FCOMP 0.0` at `0x0073FAB5`. It is a separate parameter because the wall
+/// arm needs the row *without* the overlay terms the other two carry: both
+/// `grid_ok` and the cost grid go false on `overlay_blocks`, which
+/// `ResolvedTerrainGrid` sets for every `zone_class::WALL` overlay, so either
+/// of them would refuse the very cells the wall arm exists to price.
 fn evaluate_shared_cell_leaf(
     ctx: CanEnterCellContext<'_>,
     land_passable: bool,
+    land_row_passable: bool,
 ) -> CanEnterCellResult {
     let structural_bridge = target_has_structural_bridge(ctx);
     let bridge_transition = ctx
@@ -759,14 +783,25 @@ fn evaluate_shared_cell_leaf(
             wall_ctx.weapon_route_code(armor_is_wood, owner, ctx.is_infantry)
         });
 
+        // The wall arm does NOT return in native. It accumulates 4/5 into the
+        // running code, falls through the occupant walk, and then reads the
+        // ground land row at `0x0073FAB5` (`FLD [ECX*4 + 0x89EA40]`, `FCOMP
+        // 0.0`); a zero row returns 7 at `0x0073FAD0` whatever the arm
+        // accumulated, and `InfantryClass` does the same at `0x0051C7D0`. So a
+        // wall overlay on terrain whose speed row refuses this mover answers 7,
+        // not 4/5 — the classes survive only where the terrain itself admits.
+        //
+        // `land_row_passable` is that row alone, deliberately not
+        // `land_passable`: see this function's doc for why the wider term would
+        // refuse every wall and leave the arm dead.
         if crushable_wall && !crushable_wall_admitted {
-            return match wall_attack_code {
+            return match wall_attack_code.filter(|_| land_row_passable) {
                 Some(cost_class) => CanEnterCellResult::WallBlocked { cost_class },
                 None => CanEnterCellResult::HardBlocked,
             };
         }
         return if !wall_cleared && (wall || !land_passable) {
-            match wall_attack_code.filter(|_| wall) {
+            match wall_attack_code.filter(|_| wall && land_row_passable) {
                 Some(cost_class) => CanEnterCellResult::WallBlocked { cost_class },
                 None => CanEnterCellResult::HardBlocked,
             }
@@ -2954,9 +2989,94 @@ mod tests {
         // still read as "keep the refusal", never as class 0.
         assert_eq!(classifier.classify((0, 0), (0, 0), false), 7);
         // (1, 1) is the fixture's crushable wall. This arm carries no overlay
-        // grid, so `overlay_at` yields nothing, the weapon route never runs and
-        // the refusal stands at 7. The overlay-backed 4/5 case needs a live
-        // `OverlayGrid` + `OverlayTypeRegistry` and lands with the producer.
+        // grid, so `overlay_at` yields nothing and the weapon route never runs;
+        // the refusal stands at 7. The overlay-backed 4/5 case is covered by
+        // `the_wall_arm_answers_seven_where_the_land_row_refuses` below.
         assert_eq!(classifier.classify((0, 0), (1, 1), false), 7);
+    }
+
+    /// A 3x3 board whose centre carries a non-crushable `Wall=yes` overlay.
+    ///
+    /// `track_row` is the centre cell's `Track` land row: `Some(0)` is a row
+    /// that refuses the mover, `Some(100)` one that admits it.
+    fn wall_row_fixture(track_row: Option<u8>) -> ResolvedTerrainGrid {
+        let mut cells = Vec::with_capacity(9);
+        for ry in 0..3u16 {
+            for rx in 0..3u16 {
+                let mut cell = ResolvedTerrainCell::clear_for_test(rx, ry);
+                cell.speed_costs.track = Some(100);
+                if (rx, ry) == (1, 1) {
+                    // `RecalcZoneType` reduces a non-crushable `Wall=` overlay to
+                    // class 2, and `ResolvedTerrainGrid` marks it `overlay_blocks`
+                    // — which is exactly why the wall arm cannot key on the wider
+                    // `land_passable`.
+                    cell.zone_type = zone_class::WALL;
+                    cell.overlay_zone_type = Some(zone_class::WALL);
+                    cell.overlay_blocks = true;
+                    cell.speed_costs.track = track_row;
+                }
+                cells.push(cell);
+            }
+        }
+        ResolvedTerrainGrid::from_cells(3, 3, cells)
+    }
+
+    /// Native's wall arm does **not** return. It accumulates 4/5 into the
+    /// running code, falls through the occupant walk, and then reads the ground
+    /// land row at `0x0073FAB5` (`FLD [ECX*4 + 0x89EA40]` / `FCOMP 0.0`); a zero
+    /// row returns 7 at `0x0073FAD0`, and `InfantryClass` does the same at
+    /// `0x0051C7D0`, whatever the arm accumulated. So a wall standing on terrain
+    /// this mover's speed row refuses answers 7, not 4/5.
+    ///
+    /// This is also the first exercise of the overlay-backed producer path:
+    /// `WallArmContext::overlay_at` -> `weapon_route_code` with a live
+    /// `OverlayGrid` and `OverlayTypeRegistry`.
+    #[test]
+    fn the_wall_arm_answers_seven_where_the_land_row_refuses() {
+        use crate::rules::ini_parser::IniFile;
+        let registry = crate::map::overlay_types::OverlayTypeRegistry::from_ini(
+            &IniFile::from_str("[OverlayTypes]\n0=GAWALL\n\n[GAWALL]\nWall=yes\n"),
+            None,
+        );
+        let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(3, 3);
+        // Unowned: `Is_Ally_ByIndex` rejects index -1, so the route takes 5.
+        overlays.cell_mut(1, 1).overlay_id = Some(0);
+
+        let entry = |track_row: Option<u8>| {
+            let terrain = wall_row_fixture(track_row);
+            let grid = PathGrid::from_resolved_terrain(&terrain);
+            evaluate_can_enter_cell(CanEnterCellContext {
+                wall: Some(WallArmContext {
+                    overlay_grid: Some(&overlays),
+                    overlay_registry: Some(&registry),
+                    alliances: None,
+                    interner: None,
+                    mover_owner: None,
+                    is_armed: true,
+                    warhead_wall: true,
+                    warhead_wood: false,
+                }),
+                target: (1, 1),
+                terrain_layer: MovementLayer::Ground,
+                movement_zone: Some(MovementZone::Normal),
+                speed_type: Some(SpeedType::Track),
+                path_grid: Some(&grid),
+                resolved_terrain: Some(&terrain),
+                terrain_costs: None,
+                bypass_grid: false,
+                mode: TerrainEntryMode::AStarNeighbor,
+                is_infantry: false,
+                mover_is_crusher: false,
+            })
+        };
+
+        // Row admits the mover: the weapon route survives as the enemy class 5.
+        assert_eq!(
+            entry(Some(100)),
+            CanEnterCellResult::WallBlocked { cost_class: 5 }
+        );
+        // Row refuses it: native's post-arm read returns 7 regardless of the
+        // accumulated 5, so the wall class must not escape.
+        assert_eq!(entry(Some(0)), CanEnterCellResult::HardBlocked);
     }
 }

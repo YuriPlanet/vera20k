@@ -134,15 +134,6 @@ pub(crate) fn override_mission_on_blocked_step(
     )
 }
 
-/// Entity-local `Override(Attack, attacker, NULL)` used by the synchronous
-/// ReceiveDamage retaliation path.
-///
-/// `TechnoClass::ReceiveDamage @ 0x00701900` dispatches the concrete Mission
-/// wrapper before returning to its caller. Buildings archive/set only TarCom;
-/// Foot-derived objects archive NavCom first and assign the null destination
-/// after the target. Keeping this transaction over bare storage lets an
-/// ordered receiver make the new mission visible to a later live-order combat
-/// slot in the same frame.
 /// The wall case of the blocked-step Override: Attack, with the refused **cell**
 /// as the target and a null destination.
 ///
@@ -156,6 +147,10 @@ pub(crate) fn override_mission_on_blocked_step(
 /// Termination needs nothing new: when the wall segment dies,
 /// `expire_cell_target_references` clears every listener whose `attack_target`
 /// is that cell and runs Restore, which is the native pointer-expiry order.
+// Unwired until the crossing's wall arm lands; see ledger row I9b in
+// docs/plans/2026-09-15-movement-retail-acceptance.md. Kept rather than deleted
+// because the producer it pairs with is already in the tree.
+#[allow(dead_code)]
 pub(crate) fn override_mission_on_wall_cell(
     entities: &mut crate::sim::entity_store::EntityStore,
     mover: u64,
@@ -173,6 +168,15 @@ pub(crate) fn override_mission_on_wall_cell(
     )
 }
 
+/// Entity-local `Override(Attack, attacker, NULL)` used by the synchronous
+/// ReceiveDamage retaliation path.
+///
+/// `TechnoClass::ReceiveDamage @ 0x00701900` dispatches the concrete Mission
+/// wrapper before returning to its caller. Buildings archive/set only TarCom;
+/// Foot-derived objects archive NavCom first and assign the null destination
+/// after the target. Keeping this transaction over bare storage lets an
+/// ordered receiver make the new mission visible to a later live-order combat
+/// slot in the same frame.
 pub(crate) fn override_mission_on_damage_response(
     entities: &mut crate::sim::entity_store::EntityStore,
     receiver: u64,
@@ -185,7 +189,12 @@ pub(crate) fn override_mission_on_damage_response(
         return false;
     };
     let archived_destination = entity.navigation.nav_com;
-    override_entity_to_attack(entity, TargetKind::Entity(attacker), archived_destination, true)
+    override_entity_to_attack(
+        entity,
+        TargetKind::Entity(attacker),
+        archived_destination,
+        true,
+    )
 }
 
 /// One represented concrete Mission wrapper transaction shared by bare-store
