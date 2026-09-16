@@ -32,6 +32,7 @@ use crate::sim::pathfinding::terrain_cost::TerrainCostGrid;
 use crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
 use crate::sim::rng::SimRng;
+use crate::sim::type_handle_table::TypeHandleTable;
 use crate::sim::world::EnterOrderCounter;
 use crate::util::fixed_math::{
     SIM_HALF, SIM_ONE, SIM_ZERO, SimFixed, fixed_distance, isqrt_i64,
@@ -288,7 +289,7 @@ pub(super) fn snapshot_mover(
     entities: &EntityStore,
     entity_id: u64,
     playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
-    type_handles: Option<&crate::sim::type_handle_table::TypeHandleTable>,
+    type_handles: Option<&TypeHandleTable>,
     rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> Option<MoverSnapshot> {
     let e = entities.get(entity_id)?;
@@ -1673,7 +1674,7 @@ fn advance_ordinary_mover(
     dt: SimFixed,
     interner: &mut crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    type_handles: Option<&crate::sim::type_handle_table::TypeHandleTable>,
+    type_handles: Option<&TypeHandleTable>,
     prepared: &mut PreparedMovementPass,
     effects: &mut MovementPassEffects,
     suspend_native_track: bool,
@@ -3746,7 +3747,7 @@ fn tick_movement_with_grids_scoped(
     blockage_path_delay_ticks: u16,
     interner: &mut crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    type_handles: Option<&crate::sim::type_handle_table::TypeHandleTable>,
+    type_handles: Option<&TypeHandleTable>,
     sound_events: &mut Vec<crate::sim::world::SimSoundEvent>,
     lifecycle_requests: &mut Vec<LifecycleRequest>,
     single_object: bool,
@@ -3837,7 +3838,7 @@ impl PendingMovementPass {
         blockage_path_delay_ticks: u16,
         interner: &mut crate::sim::intern::StringInterner,
         rules: Option<&crate::rules::ruleset::RuleSet>,
-        type_handles: Option<&crate::sim::type_handle_table::TypeHandleTable>,
+        type_handles: Option<&TypeHandleTable>,
         slave_bindings: Option<&BTreeMap<u64, Vec<u64>>>,
     ) {
         let blocker_neighbor_counts = path_grid.map(|grid| {
@@ -3987,7 +3988,7 @@ pub(crate) fn begin_movement_with_grids_scoped(
     blockage_path_delay_ticks: u16,
     interner: &mut crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    type_handles: Option<&crate::sim::type_handle_table::TypeHandleTable>,
+    type_handles: Option<&TypeHandleTable>,
     _sound_events: &mut Vec<crate::sim::world::SimSoundEvent>,
     _lifecycle_requests: &mut Vec<LifecycleRequest>,
     _single_object: bool,
