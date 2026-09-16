@@ -760,22 +760,12 @@ fn deploy_crush_immune(entity: &GameEntity) -> bool {
 #[derive(Clone, Copy)]
 pub struct CrushAllyGate<'a> {
     /// The crusher's owning house, already resolved by the caller.
-    pub crusher_owner: &'a str,
-    /// The same house as an interned id, when the interner knows it.
-    ///
-    /// Purely a fast path: `are_houses_friendly` normalizes both names, which
-    /// allocates twice, and this runs for every occupant of every cell a
-    /// crusher evaluates. Own-house is both the commonest answer and the one
-    /// the A7 divergence is about ("a tank parks on its own GI"), so it is
-    /// settled by an integer compare before any string work.
-    pub crusher_owner_id: Option<crate::sim::intern::InternedId>,
-    pub alliances: &'a crate::map::houses::HouseAllianceMap,
-    pub interner: &'a crate::sim::intern::StringInterner,
+    crusher_owner: &'a str,
+    alliances: &'a crate::map::houses::HouseAllianceMap,
+    interner: &'a crate::sim::intern::StringInterner,
 }
 
 impl<'a> CrushAllyGate<'a> {
-    /// Build the gate, resolving the crusher's house id once per pass rather
-    /// than once per victim.
     pub fn new(
         crusher_owner: &'a str,
         alliances: &'a crate::map::houses::HouseAllianceMap,
@@ -783,7 +773,6 @@ impl<'a> CrushAllyGate<'a> {
     ) -> Self {
         Self {
             crusher_owner,
-            crusher_owner_id: interner.get(crusher_owner),
             alliances,
             interner,
         }
@@ -791,13 +780,16 @@ impl<'a> CrushAllyGate<'a> {
 
     /// True when native would spare this victim for being allied or own.
     ///
-    /// Deliberately the same helper the kill site uses, so admission and the
-    /// kill cannot disagree about who counts as allied - which is the defect
-    /// this closes, not a detail of it.
+    /// The one predicate for the whole crush mechanism: admission asks it here
+    /// and so does the kill site, because the two disagreeing was the defect.
+    ///
+    /// No id fast path. An earlier version carried the crusher's `InternedId`
+    /// to settle own-house without allocating, which was wasted work:
+    /// `are_houses_friendly` already returns on a case-insensitive name compare
+    /// *before* it normalizes anything (`houses.rs`), so own-house never
+    /// allocated. The allocating case is a genuinely foreign house, which an id
+    /// compare cannot shortcut anyway.
     pub fn spares(&self, victim: &GameEntity) -> bool {
-        if self.crusher_owner_id == Some(victim.owner()) {
-            return true;
-        }
         crate::map::houses::are_houses_friendly(
             self.alliances,
             self.crusher_owner,
@@ -815,6 +807,13 @@ pub fn collect_crush_victims(
     entities: &EntityStore,
     ally_gate: CrushAllyGate<'_>,
 ) -> Vec<u64> {
+    // A mover that crushes nothing has no victims, so it must not pay an
+    // alliance test per occupant. Without this, every occupant of every occupied
+    // cell evaluated by a NON-crusher started paying one - and this runs per
+    // mover per step at the 20k target.
+    if !crush_capability.can_crush_units() {
+        return Vec::new();
+    }
     let Some(occ) = occupancy.get(cell.0, cell.1) else {
         return Vec::new();
     };
@@ -1060,8 +1059,9 @@ pub fn classify_drive_crush_phase(
                 }
             }
             DriveCrushPhase::FullyInCell => {
-                let victim_owner = interner.resolve(victim.owner());
-                if crate::map::houses::are_houses_friendly(alliances, crusher_owner, victim_owner) {
+                // The same gate admission uses. Two inline copies of one
+                // predicate is how admission and the kill came to disagree.
+                if CrushAllyGate::new(crusher_owner, alliances, interner).spares(victim) {
                     continue;
                 }
                 if !within_crush_distance_sq(crusher_coord, entity_crush_coord(victim)) {
@@ -1667,35 +1667,54 @@ mod tests {
         );
     }
 
-    /// The own-house fast path and the string path must agree.
+    /// The gate answers exactly what the shared helper answers.
     ///
-    /// `spares` settles own-house by an interned-id compare to keep the two
-    /// `normalize_house_name` allocations out of a per-occupant loop; if that
-    /// shortcut ever disagreed with `are_houses_friendly`, admission would
-    /// diverge from the kill site again.
+    /// Admission and the kill site both go through `spares`, so this is the one
+    /// place the predicate is pinned. Their disagreement was the A7 defect.
     #[test]
-    fn ally_gate_fast_path_agrees_with_the_name_comparison() {
+    fn ally_gate_answers_what_the_shared_helper_answers() {
         let alliances = crate::map::houses::HouseAllianceMap::new();
-        // Build the victim BEFORE snapshotting the interner: `test_interner()`
-        // hands back a clone of the thread-local, so a house interned after the
-        // clone is not in it. The gate stays correct either way - an unknown id
-        // just falls through to the name comparison - but the fast path is only
-        // exercised when the snapshot actually knows the house.
         let victim = infantry(1, 5, 5, 2); // "Allies"
         let interner = crate::sim::intern::test_interner();
 
-        let gate = CrushAllyGate::new("Allies", &alliances, &interner);
-        assert!(gate.crusher_owner_id.is_some(), "own house is interned");
-        assert!(gate.spares(&victim));
-        assert!(crate::map::houses::are_houses_friendly(
-            &alliances,
-            "Allies",
-            interner.resolve(victim.owner())
-        ));
+        for crusher in ["Allies", "Soviets", "NoSuchHouse"] {
+            let gate = CrushAllyGate::new(crusher, &alliances, &interner);
+            assert_eq!(
+                gate.spares(&victim),
+                crate::map::houses::are_houses_friendly(
+                    &alliances,
+                    crusher,
+                    interner.resolve(victim.owner())
+                ),
+                "gate and helper disagree for crusher {crusher}"
+            );
+        }
+    }
 
-        // And a house the interner has never seen still answers, via the names.
-        let unseen = CrushAllyGate::new("NoSuchHouse", &alliances, &interner);
-        assert!(!unseen.spares(&victim));
+    /// A mover that cannot crush pays no alliance test at all.
+    ///
+    /// `collect_crush_victims` runs per mover per step, so an ungated gate would
+    /// charge every occupant of every occupied cell an alliance question for
+    /// movers that have no crush victims by definition.
+    #[test]
+    fn crush_admission_returns_before_asking_about_a_non_crusher() {
+        let mut store = EntityStore::new();
+        store.insert(infantry(1, 5, 5, 2));
+        let grid = make_occ(&[(5, 5, 1, MovementLayer::Ground, Some(2))]);
+        let fixture = GateFixture::new();
+
+        assert!(
+            collect_crush_victims(
+                (5, 5),
+                &grid,
+                MovementLayer::Ground,
+                CrushCapability::new(false, false),
+                &store,
+                fixture.enemy(),
+            )
+            .is_empty(),
+            "a non-crusher has no victims whoever occupies the cell"
+        );
     }
 
     fn infantry(id: u64, rx: u16, ry: u16, sub: u8) -> GameEntity {

@@ -187,6 +187,20 @@ fn retail_inactive_high_record_restamp_inventory() {
 /// is why the ledger row must not sit behind "needs a run". It reports the count
 /// rather than asserting a threshold: the number is the evidence, and pinning a
 /// map's terrain shape here would only break when the map list changes.
+///
+/// **Read the share carefully.** A ramp cell at level L rises to L+1, so its
+/// flat neighbours divide between L and L+1 more or less evenly, and a result
+/// near half is close to a description of what a ramp *is* rather than a
+/// property of these maps. The load-bearing claim is the structural one -
+/// `slope_factor_for` compares raw level bytes, so **every** exit of this shape
+/// diverges - and this census only says the shape is ordinary rather than rare.
+///
+/// It counts static adjacency **pairs**, not traversals: how often a mover
+/// actually drives one still depends on traffic.
+///
+/// UNCHECKED: that `ResolvedTerrainCell::level` is the ramp's **base** rather
+/// than its top. If it were the top this counts uphill exits instead, which is
+/// the opposite of the shape D1 is about.
 #[test]
 #[ignore = "requires active retail assets; reports a terrain census"]
 fn retail_ramp_exit_onto_equal_level_flat_census() {
@@ -197,16 +211,17 @@ fn retail_ramp_exit_onto_equal_level_flat_census() {
         let scenario = crate::headless_scenario::load(&retail, map_name, super::SEED)
             .unwrap_or_else(|error| panic!("load {map_name}: {error}"));
         let sim = scenario.sim();
-        let terrain = sim.resolved_terrain.as_ref().expect("live resolved terrain");
+        let terrain = sim
+            .resolved_terrain
+            .as_ref()
+            .expect("live resolved terrain");
 
         let (mut ramp_cells, mut exits, mut flat_pairs) = (0u32, 0u32, 0u32);
-        for ry in 0..u16::MAX {
-            let mut row_seen = false;
-            for rx in 0..u16::MAX {
+        for ry in 0..terrain.height() {
+            for rx in 0..terrain.width() {
                 let Some(cell) = terrain.cell(rx, ry) else {
                     continue;
                 };
-                row_seen = true;
                 if cell.slope_type == 0 {
                     continue;
                 }
@@ -238,9 +253,6 @@ fn retail_ramp_exit_onto_equal_level_flat_census() {
                     }
                 }
             }
-            if !row_seen && ry > 0 {
-                break;
-            }
         }
         let share = if flat_pairs == 0 {
             0.0
@@ -249,7 +261,7 @@ fn retail_ramp_exit_onto_equal_level_flat_census() {
         };
         println!(
             "A8 D1 census {map_name}: {ramp_cells} ramp cells, {exits} ramp->flat exits at equal \
-             level out of {flat_pairs} ramp->flat pairs ({share:.1}% of ramp exits diverge)"
+             level out of {flat_pairs} ramp-to-flat adjacency PAIRS ({share:.1}%); pairs, not              traversals, and see the note on why a half is unsurprising"
         );
     }
 }

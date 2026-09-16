@@ -2345,6 +2345,86 @@ mod tests {
         assert_eq!(result.yr_code(), 6);
     }
 
+    /// The player-visible half of A7 D1: a crusher classifies its own infantry
+    /// as a friendly blocker, not as something to crush.
+    ///
+    /// `UnitClass::Can_Enter_Cell` asks the alliance question at
+    /// `0x0073F8C0..0x0073F8CE` - `MOV ECX,[EBX+0x21c]` (the occupant's house),
+    /// `PUSH ESI`, `CALL 0x004F9A90`, `TEST AL,AL`, `JZ 0x0073FAFF` - *before*
+    /// the crush latch at `0x0073FB2A`, and only the not-ally fall-through
+    /// reaches it. A stationary ally then answers **6** at `0x0073FAF4`.
+    ///
+    /// The unit tests below pin `collect_crush_victims` directly; this one pins
+    /// the answer a mover actually acts on, which is what stalled: admission
+    /// said `Crushable`, the kill site refused, and the tank sat on its own GI.
+    #[test]
+    fn a_crusher_classifies_its_own_infantry_as_friendly_not_crushable() {
+        use crate::sim::entity_store::EntityStore;
+        use crate::sim::game_entity::GameEntity;
+
+        let mut entities = EntityStore::new();
+        let mut gi = GameEntity::test_default(7, "E1", "Americans", 5, 5);
+        gi.category = EntityCategory::Infantry;
+        gi.crushable = true;
+        gi.sub_cell = Some(2);
+        entities.insert(gi);
+
+        let occupancy = {
+            let mut grid = OccupancyGrid::new();
+            grid.add(
+                5,
+                5,
+                7,
+                MovementLayer::Ground,
+                Some(2),
+                CellListInsertion::PrependNonBuilding,
+            );
+            grid
+        };
+        let alliances = HouseAllianceMap::new();
+        let interner = crate::sim::intern::test_interner();
+
+        let own = classify_occupied_cell(
+            (5, 5),
+            MovementLayer::Ground,
+            1,
+            bump_crush::CrushCapability::new(true, false),
+            "Americans",
+            LocomotorKind::Drive,
+            false,
+            &occupancy,
+            &entities,
+            &alliances,
+            &interner,
+        );
+        assert_eq!(
+            own,
+            CellEntryResult::FriendlyStationary { blocker_id: 7 },
+            "a crusher must read its own infantry as a friendly blocker"
+        );
+        assert_eq!(own.yr_code(), 6, "which is native's code 6");
+
+        // The same cell, an enemy crusher: still crushable, so the refusal is
+        // about alliance and not about something incidental to the fixture.
+        let enemy = classify_occupied_cell(
+            (5, 5),
+            MovementLayer::Ground,
+            1,
+            bump_crush::CrushCapability::new(true, false),
+            "Soviets",
+            LocomotorKind::Drive,
+            false,
+            &occupancy,
+            &entities,
+            &alliances,
+            &interner,
+        );
+        assert!(
+            matches!(enemy, CellEntryResult::Crushable { .. }),
+            "an enemy crusher still crushes it, got {enemy:?}"
+        );
+    }
+
     #[test]
     fn whole_cell_list_is_classified_and_the_worst_occupant_wins() {
         use crate::sim::entity_store::EntityStore;
