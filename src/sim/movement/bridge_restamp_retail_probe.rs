@@ -281,10 +281,26 @@ fn retail_ramp_exit_onto_equal_level_flat_census() {
 /// its frequency was recorded UNCHECKED. This counts it the same way the ramp
 /// census counts D1's shape: over static terrain, no play required.
 ///
-/// Counts ground-level differences only. The bridge arm adds 4 to the mover's
-/// side, so a mover stepping off a deck qualifies almost automatically; that
-/// needs the bridge layer and is not counted here, which makes this a **lower
-/// bound**.
+/// Three things this counts and one it does not, all found by review:
+///
+/// - **Only pairs a vehicle can actually take.** Level jumps of two or more sit
+///   at cliff faces and shorelines, which `Can_Enter_Cell` refuses, and native
+///   reaches `0x004B3589` only for a destination the pathfinder committed to.
+///   Both cells must therefore be ground-walkable and inside the playfield. The
+///   first version counted every pair and reported a cliff-perimeter statistic.
+/// - **Only where forcing the row changes something.** The override's live
+///   effect is `MOV ESI,1` - the Road row - and retail Road, Clear and Rough are
+///   all 100% for Foot, Track and Wheel. So a qualifying pair whose destination
+///   already reads 100% diverges by nothing; the divergence needs a slower row
+///   (Ice, Weeds, Tiberium, Railroad). Both are reported.
+/// - **Vehicles only.** `0x004B2630` is `DriveLocomotionClass`; Walk's Level-byte
+///   sites are a Z sanity check and the bridge transition, with no Road override.
+///
+/// Not counted, and it is **not** a lower bound: the bridge arm adds 4 to the
+/// **mover's** side alone, so a mover on a deck over flat ground reads a
+/// difference of 4 on *every* step, not merely when leaving the deck. That
+/// pushes the true figure up; the land-row gate pushes it down. Neither bounds
+/// the other.
 #[test]
 #[ignore = "requires active retail assets; reports a terrain census"]
 fn retail_cliff_override_level_difference_census() {
@@ -300,12 +316,28 @@ fn retail_cliff_override_level_difference_census() {
             .as_ref()
             .expect("live resolved terrain");
 
-        let (mut pairs, mut forced) = (0u32, 0u32);
+        let grid = sim.path_grid();
+        let walkable = |rx: u16, ry: u16| -> bool {
+            grid.and_then(|g| g.cell(rx, ry))
+                .is_some_and(|c| c.ground_walkable)
+        };
+        // Road is row 1, which the override forces. A destination already at
+        // full speed for this SpeedType diverges by nothing.
+        let full_speed = |cell: &crate::map::resolved_terrain::ResolvedTerrainCell| {
+            cell.speed_costs
+                .speed_multiplier_for(crate::rules::locomotor_type::SpeedType::Track)
+                >= crate::util::fixed_math::SIM_ONE
+        };
+
+        let (mut pairs, mut forced, mut diverging) = (0u32, 0u32, 0u32);
         for ry in 0..terrain.height() {
             for rx in 0..terrain.width() {
                 let Some(cell) = terrain.cell(rx, ry) else {
                     continue;
                 };
+                if cell.outside_playfield || !walkable(rx, ry) {
+                    continue;
+                }
                 for (dx, dy) in [
                     (-1i32, -1i32),
                     (0, -1),
@@ -323,6 +355,9 @@ fn retail_cliff_override_level_difference_census() {
                     let Some(neighbour) = terrain.cell(nx, ny) else {
                         continue;
                     };
+                    if neighbour.outside_playfield || !walkable(nx, ny) {
+                        continue;
+                    }
                     pairs += 1;
                     // The same absolute difference the binary takes, on the same
                     // signed Level byte.
@@ -330,20 +365,30 @@ fn retail_cliff_override_level_difference_census() {
                         (i32::from(cell.level as i8) - i32::from(neighbour.level as i8)).abs();
                     if delta >= 2 {
                         forced += 1;
+                        if !full_speed(neighbour) {
+                            diverging += 1;
+                        }
                     }
                 }
             }
         }
-        let share = if pairs == 0 {
-            0.0
-        } else {
-            f64::from(forced) * 100.0 / f64::from(pairs)
+        let pct = |n: u32| {
+            if pairs == 0 {
+                0.0
+            } else {
+                f64::from(n) * 100.0 / f64::from(pairs)
+            }
         };
         println!(
-            "A8 cliff-override census {map_name}: {forced} of {pairs} ground cell-to-cell \
-             steps differ by two or more levels ({share:.2}%), so gamemd forces the \
-             full-speed row there and VERA reads the cell's own. Lower bound: the \
-             bridge arm adds 4 to the mover's side and is not counted."
+            "A8 cliff-override census {map_name}: of {pairs} vehicle-passable adjacency \
+             PAIRS (both cells ground-walkable and in the playfield), {forced} differ by \
+             two or more levels ({:.2}%), and {diverging} of those have a destination row \
+             below full speed ({:.2}%) - only the latter diverge, because the override \
+             forces the Road row and Road, Clear and Rough are all 100% for Track. \
+             Pairs, not traversals; vehicles only; the bridge arm is not counted and \
+             would push the figure up.",
+            pct(forced),
+            pct(diverging)
         );
     }
 }
