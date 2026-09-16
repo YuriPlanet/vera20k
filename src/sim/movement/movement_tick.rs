@@ -2229,7 +2229,12 @@ fn advance_ordinary_mover(
                         super::drive_locomotion::compute_drive_target_speed_fraction(
                             st,
                             loco.kind,
-                            (entity.position.rx, entity.position.ry),
+                            // The mover's EXACT position, not its cell: the
+                            // sub-cell offset is what tells a ramp from a flat.
+                            {
+                                let xy = super::ground_pose::position_world_xy(&entity.position);
+                                (xy[0], xy[1])
+                            },
                             nc,
                             terrain,
                             terrain_speed_config,
