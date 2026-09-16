@@ -315,6 +315,18 @@ pub(super) struct MoverSnapshot {
     pub regular_crusher: bool,
     pub drive_accelerates: bool,
     pub owner: InternedId,
+    /// `TechnoClass::Is_Armed @ 0x00701120` (vtable `+0x2AC`). An unarmed mover
+    /// leaves the wall arm through the shared epilogue at `0x0073FCD0`.
+    ///
+    /// Resolved here, per mover, rather than at each path-request site: ledger
+    /// row I9c is what happens when a mover fact is derived independently per
+    /// caller and the callers without context quietly pass `false`.
+    pub is_armed: bool,
+    /// Slot-0 warhead `Wall=` (`WarheadTypeClass+0x144`).
+    pub warhead_wall: bool,
+    /// Slot-0 warhead `Wood=` (`+0x147`), which the arm admits only against an
+    /// overlay whose own `Armor` is wood, and only for Units.
+    pub warhead_wood: bool,
     pub too_big_to_fit_under_bridge: bool,
     pub on_bridge: bool,
     pub runtime_bridge_transition: movement_bridge::RuntimeBridgeTransitionState,

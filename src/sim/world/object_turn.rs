@@ -92,6 +92,7 @@ impl Simulation {
                 sim.blockage_path_delay_ticks,
                 &mut sim.interner,
                 rules,
+                Some(&sim.type_handles),
                 &mut sim.sound_events,
                 &mut sim.pending_lifecycle_requests,
                 true,
@@ -135,6 +136,7 @@ impl Simulation {
                     sim.blockage_path_delay_ticks,
                     &mut sim.interner,
                     rules,
+                    Some(&sim.type_handles),
                     Some(&sim.production.slave_bindings),
                 );
             }

@@ -288,8 +288,24 @@ pub(super) fn snapshot_mover(
     entities: &EntityStore,
     entity_id: u64,
     playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
+    type_handles: Option<&crate::sim::type_handle_table::TypeHandleTable>,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> Option<MoverSnapshot> {
     let e = entities.get(entity_id)?;
+    // Allocation-free type resolution: two index operations, the same hop
+    // `Simulation::object_type` takes. Going through `RuleSet::object(&str)`
+    // here costs one `String` per mover per tick - that is what 038aadfd did and
+    // 2b877fec reverted. Absent tables resolve to `None`, which leaves the wall
+    // facts false and the arm declining, i.e. exact pre-I9b behaviour.
+    let obj = type_handles.zip(rules).and_then(|(handles, rules)| {
+        handles
+            .handle_for(e.type_ref())
+            .map(|h| rules.object_by_handle(h))
+    });
+    let is_armed = obj.is_some_and(|obj| crate::sim::combat::combat_weapon::is_armed(e, obj));
+    let (warhead_wall, warhead_wood) = obj.zip(rules).map_or((false, false), |(obj, rules)| {
+        crate::sim::combat::combat_weapon::primary_warhead_wall_flags(e, obj, rules)
+    });
     Some(MoverSnapshot {
         category: e.category,
         speed_type: e.locomotor.as_ref().map(|l| l.speed_type),
@@ -302,6 +318,9 @@ pub(super) fn snapshot_mover(
         regular_crusher: e.regular_crusher,
         drive_accelerates: e.drive_accelerates,
         owner: e.owner(),
+        is_armed,
+        warhead_wall,
+        warhead_wood,
         too_big_to_fit_under_bridge: e.too_big_to_fit_under_bridge,
         on_bridge: e.on_bridge,
         runtime_bridge_transition: e.runtime_bridge_transition,
@@ -1654,6 +1673,7 @@ fn advance_ordinary_mover(
     dt: SimFixed,
     interner: &mut crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
+    type_handles: Option<&crate::sim::type_handle_table::TypeHandleTable>,
     prepared: &mut PreparedMovementPass,
     effects: &mut MovementPassEffects,
     suspend_native_track: bool,
@@ -1691,7 +1711,8 @@ fn advance_ordinary_mover(
 
         // Snapshot mover data before entering the inner loop so we can release the
         // mutable borrow on `entities` when needed for crush/bump immutable lookups.
-        let Some(snap) = snapshot_mover(entities, entity_id, playfield_bounds) else {
+        let Some(snap) = snapshot_mover(entities, entity_id, playfield_bounds, type_handles, rules)
+        else {
             return;
         };
         // Walk tests CanEnter at 0x75B690 before its paid SetCoords calls
@@ -3630,6 +3651,8 @@ pub(crate) fn tick_movement_with_grids(
         blockage_path_delay_ticks,
         interner,
         rules,
+        // Fixture path; see the sibling wrapper below.
+        None,
         sound_events,
         lifecycle_requests,
         false,
@@ -3688,6 +3711,10 @@ pub(crate) fn tick_movement_object_with_grids(
         blockage_path_delay_ticks,
         interner,
         rules,
+        // Fixture path: the only non-test caller of this wrapper is
+        // `movement::tick_movement_with_grid`, itself `#[cfg(test)]`.
+        // Unresolved wall facts leave the arm declining (pre-I9b).
+        None,
         sound_events,
         lifecycle_requests,
         true,
@@ -3719,6 +3746,7 @@ fn tick_movement_with_grids_scoped(
     blockage_path_delay_ticks: u16,
     interner: &mut crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
+    type_handles: Option<&crate::sim::type_handle_table::TypeHandleTable>,
     sound_events: &mut Vec<crate::sim::world::SimSoundEvent>,
     lifecycle_requests: &mut Vec<LifecycleRequest>,
     single_object: bool,
@@ -3747,6 +3775,7 @@ fn tick_movement_with_grids_scoped(
         blockage_path_delay_ticks,
         interner,
         rules,
+        type_handles,
         sound_events,
         lifecycle_requests,
         single_object,
@@ -3808,6 +3837,7 @@ impl PendingMovementPass {
         blockage_path_delay_ticks: u16,
         interner: &mut crate::sim::intern::StringInterner,
         rules: Option<&crate::rules::ruleset::RuleSet>,
+        type_handles: Option<&crate::sim::type_handle_table::TypeHandleTable>,
         slave_bindings: Option<&BTreeMap<u64, Vec<u64>>>,
     ) {
         let blocker_neighbor_counts = path_grid.map(|grid| {
@@ -3858,6 +3888,7 @@ impl PendingMovementPass {
             native_movement_frame_fraction(),
             interner,
             rules,
+            type_handles,
             &mut self.prepared,
             &mut self.effects,
             true,
@@ -3956,6 +3987,7 @@ pub(crate) fn begin_movement_with_grids_scoped(
     blockage_path_delay_ticks: u16,
     interner: &mut crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
+    type_handles: Option<&crate::sim::type_handle_table::TypeHandleTable>,
     _sound_events: &mut Vec<crate::sim::world::SimSoundEvent>,
     _lifecycle_requests: &mut Vec<LifecycleRequest>,
     _single_object: bool,
@@ -4056,6 +4088,7 @@ pub(crate) fn begin_movement_with_grids_scoped(
             dt,
             interner,
             rules,
+            type_handles,
             &mut prepared,
             &mut effects,
             suspend_native_track,
@@ -4628,6 +4661,9 @@ mod drive_track_chain_tests {
             regular_crusher: false,
             drive_accelerates: false,
             owner: test_intern("Americans"),
+            is_armed: false,
+            warhead_wall: false,
+            warhead_wood: false,
             too_big_to_fit_under_bridge: false,
             on_bridge: false,
             runtime_bridge_transition: Default::default(),
