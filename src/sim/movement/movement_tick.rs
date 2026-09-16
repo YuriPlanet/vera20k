@@ -284,12 +284,58 @@ fn distance_to_goal_leptons(pos: &Position, goal: (u16, u16)) -> SimFixed {
 /// Build a read-only snapshot of the mover's properties before entering the
 /// inner movement loop. This avoids repeated `entities.get()` calls and keeps
 /// the data available across the mutable/immutable borrow boundary.
+/// The mover-side half of the wall arm's weapon route
+/// (`UnitClass::Can_Enter_Cell 0x0073F483..0x0073F4C4`).
+#[derive(Clone, Copy, Default)]
+struct MoverWallWeaponFacts {
+    is_armed: bool,
+    warhead_wall: bool,
+    warhead_wood: bool,
+}
+
+/// Resolve `Is_Armed` and the **slot-0** warhead flags the wall arm reads.
+///
+/// `0x0073F487` calls vtable `+0x2AC` (`TechnoClass::Is_Armed 0x00701120`); a
+/// false answer returns 7 at `0x0073F48F` without touching a warhead. The
+/// warhead itself comes from `GetWeapon(0)` — literally `PUSH 0x0` into vtable
+/// `+0x3F8` at `0x0073F497`, then `+0xAC` — so it is weapon slot 0 at the
+/// mover's veterancy (`combat_weapon::primary_for_tier`), **not** the
+/// turret-aware current weapon `Is_Armed` itself resolves. Reading the current
+/// weapon here would diverge on a turreted type whose slot 0 is empty.
+///
+/// Without rules (headless fixtures) every flag is false, which keeps the
+/// pre-I9b answer: the wall arm returns 7 and the wall stays a hard block.
+fn mover_wall_weapon_facts(
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    interner: &crate::sim::intern::StringInterner,
+) -> MoverWallWeaponFacts {
+    let Some(rules) = rules else {
+        return MoverWallWeaponFacts::default();
+    };
+    let Some(obj) = rules.object(interner.resolve(entity.type_ref())) else {
+        return MoverWallWeaponFacts::default();
+    };
+    let warhead = crate::sim::combat::combat_weapon::primary_for_tier(obj, entity.veterancy)
+        .and_then(|weapon_id| rules.weapon(weapon_id))
+        .and_then(|weapon| weapon.warhead.as_deref())
+        .and_then(|warhead_id| rules.warhead(warhead_id));
+    MoverWallWeaponFacts {
+        is_armed: crate::sim::combat::combat_weapon::is_armed(entity, obj),
+        warhead_wall: warhead.is_some_and(|warhead| warhead.wall),
+        warhead_wood: warhead.is_some_and(|warhead| warhead.wood),
+    }
+}
+
 pub(super) fn snapshot_mover(
     entities: &EntityStore,
     entity_id: u64,
     playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    interner: &crate::sim::intern::StringInterner,
 ) -> Option<MoverSnapshot> {
     let e = entities.get(entity_id)?;
+    let wall_weapon = mover_wall_weapon_facts(e, rules, interner);
     Some(MoverSnapshot {
         category: e.category,
         speed_type: e.locomotor.as_ref().map(|l| l.speed_type),
@@ -302,6 +348,9 @@ pub(super) fn snapshot_mover(
         regular_crusher: e.regular_crusher,
         drive_accelerates: e.drive_accelerates,
         owner: e.owner(),
+        is_armed: wall_weapon.is_armed,
+        warhead_wall: wall_weapon.warhead_wall,
+        warhead_wood: wall_weapon.warhead_wood,
         too_big_to_fit_under_bridge: e.too_big_to_fit_under_bridge,
         on_bridge: e.on_bridge,
         runtime_bridge_transition: e.runtime_bridge_transition,
@@ -1622,7 +1671,7 @@ fn advance_ordinary_mover(
     native_frame: u32,
     terrain_speed_config: &TerrainSpeedConfig,
     dt: SimFixed,
-    interner: &mut crate::sim::intern::StringInterner,
+    interner: &crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     prepared: &mut PreparedMovementPass,
     effects: &mut MovementPassEffects,
@@ -1661,7 +1710,8 @@ fn advance_ordinary_mover(
 
         // Snapshot mover data before entering the inner loop so we can release the
         // mutable borrow on `entities` when needed for crush/bump immutable lookups.
-        let Some(snap) = snapshot_mover(entities, entity_id, playfield_bounds) else {
+        let Some(snap) = snapshot_mover(entities, entity_id, playfield_bounds, rules, interner)
+        else {
             return;
         };
         // Walk tests CanEnter at 0x75B690 before its paid SetCoords calls
@@ -3793,6 +3843,7 @@ impl PendingMovementPass {
             )
         });
         let ctx = PathfindingContext {
+            wall_cost: None,
             path_grid,
             zone_grid,
             resolved_terrain: terrain,
@@ -3962,6 +4013,7 @@ pub(crate) fn begin_movement_with_grids_scoped(
                 )
             });
     let ctx = PathfindingContext {
+        wall_cost: None,
         path_grid,
         zone_grid,
         resolved_terrain,
@@ -4588,6 +4640,9 @@ mod drive_track_chain_tests {
             regular_crusher: false,
             drive_accelerates: false,
             owner: test_intern("Americans"),
+            is_armed: false,
+            warhead_wall: false,
+            warhead_wood: false,
             too_big_to_fit_under_bridge: false,
             on_bridge: false,
             runtime_bridge_transition: Default::default(),

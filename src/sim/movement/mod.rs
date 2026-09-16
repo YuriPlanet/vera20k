@@ -278,6 +278,14 @@ pub(super) struct PathfindingContext<'a> {
     pub resolved_terrain: Option<&'a ResolvedTerrainGrid>,
     pub playfield_bounds: Option<PlayfieldBounds>,
     pub blocker_neighbor_counts: Option<&'a crate::sim::pathfinding::BlockerNeighborCounts>,
+    /// Per-mover wall-arm cost producer for the A* `search_cost_classifier`
+    /// seam (ledger I9b).
+    ///
+    /// The search calls the Foot `+0x1AC` slot per neighbour and prices the
+    /// returned class through `AStar_compute_edge_cost @ 0x00429830`; a wall
+    /// answers 4 or 5, which expand at 60x and 20x rather than blocking. `None`
+    /// keeps the pre-I9b search, where a wall is simply impassable.
+    pub wall_cost: Option<&'a dyn crate::sim::pathfinding::SearchCellCostClassifier>,
 }
 
 /// Movement timing/threshold config derived from rules.ini [General] section.
@@ -302,6 +310,21 @@ pub(super) struct MoverSnapshot {
     pub regular_crusher: bool,
     pub drive_accelerates: bool,
     pub owner: InternedId,
+    /// `TechnoClass::Is_Armed @ 0x00701120` (vtable `+0x2AC`), the first gate of
+    /// the wall arm's weapon route: a mover with no weapon answers 7 at
+    /// `0x0073F48F` and never reaches the warhead test.
+    pub is_armed: bool,
+    /// Primary warhead `Wall=` (`WarheadTypeClass+0x144`, read at `0x0073F4A9`).
+    ///
+    /// The arm reads weapon slot **0** unconditionally — `PUSH 0x0` into
+    /// `GetWeapon` (vtable `+0x3F8`) at `0x0073F497`, then `+0xAC` for the
+    /// warhead — not the turret-aware current weapon that `Is_Armed` resolves.
+    /// So this is `combat_weapon::primary_for_tier`, at the mover's veterancy.
+    pub warhead_wall: bool,
+    /// Primary warhead `Wood=` (`+0x147`, read at `0x0073F4B3`), which admits
+    /// only an overlay whose `Armor=` is wood (`0x0073F4BD` compares `+0x9C`
+    /// against 6). Unit-only; `InfantryClass 0x0051BF90` has no `Wood=` route.
+    pub warhead_wood: bool,
     pub too_big_to_fit_under_bridge: bool,
     pub on_bridge: bool,
     pub runtime_bridge_transition: movement_bridge::RuntimeBridgeTransitionState,

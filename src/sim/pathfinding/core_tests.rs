@@ -2917,6 +2917,7 @@ fn astar_hierarchy_progress_tracks_last_accepted_next_path_zone() {
         0,
         false,
         false,
+        None,
     )
     .expect("marked straight path should succeed");
 

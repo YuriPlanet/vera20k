@@ -86,7 +86,9 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, BinaryHeap};
 
-use super::{BlockerNeighborCounts, LayeredEntityBlockMap, SearchMarkerOverlay};
+use super::{
+    BlockerNeighborCounts, LayeredEntityBlockMap, SearchCellCostClassifier, SearchMarkerOverlay,
+};
 
 use super::terrain_cost::TerrainCostGrid;
 use super::zone_hierarchy::{ZonePrecheckExclusions, ZonePrecheckOutcome, zone_precheck_flat};
@@ -320,6 +322,7 @@ pub(crate) fn find_path_zoned_marker(
         is_infantry,
         allow_zone_hierarchy,
         playfield_bounds,
+        None,
     )
     .ok()
 }
@@ -342,6 +345,7 @@ pub(crate) fn find_path_zoned_marker_detailed(
     is_infantry: bool,
     allow_zone_hierarchy: bool,
     playfield_bounds: Option<PlayfieldBounds>,
+    wall_cost: Option<&dyn SearchCellCostClassifier>,
 ) -> Result<Vec<(u16, u16)>, PathSearchFailure> {
     let entry = prepare_native_path_entry(
         zone_grid,
@@ -376,6 +380,7 @@ pub(crate) fn find_path_zoned_marker_detailed(
         mover_is_crusher,
         is_infantry,
         blocker_neighbor_counts,
+        wall_cost,
     )
 }
 
@@ -420,6 +425,7 @@ fn find_path_zoned_marker_inner(
         mover_is_crusher,
         is_infantry,
         blocker_neighbor_counts,
+        None,
     )
     .ok()
 }
@@ -443,6 +449,7 @@ fn find_path_zoned_marker_inner_detailed(
     mover_is_crusher: bool,
     is_infantry: bool,
     blocker_neighbor_counts: Option<&BlockerNeighborCounts>,
+    wall_cost: Option<&dyn SearchCellCostClassifier>,
 ) -> Result<Vec<(u16, u16)>, PathSearchFailure> {
     if !can_use_reduced_zone_precheck(movement_zone) {
         return find_path_with_costs_marker(
@@ -458,6 +465,7 @@ fn find_path_zoned_marker_inner_detailed(
             urgency,
             mover_is_crusher,
             is_infantry,
+            wall_cost,
         )
         .ok_or(PathSearchFailure::CellSearchExhausted);
     }
@@ -476,6 +484,7 @@ fn find_path_zoned_marker_inner_detailed(
             urgency,
             mover_is_crusher,
             is_infantry,
+            wall_cost,
         )
         .ok_or(PathSearchFailure::CellSearchExhausted);
     };
@@ -494,6 +503,7 @@ fn find_path_zoned_marker_inner_detailed(
             urgency,
             mover_is_crusher,
             is_infantry,
+            wall_cost,
         )
         .ok_or(PathSearchFailure::CellSearchExhausted);
     };
@@ -556,6 +566,7 @@ fn find_path_zoned_marker_inner_detailed(
                     urgency,
                     mover_is_crusher,
                     is_infantry,
+                    wall_cost,
                 )
                 .map(|result| result.path)
                 .ok_or(PathSearchFailure::CellSearchExhausted);
@@ -574,6 +585,7 @@ fn find_path_zoned_marker_inner_detailed(
                     urgency,
                     mover_is_crusher,
                     is_infantry,
+                    wall_cost,
                 )
                 .ok_or(PathSearchFailure::CellSearchExhausted);
             }
@@ -606,6 +618,7 @@ fn find_path_zoned_marker_inner_detailed(
             urgency,
             mover_is_crusher,
             is_infantry,
+            wall_cost,
         )
         .ok_or(PathSearchFailure::CellSearchExhausted);
     }
@@ -633,6 +646,7 @@ fn find_path_zoned_marker_inner_detailed(
                 urgency,
                 mover_is_crusher,
                 is_infantry,
+                wall_cost,
             )
             .ok_or(PathSearchFailure::CellSearchExhausted);
         }
@@ -659,6 +673,7 @@ fn find_path_zoned_marker_inner_detailed(
             urgency,
             mover_is_crusher,
             is_infantry,
+            wall_cost,
         )
         .ok_or(PathSearchFailure::CellSearchExhausted);
     };
@@ -681,6 +696,7 @@ fn find_path_zoned_marker_inner_detailed(
             urgency,
             mover_is_crusher,
             is_infantry,
+            wall_cost,
         )
         .ok_or(PathSearchFailure::CellSearchExhausted);
     }
@@ -708,6 +724,7 @@ fn find_path_zoned_marker_inner_detailed(
                 urgency,
                 mover_is_crusher,
                 is_infantry,
+                wall_cost,
             ) {
                 return Ok(path);
             }
@@ -815,6 +832,7 @@ pub(crate) fn find_layered_path_zoned_marker(
         is_infantry,
         allow_zone_hierarchy,
         playfield_bounds,
+        None,
     )
     .ok()
 }
@@ -839,6 +857,7 @@ pub(crate) fn find_layered_path_zoned_marker_detailed(
     is_infantry: bool,
     allow_zone_hierarchy: bool,
     playfield_bounds: Option<PlayfieldBounds>,
+    wall_cost: Option<&dyn SearchCellCostClassifier>,
 ) -> Result<Vec<LayeredPathStep>, PathSearchFailure> {
     // `AStar @ 0x0042CAD6` admits hierarchy only while the mover's stored
     // TechnoClass+0x3D5 byte is true. False is not a hard failure: it bypasses
@@ -886,6 +905,7 @@ pub(crate) fn find_layered_path_zoned_marker_detailed(
             urgency,
             mover_is_crusher,
             is_infantry,
+            wall_cost,
         )
         .ok_or(PathSearchFailure::CellSearchExhausted);
     }
@@ -940,6 +960,7 @@ pub(crate) fn find_layered_path_zoned_marker_detailed(
                         urgency,
                         mover_is_crusher,
                         is_infantry,
+                        wall_cost,
                     )
                     .ok_or(PathSearchFailure::CellSearchExhausted);
                 }
@@ -959,6 +980,7 @@ pub(crate) fn find_layered_path_zoned_marker_detailed(
                         urgency,
                         mover_is_crusher,
                         is_infantry,
+                        wall_cost,
                     )
                     .ok_or(PathSearchFailure::CellSearchExhausted);
                 }
@@ -985,6 +1007,7 @@ pub(crate) fn find_layered_path_zoned_marker_detailed(
                     urgency,
                     mover_is_crusher,
                     is_infantry,
+                    wall_cost,
                 )
                 .ok_or(PathSearchFailure::CellSearchExhausted);
             }
@@ -1004,6 +1027,7 @@ pub(crate) fn find_layered_path_zoned_marker_detailed(
                     urgency,
                     mover_is_crusher,
                     is_infantry,
+                    wall_cost,
                 )
                 .ok_or(PathSearchFailure::CellSearchExhausted);
             }
@@ -1033,6 +1057,7 @@ pub(crate) fn find_layered_path_zoned_marker_detailed(
         urgency,
         mover_is_crusher,
         is_infantry,
+        wall_cost,
     )
     .ok_or(PathSearchFailure::CellSearchExhausted)
 }

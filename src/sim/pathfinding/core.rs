@@ -1502,26 +1502,38 @@ pub fn astar_search(
                     continue;
                 }
 
-                // The current grid-level predicate can only produce the known
-                // clear/blocked endpoints (0/7). Keep that adaptation separate
-                // from terrain speed while preserving the YR coercion threshold.
                 // Original: `AStar_main_loop` @ `0x00429A90` calls the FootClass
                 // `+0x1AC` slot (`Can_Enter_Cell`). There is no `FindPathRegular`
                 // symbol in this program.
-                // **No production site sets `search_cost_classifier`**, so this
-                // resolves to the clear/blocked endpoints and
-                // `apply_search_cost_class_multiplier` always sees class 0.
-                // VERA's stand-in for the native cost class is the
-                // `entity_block_map` below, whose 2/5/6 codes reproduce the
-                // `0x0081870C` entries 1.0/20.0/8.0 and the code-2 prediction
-                // override. Classes 3 and 4 have no producer at all — see
-                // `cell_entry`'s wall and gate residuals — so their 1.0 and 60.0
-                // entries are unreachable. The hook stays as the seam a real
-                // `Can_Enter_Cell` cost class would plug into.
-                let raw_cost_class = options.search_cost_classifier.map_or_else(
-                    || if neighbor_passable { 0 } else { 7 },
-                    |classifier| classifier.classify((cx, cy), (nx, ny), neighbor_use_bridge),
-                );
+                //
+                // The classifier is consulted **only on a refusal**, and that is
+                // deliberate. Native computes one code per neighbour inside
+                // `Can_Enter_Cell`; VERA reaches the same answer in two steps,
+                // because `neighbor_passable` above carries terms the cell-scoped
+                // classifier cannot see — the ground/bridge layer split, and the
+                // `neighbor_cell.transition` (`0x200`) gate a ground->bridge entry
+                // must still pass. Letting the classifier *replace* that verdict
+                // would silently drop those terms on every search that supplies
+                // one. Asking it only "is this refusal a wall this mover may
+                // shoot?" keeps every pre-I9b routing decision byte-identical and
+                // still produces the native wall classes.
+                //
+                // Producers: `cell_entry::WallSearchCostClassifier` answers 4 for
+                // an allied wall and 5 for any other (`0x0073F4EB` / `0x0073F50E`),
+                // which `apply_search_cost_class_multiplier` prices at 60x and 20x
+                // from `0x0081870C` — so a wall line is routed *through* at cost
+                // rather than reported unreachable, and the crossing's Override
+                // arm attacks it. Class 3 (the gate arm) still has no producer.
+                // VERA's other cost-class source is the `entity_block_map` below,
+                // whose 2/5/6 codes reproduce the `0x0081870C` entries
+                // 1.0/20.0/8.0 and the code-2 prediction override.
+                let raw_cost_class = if neighbor_passable {
+                    0
+                } else {
+                    options.search_cost_classifier.map_or(7, |classifier| {
+                        classifier.classify((cx, cy), (nx, ny), neighbor_use_bridge)
+                    })
+                };
                 let search_cost = search_cell_cost_decision(
                     raw_cost_class,
                     options.search_cost_class_coerce_to_zero,
@@ -2825,6 +2837,7 @@ pub fn find_path_with_costs(
         urgency,
         mover_is_crusher,
         is_infantry,
+        None,
     )
 }
 
@@ -2842,6 +2855,7 @@ pub fn find_path_with_costs_marker(
     urgency: u8,
     mover_is_crusher: bool,
     is_infantry: bool,
+    wall_cost: Option<&dyn SearchCellCostClassifier>,
 ) -> Option<Vec<(u16, u16)>> {
     let steps = astar_search(
         grid,
@@ -2856,6 +2870,7 @@ pub fn find_path_with_costs_marker(
             urgency,
             mover_is_crusher,
             is_infantry,
+            search_cost_classifier: wall_cost,
             movement_zone,
             resolved_terrain,
             ..Default::default()
@@ -2895,6 +2910,7 @@ pub fn find_path_with_costs_corridor(
         urgency,
         mover_is_crusher,
         is_infantry,
+        None,
     )
 }
 
@@ -2914,6 +2930,7 @@ pub fn find_path_with_costs_corridor_marker(
     urgency: u8,
     mover_is_crusher: bool,
     is_infantry: bool,
+    wall_cost: Option<&dyn SearchCellCostClassifier>,
 ) -> Option<Vec<(u16, u16)>> {
     let steps = astar_search(
         grid,
@@ -2929,6 +2946,7 @@ pub fn find_path_with_costs_corridor_marker(
             urgency,
             mover_is_crusher,
             is_infantry,
+            search_cost_classifier: wall_cost,
             movement_zone,
             resolved_terrain,
             ..Default::default()
@@ -2974,6 +2992,7 @@ pub(crate) fn find_path_with_costs_hierarchy_marker(
             urgency,
             mover_is_crusher,
             is_infantry,
+            None,
         )?
         .path,
     )
@@ -3004,6 +3023,7 @@ pub(crate) fn find_path_with_costs_hierarchy_marker_progress(
     urgency: u8,
     mover_is_crusher: bool,
     is_infantry: bool,
+    wall_cost: Option<&dyn SearchCellCostClassifier>,
 ) -> Option<HierarchyMarkerPathResult> {
     let progress = HierarchyProgressTracker::new(start, level0_path);
     let steps = astar_search(
@@ -3025,6 +3045,7 @@ pub(crate) fn find_path_with_costs_hierarchy_marker_progress(
             urgency,
             mover_is_crusher,
             is_infantry,
+            search_cost_classifier: wall_cost,
             movement_zone,
             resolved_terrain,
             ..Default::default()
@@ -3057,6 +3078,7 @@ pub(crate) fn find_layered_path_hierarchy_marker(
     urgency: u8,
     mover_is_crusher: bool,
     is_infantry: bool,
+    wall_cost: Option<&dyn SearchCellCostClassifier>,
 ) -> Option<Vec<LayeredPathStep>> {
     if !matches!(start_layer, MovementLayer::Ground | MovementLayer::Bridge) {
         return None;
@@ -3083,6 +3105,7 @@ pub(crate) fn find_layered_path_hierarchy_marker(
             urgency,
             mover_is_crusher,
             is_infantry,
+            search_cost_classifier: wall_cost,
             movement_zone,
             ..Default::default()
         },
@@ -3167,6 +3190,7 @@ pub fn find_layered_path(
         urgency,
         mover_is_crusher,
         is_infantry,
+        None,
     )
 }
 
@@ -3186,6 +3210,7 @@ pub fn find_layered_path_marker(
     urgency: u8,
     mover_is_crusher: bool,
     is_infantry: bool,
+    wall_cost: Option<&dyn SearchCellCostClassifier>,
 ) -> Option<Vec<LayeredPathStep>> {
     if !matches!(start_layer, MovementLayer::Ground | MovementLayer::Bridge) {
         return None;
@@ -3211,6 +3236,7 @@ pub fn find_layered_path_marker(
             urgency,
             mover_is_crusher,
             is_infantry,
+            search_cost_classifier: wall_cost,
             ..Default::default()
         },
     )

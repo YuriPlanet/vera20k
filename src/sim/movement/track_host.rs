@@ -888,6 +888,8 @@ impl Simulation {
             &self.substrate.entities,
             id,
             self.playfield_bounds,
+            rules,
+            &self.interner,
         ) else {
             return false;
         };

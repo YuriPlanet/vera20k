@@ -520,6 +520,7 @@ pub(super) fn find_move_path_with_marker_detailed(
             is_infantry,
             allow_zone_hierarchy,
             ctx.playfield_bounds,
+            ctx.wall_cost,
         );
         let path = layered_result.map_err(MovePathFailure::Search)?;
 
@@ -596,6 +597,7 @@ pub(super) fn find_move_path_with_marker_detailed(
         is_infantry,
         allow_zone_hierarchy,
         ctx.playfield_bounds,
+        ctx.wall_cost,
     )
     .map_err(MovePathFailure::Search)?;
 
@@ -873,6 +875,7 @@ mod tests {
         ) -> Result<(Vec<(u16, u16)>, Vec<MovementLayer>), MovePathFailure> {
             find_move_path_with_marker_detailed(
                 PathfindingContext {
+                    wall_cost: None,
                     path_grid: grid,
                     zone_grid: None,
                     resolved_terrain: None,
@@ -974,6 +977,7 @@ mod tests {
 
         let (path, layers) = find_move_path(
             PathfindingContext {
+                wall_cost: None,
                 path_grid: Some(&grid),
                 zone_grid: Some(&zone_grid),
                 resolved_terrain: Some(&terrain),
@@ -1013,6 +1017,7 @@ mod tests {
 
         let (path, layers) = find_move_path_with_marker(
             PathfindingContext {
+                wall_cost: None,
                 path_grid: Some(&grid),
                 zone_grid: None,
                 resolved_terrain: None,
@@ -1105,6 +1110,7 @@ mod tests {
             MovementLayer::Ground,
             false,
             PathfindingContext {
+                wall_cost: None,
                 path_grid: Some(&grid),
                 zone_grid: Some(&zone_grid),
                 resolved_terrain: Some(&terrain),
@@ -1161,6 +1167,7 @@ mod tests {
             MovementLayer::Ground,
             false,
             PathfindingContext {
+                wall_cost: None,
                 path_grid: Some(&grid),
                 zone_grid: None,
                 resolved_terrain: None,
@@ -1206,6 +1213,7 @@ mod tests {
 
         let flat = find_move_path(
             PathfindingContext {
+                wall_cost: None,
                 path_grid: Some(&grid),
                 zone_grid: None,
                 resolved_terrain: None,
@@ -1234,6 +1242,7 @@ mod tests {
 
         let layered = find_move_path(
             PathfindingContext {
+                wall_cost: None,
                 path_grid: Some(&grid),
                 zone_grid: None,
                 resolved_terrain: None,

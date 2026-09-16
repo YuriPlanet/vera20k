@@ -733,6 +733,7 @@ fn issue_move_command_with_destination_impl(
                 let zone_mz = movement_zone.unwrap_or(MovementZone::Normal);
                 let Some((appended, appended_layers)) = find_move_path(
                     PathfindingContext {
+                        wall_cost: None,
                         path_grid: Some(grid),
                         zone_grid,
                         resolved_terrain,
@@ -785,6 +786,7 @@ fn issue_move_command_with_destination_impl(
     }
     let zone_mz = movement_zone.unwrap_or(MovementZone::Normal);
     let ctx = PathfindingContext {
+        wall_cost: None,
         path_grid: Some(grid),
         zone_grid,
         resolved_terrain,

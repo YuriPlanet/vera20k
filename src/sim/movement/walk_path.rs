@@ -245,6 +245,7 @@ impl Simulation {
                 goal,
                 &self.substrate.entities,
                 super::PathfindingContext {
+                    wall_cost: None,
                     path_grid: grid,
                     zone_grid: self.zone_grid.as_ref(),
                     resolved_terrain: self.resolved_terrain.as_ref(),
