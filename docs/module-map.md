@@ -1,12 +1,12 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `68051140b5a3aded6779375d8d2e235cf851bdb0` (2026-09-16), cargo-modules 0.26.0.
+Generated snapshot: `35723b94662c52de36e9d9203fad68aeea1beee6` (2026-09-16), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
 External crates and the sysroot are excluded from the dependency graph.
-Contains **823 modules plus the crate root**, and **5240 distinct
+Contains **823 modules plus the crate root**, and **5241 distinct
 cross-module dependency edges**. Check this source commit against your checkout.
 <!-- module-map:provenance:end -->
 
@@ -565,7 +565,7 @@ sim::mission::retask -> rules::mission_data; sim::mission::authority; sim::missi
 sim::mission::state -> rules::mission_data; sim::mission::timer
 sim::mission::timer -> sim::timer
 sim::mission::verb -> sim::mission::state
-sim::movement -> map::entities; map::playfield; map::resolved_terrain; rules::locomotor_type; sim::entity_store; sim::game_entity; sim::intern; sim::movement::bump_crush; sim::movement::drive_locomotion; sim::movement::drive_track; sim::movement::facing_class; sim::movement::locomotion::piggyback; sim::movement::movement_bridge; sim::movement::movement_commands; sim::movement::movement_tick; sim::movement::navcom; sim::occupancy; sim::pathfinding::core; sim::pathfinding::zone_map; util::fixed_math
+sim::movement -> map::entities; map::playfield; map::resolved_terrain; rules::locomotor_type; sim::entity_store; sim::game_entity; sim::intern; sim::movement::bump_crush; sim::movement::drive_locomotion; sim::movement::drive_track; sim::movement::facing_class; sim::movement::locomotion::piggyback; sim::movement::movement_bridge; sim::movement::movement_commands; sim::movement::movement_tick; sim::movement::navcom; sim::occupancy; sim::pathfinding::cell_entry; sim::pathfinding::core; sim::pathfinding::zone_map; util::fixed_math
 sim::movement::air_movement -> rules::locomotor_type; sim::components; sim::debug_event_log; sim::entity_store; sim::movement; sim::movement::locomotor; util::fixed_math
 sim::movement::at_coord -> rules::locomotor_type; sim::components; sim::game_entity; sim::movement::drive_track
 sim::movement::bump_crush -> map::entities; map::resolved_terrain; rules::ruleset; sim::cell_kernel; sim::entity_store; sim::game_entity; sim::intern; sim::movement::locomotor; sim::movement::movement_commands; sim::occupancy; sim::pathfinding::core; sim::rng; util::fixed_math
