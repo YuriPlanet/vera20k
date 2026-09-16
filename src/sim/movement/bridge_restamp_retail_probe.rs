@@ -265,3 +265,130 @@ fn retail_ramp_exit_onto_equal_level_flat_census() {
         );
     }
 }
+
+/// Count the shape native's cliff override fires on.
+///
+/// Before the slope coefficient, `Process_Movement` compares two cell **level
+/// bytes**: `0x004B3589` fetches the destination cell, `0x004B358E MOVSX
+/// ECX,byte [EAX+0x11B]` reads its Level, `0x004B3595..0x004B359C` takes the
+/// absolute difference against the mover's cell level (plus 4 when the mover is
+/// on a bridge), and `0x004B359E CMP EAX,2` / `0x004B35A1 JGE 0x004B3C84`
+/// forces the land-type row to **1** at `0x004B3C88` instead of the cell's own
+/// `+0xEC`. VERA's `terrain_speed_factor` has no equivalent, so it reads the
+/// destination's real row where gamemd reads full speed.
+///
+/// That is a larger swing than the 1.2 downhill coefficient on slow terrain, and
+/// its frequency was recorded UNCHECKED. This counts it the same way the ramp
+/// census counts D1's shape: over static terrain, no play required.
+///
+/// Three things this counts and one it does not, all found by review:
+///
+/// - **Only pairs a vehicle can actually take.** Level jumps of two or more sit
+///   at cliff faces and shorelines, which `Can_Enter_Cell` refuses, and native
+///   reaches `0x004B3589` only for a destination the pathfinder committed to.
+///   Both cells must therefore be ground-walkable and inside the playfield. The
+///   first version counted every pair and reported a cliff-perimeter statistic.
+/// - **Only where forcing the row changes something.** The override's live
+///   effect is `MOV ESI,1` - the Road row - and retail Road, Clear and Rough are
+///   all 100% for Foot, Track and Wheel. So a qualifying pair whose destination
+///   already reads 100% diverges by nothing; the divergence needs a slower row
+///   (Ice, Weeds, Tiberium, Railroad). Both are reported.
+/// - **Vehicles only.** `0x004B2630` is `DriveLocomotionClass`; Walk's Level-byte
+///   sites are a Z sanity check and the bridge transition, with no Road override.
+///
+/// Not counted, and it is **not** a lower bound: the bridge arm adds 4 to the
+/// **mover's** side alone, so a mover on a deck over flat ground reads a
+/// difference of 4 on *every* step, not merely when leaving the deck. That
+/// pushes the true figure up; the land-row gate pushes it down. Neither bounds
+/// the other.
+#[test]
+#[ignore = "requires active retail assets; reports a terrain census"]
+fn retail_cliff_override_level_difference_census() {
+    let retail = super::retail_dir().expect("configured active retail install");
+    let maps = std::env::var("VERA20K_CLIFF_CENSUS_MAPS")
+        .unwrap_or_else(|_| "BayOPigs.mmx;Hills.mmx;Deadman.mmx".into());
+    for map_name in maps.split(';') {
+        let scenario = crate::headless_scenario::load(&retail, map_name, super::SEED)
+            .unwrap_or_else(|error| panic!("load {map_name}: {error}"));
+        let sim = scenario.sim();
+        let terrain = sim
+            .resolved_terrain
+            .as_ref()
+            .expect("live resolved terrain");
+
+        let grid = sim.path_grid();
+        let walkable = |rx: u16, ry: u16| -> bool {
+            grid.and_then(|g| g.cell(rx, ry))
+                .is_some_and(|c| c.ground_walkable)
+        };
+        // Road is row 1, which the override forces. A destination already at
+        // full speed for this SpeedType diverges by nothing.
+        let full_speed = |cell: &crate::map::resolved_terrain::ResolvedTerrainCell| {
+            cell.speed_costs
+                .speed_multiplier_for(crate::rules::locomotor_type::SpeedType::Track)
+                >= crate::util::fixed_math::SIM_ONE
+        };
+
+        let (mut pairs, mut forced, mut diverging) = (0u32, 0u32, 0u32);
+        for ry in 0..terrain.height() {
+            for rx in 0..terrain.width() {
+                let Some(cell) = terrain.cell(rx, ry) else {
+                    continue;
+                };
+                if cell.outside_playfield || !walkable(rx, ry) {
+                    continue;
+                }
+                for (dx, dy) in [
+                    (-1i32, -1i32),
+                    (0, -1),
+                    (1, -1),
+                    (-1, 0),
+                    (1, 0),
+                    (-1, 1),
+                    (0, 1),
+                    (1, 1),
+                ] {
+                    let (nx, ny) = (i32::from(rx) + dx, i32::from(ry) + dy);
+                    let (Ok(nx), Ok(ny)) = (u16::try_from(nx), u16::try_from(ny)) else {
+                        continue;
+                    };
+                    let Some(neighbour) = terrain.cell(nx, ny) else {
+                        continue;
+                    };
+                    if neighbour.outside_playfield || !walkable(nx, ny) {
+                        continue;
+                    }
+                    pairs += 1;
+                    // The same absolute difference the binary takes, on the same
+                    // signed Level byte.
+                    let delta =
+                        (i32::from(cell.level as i8) - i32::from(neighbour.level as i8)).abs();
+                    if delta >= 2 {
+                        forced += 1;
+                        if !full_speed(neighbour) {
+                            diverging += 1;
+                        }
+                    }
+                }
+            }
+        }
+        let pct = |n: u32| {
+            if pairs == 0 {
+                0.0
+            } else {
+                f64::from(n) * 100.0 / f64::from(pairs)
+            }
+        };
+        println!(
+            "A8 cliff-override census {map_name}: of {pairs} vehicle-passable adjacency \
+             PAIRS (both cells ground-walkable and in the playfield), {forced} differ by \
+             two or more levels ({:.2}%), and {diverging} of those have a destination row \
+             below full speed ({:.2}%) - only the latter diverge, because the override \
+             forces the Road row and Road, Clear and Rough are all 100% for Track. \
+             Pairs, not traversals; vehicles only; the bridge arm is not counted and \
+             would push the figure up.",
+            pct(forced),
+            pct(diverging)
+        );
+    }
+}
