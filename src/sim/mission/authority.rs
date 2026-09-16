@@ -128,7 +128,41 @@ pub(crate) fn override_mission_on_blocked_step(
     let archived_destination = represented_archived_destination(entity);
     override_entity_to_attack(
         entity,
-        blocker,
+        TargetKind::Entity(blocker),
+        archived_destination,
+        false, // the calling locomotor owns its active-path stop
+    )
+}
+
+/// The wall case of the blocked-step Override: Attack, with the refused **cell**
+/// as the target and a null destination.
+///
+/// gamemd-derived: all three ground locomotors take the same arm — Drive
+/// `0x004B3B03..0x004B3BEF`, Hover `0x00515C3F..0x00515C9C` and Walk's pair.
+/// `CellClass::Find_Blocking_Object @ 0x0047C5A0` on the refused cell returns no
+/// object, so a cell whose `OverlayTypeIndex (+0x44) != -1` with
+/// `OverlayType.Wall (+0x2A8)` gets `Override_Mission(1, cell, 0)` through the
+/// owner's `+0x1F4` slot (`FootClass::Override_Mission @ 0x004D8F40`).
+///
+/// Termination needs nothing new: when the wall segment dies,
+/// `expire_cell_target_references` clears every listener whose `attack_target`
+/// is that cell and runs Restore, which is the native pointer-expiry order.
+// Unwired until the crossing's wall arm lands; see ledger row I9b in
+// docs/plans/2026-09-15-movement-retail-acceptance.md. Kept rather than deleted
+// because the producer it pairs with is already in the tree.
+#[allow(dead_code)]
+pub(crate) fn override_mission_on_wall_cell(
+    entities: &mut crate::sim::entity_store::EntityStore,
+    mover: u64,
+    cell: (u16, u16),
+) -> bool {
+    let Some(entity) = entities.get_mut(mover) else {
+        return false;
+    };
+    let archived_destination = represented_archived_destination(entity);
+    override_entity_to_attack(
+        entity,
+        TargetKind::Cell(cell.0, cell.1),
         archived_destination,
         false, // the calling locomotor owns its active-path stop
     )
@@ -155,7 +189,12 @@ pub(crate) fn override_mission_on_damage_response(
         return false;
     };
     let archived_destination = entity.navigation.nav_com;
-    override_entity_to_attack(entity, attacker, archived_destination, true)
+    override_entity_to_attack(
+        entity,
+        TargetKind::Entity(attacker),
+        archived_destination,
+        true,
+    )
 }
 
 /// One represented concrete Mission wrapper transaction shared by bare-store
@@ -164,7 +203,7 @@ pub(crate) fn override_mission_on_damage_response(
 /// ReceiveDamage wrapper reads the ordinary Foot NavCom field directly.
 fn override_entity_to_attack(
     entity: &mut crate::sim::game_entity::GameEntity,
-    attacker: u64,
+    target: TargetKind,
     archived_destination: Option<NavTargetRef>,
     stop_active_path: bool,
 ) -> bool {
@@ -180,7 +219,7 @@ fn override_entity_to_attack(
     }
     entity.suspended_attack_target = entity.attack_target.as_ref().map(|target| target.target);
     verb::override_base(&mut entity.mission, MISSION_ATTACK);
-    represented_assign_target(entity, Some(TargetKind::Entity(attacker)));
+    represented_assign_target(entity, Some(target));
     if entity.category != EntityCategory::Structure {
         if stop_active_path {
             // Native has one NavCom. VERA's active path executor is a second

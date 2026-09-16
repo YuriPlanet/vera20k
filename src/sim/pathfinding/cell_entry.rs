@@ -286,6 +286,19 @@ pub enum TerrainCheckResult {
 pub enum CanEnterCellResult {
     Clear,
     HardBlocked,
+    /// The wall arm answered 4 or 5: the mover cannot step here, but the search
+    /// may still expand through it at the class's cost multiplier.
+    ///
+    /// gamemd-derived: `UnitClass::Can_Enter_Cell @ 0x0073F0A0` accumulates
+    /// `max(code, 4)` for an allied wall (`0x0073F4EB`) and `max(code, 5)` for a
+    /// non-allied one (`0x0073F50E`), after `HouseClass::Is_Ally_ByIndex
+    /// @ 0x004F9A10` on the wall owner at `cell+0x50`. `InfantryClass::
+    /// Can_Enter_Cell @ 0x0051BF90` computes the same pair as `5 - is_ally`.
+    /// `AStar_compute_edge_cost @ 0x00429830` then prices them at 60x and 20x
+    /// from the class table at `0x0081870C`.
+    WallBlocked {
+        cost_class: u8,
+    },
 }
 
 /// Search-time interpretation of the YR `FootClass` cell predicate result.
@@ -375,6 +388,183 @@ pub struct CanEnterCellContext<'a> {
     /// the crusher route of the Unit wall arm (`0x0073F438`). Infantry never
     /// takes that route; pass `false` where the mover is unknown.
     pub mover_is_crusher: bool,
+    /// Wall-arm inputs. `None` keeps the coarse pre-I9b answer (a wall is a
+    /// hard block), which is what every caller without a resolved mover wants.
+    pub wall: Option<WallArmContext<'a>>,
+}
+
+/// Everything the wall arm of `Can_Enter_Cell` reads that terrain alone cannot
+/// supply: the overlay at the target cell, the house that owns it, and whether
+/// the mover can shoot a wall at all.
+///
+/// gamemd-derived: `UnitClass::Can_Enter_Cell @ 0x0073F0A0` wall arm
+/// (`0x0073F3D0..0x0073F51F`) and `InfantryClass::Can_Enter_Cell @ 0x0051BF90`.
+#[derive(Clone, Copy)]
+pub struct WallArmContext<'a> {
+    pub overlay_grid: Option<&'a crate::sim::overlay_grid::OverlayGrid>,
+    pub overlay_registry: Option<&'a crate::map::overlay_types::OverlayTypeRegistry>,
+    pub alliances: Option<&'a crate::map::houses::HouseAllianceMap>,
+    pub interner: Option<&'a crate::sim::intern::StringInterner>,
+    /// The mover's owning house, compared with the wall's owner through
+    /// `HouseClass::Is_Ally_ByIndex @ 0x004F9A10`.
+    pub mover_owner: Option<crate::sim::intern::InternedId>,
+    /// `TechnoClass::Is_Armed @ 0x00701120` (vtable `+0x2AC`, primary weapon
+    /// slot non-null). False answers 7 at `0x0073F48F`.
+    pub is_armed: bool,
+    /// Primary warhead `Wall=` (`WarheadTypeClass+0x144`, tested at
+    /// `0x0073F4A9`).
+    pub warhead_wall: bool,
+    /// Primary warhead `Wood=` (`+0x147`, tested at `0x0073F4B3`), which only
+    /// admits an overlay whose `Armor=` is wood (`0x0073F4BD` compares 6).
+    pub warhead_wood: bool,
+}
+
+// `OverlayTypeRegistry` carries no `Debug`, and adding one there would touch a
+// rules type for a pathfinding convenience. `CanEnterCellContext` derives
+// `Debug`, so this prints the mover-side facts and elides the borrowed tables.
+impl std::fmt::Debug for WallArmContext<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WallArmContext")
+            .field("mover_owner", &self.mover_owner)
+            .field("is_armed", &self.is_armed)
+            .field("warhead_wall", &self.warhead_wall)
+            .field("warhead_wood", &self.warhead_wood)
+            .field("overlay_grid", &self.overlay_grid.is_some())
+            .field("overlay_registry", &self.overlay_registry.is_some())
+            .field("alliances", &self.alliances.is_some())
+            .finish()
+    }
+}
+
+impl WallArmContext<'_> {
+    /// The wall overlay at `cell`, as `(is_wall, armor_is_wood, owner)`.
+    fn overlay_at(
+        &self,
+        cell: (u16, u16),
+    ) -> Option<(bool, bool, Option<crate::sim::intern::InternedId>)> {
+        let grid = self.overlay_grid?;
+        let registry = self.overlay_registry?;
+        let overlay = grid.cell(cell.0, cell.1);
+        let flags = overlay.overlay_id.and_then(|id| registry.flags(id))?;
+        Some((flags.wall, flags.armor_is_wood, overlay.wall_owner))
+    }
+
+    /// `HouseClass::Is_Ally_ByIndex @ 0x004F9A10`: true for the mover's own
+    /// house, false for an unowned wall (index -1), else the ally bitfield.
+    fn owner_is_ally(&self, wall_owner: Option<crate::sim::intern::InternedId>) -> bool {
+        let (Some(alliances), Some(interner), Some(mover), Some(wall)) =
+            (self.alliances, self.interner, self.mover_owner, wall_owner)
+        else {
+            return false;
+        };
+        crate::map::houses::is_allied_with(
+            alliances,
+            interner.resolve(mover),
+            interner.resolve(wall),
+        )
+    }
+
+    /// The accumulated wall code, or `None` when the arm answers 7.
+    ///
+    /// `0x0073F483..0x0073F51F`: an unarmed mover exits through the shared
+    /// epilogue at `0x0073FCD0` (branch `JZ` at `0x0073F48F`); one whose primary
+    /// warhead is neither `Wall=` nor `Wood=`-against-wood returns 7 at its own
+    /// exit, `0x0073F4C9`. Otherwise the ally test picks `max(code, 4)` or
+    /// `max(code, 5)`.
+    ///
+    /// `is_infantry` gates the `Wood=` clause, which is **Unit-only**. The
+    /// infantry arm (`InfantryClass::Can_Enter_Cell 0x0051BF90`) resolves its
+    /// warhead through `FUN_00772AC0`, whose whole body is one test of
+    /// `+0x144` (`Wall=`) — no `+0x147`, no `Armor == 6` compare — and then
+    /// takes `5 - Is_Ally_ByIndex`. Stock-reachable: `[SHK]` (Primary
+    /// `ElectricBolt` -> warhead `[Shock]`, `Wood=yes` with no `Wall=`) against
+    /// `[CAKRMW]` (`Armor=wood`, `Crushable=no`).
+    fn weapon_route_code(
+        &self,
+        armor_is_wood: bool,
+        wall_owner: Option<crate::sim::intern::InternedId>,
+        is_infantry: bool,
+    ) -> Option<u8> {
+        if !self.is_armed {
+            return None;
+        }
+        let wood_route = !is_infantry && self.warhead_wood && armor_is_wood;
+        if !(self.warhead_wall || wood_route) {
+            return None;
+        }
+        // Fail closed on a wiring gap rather than guessing "enemy". Native
+        // always has a house to ask, so absent alliance tables here are a VERA
+        // wiring mistake, not a game state — and answering 5 would be
+        // indistinguishable from a genuinely unowned wall while quietly pricing
+        // it at 20x. Declining keeps the pre-I9b hard block, which is the same
+        // "absent context => pre-I9b behaviour" rule the rest of the arm
+        // follows, and it matters because the producer has to reach many call
+        // sites: a site wired without tables then refuses walls instead of
+        // silently mis-pricing them. An unowned wall (`wall_owner: None` with
+        // the tables present) still takes 5 — native's index -1.
+        if self.alliances.is_none() || self.interner.is_none() || self.mover_owner.is_none() {
+            return None;
+        }
+        Some(if self.owner_is_ally(wall_owner) { 4 } else { 5 })
+    }
+}
+
+/// Prices a candidate cell for A* expansion through the wall arm.
+///
+/// gamemd-derived: `AStar_main_loop @ 0x00429A90` calls the Foot `+0x1AC` slot
+/// for each neighbour and hands the returned code to
+/// `AStar_compute_edge_cost @ 0x00429830`, which indexes the class base table
+/// at `0x0081870C` — `[1.0, 1000.0, 1.0, 1.0, 60.0, 20.0, 8.0, 10000.0]`, so an
+/// allied wall (4) expands at 60x and an enemy one (5) at 20x. A code of 7 stops
+/// the expansion in `search_cell_cost_decision`.
+///
+/// This is the production producer for the `search_cost_classifier` seam: it
+/// carries the mover facts the pure pathfinding layer cannot resolve on its own.
+pub struct WallSearchCostClassifier<'a> {
+    pub wall: WallArmContext<'a>,
+    pub path_grid: Option<&'a PathGrid>,
+    pub resolved_terrain: Option<&'a ResolvedTerrainGrid>,
+    pub terrain_costs: Option<&'a TerrainCostGrid>,
+    pub movement_zone: Option<MovementZone>,
+    pub speed_type: Option<SpeedType>,
+    pub is_infantry: bool,
+    pub mover_is_crusher: bool,
+}
+
+impl crate::sim::pathfinding::SearchCellCostClassifier for WallSearchCostClassifier<'_> {
+    fn classify(&self, _from: (u16, u16), candidate: (u16, u16), bridge: bool) -> u8 {
+        let terrain_layer = if bridge {
+            MovementLayer::Bridge
+        } else {
+            MovementLayer::Ground
+        };
+        match evaluate_can_enter_cell(CanEnterCellContext {
+            wall: Some(self.wall),
+            target: candidate,
+            terrain_layer,
+            movement_zone: self.movement_zone,
+            speed_type: self.speed_type,
+            path_grid: self.path_grid,
+            resolved_terrain: self.resolved_terrain,
+            terrain_costs: self.terrain_costs,
+            bypass_grid: false,
+            mode: TerrainEntryMode::AStarNeighbor,
+            is_infantry: self.is_infantry,
+            mover_is_crusher: self.mover_is_crusher,
+        }) {
+            // `Clear` is NOT class 0 here. `astar_search` consults this
+            // classifier only after its own `neighbor_passable` has already
+            // refused the cell, and that check carries terms this cell-scoped
+            // evaluation cannot see — the ground/bridge layer split, and the
+            // `neighbor_cell.transition` (`0x200`) gate a ground->bridge entry
+            // must pass. Answering 0 would re-admit a refused neighbour at 1x:
+            // a passable deck whose `transition` is clear would be entered
+            // anyway. Only a wall this mover may shoot changes the outcome.
+            CanEnterCellResult::Clear => 7,
+            CanEnterCellResult::WallBlocked { cost_class } => cost_class,
+            CanEnterCellResult::HardBlocked => 7,
+        }
+    }
 }
 
 /// Evaluate the shared terrain/layer slice of Can_Enter_Cell.
@@ -393,7 +583,10 @@ pub fn evaluate_can_enter_cell(ctx: CanEnterCellContext<'_>) -> CanEnterCellResu
             let bridge_walkable = ctx.path_grid.is_some_and(|grid| {
                 grid.is_walkable_on_layer(ctx.target.0, ctx.target.1, MovementLayer::Bridge)
             });
-            evaluate_shared_cell_leaf(ctx, bridge_walkable)
+            // The deck branch never reaches the land row: `0x0073FA92` tests the
+            // deck flag and jumps past the read (`JNZ 0x0073FC24`), so the row
+            // cannot refuse a bridge-layer entry.
+            evaluate_shared_cell_leaf(ctx, bridge_walkable, true)
         }
         // Air and underground locomotors are admitted by their dedicated
         // locomotion state machines, not this ground/bridge terrain slice.
@@ -409,7 +602,11 @@ fn evaluate_ground_cell_entry(ctx: CanEnterCellContext<'_>) -> CanEnterCellResul
             .resolved_terrain
             .and_then(|terrain| terrain.cell(x, y))
             .is_some_and(|cell| is_water_surface_cell_passable(cell, movement_zone));
-        return evaluate_shared_cell_leaf(ctx, land_passable);
+        // A water mover's surface test above already stands in for the row on
+        // this VERA-internal branch; native has one path and would read the row
+        // here too. UNCHECKED, and inert in practice (walls are not placed on
+        // open water), so the row is not made to refuse anything extra.
+        return evaluate_shared_cell_leaf(ctx, land_passable, true);
     }
 
     let grid_ok = ctx.path_grid.map_or(true, |grid| {
@@ -449,7 +646,11 @@ fn evaluate_ground_cell_entry(ctx: CanEnterCellContext<'_>) -> CanEnterCellResul
         None => true,
     };
 
-    evaluate_shared_cell_leaf(ctx, grid_ok && speed_passable && terrain_cost_passable)
+    evaluate_shared_cell_leaf(
+        ctx,
+        grid_ok && speed_passable && terrain_cost_passable,
+        speed_passable,
+    )
 }
 
 /// Whether the target carries the native `CellClass+0x140 & 0x100` stamp.
@@ -463,9 +664,37 @@ fn target_has_structural_bridge(ctx: CanEnterCellContext<'_>) -> bool {
             .is_some_and(|cell| cell.bridge_facts.has_structural_bridge())
 }
 
+/// The shared tail of both `Can_Enter_Cell` implementations.
+///
+/// `land_passable` is VERA's coarse "may this mover stand here at all" answer:
+/// the path grid, the speed row and the cost grid folded together.
+///
+/// `land_row_passable` is the cell's **land row** — `speed_type_allows_cell`,
+/// the analogue of native's `FLD [ECX*4 + 0x89EA40]` / `FCOMP 0.0` at
+/// `0x0073FAB5`.
+///
+/// It is a separate parameter because the wall arm needs the row without the
+/// two *blocking* terms the coarse answer folds in: `grid_ok` and the cost grid
+/// both go false on `overlay_blocks`, which `ResolvedTerrainGrid` sets for every
+/// `zone_class::WALL` overlay, so gating the wall classes on `land_passable`
+/// would refuse the very cells the arm exists to price.
+///
+/// The row itself is *not* overlay-free, and the distinction matters:
+/// `apply_overlay_land` writes `cell.speed_costs` from the overlay's own `Land=`
+/// row, exactly as native does — `CellClass::RecalcAttributes @ 0x0047D2B0`
+/// opens with `this->LandType = ot->Land` (`+0x298`) and early-returns on
+/// `Land == 4`/`9` or `NoUseTileLandType` (`+0x2AC`), which
+/// `uses_early_recalc_land_branch` ports. So reading the post-overlay row is the
+/// faithful analogue, not an accident.
+///
+/// In stock data this gate never fires: no `Wall=yes` overlay declares `Land=`,
+/// so each inherits `LandType::Clear` and its passable row rather than the
+/// all-zero `[Wall]` row. It bites only where an overlay declares a land whose
+/// row is zero for the mover's SpeedType.
 fn evaluate_shared_cell_leaf(
     ctx: CanEnterCellContext<'_>,
     land_passable: bool,
+    land_row_passable: bool,
 ) -> CanEnterCellResult {
     let structural_bridge = target_has_structural_bridge(ctx);
     let bridge_transition = ctx
@@ -556,11 +785,54 @@ fn evaluate_shared_cell_leaf(
             terrain_cell.is_some_and(|cell| cell.zone_type == zone_class::CRUSHABLE);
         let crushable_wall_admitted =
             !ctx.is_infantry && (ctx.mover_is_crusher || movement_zone == MovementZone::CrusherAll);
+
+        // The wall arm's weapon route (`0x0073F483..0x0073F51F`): an armed mover
+        // whose primary warhead is `Wall=`, or `Wood=` against an `Armor=wood`
+        // overlay (Unit only — the infantry arm's `FUN_00772AC0` tests `Wall=`
+        // alone), accumulates 4 against an allied wall and 5 against any other
+        // — an unowned wall is index -1, which `Is_Ally_ByIndex` rejects, so it
+        // takes 5. An unarmed mover leaves through the shared epilogue at
+        // `0x0073FCD0`; a warhead miss returns 7 at `0x0073F4C9`.
+        //
+        // With `ctx.wall` absent this stays `None` and the coarse pre-I9b hard
+        // block is returned unchanged, which is what every caller that has not
+        // resolved a mover wants.
+        //
+        // Residual: the crusher route's allied-wall `max(code, 4)` (`0x0073F481`
+        // jumps into the same accumulator at `0x0073F4EB`) is not modelled, so a
+        // crusher still enters a crushable wall freely whoever owns it. Changing
+        // that also moves I4's wall-crush admission, so it is recorded rather
+        // than folded in here.
+        let wall_attack_code: Option<u8> = ctx.wall.and_then(|wall_ctx| {
+            let (is_wall, armor_is_wood, owner) = wall_ctx.overlay_at(ctx.target)?;
+            if !is_wall {
+                return None;
+            }
+            wall_ctx.weapon_route_code(armor_is_wood, owner, ctx.is_infantry)
+        });
+
+        // The wall arm does NOT return in native. It accumulates 4/5 into the
+        // running code, falls through the occupant walk, and then reads the
+        // ground land row at `0x0073FAB5` (`FLD [ECX*4 + 0x89EA40]`, `FCOMP
+        // 0.0`); a zero row returns 7 at `0x0073FAD0` whatever the arm
+        // accumulated, and `InfantryClass` does the same at `0x0051C7D0`. So a
+        // wall overlay on terrain whose speed row refuses this mover answers 7,
+        // not 4/5 — the classes survive only where the terrain itself admits.
+        //
+        // `land_row_passable` is that row alone, deliberately not
+        // `land_passable`: see this function's doc for why the wider term would
+        // refuse every wall and leave the arm dead.
         if crushable_wall && !crushable_wall_admitted {
-            return CanEnterCellResult::HardBlocked;
+            return match wall_attack_code.filter(|_| land_row_passable) {
+                Some(cost_class) => CanEnterCellResult::WallBlocked { cost_class },
+                None => CanEnterCellResult::HardBlocked,
+            };
         }
         return if !wall_cleared && (wall || !land_passable) {
-            CanEnterCellResult::HardBlocked
+            match wall_attack_code.filter(|_| wall && land_row_passable) {
+                Some(cost_class) => CanEnterCellResult::WallBlocked { cost_class },
+                None => CanEnterCellResult::HardBlocked,
+            }
         } else {
             CanEnterCellResult::Clear
         };
@@ -828,6 +1100,7 @@ pub fn check_terrain_with_layers(
 
     // --- Terrain walkability ---
     let terrain_walkable = evaluate_can_enter_cell(CanEnterCellContext {
+        wall: None,
         target,
         terrain_layer: layers.terrain_layer,
         movement_zone: None,
@@ -1500,6 +1773,7 @@ mod tests {
         mover_is_crusher: bool,
     ) -> CanEnterCellResult {
         evaluate_can_enter_cell(CanEnterCellContext {
+            wall: None,
             target: (1, 1),
             terrain_layer: MovementLayer::Ground,
             movement_zone: Some(movement_zone),
@@ -1583,6 +1857,7 @@ mod tests {
         }
         // The clear neighbour is untouched by the arm.
         let clear = evaluate_can_enter_cell(CanEnterCellContext {
+            wall: None,
             target: (0, 0),
             terrain_layer: MovementLayer::Ground,
             movement_zone: Some(MovementZone::Normal),
@@ -2655,5 +2930,215 @@ mod tests {
         assert_eq!(decision.effective_cost_class, Some(2));
         assert!(decision.expands);
         assert!(decision.should_call_edge_cost);
+    }
+
+    /// `tables` carries the alliance context the arm needs to answer the ally
+    /// test; `None` models a caller that has not wired it, which the arm treats
+    /// as a reason to decline rather than to guess.
+    type AllianceTables<'a> = (
+        &'a HouseAllianceMap,
+        &'a crate::sim::intern::StringInterner,
+        crate::sim::intern::InternedId,
+    );
+
+    fn wall_arm<'a>(
+        tables: Option<AllianceTables<'a>>,
+        is_armed: bool,
+        warhead_wall: bool,
+        warhead_wood: bool,
+    ) -> WallArmContext<'a> {
+        WallArmContext {
+            overlay_grid: None,
+            overlay_registry: None,
+            alliances: tables.map(|(alliances, _, _)| alliances),
+            interner: tables.map(|(_, interner, _)| interner),
+            mover_owner: tables.map(|(_, _, owner)| owner),
+            is_armed,
+            warhead_wall,
+            warhead_wood,
+        }
+    }
+
+    /// The `Wood=` clause of the wall arm is **Unit-only**.
+    ///
+    /// `UnitClass::Can_Enter_Cell 0x0073F0A0` tests `Wall=` (`+0x144`) at
+    /// `0x0073F4A9` and then `Wood=` (`+0x147`) at `0x0073F4B3` gated on the
+    /// overlay's `Armor` (`+0x9C == 6`) at `0x0073F4BD`. The infantry arm
+    /// `InfantryClass::Can_Enter_Cell 0x0051BF90` instead calls `FUN_00772AC0`,
+    /// whose entire body is `warhead != 0 && *(warhead + 0x144) != 0` — `Wall=`
+    /// only, no `Wood=` and no armor compare (decompiled 2026-09-16).
+    ///
+    /// Stock-reachable: `[SHK]` Shock Trooper (`Category=Soldier`,
+    /// `Primary=ElectricBolt` -> warhead `[Shock]`, which declares `Wood=yes`
+    /// and no `Wall=`) against `[CAKRMW]` (`Armor=wood`, `Crushable=no`) — a
+    /// non-crushable wooden wall gamemd refuses it.
+    #[test]
+    fn the_wall_arm_wood_route_is_unit_only() {
+        // Intern before cloning the thread-local: the clone must already carry
+        // the id, or `resolve` in the ally test finds nothing.
+        let mover = crate::sim::intern::test_intern("Americans");
+        let interner = crate::sim::intern::test_interner();
+        let alliances = HouseAllianceMap::new();
+        let tables = Some((&alliances, &interner, mover));
+        let arm = |armed, wall, wood| wall_arm(tables, armed, wall, wood);
+
+        // Wood= against a wooden wall: the vehicle routes, the infantryman does not.
+        assert_eq!(
+            arm(true, false, true).weapon_route_code(true, None, false),
+            Some(5)
+        );
+        assert_eq!(
+            arm(true, false, true).weapon_route_code(true, None, true),
+            None
+        );
+        // Wall= routes for both classes.
+        assert_eq!(
+            arm(true, true, false).weapon_route_code(false, None, false),
+            Some(5)
+        );
+        assert_eq!(
+            arm(true, true, false).weapon_route_code(false, None, true),
+            Some(5)
+        );
+        // Wood= against a non-wood overlay never routes, for either class.
+        assert_eq!(
+            arm(true, false, true).weapon_route_code(false, None, false),
+            None
+        );
+        // An unarmed mover leaves at 0x0073F48F before any warhead is read.
+        assert_eq!(
+            arm(false, true, true).weapon_route_code(true, None, false),
+            None
+        );
+        // Wiring gap: with no alliance tables the arm declines instead of
+        // guessing "enemy" and quietly pricing the wall at 20x. An unowned wall
+        // with the tables present still takes 5 — that is the `None` wall_owner
+        // in the cases above.
+        assert_eq!(
+            wall_arm(None, true, true, false).weapon_route_code(false, None, false),
+            None
+        );
+    }
+
+    /// `astar_search` consults this classifier ONLY after its own
+    /// `neighbor_passable` has refused the neighbour, so a `Clear` answer is not
+    /// new information and must never re-admit the cell.
+    ///
+    /// Mapping `Clear` to class 0 would drop the terms the classifier cannot
+    /// see — the ground/bridge layer split and the `neighbor_cell.transition`
+    /// (`0x200`) gate a ground->bridge entry must pass — and silently expand a
+    /// refused neighbour at 1x.
+    #[test]
+    fn the_wall_classifier_never_upgrades_a_refusal_to_passable() {
+        use crate::sim::pathfinding::SearchCellCostClassifier as _;
+        let terrain = crushable_wall_grid();
+        let grid = PathGrid::from_resolved_terrain(&terrain);
+        let classifier = WallSearchCostClassifier {
+            wall: wall_arm(None, true, true, true),
+            path_grid: Some(&grid),
+            resolved_terrain: Some(&terrain),
+            terrain_costs: None,
+            movement_zone: Some(MovementZone::Normal),
+            speed_type: None,
+            is_infantry: false,
+            mover_is_crusher: false,
+        };
+        // (0, 0) is ordinary clear ground: the arm answers Clear, which must
+        // still read as "keep the refusal", never as class 0.
+        assert_eq!(classifier.classify((0, 0), (0, 0), false), 7);
+        // (1, 1) is the fixture's crushable wall. This arm carries no overlay
+        // grid, so `overlay_at` yields nothing and the weapon route never runs;
+        // the refusal stands at 7. The overlay-backed 4/5 case is covered by
+        // `the_wall_arm_answers_seven_where_the_land_row_refuses` below.
+        assert_eq!(classifier.classify((0, 0), (1, 1), false), 7);
+    }
+
+    /// A 3x3 board whose centre carries a non-crushable `Wall=yes` overlay.
+    ///
+    /// `track_row` is the centre cell's `Track` land row: `Some(0)` is a row
+    /// that refuses the mover, `Some(100)` one that admits it.
+    fn wall_row_fixture(track_row: Option<u8>) -> ResolvedTerrainGrid {
+        let mut cells = Vec::with_capacity(9);
+        for ry in 0..3u16 {
+            for rx in 0..3u16 {
+                let mut cell = ResolvedTerrainCell::clear_for_test(rx, ry);
+                cell.speed_costs.track = Some(100);
+                if (rx, ry) == (1, 1) {
+                    // `RecalcZoneType` reduces a non-crushable `Wall=` overlay to
+                    // class 2, and `ResolvedTerrainGrid` marks it `overlay_blocks`
+                    // — which is exactly why the wall arm cannot key on the wider
+                    // `land_passable`.
+                    cell.zone_type = zone_class::WALL;
+                    cell.overlay_zone_type = Some(zone_class::WALL);
+                    cell.overlay_blocks = true;
+                    cell.speed_costs.track = track_row;
+                }
+                cells.push(cell);
+            }
+        }
+        ResolvedTerrainGrid::from_cells(3, 3, cells)
+    }
+
+    /// Native's wall arm does **not** return. It accumulates 4/5 into the
+    /// running code, falls through the occupant walk, and then reads the ground
+    /// land row at `0x0073FAB5` (`FLD [ECX*4 + 0x89EA40]` / `FCOMP 0.0`); a zero
+    /// row returns 7 at `0x0073FAD0`, and `InfantryClass` does the same at
+    /// `0x0051C7D0`, whatever the arm accumulated. So a wall standing on terrain
+    /// this mover's speed row refuses answers 7, not 4/5.
+    ///
+    /// This is also the first exercise of the overlay-backed producer path:
+    /// `WallArmContext::overlay_at` -> `weapon_route_code` with a live
+    /// `OverlayGrid` and `OverlayTypeRegistry`.
+    #[test]
+    fn the_wall_arm_answers_seven_where_the_land_row_refuses() {
+        use crate::rules::ini_parser::IniFile;
+        let registry = crate::map::overlay_types::OverlayTypeRegistry::from_ini(
+            &IniFile::from_str("[OverlayTypes]\n0=GAWALL\n\n[GAWALL]\nWall=yes\n"),
+            None,
+        );
+        let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(3, 3);
+        // Unowned: `Is_Ally_ByIndex` rejects index -1, so the route takes 5.
+        overlays.cell_mut(1, 1).overlay_id = Some(0);
+        // Intern before cloning the thread-local interner.
+        let mover = crate::sim::intern::test_intern("Americans");
+        let interner = crate::sim::intern::test_interner();
+        let alliances = HouseAllianceMap::new();
+
+        let entry = |track_row: Option<u8>| {
+            let terrain = wall_row_fixture(track_row);
+            let grid = PathGrid::from_resolved_terrain(&terrain);
+            evaluate_can_enter_cell(CanEnterCellContext {
+                wall: Some(WallArmContext {
+                    overlay_grid: Some(&overlays),
+                    overlay_registry: Some(&registry),
+                    alliances: Some(&alliances),
+                    interner: Some(&interner),
+                    mover_owner: Some(mover),
+                    is_armed: true,
+                    warhead_wall: true,
+                    warhead_wood: false,
+                }),
+                target: (1, 1),
+                terrain_layer: MovementLayer::Ground,
+                movement_zone: Some(MovementZone::Normal),
+                speed_type: Some(SpeedType::Track),
+                path_grid: Some(&grid),
+                resolved_terrain: Some(&terrain),
+                terrain_costs: None,
+                bypass_grid: false,
+                mode: TerrainEntryMode::AStarNeighbor,
+                is_infantry: false,
+                mover_is_crusher: false,
+            })
+        };
+
+        // Row admits the mover: the weapon route survives as the enemy class 5.
+        assert_eq!(
+            entry(Some(100)),
+            CanEnterCellResult::WallBlocked { cost_class: 5 }
+        );
+        // Row refuses it: native's post-arm read returns 7 regardless of the
+        // accumulated 5, so the wall class must not escape.
+        assert_eq!(entry(Some(0)), CanEnterCellResult::HardBlocked);
     }
 }

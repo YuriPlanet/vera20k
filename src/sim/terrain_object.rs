@@ -704,6 +704,7 @@ mod tests {
         for movement_zone in [MovementZone::Crusher, MovementZone::CrusherAll] {
             assert_eq!(
                 evaluate_can_enter_cell(CanEnterCellContext {
+                    wall: None,
                     target: source_cell,
                     terrain_layer: MovementLayer::Ground,
                     movement_zone: Some(movement_zone),

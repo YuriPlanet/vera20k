@@ -22,7 +22,8 @@ Override) in `docs/plans/2026-09-15-movement-retail-acceptance.md`.
 ## InfantryClass::Can_Enter_Cell 0x0051BF90, wall arm (decompile)
 - ot+0x2AA (`Crate=`, written by `OverlayTypeClass::ReadINI 0x005FE770`; see `native_mark_overlay_data` in `src/rules/overlay_types.rs`) && !human -> 7.
 - ot.Wall && (cell+0x11E >> 4) != ot+0x2A0 (`DamageLevels=` from the art section, parsed as `damage_levels`): the wall arm is skipped on a fully destroyed wall stage:
-  +0x2AC false -> 7; Weapon(0) -> FUN_00772AC0 (warhead +0x144 Wall) false -> 7; code = 5 - Is_Ally_ByIndex(owner).
+  +0x2AC false -> 7; Weapon(0) -> WeaponTypeClass__WarheadDamagesWalls (0x00772AC0, labelled 2026-09-16;
+  warhead +0x144 Wall only) false -> 7; code = 5 - Is_Ally_ByIndex(owner).
 - No crusher route for infantry.
 
 ## A* consumption
@@ -75,6 +76,40 @@ Override) in `docs/plans/2026-09-15-movement-retail-acceptance.md`.
   whose `attack_target` is that cell has its target cleared and, if a mission was suspended, Restore runs
   (`restore_entity_after_target_expiry`). That is the native CellClass pointer-expiry order (clear, then Restore). So a
   wall-attack Override needs no new termination logic, only the producer and the Override with a cell target.
+
+## Native facts added 2026-09-16 (disassembly + decompile; each re-derived by an independent reviewer)
+
+- **The wall arm does not return.** It accumulates `max(code,4)` at `0x0073F4EB` / `max(code,5)` at
+  `0x0073F50E` into EBP (stored to `[ESP+0x18]`) and then falls through: `0x0073F520 TEST ESI,ESI /
+  JZ 0x0073FA92` sends an empty object list straight to the land-row block, and the occupant walk
+  exits there too. `0x0073FAB5 FLD [ECX*4 + 0x89EA40]` / `FCOMP [0x007E1748]` (eight zero bytes):
+  row == 0 falls through to `MOV EAX,0x7` at `0x0073FAD0`, **discarding the accumulated 4/5**;
+  row != 0 takes `JZ 0x0073FC24`, where `TEST EBP,EBP / JNZ` returns the accumulated code. Infantry
+  mirrors it at `0x0051C750`/`0x0051C7D0`. The deck branch never reaches the read: `0x0073FA92`
+  tests the deck flag and jumps it at `JNZ 0x0073FC24`.
+- **Two distinct 7-exits, previously conflated here.** An unarmed mover leaves at `0x0073F48F`
+  (`JZ 0x0073FCD0`, the shared epilogue) without reading a warhead; a warhead miss returns 7 at its
+  own exit, `0x0073F4C9`. Same value, different exits.
+- **`Wood=` is Unit-only.** `0x00772AC0` (now `WeaponTypeClass__WarheadDamagesWalls`) is one test:
+  `warhead = *(weapon + 0xAC); return warhead != 0 && *(warhead + 0x144) != 0`. No `+0x147`, no
+  `Armor == 6` compare. So the infantry arm has no Wood route at all.
+- **Slot 0, not the current weapon.** `0x0073F497 PUSH 0x0` into vtable `+0x3F8`
+  (`TechnoClass::GetWeapon 0x0070E140`, elite-only tier): the warhead comes from weapon slot 0
+  unconditionally, while `Is_Armed` (`+0x2AC`) resolves the turret-aware *current* weapon. Different
+  slots — conflating them diverges on a turreted type whose slot 0 is empty.
+- **Overlay land defaults, and why the 4/5 codes are reachable at all.**
+  `OverlayTypeClass::ReadINI 0x005FE770` reads every field in the echo form
+  `ReadX(section, key, *(this + off))`, so an absent key keeps the constructor default; its field
+  map records `+0x298 Land` default `0 = Clear` and `+0x2AC NoUseTileLandType` default true, and the
+  body's `if (Tiberium && Land == 0) Land = 5` corroborates the `Land` default independently of the
+  annotation. No stock `Wall=yes` overlay declares `Land=`, so stock walls carry the passable
+  `[Clear]` row rather than the all-zero `[Wall]` row — had `Land` defaulted to 4, native would
+  refuse every wall at the land row and its own 4/5 codes would be unreachable. The constructor
+  itself was not read.
+- **`CellClass::RecalcAttributes 0x0047D2B0`** opens with `this->LandType = ot->Land` (`+0x298`) and
+  early-returns on `Land == 4`/`9` or `NoUseTileLandType` (`+0x2AC`) — VERA's
+  `uses_early_recalc_land_branch`. So the cell's land row is *post-overlay-land* in gamemd too;
+  reading it (rather than a wall-blind row) is the faithful analogue.
 
 ## What I9b has to add
 

@@ -278,6 +278,14 @@ pub(super) struct PathfindingContext<'a> {
     pub resolved_terrain: Option<&'a ResolvedTerrainGrid>,
     pub playfield_bounds: Option<PlayfieldBounds>,
     pub blocker_neighbor_counts: Option<&'a crate::sim::pathfinding::BlockerNeighborCounts>,
+    /// Per-mover wall-arm cost producer for the A* `search_cost_classifier`
+    /// seam (ledger I9b).
+    ///
+    /// The search calls the Foot `+0x1AC` slot per neighbour and prices the
+    /// returned class through `AStar_compute_edge_cost @ 0x00429830`; a wall
+    /// answers 4 or 5, which expand at 60x and 20x rather than blocking. `None`
+    /// keeps the pre-I9b search, where a wall is simply impassable.
+    pub wall_cost: Option<&'a dyn crate::sim::pathfinding::SearchCellCostClassifier>,
 }
 
 /// Movement timing/threshold config derived from rules.ini [General] section.

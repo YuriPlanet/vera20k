@@ -399,6 +399,7 @@ mod native_walk_timer_tests {
                 &mut finished,
                 &mut aborted,
                 PathfindingContext {
+                    wall_cost: None,
                     path_grid: Some(&grid),
                     zone_grid: None,
                     resolved_terrain: None,

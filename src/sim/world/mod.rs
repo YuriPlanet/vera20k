@@ -6784,6 +6784,7 @@ impl Simulation {
         // Named location: ObjectClass::Unlimbo's virtual Foot +0x1AC gate.
         // DropPod itself never substitutes a direct list-emptiness predicate.
         let land_passable = evaluate_can_enter_cell(CanEnterCellContext {
+            wall: None,
             target,
             terrain_layer: MovementLayer::Ground,
             movement_zone: Some(movement_zone),

@@ -3793,6 +3793,7 @@ impl PendingMovementPass {
             )
         });
         let ctx = PathfindingContext {
+            wall_cost: None,
             path_grid,
             zone_grid,
             resolved_terrain: terrain,
@@ -3962,6 +3963,7 @@ pub(crate) fn begin_movement_with_grids_scoped(
                 )
             });
     let ctx = PathfindingContext {
+        wall_cost: None,
         path_grid,
         zone_grid,
         resolved_terrain,
