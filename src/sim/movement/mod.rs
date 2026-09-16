@@ -40,6 +40,7 @@ use crate::sim::intern::InternedId;
 #[cfg(test)]
 use crate::sim::lifecycle_request::LifecycleRequest;
 use crate::sim::pathfinding::PathGrid;
+use crate::sim::pathfinding::cell_entry::WallArmTables;
 #[cfg(test)]
 use crate::sim::pathfinding::terrain_cost::TerrainCostGrid;
 #[cfg(test)]
@@ -289,7 +290,7 @@ pub(super) struct PathfindingContext<'a> {
     /// per mover and is constructed at the search boundary from these plus the
     /// mover's own facts. Holding a per-mover `&dyn` on a per-pass `Copy` struct
     /// was a granularity mismatch.
-    pub wall_tables: Option<crate::sim::pathfinding::cell_entry::WallArmTables<'a>>,
+    pub wall_tables: Option<WallArmTables<'a>>,
 }
 
 /// Movement timing/threshold config derived from rules.ini [General] section.
