@@ -245,7 +245,11 @@ impl Simulation {
                 goal,
                 &self.substrate.entities,
                 super::PathfindingContext {
-                    wall_cost: None,
+                    wall_tables: Some(crate::sim::pathfinding::cell_entry::WallArmTables {
+                        overlay_grid: self.overlay_grid.as_ref(),
+                        overlay_registry: registry,
+                        alliances: Some(&self.house_alliances),
+                    }),
                     path_grid: grid,
                     zone_grid: self.zone_grid.as_ref(),
                     resolved_terrain: self.resolved_terrain.as_ref(),

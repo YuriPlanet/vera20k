@@ -63,9 +63,15 @@
 //!   a friendly wall and **5** for an enemy one (Unit: `OverlayTypeClass+0x2A8`
 //!   at `0x0073F420` with the `Crushable=` gate `+0x22D` at `0x0073F42E`;
 //!   Infantry: `5 - isAlly`), and 4 and 5 both still expand in the A*. Retail
-//!   therefore routes *through* a wall line at 60×/20× cost and stops at it;
-//!   VERA reports no path. [`CellEntryResult::FriendlyWall`] consequently has no
-//!   producer. Trigger: any expansion into a `Wall=yes` overlay cell. Player
+//!   therefore routes *through* a wall line at 60×/20× cost and stops at it.
+//!   **Partly addressed by I9b (2026-09-16):** the runtime cell crossing now
+//!   produces 4 and 5 and dispatches the wall-attack Override, so
+//!   [`CellEntryResult::FriendlyWall`] has a producer there. The **A\*** still
+//!   hard-blocks, which is what the rest of this paragraph describes and what
+//!   bounds the fix: because order-time search never routes into a wall cell,
+//!   the arm fires only where a wall appears across an already-moving mover's
+//!   path and the following repath fails. Trigger: any expansion into a
+//!   `Wall=yes` overlay cell. Player
 //!   effect: a move order whose destination is enclosed by walls is refused
 //!   outright instead of routing to the wall and stopping. Frequency: pre-placed
 //!   civilian fences appear on most stock maps, so this fires many times a match
@@ -393,6 +399,33 @@ pub struct CanEnterCellContext<'a> {
     pub wall: Option<WallArmContext<'a>>,
 }
 
+/// The map-global tables the wall arm needs, carried on the pathfinding context.
+///
+/// Split from [`WallArmContext`] deliberately, and the split is the whole point
+/// of the seam. These three are map-global — identical for every mover — so they
+/// ride on `PathfindingContext` and no caller ever supplies them. The *mover*
+/// facts (`owner`, `is_armed`, the two warhead bools) have a different lifetime,
+/// one per mover, and are resolved by exactly two authorities: `snapshot_mover`
+/// on the tick path and `resolve_move_info` on the order path.
+///
+/// Ledger row I9c is the counter-example this shape exists to avoid: a mover
+/// fact (`mover_is_crusher`) was derived independently at each call site, and the
+/// sites lacking context silently passed `false`, so the same unit behaved
+/// differently depending on which function issued its move. Tables that no
+/// caller passes cannot diverge that way.
+///
+/// The interner is deliberately **not** here. [`WallArmContext`] is built per
+/// mover at the point of use, where an immutable reborrow is already in scope;
+/// holding `&StringInterner` on a context that outlives the whole pass would
+/// collide with the `&mut` the pass still needs (movement_tick.rs:4023, :4049,
+/// :4114, :3855).
+#[derive(Clone, Copy)]
+pub struct WallArmTables<'a> {
+    pub overlay_grid: Option<&'a crate::sim::overlay_grid::OverlayGrid>,
+    pub overlay_registry: Option<&'a crate::map::overlay_types::OverlayTypeRegistry>,
+    pub alliances: Option<&'a crate::map::houses::HouseAllianceMap>,
+}
+
 /// Everything the wall arm of `Can_Enter_Cell` reads that terrain alone cannot
 /// supply: the overlay at the target cell, the house that owns it, and whether
 /// the mover can shoot a wall at all.
@@ -457,6 +490,13 @@ impl WallArmContext<'_> {
         else {
             return false;
         };
+        // RESIDUAL (ledger I9b): `is_allied_with` normalizes both names, i.e. two
+        // String allocations per query, and this runs once per refused neighbour
+        // inside the A* loop. Pre-existing, not introduced here. An id-keyed
+        // lookup is the right fix but must be built once per *frame* and cached
+        // (`MovementPassCache`) — a first attempt rebuilt it per object per frame,
+        // which is strictly worse, and silently dropped alliance rows for house
+        // names carrying whitespace because the interner does not trim.
         crate::map::houses::is_allied_with(
             alliances,
             interner.resolve(mover),
@@ -778,7 +818,9 @@ fn evaluate_shared_cell_leaf(
         // is); `0x0073F455..F46C`: `MovementZone=CrusherAll` (+0x5B4 == 0xC)
         // enters any `Wall=`; everything else, and every infantryman
         // (`0x0051BF90` has no crusher route), takes the weapon/warhead route
-        // that answers 4/5 or 7. The 4/5 codes have no producer yet, so that
+        // that answers 4/5 or 7. The runtime crossing produces 4/5 since
+        // 2026-09-16; the A* search still does not (its classifier has no
+        // production construction site), so that
         // route is the hard block below; the allied-wall 4 and ability 0x11
         // are likewise unmodelled.
         let crushable_wall =

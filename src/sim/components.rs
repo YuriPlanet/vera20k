@@ -231,6 +231,19 @@ pub struct MovementTarget {
     /// Lepton distance from current cell center to next cell center.
     /// 256 for cardinal moves, ~362 for diagonal. Used to normalize advancement.
     pub move_dir_len: SimFixed,
+    /// Cell where this mover was last refused by a wall it could shoot.
+    ///
+    /// VERA-only scaffolding, and a recorded DRIFT. Native evaluates the cell
+    /// twice inside ONE `DriveLocomotionClass::Process_Movement` call: the 4/5
+    /// arm at `0x004B3ADB` drops `Path[0]`, stamps an already-expired timer and
+    /// tail-recurses at `0x004B4552` with `arg2 = 0`, which repaths and
+    /// re-evaluates immediately; the Override at `0x004B3BE9` fires only on that
+    /// second refusal. VERA issues its repath through `handle_blocked_tick` and
+    /// takes the second refusal on a later tick, so it needs to remember which
+    /// cell was refused. Cleared on any non-wall refusal, and naturally reset
+    /// when a new order replaces this target.
+    #[serde(default)]
+    pub wall_refusal_cell: Option<(u16, u16)>,
     /// Ultimate destination — preserved across 24-step segment replanning.
     /// When a path segment is exhausted before reaching this goal, the movement
     /// system auto-replans from the current position. `None` for short paths
@@ -614,6 +627,7 @@ impl Default for MovementTarget {
             group_id: None,
             ignore_terrain_cost: false,
             bypass_grid: false,
+            wall_refusal_cell: None,
         }
     }
 }

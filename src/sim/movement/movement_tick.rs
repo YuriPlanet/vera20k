@@ -32,6 +32,7 @@ use crate::sim::pathfinding::terrain_cost::TerrainCostGrid;
 use crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
 use crate::sim::rng::SimRng;
+use crate::sim::type_handle_table::TypeHandleTable;
 use crate::sim::world::EnterOrderCounter;
 use crate::util::fixed_math::{
     SIM_HALF, SIM_ONE, SIM_ZERO, SimFixed, fixed_distance, isqrt_i64,
@@ -288,8 +289,36 @@ pub(super) fn snapshot_mover(
     entities: &EntityStore,
     entity_id: u64,
     playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
+    type_handles: Option<&TypeHandleTable>,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> Option<MoverSnapshot> {
     let e = entities.get(entity_id)?;
+    // Allocation-free type resolution: two index operations, the same hop
+    // `Simulation::object_type` takes. Going through `RuleSet::object(&str)`
+    // here costs one `String` per mover per tick - that is what 038aadfd did and
+    // 2b877fec reverted. Absent tables resolve to `None`, which leaves the wall
+    // facts false and the arm declining, i.e. exact pre-I9b behaviour.
+    let obj = type_handles.zip(rules).and_then(|(handles, rules)| {
+        handles
+            .handle_for(e.type_ref())
+            .map(|h| rules.object_by_handle(h))
+    });
+    let is_armed = obj.is_some_and(|obj| crate::sim::combat::combat_weapon::is_armed(e, obj));
+    // Gated on `is_armed`, the way native gates it: `Can_Enter_Cell` tests the
+    // armed vtable slot at `0x0073F487` (`CALL [EAX+0x2AC]`, `JZ 0x0073FCD0`)
+    // and only then fetches weapon 0 at `0x0073F497`/`0x0073F49B`. Ungated,
+    // this ran the lookup for every mover every tick, and `RuleSet::weapon`
+    // falls back to a full linear scan when the key misses - which is exactly
+    // what `Primary=none` on `[CMIN]`, `[TRUCKA]` and `[TRUCKB]` produces, so
+    // every Chrono Miner and truck scanned all weapon sections per movement
+    // tick. An unarmed mover cannot take the wall arm anyway.
+    let (warhead_wall, warhead_wood) = if is_armed {
+        obj.zip(rules).map_or((false, false), |(obj, rules)| {
+            crate::sim::combat::combat_weapon::primary_warhead_wall_flags(e, obj, rules)
+        })
+    } else {
+        (false, false)
+    };
     Some(MoverSnapshot {
         category: e.category,
         speed_type: e.locomotor.as_ref().map(|l| l.speed_type),
@@ -302,6 +331,9 @@ pub(super) fn snapshot_mover(
         regular_crusher: e.regular_crusher,
         drive_accelerates: e.drive_accelerates,
         owner: e.owner(),
+        is_armed,
+        warhead_wall,
+        warhead_wood,
         too_big_to_fit_under_bridge: e.too_big_to_fit_under_bridge,
         on_bridge: e.on_bridge,
         runtime_bridge_transition: e.runtime_bridge_transition,
@@ -541,6 +573,10 @@ fn handle_path_exhaustion(
                     let saved_decel = target.decel_factor;
                     let saved_slowdown = target.slowdown_distance;
                     let saved_group = target.group_id;
+                    // Survives the repath: the wall arm's second refusal lands
+                    // after this replan, and resetting here would mean the
+                    // Override never fires.
+                    let saved_wall_refusal = target.wall_refusal_cell;
                     *target = MovementTarget {
                         path: new_path,
                         path_layers: new_layers,
@@ -557,6 +593,7 @@ fn handle_path_exhaustion(
                         group_id: saved_group,
                         ignore_terrain_cost: false,
                         bypass_grid: false,
+                        wall_refusal_cell: saved_wall_refusal,
                     };
                     let walk = locomotor
                         .as_ref()
@@ -959,19 +996,31 @@ const CODE_FRIENDLY_STATIONARY: u8 = 6;
 /// the wall cell, with a null destination (`EDI` is zeroed at `0x004B3B03`).
 /// The old comment even cited `JNZ 0x004B3A97` while denying what sits there.
 ///
-/// Whether the arm is same-tick is **UNCHECKED**. `[ESP+0x64]` is argument 2,
-/// the literal `1` on the first evaluation (see
-/// `docs/research/traces/AMCV_MIDROUTE_REPATH_BLOCKED_CELL_RETRACE_20260729.md`),
-/// so `0x004B3AD3 TEST AL,AL / JZ 0x004B3B03` provably takes the
-/// drop-path-and-arm-timer branch first: the Override is unreachable on that
-/// first evaluation. What is **not** established is that the `arg2 = 0`
-/// recursion at `0x004B4552` re-reaches this dispatch — the recursing branch
-/// first writes `Foot+0x5E0 = -1`, the shared entry has already nulled the
-/// head-to triple, and, unlike Hover (which calls `Find_Path` before its own
-/// recursion), Drive executes no CALL at all between `0x004B3ADB` and the
-/// recursive call. An earlier revision asserted the same-tick reach outright;
-/// a 2026-09-16 review demoted it. Closing it needs a breakpoint or an
-/// emulated trace, and it is ledger row I9b's justification, so it matters.
+/// Whether the arm is same-tick is **UNCHECKED**, now narrowed to a named gate
+/// chain rather than the whole path.
+///
+/// Established (disassembled 2026-09-16): `[ESP+0x64]` is argument 2, the literal
+/// `1` on the first evaluation, so `0x004B3AD3 TEST AL,AL / JZ 0x004B3B03`
+/// provably takes the drop-path branch first and the Override is unreachable on
+/// that evaluation. That branch is itself the producer of the retry:
+/// `0x004B3ADB` writes `Foot+0x5E0 = -1`, stamps `Foot+0x640 = Frame` with
+/// duration `0`, then `0x004B3AFE JMP 0x004B4541` lands three instructions
+/// before `CALL 0x004B2630` at `0x004B4552` with `arg2 = 0` (`PUSH 0x0` at
+/// `0x004B4546`). The stamp is an immediate expiry, not a wait: `0x004B283F JGE`
+/// reads elapsed `0` against duration `0` and proceeds.
+///
+/// **Not** established: that the recursion reaches `Find_Path` and returns to
+/// this dispatch. On re-entry `Path[0]` is `-1`, and control must pass
+/// `CALL [ECX+0x10]` (Is_Moving) at `0x004B264D` — `0x004B2652 JNZ 0x004B26D0`
+/// is taken only if it answers true, and `0x004B2654 CMP EBX,-0x1` is reached
+/// only if it answers false. The 4/5 arm writes neither Destination
+/// (`+0x34/0x38/0x3C`) nor the `+0x1D4`, `+0x1D8`, `+0x2D0` gates beyond it, so
+/// true is the expected answer, but that is argued, not executed. The repath
+/// block at `0x004B2813` is reached only from `0x004B2792`, `0x004B279C` and
+/// `0x004B27FA`, all inside the `0x004B26D0` branch.
+///
+/// Closing it needs a breakpoint at `0x004B2650` on the recursion, or an
+/// emulated trace. It is ledger row I9b's justification, so it matters.
 ///
 /// So porting it is ledger row I9b's work, and until that lands a blocked
 /// vehicle repaths here where retail would stop and shoot. Recorded as a gap,
@@ -1654,6 +1703,7 @@ fn advance_ordinary_mover(
     dt: SimFixed,
     interner: &mut crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
+    type_handles: Option<&TypeHandleTable>,
     prepared: &mut PreparedMovementPass,
     effects: &mut MovementPassEffects,
     suspend_native_track: bool,
@@ -1691,7 +1741,8 @@ fn advance_ordinary_mover(
 
         // Snapshot mover data before entering the inner loop so we can release the
         // mutable borrow on `entities` when needed for crush/bump immutable lookups.
-        let Some(snap) = snapshot_mover(entities, entity_id, playfield_bounds) else {
+        let Some(snap) = snapshot_mover(entities, entity_id, playfield_bounds, type_handles, rules)
+        else {
             return;
         };
         // Walk tests CanEnter at 0x75B690 before its paid SetCoords calls
@@ -1806,6 +1857,7 @@ fn advance_ordinary_mover(
     // and layer, break out of the while loop, release the borrow, then handle
     // the check in a separate scope below.
     let mut deferred_cell_check: Option<DeferredCellCheck> = None;
+    let mut deferred_wall_override: Option<(u16, u16)> = None;
     let mut deferred_drive_track_chain: Option<DeferredDriveTrackChain> = None;
     let mut deferred_drive_selection_block: Option<movement_step::DriveSelectionRefusal> = None;
     let mut already_finished: bool = false;
@@ -1977,6 +2029,7 @@ fn advance_ordinary_mover(
                     stats,
                     finished_entities,
                     rng,
+                    interner,
                     ctx,
                     mcfg,
                     sim_tick,
@@ -1988,6 +2041,7 @@ fn advance_ordinary_mover(
                 entity.runtime_bridge_transition = admission.runtime_bridge_transition;
                 if !admission.walk_head_admitted {
                     deferred_cell_check = admission.deferred_cell_check;
+                    deferred_wall_override = admission.deferred_wall_override;
                     aborted_for_stuck = admission.aborted_for_stuck;
                     debug_events.extend(admission.debug_events);
                     if deferred_cell_check.is_none() {
@@ -2942,6 +2996,7 @@ fn advance_ordinary_mover(
                     stats,
                     finished_entities,
                     rng,
+                    interner,
                     ctx,
                     mcfg,
                     sim_tick,
@@ -2959,6 +3014,7 @@ fn advance_ordinary_mover(
                     return;
                 }
                 deferred_cell_check = crossing.deferred_cell_check;
+                deferred_wall_override = crossing.deferred_wall_override;
                 pending_bridge_update = crossing.pending_bridge_update;
                 active_layer = crossing.active_layer;
                 debug_events.extend(crossing.debug_events);
@@ -3129,6 +3185,24 @@ fn advance_ordinary_mover(
     // --- Deferred occupancy check (unified vehicle + infantry) ---
     // Runs outside the mutable entity borrow so classify_occupied_cell()
     // can do immutable EntityStore lookups for blocker properties.
+    // The wall-attack Override, outside the entity borrow the crossing held.
+    //
+    // Pushing onto `finished_entities` is what makes this fire once per block
+    // rather than every tick, but the guard is one hop further on:
+    // `finalize_finished_entities` clears `movement_target` for everything in
+    // that list (see the assignment below in this file), and a mover with no
+    // target runs no crossing next tick, so it cannot reach this line again.
+    //
+    // The hazard being avoided - not the guard itself - is double archiving: a
+    // second Override with an empty queue archives the CURRENT mission, so a
+    // re-entering mover would overwrite its archived Move with Attack and every
+    // later Restore would hand it back Attack instead of its order.
+    if let Some(cell) = deferred_wall_override
+        && crate::sim::mission::authority::override_mission_on_wall_cell(entities, entity_id, cell)
+    {
+        finished_entities.push(entity_id);
+    }
+
     if let Some(check) = deferred_cell_check {
         let rejected_xy = entities
             .get(entity_id)
@@ -3630,6 +3704,8 @@ pub(crate) fn tick_movement_with_grids(
         blockage_path_delay_ticks,
         interner,
         rules,
+        // Fixture path; see the sibling wrapper below.
+        None,
         sound_events,
         lifecycle_requests,
         false,
@@ -3688,6 +3764,10 @@ pub(crate) fn tick_movement_object_with_grids(
         blockage_path_delay_ticks,
         interner,
         rules,
+        // Fixture path: the only non-test caller of this wrapper is
+        // `movement::tick_movement_with_grid`, itself `#[cfg(test)]`.
+        // Unresolved wall facts leave the arm declining (pre-I9b).
+        None,
         sound_events,
         lifecycle_requests,
         true,
@@ -3719,6 +3799,7 @@ fn tick_movement_with_grids_scoped(
     blockage_path_delay_ticks: u16,
     interner: &mut crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
+    type_handles: Option<&TypeHandleTable>,
     sound_events: &mut Vec<crate::sim::world::SimSoundEvent>,
     lifecycle_requests: &mut Vec<LifecycleRequest>,
     single_object: bool,
@@ -3747,6 +3828,7 @@ fn tick_movement_with_grids_scoped(
         blockage_path_delay_ticks,
         interner,
         rules,
+        type_handles,
         sound_events,
         lifecycle_requests,
         single_object,
@@ -3808,6 +3890,7 @@ impl PendingMovementPass {
         blockage_path_delay_ticks: u16,
         interner: &mut crate::sim::intern::StringInterner,
         rules: Option<&crate::rules::ruleset::RuleSet>,
+        type_handles: Option<&TypeHandleTable>,
         slave_bindings: Option<&BTreeMap<u64, Vec<u64>>>,
     ) {
         let blocker_neighbor_counts = path_grid.map(|grid| {
@@ -3823,7 +3906,11 @@ impl PendingMovementPass {
             )
         });
         let ctx = PathfindingContext {
-            wall_cost: None,
+            wall_tables: Some(crate::sim::pathfinding::cell_entry::WallArmTables {
+                overlay_grid,
+                overlay_registry,
+                alliances: Some(alliances),
+            }),
             path_grid,
             zone_grid,
             resolved_terrain: terrain,
@@ -3854,6 +3941,7 @@ impl PendingMovementPass {
             native_movement_frame_fraction(),
             interner,
             rules,
+            type_handles,
             &mut self.prepared,
             &mut self.effects,
             true,
@@ -3952,6 +4040,7 @@ pub(crate) fn begin_movement_with_grids_scoped(
     blockage_path_delay_ticks: u16,
     interner: &mut crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
+    type_handles: Option<&TypeHandleTable>,
     _sound_events: &mut Vec<crate::sim::world::SimSoundEvent>,
     _lifecycle_requests: &mut Vec<LifecycleRequest>,
     _single_object: bool,
@@ -3993,7 +4082,11 @@ pub(crate) fn begin_movement_with_grids_scoped(
                 )
             });
     let ctx = PathfindingContext {
-        wall_cost: None,
+        wall_tables: Some(crate::sim::pathfinding::cell_entry::WallArmTables {
+            overlay_grid,
+            overlay_registry,
+            alliances: Some(alliances),
+        }),
         path_grid,
         zone_grid,
         resolved_terrain,
@@ -4048,6 +4141,7 @@ pub(crate) fn begin_movement_with_grids_scoped(
             dt,
             interner,
             rules,
+            type_handles,
             &mut prepared,
             &mut effects,
             suspend_native_track,
@@ -4620,6 +4714,9 @@ mod drive_track_chain_tests {
             regular_crusher: false,
             drive_accelerates: false,
             owner: test_intern("Americans"),
+            is_armed: false,
+            warhead_wall: false,
+            warhead_wood: false,
             too_big_to_fit_under_bridge: false,
             on_bridge: false,
             runtime_bridge_transition: Default::default(),

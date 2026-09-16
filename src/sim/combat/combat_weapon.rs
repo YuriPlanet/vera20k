@@ -355,6 +355,40 @@ pub(crate) fn is_armed(entity: &GameEntity, obj: &ObjectType) -> bool {
     is_armed_from_facts(obj, attacker_facts(entity, obj))
 }
 
+/// The `Wall=` and `Wood=` flags of the mover's **slot 0** warhead.
+///
+/// gamemd-derived: the weapon route of the wall arm in
+/// `UnitClass::Can_Enter_Cell @ 0x0073F0A0` resolves its warhead by pushing a
+/// literal `0` into vtable `+0x3F8` (`TechnoClass::GetWeapon @ 0x0070E140`) at
+/// `0x0073F497`, then reads `+0xAC` for the warhead and tests `+0x144` (`Wall=`)
+/// at `0x0073F4A9` and `+0x147` (`Wood=`) at `0x0073F4B3`.
+///
+/// Slot 0 is **unconditional** there. [`is_armed`] resolves the turret-aware
+/// current weapon instead (`GetCurrentWeapon @ 0x0070E1A0`: the gunner slot iff
+/// `HasTurrets`), so the two gates of the same arm deliberately read different
+/// slots and this cannot reuse that choice.
+///
+/// `Wood=` additionally requires the overlay's own `Armor` to be wood
+/// (`0x0073F4BD` compares 6) and is Unit-only - the infantry arm's
+/// `FUN_00772AC0` tests `+0x144` alone. Both of those gates live in the wall arm
+/// itself; this returns the raw warhead flags.
+pub(crate) fn primary_warhead_wall_flags(
+    entity: &GameEntity,
+    obj: &ObjectType,
+    rules: &crate::rules::ruleset::RuleSet,
+) -> (bool, bool) {
+    let facts = attacker_facts(entity, obj);
+    let Some((weapon_id, _)) = weapon_for_index(obj, facts.veterancy, 0) else {
+        return (false, false);
+    };
+    let Some(warhead_id) = rules.weapon(weapon_id).and_then(|w| w.warhead.as_deref()) else {
+        return (false, false);
+    };
+    rules
+        .warhead(warhead_id)
+        .map_or((false, false), |wh| (wh.wall, wh.wood))
+}
+
 fn is_armed_from_facts(obj: &ObjectType, facts: AttackerFacts) -> bool {
     // `BuildingClass::Is_Armed 0x00458DB0`: `IsOccupied() → 1`.
     if facts.is_occupied_building {

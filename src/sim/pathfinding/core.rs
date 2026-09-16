@@ -14,8 +14,8 @@
 //! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
 
 use super::cell_entry::{
-    CanEnterCellContext, CanEnterLayerContext, TerrainEntryMode, evaluate_can_enter_cell,
-    search_cell_cost_decision,
+    CanEnterCellContext, CanEnterCellResult, CanEnterLayerContext, TerrainEntryMode,
+    WallArmContext, evaluate_can_enter_cell, search_cell_cost_decision,
 };
 use super::terrain_cost::TerrainCostGrid;
 use super::zone_hierarchy::ZoneLevelGraph;
@@ -1787,8 +1787,56 @@ pub fn is_cell_passable_for_category_on_layer(
     is_infantry: bool,
     mover_is_crusher: bool,
 ) -> bool {
+    evaluate_cell_entry_for_category_on_layer(
+        grid,
+        x,
+        y,
+        terrain_layer,
+        movement_zone,
+        speed_type,
+        resolved_terrain,
+        terrain_costs,
+        bypass_grid,
+        mode,
+        is_infantry,
+        mover_is_crusher,
+        None,
+    )
+    .is_clear()
+}
+
+/// Result-preserving sibling of [`is_cell_passable_for_category_on_layer`].
+///
+/// The bool form answers "may this mover step here", which necessarily flattens
+/// the wall arm's 4 and 5 into the same `false` as a hard 7. Ledger row I9b needs
+/// that distinction at the runtime crossing: `UnitClass::Can_Enter_Cell
+/// @ 0x0073F0A0` accumulates `max(code, 4)` for an allied wall (`0x0073F4EB`) and
+/// `max(code, 5)` for a non-allied one (`0x0073F50E`) rather than refusing, and
+/// the Drive dispatch at `0x004B3A97` routes exactly those two codes into the
+/// blocking-object / wall-cell Override.
+///
+/// Passing `wall: None` is bit-identical to the bool path by construction: the
+/// bool path is now this function. `CanEnterCellContext::wall` is consumed as
+/// `ctx.wall.and_then(..)` when the arm computes `wall_attack_code`, so `None`
+/// short-circuits to the same `HardBlocked` the bool reported as `false`.
+#[allow(clippy::too_many_arguments)]
+pub fn evaluate_cell_entry_for_category_on_layer(
+    grid: &PathGrid,
+    x: u16,
+    y: u16,
+    terrain_layer: MovementLayer,
+    movement_zone: Option<MovementZone>,
+    speed_type: Option<SpeedType>,
+    resolved_terrain: Option<&ResolvedTerrainGrid>,
+    terrain_costs: Option<&TerrainCostGrid>,
+    bypass_grid: bool,
+    mode: TerrainEntryMode,
+    is_infantry: bool,
+    mover_is_crusher: bool,
+    wall: Option<WallArmContext<'_>>,
+) -> CanEnterCellResult {
     evaluate_can_enter_cell(CanEnterCellContext {
-        wall: None,
+        wall,
         target: (x, y),
         terrain_layer,
         movement_zone,
@@ -1801,7 +1849,6 @@ pub fn is_cell_passable_for_category_on_layer(
         is_infantry,
         mover_is_crusher,
     })
-    .is_clear()
 }
 
 #[allow(clippy::too_many_arguments)]

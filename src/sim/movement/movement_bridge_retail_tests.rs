@@ -476,7 +476,7 @@ fn diagnose_rejected_order(
             ("all", true, true, true, true, true),
         ] {
             let ctx = PathfindingContext {
-                wall_cost: None,
+                wall_tables: None,
                 path_grid: Some(&grid),
                 zone_grid: if use_zone {
                     sim.zone_grid.as_ref()
@@ -524,7 +524,7 @@ fn diagnose_rejected_order(
         // Exact production argument set.
         let production = find_move_path(
             PathfindingContext {
-                wall_cost: None,
+                wall_tables: None,
                 path_grid: Some(&grid),
                 zone_grid: sim.zone_grid.as_ref(),
                 resolved_terrain: sim.resolved_terrain.as_ref(),
@@ -556,7 +556,7 @@ fn diagnose_rejected_order(
         // Same, minus one input at a time.
         let without_occupation = find_move_path(
             PathfindingContext {
-                wall_cost: None,
+                wall_tables: None,
                 path_grid: Some(&grid),
                 zone_grid: sim.zone_grid.as_ref(),
                 resolved_terrain: sim.resolved_terrain.as_ref(),
@@ -586,7 +586,7 @@ fn diagnose_rejected_order(
         );
         let without_neighbors = find_move_path(
             PathfindingContext {
-                wall_cost: None,
+                wall_tables: None,
                 path_grid: Some(&grid),
                 zone_grid: sim.zone_grid.as_ref(),
                 resolved_terrain: sim.resolved_terrain.as_ref(),
@@ -616,7 +616,7 @@ fn diagnose_rejected_order(
         );
         let without_block_map = find_move_path(
             PathfindingContext {
-                wall_cost: None,
+                wall_tables: None,
                 path_grid: Some(&grid),
                 zone_grid: sim.zone_grid.as_ref(),
                 resolved_terrain: sim.resolved_terrain.as_ref(),
@@ -673,7 +673,7 @@ fn diagnose_rejected_order(
         for goal in goals {
             let reached = find_move_path(
                 PathfindingContext {
-                    wall_cost: None,
+                    wall_tables: None,
                     path_grid: Some(&grid),
                     zone_grid: sim.zone_grid.as_ref(),
                     resolved_terrain: sim.resolved_terrain.as_ref(),

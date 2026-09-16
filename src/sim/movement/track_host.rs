@@ -884,10 +884,17 @@ impl Simulation {
         let candidate = super::track_head::offset_head(head(entity, family), direction);
         let saved_speed = entity.foot_speed.applied_fraction;
         let grid = self.path_grid.as_deref().or(fallback_grid);
+        // `None` tables: this snapshot feeds `classify_drive_track_chain_entry`
+        // only, which is the selection gate (G2). That gate stays a pure refusal
+        // - it has no `finished_entities` and no stop route, so an Override fired
+        // there would re-enter every tick - and so it never reads the wall facts.
+        // Resolving them here would be dead work, not a coverage gap.
         let Some(snapshot) = super::movement_tick::snapshot_mover(
             &self.substrate.entities,
             id,
             self.playfield_bounds,
+            None,
+            None,
         ) else {
             return false;
         };
