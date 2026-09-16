@@ -1848,6 +1848,67 @@ impl AuthoredTerrainFill {
     }
 }
 
+/// A fully-populated flat `ResolvedTerrainCell`, for tests in other modules that
+/// need a grid and should not carry a 47-field copy of this literal.
+#[cfg(test)]
+pub(crate) fn test_flat_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
+    ResolvedTerrainCell {
+        rx,
+        ry,
+        source_tile_index: 0,
+        source_sub_tile: 0,
+        final_tile_index: 0,
+        final_sub_tile: 0,
+        is_wood_bridge_repair_tile: false,
+        level: 0,
+        filled_clear: false,
+        tileset_index: Some(0),
+        land_type: 0,
+        yr_cell_land_type: 0,
+        slope_type: 0,
+        template_height: 0,
+        render_offset_x: 0,
+        render_offset_y: 0,
+        terrain_class: TerrainClass::Clear,
+        speed_costs: SpeedCostProfile::default(),
+        is_water: false,
+        is_cliff_like: false,
+        height_in_pixels: 0,
+        variant: 0,
+        is_rough: false,
+        is_road: false,
+        accepts_smudge: false,
+        allows_tiberium: false,
+        has_ramp: false,
+        canonical_ramp: None,
+        ground_walk_blocked: false,
+        terrain_object_blocks: false,
+        terrain_object_occupation: None,
+        overlay_blocks: false,
+        overlay_zone_type: None,
+        outside_playfield: false,
+        zone_type: 0,
+        base_ground_walk_blocked: false,
+        base_build_blocked: false,
+        base_land_type: 0,
+        base_yr_cell_land_type: 0,
+        base_terrain_class: Default::default(),
+        base_speed_costs: Default::default(),
+        build_blocked: false,
+        has_bridge_deck: false,
+        bridge_walkable: false,
+        bridge_transition: false,
+        bridge_deck_level: 0,
+        bridge_layer: None,
+        bridge_facts: crate::map::bridge_facts::BridgeCellFacts::default(),
+        tube_index: None,
+        radar_left: [0, 0, 0],
+        radar_right: [0, 0, 0],
+        has_damaged_data: false,
+        bridgehead_anchor_class_at_load: None,
+    }
+}
+
 impl ResolvedTerrainGrid {
     pub fn from_cells(width: u16, height: u16, cells: Vec<ResolvedTerrainCell>) -> Self {
         Self::from_cells_with_tubes(width, height, cells, Vec::new())
@@ -6779,61 +6840,7 @@ mod tests {
     }
 
     fn make_test_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
-        ResolvedTerrainCell {
-            rx,
-            ry,
-            source_tile_index: 0,
-            source_sub_tile: 0,
-            final_tile_index: 0,
-            final_sub_tile: 0,
-            is_wood_bridge_repair_tile: false,
-            level: 0,
-            filled_clear: false,
-            tileset_index: Some(0),
-            land_type: 0,
-            yr_cell_land_type: 0,
-            slope_type: 0,
-            template_height: 0,
-            render_offset_x: 0,
-            render_offset_y: 0,
-            terrain_class: TerrainClass::Clear,
-            speed_costs: SpeedCostProfile::default(),
-            is_water: false,
-            is_cliff_like: false,
-            height_in_pixels: 0,
-            variant: 0,
-            is_rough: false,
-            is_road: false,
-            accepts_smudge: false,
-            allows_tiberium: false,
-            has_ramp: false,
-            canonical_ramp: None,
-            ground_walk_blocked: false,
-            terrain_object_blocks: false,
-            terrain_object_occupation: None,
-            overlay_blocks: false,
-            overlay_zone_type: None,
-            outside_playfield: false,
-            zone_type: 0,
-            base_ground_walk_blocked: false,
-            base_build_blocked: false,
-            base_land_type: 0,
-            base_yr_cell_land_type: 0,
-            base_terrain_class: Default::default(),
-            base_speed_costs: Default::default(),
-            build_blocked: false,
-            has_bridge_deck: false,
-            bridge_walkable: false,
-            bridge_transition: false,
-            bridge_deck_level: 0,
-            bridge_layer: None,
-            bridge_facts: crate::map::bridge_facts::BridgeCellFacts::default(),
-            tube_index: None,
-            radar_left: [0, 0, 0],
-            radar_right: [0, 0, 0],
-            has_damaged_data: false,
-            bridgehead_anchor_class_at_load: None,
-        }
+        test_flat_cell(rx, ry)
     }
 
     #[derive(Default)]
@@ -11147,11 +11154,17 @@ mod mutation_epoch_tests {
             ResolvedTerrainGrid::from_cells(1, 1, vec![ResolvedTerrainCell::clear_for_test(0, 0)]);
         let before = grid.mutation_epoch();
         grid.set_terrain_object_occupation((0, 0), Some(1));
-        assert!(grid.mutation_epoch() > before, "occupation write must bump the epoch");
+        assert!(
+            grid.mutation_epoch() > before,
+            "occupation write must bump the epoch"
+        );
         assert!(grid.cell(0, 0).unwrap().terrain_object_blocks);
         let marked = grid.mutation_epoch();
         grid.set_terrain_object_occupation((0, 0), None);
-        assert!(grid.mutation_epoch() > marked, "occupation clear must bump the epoch");
+        assert!(
+            grid.mutation_epoch() > marked,
+            "occupation clear must bump the epoch"
+        );
         // A miss leaves the epoch alone.
         let stable = grid.mutation_epoch();
         grid.set_terrain_object_occupation((5, 5), Some(1));
