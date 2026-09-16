@@ -486,7 +486,9 @@ use crate::sim::world::Simulation;
 // be decoded as this combined schema.
 // v163 adds the Jumpjet locomotor's linked type block and flight fields
 // (facing, speed doubles, target height, bob phase) to its runtime payload.
-const SNAPSHOT_VERSION: u32 = 163;
+// v164 adds the per-cell AltObject air slots (CellClass+0xE0), the authority
+// that keeps one hovering Jumpjet per cell.
+const SNAPSHOT_VERSION: u32 = 164;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3333,12 +3335,13 @@ mod tests {
         // 151 -> 152: Foot occupation enable and pending fresh Apply1 obligation.
         // 161 -> 162: Infantry+6DC current-cell entry answer of the failed path.
         // 162 -> 163: Jumpjet linked type block and flight fields.
-        assert_eq!(super::SNAPSHOT_VERSION, 163);
+        // 163 -> 164: per-cell AltObject air slots.
+        assert_eq!(super::SNAPSHOT_VERSION, 164);
     }
 
     #[test]
     fn combined_bridge_membership_history_schema_rejects_separate_layouts() {
-        for version in 153..=162 {
+        for version in 153..=163 {
             let preamble = GameSnapshotPreamble {
                 product_magic: SNAPSHOT_PRODUCT_MAGIC,
                 envelope_version: SNAPSHOT_ENVELOPE_VERSION,
@@ -3347,7 +3350,7 @@ mod tests {
             let bytes = bincode::serialize(&preamble).expect("previous layout header");
             assert!(matches!(
                 GameSnapshot::load(&bytes),
-                Err(SnapshotError::VersionMismatch { expected: 163, found }) if found == version
+                Err(SnapshotError::VersionMismatch { expected: 164, found }) if found == version
             ));
         }
     }
@@ -5344,6 +5347,60 @@ mod tests {
             0x02
         );
         assert_eq!(restored.state_hash(), expected_hash);
+    }
+
+    /// The cell `AltObject` slots (`CellClass+0xE0`) are a serialized authority:
+    /// which owner holds a cell, and when it was released, cannot be rebuilt
+    /// from entity positions or locomotor phase, so they must survive a save
+    /// verbatim and reach the state hash.
+    #[test]
+    fn air_slot_snapshot_roundtrip_preserves_the_cell_holders() {
+        let empty_hash = Simulation::new().state_hash();
+        let mut sim = Simulation::new();
+        assert!(sim.substrate.air_slots.claim(17, 23, 41));
+        assert!(sim.substrate.air_slots.claim(2, 31, 99));
+        // `0x00487D70` refuses a claim while another object holds the slot,
+        // which is what keeps one hovering Jumpjet per cell.
+        assert!(!sim.substrate.air_slots.claim(17, 23, 42));
+        assert_eq!(sim.substrate.air_slots.holder(17, 23), Some(41));
+        let expected_hash = sim.state_hash();
+        assert_ne!(
+            expected_hash, empty_hash,
+            "held air slots must reach the state hash"
+        );
+
+        let bytes = GameSnapshot::save(&sim, 0, 0, "air_slot_roundtrip", 0);
+        assert_eq!(
+            GameSnapshot::read_header(&bytes)
+                .expect("current snapshot header")
+                .version,
+            super::SNAPSHOT_VERSION
+        );
+
+        let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
+        restored
+            .restore_after_snapshot_load()
+            .expect("restore transient caches without replacing the slots");
+
+        assert_eq!(restored.substrate.air_slots.holder(17, 23), Some(41));
+        assert_eq!(restored.substrate.air_slots.holder(2, 31), Some(99));
+        assert_eq!(restored.substrate.air_slots.holder(5, 5), None);
+
+        // The post-restore hash check is differential on purpose: a bare
+        // `Simulation::new()` does not round-trip its own state hash, which a
+        // no-slot control sim shows just as well, so comparing `restored`
+        // against `expected_hash` would be measuring that instead. What matters
+        // here is that the restored slots are still hash-visible.
+        let control = GameSnapshot::save(&Simulation::new(), 0, 0, "air_slot_control", 0);
+        let mut control = GameSnapshot::load(&control).expect("control snapshot").sim;
+        control
+            .restore_after_snapshot_load()
+            .expect("restore the control");
+        assert_ne!(
+            restored.state_hash(),
+            control.state_hash(),
+            "restored air slots must still reach the state hash"
+        );
     }
 
     #[test]

@@ -20,7 +20,7 @@ use crate::sim::anim_class::AnimStore;
 use crate::sim::cell_rect::CellReservationGrid;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::occupancy::{
-    CellOccupationGrid, HiddenOccupationGrid, OccupancyGrid, RawCellOccupationGrid,
+    AirSlotGrid, CellOccupationGrid, HiddenOccupationGrid, OccupancyGrid, RawCellOccupationGrid,
 };
 use crate::sim::particles::ParticleSystemStore;
 use crate::sim::voxel_anim::VoxelAnimStore;
@@ -113,6 +113,11 @@ pub(crate) struct ObjectSubstrate {
     /// reconstructible from the currently placed entity set.
     #[serde(default)]
     pub(crate) hidden_occupation: HiddenOccupationGrid,
+    /// Authoritative CellClass `+0xE0` AltObject slots — the one airborne
+    /// object each cell holds. Serialized verbatim: a hovering Jumpjet's claim
+    /// is not reconstructible from its position or locomotor phase.
+    #[serde(default)]
+    pub(crate) air_slots: AirSlotGrid,
     /// Authoritative CellClass `+0xDC` per-house Building base reservations,
     /// including the single shared dummy CellClass mask.
     #[serde(default)]
@@ -165,6 +170,7 @@ impl ObjectSubstrate {
             cell_occupation: CellOccupationGrid::new(),
             raw_cell_occupation: RawCellOccupationGrid::new(),
             hidden_occupation: HiddenOccupationGrid::new(),
+            air_slots: AirSlotGrid::default(),
             base_reservations: CellReservationGrid::new(),
             entities: EntityStore::new(),
             anims: AnimStore::default(),
@@ -261,6 +267,23 @@ impl ObjectSubstrate {
                 ground_owner.hash(hasher);
                 deck_owner.hash(hasher);
             }
+        }
+    }
+
+    /// Fold the cell AltObject slots. Empty stays silent so a save with no
+    /// hovering Jumpjet hashes exactly as it did before the slots existed.
+    pub(crate) fn fold_air_slots(&self, hasher: &mut impl std::hash::Hasher) {
+        let entry_count = self.air_slots.entry_count();
+        if entry_count == 0 {
+            return;
+        }
+
+        b"cell-air-slots-v1".hash(hasher);
+        entry_count.hash(hasher);
+        for (rx, ry, owner) in self.air_slots.entries() {
+            rx.hash(hasher);
+            ry.hash(hasher);
+            owner.hash(hasher);
         }
     }
 

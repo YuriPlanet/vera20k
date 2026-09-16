@@ -3280,6 +3280,10 @@ impl Simulation {
             self.conceal_anim(stable_id);
             self.detach_anim_from_owner(stable_id);
         }
+        // A Jumpjet destroyed while hovering never reaches State 4's release,
+        // so its cell AltObject slot (`CellClass+0xE0`) is dropped here rather
+        // than leaving the cell permanently claimed against later hoverers.
+        self.substrate.air_slots.release_owner(stable_id);
         let entity = self.substrate.entities.remove(stable_id);
         let anim = self.substrate.anims.remove(stable_id);
         let particle_system = self.substrate.particle_systems.finalize_remove(stable_id);

@@ -1751,11 +1751,11 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
                 DriveCoord::cell(20, 15, 0),
                 "Infantry keeps the selected subcell"
             );
-            crate::sim::movement::air_movement::tick_air_movement(
-                &mut sim.substrate.entities,
-                &[rocketeer],
-                sim.session.tick,
-            );
+            // A Rocketeer is a Jumpjet, so its locomotor owns the tick now:
+            // `Process 0x0054AEC0` dispatches State 0 (`0x0054B980`), which is
+            // what promotes a moving owner out of the ground state. The air
+            // adapter no longer touches Jumpjets at all.
+            sim.tick_air_movement_with_cell_lists_one(rocketeer, None);
             assert_eq!(
                 sim.substrate
                     .entities
