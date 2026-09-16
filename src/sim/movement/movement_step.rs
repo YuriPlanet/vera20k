@@ -586,7 +586,13 @@ mod tests {
             };
             let mut curve =
                 drive_track::begin_drive_track_with_head_offset(1, 0, 85, 153, 0).unwrap();
-            curve.point_index = drive_track::raw_track_meta(1).unwrap().points_count - 2;
+            // Park the curve on its LAST real point, not one before it. The
+            // terminal is a paid step of its own - native reads the sentinel at
+            // `0x004B1596` after `SUB EDI,0x7` - so from `count - 2` a budget of
+            // 9 only buys the step onto the last point and the curve correctly
+            // does not finish this tick. From `count - 1` the 9 buys the
+            // sentinel read, which is what this test is here to exercise.
+            curve.point_index = drive_track::raw_track_meta(1).unwrap().points_count - 1;
             curve.residual = 8;
             let mut curve = Some(curve);
             let mut drive = (kind == LocomotorKind::Drive).then(|| DriveLocomotionRuntime {
@@ -779,13 +785,15 @@ mod tests {
             Some(0x40),
             "turn commanded onto the head node"
         );
+        // Two steps, then the sentinel read and track 15's -5 terminal credit:
+        // 20 - 7 - 7 - 5. See `terminal_budget_credit`.
         assert_eq!(
             drive_locomotion
                 .as_ref()
                 .expect("drive runtime")
                 .track
                 .residual,
-            13
+            1
         );
 
         // Once the hull is on the octant, the fresh selection runs and enters the
@@ -818,10 +826,18 @@ mod tests {
 
         assert!(matches!(result, AdvanceResult::DriveTrackActive));
         let drive = drive_locomotion.as_ref().expect("drive runtime");
-        assert_eq!(drive.track.residual, 6);
+        // The completed curve left 1, not 6: its sentinel read cost 7 and track
+        // 15's terminal credit gave back -5. The retry carries that through
+        // untouched, which is the property under test.
+        assert_eq!(drive.track.residual, 1);
         let track = drive_track_state.as_ref().expect("new track installed");
-        assert_eq!(track.residual, 6);
-        assert_eq!(drive.track.cursor, i32::from(track.point_index));
+        assert_eq!(track.residual, 1);
+        // A retry installs a fresh curve, so nothing is occupied yet: native's
+        // cursor is 0 and the mirror carries that, not the index of a point.
+        // Comparing the mirror against `occupied_points()` here would only
+        // restate the line that set it.
+        assert_eq!(drive.track.cursor, 0);
+        assert!(track.before_first_point);
     }
 
     #[test]
@@ -1815,7 +1831,11 @@ fn advance_shared_track(
     let Some(track_state) = drive_track_state else {
         return AdvanceResult::ReadyForCrossings;
     };
-    let prior_point_index = track_state.point_index;
+    // The occupied COUNT, not the index: a fresh curve's first paid step
+    // occupies `points[0]` and leaves `point_index` at 0, so gating the
+    // paid-point block on the index changing would skip it for exactly that
+    // step. See `DriveTrackState::occupied_points`.
+    let prior_occupied = track_state.occupied_points();
     let advance = match kind {
         LocomotorKind::Drive => {
             let drive = drive_locomotion.get_or_insert_with(Default::default);
@@ -1824,7 +1844,7 @@ fn advance_shared_track(
                 fresh_budget,
                 &mut drive.track.residual,
             );
-            drive.track.cursor = i32::from(track_state.point_index);
+            drive.track.cursor = track_state.occupied_points();
             drive.track_valid = !advance.finished;
             advance
         }
@@ -1835,12 +1855,12 @@ fn advance_shared_track(
                 fresh_budget,
                 &mut ship.track.residual,
             );
-            ship.track.cursor = i32::from(track_state.point_index);
+            ship.track.cursor = track_state.occupied_points();
             advance
         }
         _ => return AdvanceResult::ReadyForCrossings,
     };
-    if track_state.point_index != prior_point_index {
+    if track_state.occupied_points() != prior_occupied {
         // Real forward progress clears the owner's impatience flag. gamemd does
         // this on the first paid track point of a segment, in the same block
         // that clears the raw occupation bit and the cell-occupation-enabled
@@ -1863,7 +1883,7 @@ fn advance_shared_track(
     *facing = advance.facing;
     *facing_target = None;
 
-    if track_state.point_index != prior_point_index || advance.finished {
+    if track_state.occupied_points() != prior_occupied || advance.finished {
         // Consume the old current cell before a paid point can leave it.
         consume_previously_reached_track_node(target, position);
     }
@@ -1877,7 +1897,7 @@ fn advance_shared_track(
         };
     }
 
-    if track_state.point_index != prior_point_index || advance.finished {
+    if track_state.occupied_points() != prior_occupied || advance.finished {
         commit_paid_track_height(
             position,
             &advance,

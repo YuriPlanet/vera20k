@@ -321,8 +321,13 @@ fn drive_track_finish_preserves_residual_for_same_tick_retry() {
 
     assert!(advance.finished);
     assert_eq!(state.point_index, last_index);
-    assert_eq!(state.residual, 13);
-    assert_eq!(residual, 13);
+    // 20 buys two steps, not one: the first occupies `last_index`, the second
+    // reads the end-of-track sentinel and ends the curve. 20 - 7 - 7 = 6, then
+    // the terminal credit. Track 15's last point is (16, -4), so manhattan is
+    // 20 and `ftol((1 - 20/11) * 7)` is -5 - the curve ends far enough from the
+    // head that the final snap is charged for rather than refunded.
+    assert_eq!(state.residual, 1);
+    assert_eq!(residual, 1);
 }
 
 #[test]
@@ -1537,4 +1542,242 @@ fn track_tables_match_the_retail_bytes_entry_for_entry() {
             "RAW_TRACKS[{index}] disagrees with gamemd 0x007E7A28 + {index} * 16",
         );
     }
+}
+
+/// A fresh curve occupies `points[0]`, and a whole cell costs what gamemd
+/// charges for it.
+///
+/// Both numbers come from the native loop, not from running this port:
+///
+/// - the loop is entered and repeated only on `budget > 7` (`0x004B1510
+///   CMP EDX,7 / JLE`, and `0x004B1F50`/`0x004B1F56`);
+/// - each pass pays first (`0x004B159D SUB EDI,0x7`) and then reads
+///   `points[cursor]` (`0x004B1596`), incrementing only at the tail
+///   (`0x004B1F4F`), so a fresh cursor of 0 (`0x004B4659`) occupies point 0;
+/// - the curve ends when that read lands on the `(0, 0)` sentinel stored one
+///   slot past the real points (`0x004B15C0..0x004B15C8`), which costs its 7
+///   like any other pass;
+/// - and `0x004B1FD0..0x004B1FF9` then credits `ftol((1 - manhattan/11) * 7)`
+///   back, which for track 1's last point `(0, 3)` is `ftol(5.09) = 5`.
+///
+/// Raw track 1 stores 23 points, so crossing the cell is 23 paid steps (161)
+/// plus the sentinel read (168) less the credit: **163**. Before this test's
+/// change the port spent 154, about 5.5% cheap, on every fresh curve.
+#[test]
+fn fresh_curve_occupies_point_zero_and_a_cell_costs_the_native_budget() {
+    // Exactly what `track_head::begin_fresh` installs for a fresh acceptance.
+    let fresh = || {
+        let mut state = begin_drive_track(1, 0, 0, 0, 0).expect("track 1");
+        state.point_index = 0;
+        state.before_first_point = true;
+        state
+    };
+
+    // One affordable step (8 > 7) must land on point 0, not point 1.
+    let mut state = fresh();
+    let mut residual = 0;
+    let advance = advance_drive_track_with_budget(&mut state, 8, &mut residual);
+    assert_eq!(state.point_index, 0, "the first paid step occupies point 0");
+    assert!(!state.before_first_point);
+    assert!(!advance.finished);
+    assert_eq!(residual, 1);
+
+    // 169 is the least budget that affords all 23 points and the sentinel read:
+    // pass 24 needs `169 - 7 * 23 = 8 > 7`.
+    //
+    // The step loop also breaks partway when the curve carries the mover into
+    // the next cell, so the traversal is fed budget until the curve ends rather
+    // than assumed to complete in one call. What is being measured is the total
+    // spend across the curve, which is where the 163 lives.
+    let points = raw_track_points(1);
+    let last = u16::try_from(points.len() - 1).expect("track 1 fits u16");
+    let mut state = fresh();
+    let mut residual = 169;
+    let mut passes = 0;
+    loop {
+        let advance = advance_drive_track_with_budget(&mut state, 0, &mut residual);
+        if advance.finished {
+            break;
+        }
+        passes += 1;
+        assert!(passes < 40, "curve did not end; residual {residual}");
+    }
+    assert_eq!(
+        state.point_index, last,
+        "it ends standing on the last point"
+    );
+    assert_eq!(residual, 6);
+    assert_eq!(169 - residual, 163, "gamemd spends 163 to cross this cell");
+
+    // One less cannot afford the sentinel read, so the curve is still running
+    // with the mover parked on its last point - which is what native does too,
+    // rather than finishing early.
+    let mut state = fresh();
+    let mut residual = 168;
+    let mut passes = 0;
+    while !advance_drive_track_with_budget(&mut state, 0, &mut residual).finished {
+        passes += 1;
+        if residual <= TRACK_STEP_COST {
+            break;
+        }
+        assert!(passes < 40, "curve did not settle; residual {residual}");
+    }
+    assert_eq!(state.point_index, last);
+    // 23 passes at 7 leaves exactly 7, and the loop needs strictly more than
+    // 7 to take another - so the sentinel read waits for the next tick.
+    assert_eq!(residual, 7, "168 buys the 23 points and stops one short");
+}
+
+/// The production fresh-install site really does mark the curve pre-start.
+///
+/// Without this, `track_head.rs`'s `before_first_point = true` could be deleted
+/// and the D1 budget test above would still pass, because that one builds the
+/// state by hand. The only other writer is `begin_selected_drive_track`, which
+/// nothing but a test calls.
+#[test]
+fn begin_fresh_marks_the_curve_as_not_yet_on_its_first_point() {
+    let DriveTrackDecision::Select(plan) = plan_drive_track_from_path(0, (0, -1), None, false)
+    else {
+        panic!("native straight-north selection");
+    };
+    let position = crate::sim::components::Position {
+        rx: 5,
+        ry: 5,
+        z: 0,
+        exact_z_leptons: None,
+        sub_x: crate::util::lepton::CELL_CENTER_LEPTON,
+        sub_y: crate::util::lepton::CELL_CENTER_LEPTON,
+    };
+    let (_head, curve) = crate::sim::movement::track_head::begin_fresh(&plan, &position)
+        .expect("fresh curve installs");
+    assert_eq!(curve.point_index, 0);
+    assert!(
+        curve.before_first_point,
+        "a fresh curve must still owe its first point, or it skips points[0] \
+         exactly as gamemd does not (0x004B4659 cursor 0, read at 0x004B1596)"
+    );
+}
+
+/// No shipped track holds an interior `(0, 0)`.
+///
+/// The step loop ends on an index (`next > last_index`) while native ends on a
+/// value - the `(0, 0)` sentinel at a non-zero cursor (`0x004B15C0..0x004B15C8`)
+/// - and the interp peek in the same file still uses the value test. The two
+/// agree only because no track has a `(0, 0)` anywhere but slot 0, which is a
+/// property of the shipped data and is therefore pinned here rather than
+/// assumed.
+#[test]
+fn no_shipped_track_holds_an_interior_sentinel_point() {
+    for index in 1..=15u8 {
+        for (slot, point) in raw_track_points(index).iter().enumerate().skip(1) {
+            assert!(
+                point.x != 0 || point.y != 0,
+                "track {index} slot {slot} is (0, 0); the index-based loop end \
+                 and the value-based interp peek would disagree about it"
+            );
+        }
+    }
+}
+
+/// Every shipped track's terminal credit, and the one that is nothing like the
+/// others.
+///
+/// The credit is unclamped by design - it is `ftol((1 - manhattan/11) * 7)` and
+/// native adds whatever that is (`0x004B1FF9 ADD EBX,EAX`). Fourteen tracks end
+/// between 1 and 21 manhattan from their head and land between +6 and -6.
+///
+/// **Track 11 does not.** It ends at `(96, 85)`, 181 manhattan out, for a credit
+/// of **-108** - about fifteen ticks during which a mover could not afford a
+/// step. UNCHECKED: whether any production path runs track 11 to its end. The
+/// only forced index wired in the tree is `0x47`, which selects track 15, so
+/// this is latent today; it is pinned so that wiring another forced index
+/// cannot make it a surprise. If a path is ever found that does reach it, the
+/// premise to re-examine is that the head is where the sentinel maps - a curve
+/// ending 181 leptons from its own head is the thing that looks wrong, not the
+/// arithmetic over it.
+#[test]
+fn terminal_credit_is_pinned_for_every_shipped_track() {
+    // (track, manhattan of the last point, credit)
+    const EXPECTED: [(u8, i32, i32); 15] = [
+        (1, 3, 5),
+        (2, 16, -3),
+        (3, 16, -3),
+        (4, 11, 0),
+        (5, 16, -3),
+        (6, 11, 0),
+        (7, 9, 1),
+        (8, 7, 2),
+        (9, 12, 0),
+        (10, 21, -6),
+        (11, 181, -108),
+        (12, 21, -6),
+        (13, 1, 6),
+        (14, 16, -3),
+        (15, 20, -5),
+    ];
+    for (index, manhattan, credit) in EXPECTED {
+        let points = raw_track_points(index);
+        let last = u16::try_from(points.len() - 1).expect("track fits u16");
+        let point = &points[usize::from(last)];
+        assert_eq!(
+            i32::from(point.x).abs() + i32::from(point.y).abs(),
+            manhattan,
+            "track {index} last point"
+        );
+        assert_eq!(
+            terminal_budget_credit(points, last, 0),
+            credit,
+            "track {index} terminal credit"
+        );
+    }
+}
+
+/// The occupation handoff is released on the count of points occupied, the way
+/// native releases it - not on the index of the point being occupied.
+///
+/// Native compares its stored cursor against `RawTrack+0x0C`: `0x004B49B6 MOV
+/// EDX,[ESI+0x58]` / `CMP EDX,ECX` / `JGE` out, where `ECX` is the handoff
+/// index. `ESI` is the locomotor biased by -4, which three offsets confirm -
+/// `ESI+0x54` indexes the TurnTrack table (the selector, `+0x58` on the
+/// locomotor) and `ESI+0x5C` is read as a byte (the normal/short variant,
+/// `+0x60`), so `ESI+0x58` is the cursor at `+0x5C`.
+///
+/// That cursor counts points already occupied, so it is one ahead of
+/// `point_index`. D1 made `point_index` mean the point actually occupied, and
+/// comparing it here would hold the forward claim one paid point too long on
+/// every curve that has a handoff.
+#[test]
+fn occupation_handoff_releases_on_the_native_cursor_not_the_point_index() {
+    // Track 3 hands off at point 22.
+    let handoff = raw_track_meta(3).unwrap().occupation_handoff_point_index;
+    assert_eq!(handoff, 22, "track 3 handoff index");
+    let handoff = u16::try_from(handoff).unwrap();
+
+    let claim_at = |occupied: i32| {
+        let mut state = begin_drive_track(3, 0, 0, -1, 0).expect("track 3");
+        // `occupied` points consumed means standing on index occupied - 1.
+        state.before_first_point = occupied == 0;
+        state.point_index = if occupied == 0 {
+            0
+        } else {
+            u16::try_from(occupied - 1).unwrap()
+        };
+        assert_eq!(state.occupied_points(), occupied);
+        is_at_coord_track_cells(&state, (10, 10), true).0
+    };
+
+    // Including the pre-start arm, which is the state D1 exists for and which
+    // the rest of this test would not reach.
+    assert!(
+        claim_at(0).is_some(),
+        "before the first paid point, the forward cell is claimed"
+    );
+    assert!(
+        claim_at(i32::from(handoff) - 1).is_some(),
+        "one point before the handoff, the forward cell is still claimed"
+    );
+    assert!(
+        claim_at(i32::from(handoff)).is_none(),
+        "on the handoff count the claim is released, as 0x004B49B6's JGE does"
+    );
 }
