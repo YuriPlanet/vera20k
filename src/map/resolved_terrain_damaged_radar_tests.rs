@@ -24,7 +24,11 @@ fn one_cell_tmp(
     put_u32(
         &mut data,
         16,
-        if subimage_present { CELL_OFFSET as u32 } else { 0 },
+        if subimage_present {
+            CELL_OFFSET as u32
+        } else {
+            0
+        },
     );
     if subimage_present {
         put_u32(
@@ -49,18 +53,8 @@ fn parsed_metadata(tmp: &TmpFile) -> TileMetadata {
 
 #[test]
 fn gsi_04_01_damaged_tmp_radar_metadata_retains_independent_asset_pair() {
-    let pristine = parsed_metadata(&one_cell_tmp(
-        [20, 40, 60],
-        [70, 80, 90],
-        true,
-        true,
-    ));
-    let damaged = parsed_metadata(&one_cell_tmp(
-        [200, 100, 50],
-        [7, 8, 9],
-        false,
-        true,
-    ));
+    let pristine = parsed_metadata(&one_cell_tmp([20, 40, 60], [70, 80, 90], true, true));
+    let damaged = parsed_metadata(&one_cell_tmp([200, 100, 50], [7, 8, 9], false, true));
     let retained = retained_damaged_radar_metadata(&pristine, Some(&damaged)).unwrap();
     assert_eq!(retained.left, [200, 100, 50]);
     assert_eq!(retained.right, [7, 8, 9]);
@@ -69,12 +63,7 @@ fn gsi_04_01_damaged_tmp_radar_metadata_retains_independent_asset_pair() {
 
 #[test]
 fn gsi_04_01_damaged_tmp_missing_chain_wraps_but_sparse_subimage_is_gray() {
-    let pristine = parsed_metadata(&one_cell_tmp(
-        [20, 40, 60],
-        [70, 80, 90],
-        true,
-        true,
-    ));
+    let pristine = parsed_metadata(&one_cell_tmp([20, 40, 60], [70, 80, 90], true, true));
     assert_eq!(retained_damaged_radar_metadata(&pristine, None), None);
 
     let corrupt_or_unloaded = TileMetadata::default();

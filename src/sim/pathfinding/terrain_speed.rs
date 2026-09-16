@@ -204,11 +204,6 @@ fn combine_speed_stages(
     }
 }
 
-/// Terrain height of a cell, defaulting to 0 outside the grid.
-fn cell_level(cell: (u16, u16), terrain: &ResolvedTerrainGrid) -> u8 {
-    terrain.cell(cell.0, cell.1).map(|c| c.level).unwrap_or(0)
-}
-
 /// Ground height in leptons under an exact world position.
 ///
 /// `CellClass::ComputeGroundHeightAtCoord 0x0047B3A0`, through the evaluator
@@ -310,63 +305,90 @@ mod tests {
     use super::*;
     use crate::rules::terrain_rules::SpeedCostProfile;
 
-    /// A8 D1: leaving a ramp onto a flat cell at the ramp's own level is
-    /// downhill, and reading level bytes cannot see that.
+    /// A8 D1, over a real grid and through the production entry point.
     ///
-    /// Native compares two `GetGroundHeight` samples - the destination's
-    /// coordinate at `0x004B3CEC` and the mover's own at `0x004B3D1A`, compared
-    /// at `0x004B3D21`. This port compared the two cells' integer `level` bytes,
-    /// which are equal in exactly this shape, so it applied 1.0 where gamemd
-    /// applies `Tracked/WheeledDownhill`.
+    /// Native picks the slope coefficient from two sampled ground heights - the
+    /// destination's coordinate at `0x004B3CEC` and the mover's own `+0x9C` at
+    /// `0x004B3D1A`, compared at `0x004B3D21`. This port compared the two cells'
+    /// integer `level` bytes, which are equal exactly where a mover leaves a ramp
+    /// for a flat cell standing at the ramp's own level.
     ///
-    /// Stated without assuming which way a given ramp faces: somewhere inside a
-    /// ramp cell there is a position whose ground height differs from the flat
-    /// neighbour's, while the two cells' level bytes are identical. That is the
-    /// whole defect, and the sampled comparison sees it.
+    /// So the fixture is that shape: a ramp at level 3 beside a flat cell also at
+    /// level 3. If the comparison ever returns to level bytes, both read 3, the
+    /// factor is 1.0 and this fails.
+    ///
+    /// The destination land row is deliberately below 100%: `SetSpeedFraction
+    /// 0x004D3710` clamps the combined value at 1.0, so on a full-speed row the
+    /// downhill bonus is invisible and the assertion could not discriminate.
     #[test]
-    fn a_ramp_position_differs_in_height_from_a_flat_cell_at_the_same_level() {
-        use crate::util::lepton::ground_height_leptons;
+    fn leaving_a_ramp_for_a_flat_cell_at_the_same_level_is_downhill() {
+        use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
 
         const LEVEL: u8 = 3;
-        let flat = ground_height_leptons(LEVEL, 0, 5 * 256 + 128, 5 * 256 + 128)
-            .expect("a flat cell is always evaluable");
+        const RAMP: (u16, u16) = (4, 4);
+        const FLAT: (u16, u16) = (5, 4);
+        const SIZE: u16 = 8;
 
-        // Sample across one ramp cell of each modelled slope.
-        let mut found_any = false;
-        for slope in 1..=20u8 {
-            let Ok(corner) = ground_height_leptons(LEVEL, slope, 4 * 256 + 8, 4 * 256 + 8) else {
-                continue;
-            };
-            let Ok(opposite) = ground_height_leptons(LEVEL, slope, 4 * 256 + 248, 4 * 256 + 248)
-            else {
-                continue;
-            };
-            if corner == flat && opposite == flat {
-                continue;
+        let mut cells = Vec::new();
+        for ry in 0..SIZE {
+            for rx in 0..SIZE {
+                let mut cell = test_flat_cell(rx, ry);
+                cell.level = LEVEL;
+                // A land row the clamp will not swallow.
+                cell.speed_costs = SpeedCostProfile {
+                    track: Some(50),
+                    ..Default::default()
+                };
+                if (rx, ry) == RAMP {
+                    cell.slope_type = 1;
+                    cell.has_ramp = true;
+                }
+                cells.push(cell);
             }
-            found_any = true;
-
-            // The level bytes are equal, so the old level-byte comparison called
-            // every one of these flat.
-            let config = TerrainSpeedConfig::default();
-            let by_level = slope_factor_for(
-                SpeedType::Track,
-                i32::from(LEVEL),
-                i32::from(LEVEL),
-                &config,
-            );
-            assert_eq!(by_level, SIM_ONE, "equal levels always read as flat");
-
-            let sampled = slope_factor_for(SpeedType::Track, corner, flat, &config);
-            let sampled_other = slope_factor_for(SpeedType::Track, opposite, flat, &config);
-            assert!(
-                sampled != SIM_ONE || sampled_other != SIM_ONE,
-                "slope {slope}: sampling must see a grade the level bytes hide"
-            );
         }
+        let terrain = ResolvedTerrainGrid::from_cells(SIZE, SIZE, cells);
+        let config = TerrainSpeedConfig::default();
+
+        // Both cells carry level 3, so a level-byte comparison calls this flat.
+        assert_eq!(
+            terrain.cell(RAMP.0, RAMP.1).map(|c| c.level),
+            terrain.cell(FLAT.0, FLAT.1).map(|c| c.level),
+            "the fixture is only meaningful while the two level bytes agree"
+        );
+
+        // A mover partway across the ramp, heading for the flat cell.
+        let on_ramp = (i32::from(RAMP.0) * 256 + 200, i32::from(RAMP.1) * 256 + 200);
+        let leaving = compute_cell_speed_modifier(
+            SpeedType::Track,
+            LocomotorKind::Drive,
+            on_ramp,
+            FLAT,
+            &terrain,
+            &config,
+            false,
+        );
+
+        // Standing on the flat cell already, heading further along it.
+        let on_flat = (i32::from(FLAT.0) * 256 + 128, i32::from(FLAT.1) * 256 + 128);
+        let flat_to_flat = compute_cell_speed_modifier(
+            SpeedType::Track,
+            LocomotorKind::Drive,
+            on_flat,
+            (FLAT.0 + 1, FLAT.1),
+            &terrain,
+            &config,
+            false,
+        );
+
         assert!(
-            found_any,
-            "no modelled slope varied the height inside a cell; the premise is wrong"
+            leaving > flat_to_flat,
+            "leaving the ramp must earn the downhill coefficient the flat step \
+             does not: ramp {leaving:?} vs flat {flat_to_flat:?}"
+        );
+        assert_eq!(
+            flat_to_flat,
+            SimFixed::from_num(0.5),
+            "flat to flat is the land row alone"
         );
     }
 
