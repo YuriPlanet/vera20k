@@ -733,6 +733,14 @@ mod tests {
                     MovementLayer::Ground,
                     capability,
                     &sim.substrate.entities,
+                    // A terrain object is never a crush victim whoever asks, so
+                    // the ally gate is irrelevant here; a neutral crusher keeps
+                    // the assertion about terrain rather than about alliance.
+                    crate::sim::movement::bump_crush::CrushAllyGate::new(
+                        "Neutral",
+                        &crate::map::houses::HouseAllianceMap::new(),
+                        &sim.interner,
+                    ),
                 )
                 .is_empty(),
                 "Terrain never enters the Techno crush-victim list"

@@ -1330,12 +1330,14 @@ fn classify_occupied_cell_with_slave_query(
     // the cell list and consults it only after the walk, when nothing else
     // raised the running code above 0. An occupant the mover can crush does not
     // contribute a code; one it cannot crush raises the code like any blocker.
+    let ally_gate = bump_crush::CrushAllyGate::new(mover_owner, alliances, interner);
     let victims = bump_crush::collect_crush_victims(
         target,
         occupancy,
         layers.object_list_layer,
         crush_capability,
         entities,
+        ally_gate,
     );
     let crushable: BTreeSet<u64> = victims.iter().copied().collect();
 
@@ -1436,6 +1438,7 @@ fn classify_occupied_cell_with_slave_query(
             layers.occupancy_bits_layer,
             crush_capability,
             entities,
+            ally_gate,
         )
     {
         return apply_overrides(CellEntryResult::Crushable { victims }, mover_locomotor);
