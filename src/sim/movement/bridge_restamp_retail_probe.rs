@@ -265,3 +265,85 @@ fn retail_ramp_exit_onto_equal_level_flat_census() {
         );
     }
 }
+
+/// Count the shape native's cliff override fires on.
+///
+/// Before the slope coefficient, `Process_Movement` compares two cell **level
+/// bytes**: `0x004B3589` fetches the destination cell, `0x004B358E MOVSX
+/// ECX,byte [EAX+0x11B]` reads its Level, `0x004B3595..0x004B359C` takes the
+/// absolute difference against the mover's cell level (plus 4 when the mover is
+/// on a bridge), and `0x004B359E CMP EAX,2` / `0x004B35A1 JGE 0x004B3C84`
+/// forces the land-type row to **1** at `0x004B3C88` instead of the cell's own
+/// `+0xEC`. VERA's `terrain_speed_factor` has no equivalent, so it reads the
+/// destination's real row where gamemd reads full speed.
+///
+/// That is a larger swing than the 1.2 downhill coefficient on slow terrain, and
+/// its frequency was recorded UNCHECKED. This counts it the same way the ramp
+/// census counts D1's shape: over static terrain, no play required.
+///
+/// Counts ground-level differences only. The bridge arm adds 4 to the mover's
+/// side, so a mover stepping off a deck qualifies almost automatically; that
+/// needs the bridge layer and is not counted here, which makes this a **lower
+/// bound**.
+#[test]
+#[ignore = "requires active retail assets; reports a terrain census"]
+fn retail_cliff_override_level_difference_census() {
+    let retail = super::retail_dir().expect("configured active retail install");
+    let maps = std::env::var("VERA20K_CLIFF_CENSUS_MAPS")
+        .unwrap_or_else(|_| "BayOPigs.mmx;Hills.mmx;Deadman.mmx".into());
+    for map_name in maps.split(';') {
+        let scenario = crate::headless_scenario::load(&retail, map_name, super::SEED)
+            .unwrap_or_else(|error| panic!("load {map_name}: {error}"));
+        let sim = scenario.sim();
+        let terrain = sim
+            .resolved_terrain
+            .as_ref()
+            .expect("live resolved terrain");
+
+        let (mut pairs, mut forced) = (0u32, 0u32);
+        for ry in 0..terrain.height() {
+            for rx in 0..terrain.width() {
+                let Some(cell) = terrain.cell(rx, ry) else {
+                    continue;
+                };
+                for (dx, dy) in [
+                    (-1i32, -1i32),
+                    (0, -1),
+                    (1, -1),
+                    (-1, 0),
+                    (1, 0),
+                    (-1, 1),
+                    (0, 1),
+                    (1, 1),
+                ] {
+                    let (nx, ny) = (i32::from(rx) + dx, i32::from(ry) + dy);
+                    let (Ok(nx), Ok(ny)) = (u16::try_from(nx), u16::try_from(ny)) else {
+                        continue;
+                    };
+                    let Some(neighbour) = terrain.cell(nx, ny) else {
+                        continue;
+                    };
+                    pairs += 1;
+                    // The same absolute difference the binary takes, on the same
+                    // signed Level byte.
+                    let delta =
+                        (i32::from(cell.level as i8) - i32::from(neighbour.level as i8)).abs();
+                    if delta >= 2 {
+                        forced += 1;
+                    }
+                }
+            }
+        }
+        let share = if pairs == 0 {
+            0.0
+        } else {
+            f64::from(forced) * 100.0 / f64::from(pairs)
+        };
+        println!(
+            "A8 cliff-override census {map_name}: {forced} of {pairs} ground cell-to-cell \
+             steps differ by two or more levels ({share:.2}%), so gamemd forces the \
+             full-speed row there and VERA reads the cell's own. Lower bound: the \
+             bridge arm adds 4 to the mover's side and is not counted."
+        );
+    }
+}

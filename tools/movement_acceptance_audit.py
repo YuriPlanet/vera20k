@@ -116,8 +116,9 @@ def main():
             for ok, note in ((a, an), (t, tn), (f, fn)):
                 if not ok:
                     gaps.append((name, key.strip(), note))
-            if UNESTABLISHED.search(row):
-                caveats.append((name, key.strip()))
+            marks = UNESTABLISHED.findall(row)
+            if marks:
+                caveats.append((name, key.strip(), len(marks)))
 
     print()
     if gaps:
@@ -131,8 +132,10 @@ def main():
         print("known (UNCHECKED / NEEDS A RUN / unknown). Honest, but the")
         print("condition asks for a frequency, and \"we could not measure it\"")
         print("is not one. These are the rows an instrument would close:")
-        for name, key in caveats:
-            print("  %-19s %s" % (name, key))
+        for name, key, n in caveats:
+            print("  %-19s %-24s %d marker%s" % (name, key, n, "" if n == 1 else "s"))
+        print("  (%d markers across %d rows - the number to burn down)"
+              % (sum(n for _, _, n in caveats), len(caveats)))
         print()
 
     if gaps or caveats:
