@@ -3,7 +3,7 @@
 **Date:** 2026-08-27
 **Phase:** 3 / GSI-04.05 bounded mechanism
 **Status:** Approved after read-only design review
-**Native evidence:** `docs/research/PHASE3_HOUSE_UPDATE_AI_ACTIVATION_GHIDRA_REPORT.md`
+**Native evidence:** [docs/research/PHASE3_HOUSE_UPDATE_AI_ACTIVATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_HOUSE_UPDATE_AI_ACTIVATION_GHIDRA_REPORT.md)
 
 ## Goal
 

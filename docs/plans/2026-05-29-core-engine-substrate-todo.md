@@ -8,12 +8,12 @@ Use the linked research docs and contracts as evidence before editing Rust.
 
 ## Source Docs
 
-- `docs/research/ENGINE_STATE_OVERVIEW.md`
-- `docs/research/SUBSTRATE_PARITY_LEDGER_20260529.md`
-- `docs/research/CORE_PRIMITIVE_PARITY_20260529.md`
-- `docs/research/TWO_RNG_STREAM_IMPLEMENTATION_CONTRACT_20260529.md`
-- `docs/research/PERTICKUPDATE_FULL_ORDERING_LADDER_GHIDRA_REPORT.md`
-- `docs/research/2026-05-29-parity-gap-scan-shortlist.md`
+- [docs/research/ENGINE_STATE_OVERVIEW.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ENGINE_STATE_OVERVIEW.md)
+- [docs/research/SUBSTRATE_PARITY_LEDGER_20260529.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SUBSTRATE_PARITY_LEDGER_20260529.md)
+- [docs/research/CORE_PRIMITIVE_PARITY_20260529.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CORE_PRIMITIVE_PARITY_20260529.md)
+- [docs/research/TWO_RNG_STREAM_IMPLEMENTATION_CONTRACT_20260529.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TWO_RNG_STREAM_IMPLEMENTATION_CONTRACT_20260529.md)
+- [docs/research/PERTICKUPDATE_FULL_ORDERING_LADDER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PERTICKUPDATE_FULL_ORDERING_LADDER_GHIDRA_REPORT.md)
+- [docs/research/2026-05-29-parity-gap-scan-shortlist.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/2026-05-29-parity-gap-scan-shortlist.md)
 - `docs/plans/2026-05-29-native-tick-spine-contract.md`
 - `docs/plans/TWO_STREAM_RNG_PLAN_20260529.md`
 - `docs/plans/2026-05-28-foundational-scheduler-roadmap-todo.md`

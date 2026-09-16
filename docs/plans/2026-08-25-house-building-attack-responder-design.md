@@ -10,7 +10,7 @@ Damage is committed in native receiver order by `sim/combat/mod.rs::commit_damag
 
 Persistent type data flows from `RuleSet`/`ObjectType`; map-authored Unit/Infantry/Aircraft placement state flows through `MapEntity` into `GameEntity`. EntityStore iteration is stable creation order. Missions are persistent `MissionCom` state: receiver code can queue a deferred mission immediately, while `world/techno_ai/mission_handlers.rs` owns later ground mission dispatch. `TeamScriptVm` is the only existing TeamClass storage seam, but currently lacks priority/base-defence/suspension state and has no production Team producer. `ZoneGrid` retains native raw movement-row topology, but its public `can_reach` intentionally widens distinct zones and rejects the native source-outside-playfield special admit.
 
-The research authority is `docs/research/PHASE3_HOUSE_BUILDING_ATTACK_RESPONDER_00708080_GHIDRA_REPORT.md`, based on live `gamemd.exe` callers/body and retail Rules. Older Rescue research is orientation only; its probability and Foot-caller reachability claims are superseded by the new direct proof.
+The research authority is [docs/research/PHASE3_HOUSE_BUILDING_ATTACK_RESPONDER_00708080_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_HOUSE_BUILDING_ATTACK_RESPONDER_00708080_GHIDRA_REPORT.md), based on live `gamemd.exe` callers/body and retail Rules. Older Rescue research is orientation only; its probability and Foot-caller reachability claims are superseded by the new direct proof.
 
 ## Impact Analysis
 

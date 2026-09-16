@@ -128,7 +128,7 @@ Scanned for comparison only; no code was changed.
 | State 3 next step | verified | `0x0073E5E0` state 3 assigns mission `7` | detailed Mission_Enter timing out-of-scope |
 | Accepted CAN_DOCK cell | verified for reconciliation | `0x0043C2D0` case `0x0E`, `ini/artmd.ini:1795` | arrival/link timing out-of-scope |
 | Far fallback seed and destination handoff | verified | `0x0073E5E0` fallback reads `+0x1618/+0x161C`, calls nearby passable search, then vtable `+0x480` | exact search ordering/radius out-of-scope |
-| `QueueingCell` vs `DockingOffset%d` | verified by prior report and spot-check | `NUMBEROFDOCKS_VS_DOCKOFFSET_RECONCILE_GHIDRA_REPORT.md`; no `+0x1788` read in state 2 | none for this slice |
+| `QueueingCell` vs `DockingOffset%d` | verified by prior report and spot-check | [NUMBEROFDOCKS_VS_DOCKOFFSET_RECONCILE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/NUMBEROFDOCKS_VS_DOCKOFFSET_RECONCILE_GHIDRA_REPORT.md); no `+0x1788` read in state 2 | none for this slice |
 | `BuildingClass__GetDockCoord` | touched-not-exhausted | `0x00447B20` direct decompile | broader dock coordinate consumers out-of-scope |
 | TS legacy gate | verified | Standard YR INI plus live branches in `0x0073E5E0`/`0x0043C2D0` | none |
 

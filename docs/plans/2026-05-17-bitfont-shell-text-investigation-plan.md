@@ -19,18 +19,18 @@ ListBox, Edit) get from a `wchar_t*` to pixels on the 16-bit display surface, us
 - `SIDEBAR_READY_TEXT_RENDERING.md` — FNT header partially extracted, font-object
   offsets `+0x18`/`+0x1C` known, sidebar "Ready" call site documented. Confidence:
   HIGH for sidebar Ready path, NONE for shell owner-draw path.
-- `TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md` — mentions `BitFont__MeasureText` in
+- [TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md) — mentions `BitFont__MeasureText` in
   passing for viewport corner text. Out of scope here.
-- `SELECTION_BRACKETS_PIPS_DRAW_ORDER_GHIDRA_REPORT.md` — single mention. Out of
+- [SELECTION_BRACKETS_PIPS_DRAW_ORDER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/building-selection-brackets/SELECTION_BRACKETS_PIPS_DRAW_ORDER_GHIDRA_REPORT.md) — single mention. Out of
   scope.
-- `SKIRMISH_OWNERDRAW_CALLBACKS_GHIDRA_REPORT.md` §1.2 — names `FUN_00621040` /
+- [SKIRMISH_OWNERDRAW_CALLBACKS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_OWNERDRAW_CALLBACKS_GHIDRA_REPORT.md) §1.2 — names `FUN_00621040` /
   `FUN_006211D0` / `FUN_00623880` and their roles, but does not decompile their
   internals. Flags font identity as open question.
-- `SKIRMISH_SHELL_ACTIVE_RENDER_PATH_LIVE_GHIDRA_REPORT.md` §`0x00621040` —
+- [SKIRMISH_SHELL_ACTIVE_RENDER_PATH_LIVE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_SHELL_ACTIVE_RENDER_PATH_LIVE_GHIDRA_REPORT.md) §`0x00621040` —
   documents flag `0x04` = vertical center; horizontal align bits `0x01` center,
   `0x02` right; color conversion via `g_DD_*Loss/Shift`. **Open question 3** in
   that doc: font identity not named beyond `g_GAME_FNT`/bitfont state.
-- `CREDITS_COUNTER_SYSTEM.md`, `ADDRESS_MAP.md` — incidental.
+- `CREDITS_COUNTER_SYSTEM.md`, [ADDRESS_MAP.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ADDRESS_MAP.md) — incidental.
 
 **Conflicts to resolve:**
 - `SIDEBAR_READY_TEXT_RENDERING.md` claims FNT header `[0x08] = 3 = inter-char
@@ -39,7 +39,7 @@ ListBox, Edit) get from a `wchar_t*` to pixels on the 16-bit display surface, us
   spacing and the other to draw advance. Phase 1 must reconcile this.
 
 **Expected Output:** Research document at
-`docs/research/BITFONT_SHELL_TEXT_GHIDRA_REPORT.md`.
+[docs/research/BITFONT_SHELL_TEXT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BITFONT_SHELL_TEXT_GHIDRA_REPORT.md).
 
 **Next Pipeline Step:** `/brainstorm` how to render Rust shell text matching the
 binary's BitFont path (likely: extend `sidebar_text.rs` or sibling renderer to
@@ -71,9 +71,9 @@ When this investigation finishes, the report must answer:
 | Report | Scope | Confidence | Known Gaps |
 |---|---|---|---|
 | `SIDEBAR_READY_TEXT_RENDERING.md` | Sidebar "Ready" call site, FNT header partial, BitFont +0x18/+0x1C | HIGH for narrow scope | No glyph-data layout details, no draw algorithm, no width algorithm, font object full struct, lookup-table semantics |
-| `SKIRMISH_OWNERDRAW_CALLBACKS_GHIDRA_REPORT.md` §1.2 | FUN_00621040/006211D0/00623880 named & roles | MEDIUM | All internals open |
-| `SKIRMISH_SHELL_ACTIVE_RENDER_PATH_LIVE_GHIDRA_REPORT.md` §0x00621040 | Vertical center flag 0x04, color conversion via g_DD_* | HIGH for that one function summary | Tabs, wrap, newline, fade not documented; font ID open |
-| `TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md` | Single mention | Out of scope | n/a |
+| [SKIRMISH_OWNERDRAW_CALLBACKS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_OWNERDRAW_CALLBACKS_GHIDRA_REPORT.md) §1.2 | FUN_00621040/006211D0/00623880 named & roles | MEDIUM | All internals open |
+| [SKIRMISH_SHELL_ACTIVE_RENDER_PATH_LIVE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_SHELL_ACTIVE_RENDER_PATH_LIVE_GHIDRA_REPORT.md) §0x00621040 | Vertical center flag 0x04, color conversion via g_DD_* | HIGH for that one function summary | Tabs, wrap, newline, fade not documented; font ID open |
+| [TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md) | Single mention | Out of scope | n/a |
 
 **Conflicts between reports:** The FNT spacing field `[0x08]=3` (SIDEBAR_READY_TEXT_RENDERING.md) vs. Rust's `text_width` adding `+1` per pair (`src/assets/fnt_file.rs:171`) — both internally documented but the relationship is unclear.
 
@@ -250,7 +250,7 @@ Within the single session:
 2. User reviews Phase 1; revise scope if assumptions break
 3. Execute Phase 2 (#8–#13) for depth
 4. Execute Phase 3 (#14–#19) for caller-context confirmation
-5. Synthesize → `BITFONT_SHELL_TEXT_GHIDRA_REPORT.md`
+5. Synthesize → [BITFONT_SHELL_TEXT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BITFONT_SHELL_TEXT_GHIDRA_REPORT.md)
 
 If Phase 1 reveals the draw algorithm is much larger than expected (e.g.,
 function body 1602 bytes contains multiple sub-algorithms), split #5 into
@@ -284,10 +284,10 @@ The executed research document must:
   - `docs/research/SIDEBAR_READY_TEXT_RENDERING.md`
   - `docs/research/SKIRMISH_OWNERDRAW_CALLBACKS_GHIDRA_REPORT.md` §1.2
   - `docs/research/SKIRMISH_SHELL_ACTIVE_RENDER_PATH_LIVE_GHIDRA_REPORT.md` §0x00621040
-  - `docs/research/TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md`
+  - [docs/research/TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md)
   - `docs/research/SELECTION_BRACKETS_PIPS_DRAW_ORDER_GHIDRA_REPORT.md`
   - `docs/research/CREDITS_COUNTER_SYSTEM.md`
-  - `docs/research/ADDRESS_MAP.md`
+  - [docs/research/ADDRESS_MAP.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ADDRESS_MAP.md)
 - INI files checked: none — bitfont has no INI surface
 - Rust files inspected: `src/assets/fnt_file.rs`, `src/render/sidebar_text.rs`
   (first 80 lines), `src/app_skirmish_shell_render.rs:242`

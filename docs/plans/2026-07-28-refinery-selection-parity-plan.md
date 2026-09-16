@@ -12,7 +12,7 @@
 
 ## Grounding Summary
 
-- `docs/research/miner/FIND_DOCKING_BAY_INTERNALS_GHIDRA_REPORT.md` (2026-07-28): `FootClass::Find_Docking_Bay` 0x004DF040 → `FUN_004DEE80` scans **only the miner's own house's** BuildingInstances (no alliance loop); distance = 2D squared leptons (Z ignored); per-candidate narrow check `FUN_0065ADF0` is a reservation/contact-list probe **bypassed when the wide-pass flag = 1**; `IsPrimaryFactory` (+0x3D3) overrides distance unconditionally. Spot-checked this session (`MOV ECX,ESI` at 0x004DF07E; COL walk).
+- [docs/research/miner/FIND_DOCKING_BAY_INTERNALS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/FIND_DOCKING_BAY_INTERNALS_GHIDRA_REPORT.md) (2026-07-28): `FootClass::Find_Docking_Bay` 0x004DF040 → `FUN_004DEE80` scans **only the miner's own house's** BuildingInstances (no alliance loop); distance = 2D squared leptons (Z ignored); per-candidate narrow check `FUN_0065ADF0` is a reservation/contact-list probe **bypassed when the wide-pass flag = 1**; `IsPrimaryFactory` (+0x3D3) overrides distance unconditionally. Spot-checked this session (`MOV ECX,ESI` at 0x004DF07E; COL walk).
 - `docs/scans/trace-swarm-20260728/refinery-contact-list.md`: contact array/capacity at building +0xE4/+0xE8; capacity = `NumberOfDocks` floor 1 set once at construction; probe = free-slot-or-already-tracked.
 - `docs/scans/trace-swarm-20260728/dock-widescan-global.md`: the wide pass elevates 0x00A8E7AC so `BuildingClass::Receive_Radio` case 0xF accepts already-reserved refineries — i.e. narrow pass rejects contested docks, wide pass admits them. Mission_Harvest state 2 runs narrow first, wide only when narrow found nothing (mission-harvest-cadence.md §3 state 2).
 - Repo pattern: `find_nearest_refinery` (src/sim/miner/miner_system.rs:1245-1290) with 3 callers (handle_return :791, handle_forced_return :910, begin_return :1013); capacity lookup pattern `refinery_dock_capacity_for_sid` (:1312-1325, `number_of_docks.max(1)`); registry `RefineryDockContacts` (src/sim/miner/miner_dock.rs:36-68, `hello_or_wait` already implements exactly the free-slot-or-already-tracked shape mutably).
@@ -343,7 +343,7 @@ Helper notes (self-containment): `fill_miner_full`/`set_state` may not exist und
 
 **Steps:**
 1. `cargo test -p vera20k --lib 2>&1 | grep -E "FAILED|test result"`.
-2. For each failure: decide whether the test's premise assumed cross-house selection or nearest-regardless-of-saturation. Update the fixture (spawn the refinery under the miner's owner / free a slot) rather than weakening the assertion; if the test pinned the OLD behavior as a contract, rewrite its doc comment citing FIND_DOCKING_BAY_INTERNALS_GHIDRA_REPORT.md.
+2. For each failure: decide whether the test's premise assumed cross-house selection or nearest-regardless-of-saturation. Update the fixture (spawn the refinery under the miner's owner / free a slot) rather than weakening the assertion; if the test pinned the OLD behavior as a contract, rewrite its doc comment citing [FIND_DOCKING_BAY_INTERNALS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/FIND_DOCKING_BAY_INTERNALS_GHIDRA_REPORT.md).
 3. Re-run until `0 failed`; record the literal `test result:` line.
 4. Commit — `miner: retime/refit tests for own-house narrow-pass selection`
 
@@ -358,7 +358,7 @@ Helper notes (self-containment): `fill_miner_full`/`set_state` may not exist und
 
 ## Sources & References
 
-- **Ghidra reports:** docs/research/miner/FIND_DOCKING_BAY_INTERNALS_GHIDRA_REPORT.md; docs/scans/trace-swarm-20260728/refinery-contact-list.md; docs/scans/trace-swarm-20260728/dock-widescan-global.md; docs/scans/trace-swarm-20260728/mission-harvest-cadence.md §3 (state 2 ordering)
+- **Ghidra reports:** [docs/research/miner/FIND_DOCKING_BAY_INTERNALS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/FIND_DOCKING_BAY_INTERNALS_GHIDRA_REPORT.md); docs/scans/trace-swarm-20260728/refinery-contact-list.md; docs/scans/trace-swarm-20260728/dock-widescan-global.md; docs/scans/trace-swarm-20260728/mission-harvest-cadence.md §3 (state 2 ordering)
 - **gamemd.exe addresses:** Find_Docking_Bay 0x004DF040; per-house scan FUN_004DEE80; contact probe FUN_0065ADF0; Receive_Radio case 0xF 0x0043c2d0; leniency global 0x00A8E7AC — addresses stay here, not in Rust comments.
 - **INI keys:** rulesmd.ini per-building `NumberOfDocks=` (already parsed).
 - **Related code:** src/sim/miner/miner_system.rs:791,910,1013,1236-1325; src/sim/miner/miner_dock.rs:36-108.

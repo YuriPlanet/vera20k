@@ -77,7 +77,7 @@ Milestones are integer inputs to `FUN_0069AE90`; they map to percent-like values
 | `Init_Theater @ 0x005349C0` | Calls progress callback around theater MIX/palette setup and within 13-level lighting loop. | Decompiled `0x005349C0` | Yes |
 | `Read_Map_Section_And_IsoMapPacks @ 0x004ACE70` | Emits nested progress values `63..69` around map pack work. | Assembly context xrefs to `0x0069AE90` | Yes |
 | `ProgressClass update @ 0x00643C50` | Stores new value and synchronously repaints or draws. | Decompiled `0x00643C50`, `0x00643AE0` | Yes |
-| mode-2 loading background paint | `WM_PAINT_Handler @ 0x00621E90` draws the loading background when shell record mode is `2`. | Decompiled `0x00621E90`; sibling `ALLIED_SIDEBAR_PALETTE_SELECTOR_GHIDRA_REPORT.md` | Yes |
+| mode-2 loading background paint | `WM_PAINT_Handler @ 0x00621E90` draws the loading background when shell record mode is `2`. | Decompiled `0x00621E90`; sibling [ALLIED_SIDEBAR_PALETTE_SELECTOR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ALLIED_SIDEBAR_PALETTE_SELECTOR_GHIDRA_REPORT.md) | Yes |
 
 ## 9. Current Rust Implementation Status
 
@@ -156,5 +156,5 @@ Retry slot 4 rechecked the handoff-critical claims in Ghidra read-only. `FUN_006
 
 - Ghidra decompile: `0x00684620`, `0x00686B20`, `0x0069AE90`, `0x00643C50`, `0x00643AE0`, `0x00643E90`, `0x00643E80`, `0x00642A60`, `0x00642AD0`, `0x00642B10`, `0x00642C20`, `0x00642C80`, `0x00643400`, `0x00643720`, `0x00643670`, `0x00684370`, `0x005349C0`, `0x00621E90`.
 - Ghidra xrefs/assembly context: xrefs to `0x0069AE90`, selected xrefs to `0x00643C50`, mode-2 paint context, progress-control procedure context around `0x0061D6D0`.
-- Prior docs: `ASSET_PARSING_BRIDGES_GHIDRA_REPORT.md`, `ALLIED_SIDEBAR_PALETTE_SELECTOR_GHIDRA_REPORT.md`, `SKIRMISH_START_TO_FULL_INIT_SPAWN_TRACE.md`, `SKIRMISH_MMPB_ASSIGNED_PLAYER_MARKER_CONTEXT_GHIDRA_REPORT.md`.
+- Prior docs: `ASSET_PARSING_BRIDGES_GHIDRA_REPORT.md`, [ALLIED_SIDEBAR_PALETTE_SELECTOR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ALLIED_SIDEBAR_PALETTE_SELECTOR_GHIDRA_REPORT.md), `SKIRMISH_START_TO_FULL_INIT_SPAWN_TRACE.md`, [SKIRMISH_MMPB_ASSIGNED_PLAYER_MARKER_CONTEXT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_MMPB_ASSIGNED_PLAYER_MARKER_CONTEXT_GHIDRA_REPORT.md).
 - Rust scan: `src/app.rs`, `src/ui/main_menu.rs`, `src/app_transitions.rs`.

@@ -21,9 +21,9 @@ This design is limited to the initial main menu. It does not attempt to implemen
 
 ### Source-of-truth research
 
-- [ra2-rust-game-docs/MAIN_MENU_SIDEBAR_GHIDRA_REPORT.md](../../../ra2-rust-game-docs/MAIN_MENU_SIDEBAR_GHIDRA_REPORT.md)
-- [ra2-rust-game-docs/MAIN_MENU_VISUAL_ASSETS_GHIDRA_REPORT.md](../../../ra2-rust-game-docs/MAIN_MENU_VISUAL_ASSETS_GHIDRA_REPORT.md)
-- [ra2-rust-game-docs/MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md](../../../ra2-rust-game-docs/MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md)
+- [ra2-rust-game-docs/MAIN_MENU_SIDEBAR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_SIDEBAR_GHIDRA_REPORT.md)
+- [ra2-rust-game-docs/MAIN_MENU_VISUAL_ASSETS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_VISUAL_ASSETS_GHIDRA_REPORT.md)
+- [ra2-rust-game-docs/MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md)
 - [docs/plans/2026-05-17-main-menu-sidebar-investigation-plan.md](2026-05-17-main-menu-sidebar-investigation-plan.md)
 
 Verified binary facts carried into this design:

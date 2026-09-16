@@ -169,7 +169,7 @@ Evidence: `0x00597260` decompile.
 
 Active in YR: Conditional. Generate syncs controls through `0x00596C70`, clears scenario/map scratch globals and scenario waypoint/count fields, disables controls `0x405`, `0x3EA`, `0x407`, `0x406`, `0x408`, `0x3EB`, `0x621`, `0x620`, `0x6C2`, `0x6C3`, `0x6C4`, `0x6C5`, `0x5C0`, resets description/display text to string id `0xF5E`, calls `0x00598960(1, hwnd)` and `GenerateTerrainPreview`, re-enables the same controls, allocates/copies `0x00ABDFD8` into `DAT_00ABE150`, and posts `WM_PAINT`.
 
-Evidence: `0x00596300` command `0x620`; preview report `GENERATETERRAINPREVIEW_RANDMAP_DIMENSIONS_COLORS_GHIDRA_REPORT.md`.
+Evidence: `0x00596300` command `0x620`; preview report [GENERATETERRAINPREVIEW_RANDMAP_DIMENSIONS_COLORS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/GENERATETERRAINPREVIEW_RANDMAP_DIMENSIONS_COLORS_GHIDRA_REPORT.md).
 
 Important tiny detail: Cancel `0x5C0` is disabled during the synchronous Generate block and re-enabled after preview generation. Rust should not allow state mutation/cancel midway through a native-equivalent generation action unless it deliberately models native's modal blocking.
 
@@ -282,7 +282,7 @@ Current Rust recognizes Choose Map `CreateRandomMap0x583` but does not open/mode
 
 ## 15. Stale Docs / Follow-up Docs
 
-Prior report `docs/research/skirmish-ui/SKIRMISH_CREATE_RANDOM_MAP_0X583_SETUP_PATH_GHIDRA_REPORT.md` has stale current-Rust preview wording in Section 6 after later Rust changes. Replacement wording:
+Prior report [docs/research/skirmish-ui/SKIRMISH_CREATE_RANDOM_MAP_0X583_SETUP_PATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_CREATE_RANDOM_MAP_0X583_SETUP_PATH_GHIDRA_REPORT.md) has stale current-Rust preview wording in Section 6 after later Rust changes. Replacement wording:
 
 > `preview` - partial: Rust now recognizes `RandMap.Sed` and attempts to read runtime `RandMap.img` for random sentinel previews, but the native setup dialog/generation path that creates that image and seed snapshot is still missing.
 
@@ -292,5 +292,5 @@ No binary-behavior contradiction with prior Create Random Map reports was found;
 
 - Ghidra read-only decompile / assembly context: `0x00595BC0`, `0x00595BCA..0x00595BE3`, `0x00595BEE..0x00595C42`, `0x00596300`, `0x00595680`, `0x00596C70`, `0x00596E50`, `0x00597260`, `0x00597380`, `0x005975E0`, `0x00597730`, `0x005E8590`, `0x00622650`, `0x005587F0`, `0x00558810`, `0x00558840`, `0x00559C20`, `0x00598960`.
 - String anchors: `MapGen.cpp @ 0x0082BA48`, `TXT_RANDOM_MAP_DESCRIPTION @ 0x0082BA2C`, `RandMap.Map @ 0x0082BB44`, `RandMap.img @ 0x00829ABC`, `RandMap.Sed @ 0x0082BC30`.
-- Prior docs read: `SKIRMISH_CREATE_RANDOM_MAP_0X583_SETUP_PATH_GHIDRA_REPORT.md`, `GENERATETERRAINPREVIEW_RANDMAP_DIMENSIONS_COLORS_GHIDRA_REPORT.md`, `SKIRMISH_RANDOM_MAP_GENERATOR_00598960_GHIDRA_REPORT.md`.
+- Prior docs read: [SKIRMISH_CREATE_RANDOM_MAP_0X583_SETUP_PATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_CREATE_RANDOM_MAP_0X583_SETUP_PATH_GHIDRA_REPORT.md), [GENERATETERRAINPREVIEW_RANDMAP_DIMENSIONS_COLORS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/GENERATETERRAINPREVIEW_RANDMAP_DIMENSIONS_COLORS_GHIDRA_REPORT.md), `SKIRMISH_RANDOM_MAP_GENERATOR_00598960_GHIDRA_REPORT.md`.
 - Rust scan: `src/app.rs`, `src/ui/skirmish_shell/state/choose_map.rs`, `src/skirmish_scenarios.rs`, `src/app_skirmish_shell_render/preview.rs`.

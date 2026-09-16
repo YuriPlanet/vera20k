@@ -261,6 +261,6 @@ Adversarial corner-case answers:
 - Ghidra decompiled: `CellClass__CanPlaceTiberium @ 0x004838E0`
 - Ghidra decompiled: `CCINIClass__ReadBool @ 0x005295F0`
 - Ghidra assembly spot-checks: `0x005448B5..0x005448BC`, `0x00546442..0x0054646D`, `0x004839C0..0x004839E3`
-- Existing docs referenced: `ASSET_PARSING_BRIDGES_GHIDRA_REPORT.md`, `ISOMETRIC_TILE_TYPE_CLASS_GHIDRA_REPORT.md`, `TIBTRE_CANACCEPTTIBERIUM_REJECTION_GATES_GHIDRA_REPORT.md`, `PLACETIBERIUM_SPREAD_GERMINATION_CONSTRAINTS_AND_OVERLAY_FRAME_GHIDRA_REPORT.md`
+- Existing docs referenced: `ASSET_PARSING_BRIDGES_GHIDRA_REPORT.md`, `ISOMETRIC_TILE_TYPE_CLASS_GHIDRA_REPORT.md`, [TIBTRE_CANACCEPTTIBERIUM_REJECTION_GATES_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TIBTRE_CANACCEPTTIBERIUM_REJECTION_GATES_GHIDRA_REPORT.md), [PLACETIBERIUM_SPREAD_GERMINATION_CONSTRAINTS_AND_OVERLAY_FRAME_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PLACETIBERIUM_SPREAD_GERMINATION_CONSTRAINTS_AND_OVERLAY_FRAME_GHIDRA_REPORT.md)
 - INI checked: `ini/temperatmd.ini`, `ini/temperat.ini`, `ini/snowmd.ini`, `ini/snow.ini`, `ini/urbanmd.ini`, `ini/urban.ini`, `ini/urbannmd.ini`, `ini/desertmd.ini`, `ini/lunarmd.ini`
 - Rust source audited: `src/map/theater.rs`, `src/map/resolved_terrain.rs`, `src/sim/terrain_spawn.rs`

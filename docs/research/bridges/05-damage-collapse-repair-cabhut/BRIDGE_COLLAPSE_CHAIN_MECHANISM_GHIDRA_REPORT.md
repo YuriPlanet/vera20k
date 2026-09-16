@@ -37,7 +37,7 @@ broadcast along the span. There is no warhead AoE re-entry, no damage propagatio
 and no `CollapseBridge` recursion.
 
 This also surfaces an unintended finding: the 2026-05-20 trace doc
-`CABHUT_PER_CELL_DESTRUCTION_CASCADE_TRACE.md` § Stage 2 mischaracterizes
+[CABHUT_PER_CELL_DESTRUCTION_CASCADE_TRACE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/08-traces/CABHUT_PER_CELL_DESTRUCTION_CASCADE_TRACE.md) § Stage 2 mischaracterizes
 gamemd's `CollapseBridge_*_High` as a "span-completing walker" that walks the
 entire bridge end-to-end. The binary contradicts this — `local_2c = 4` is a
 hard cap. The Rust port's new full-span flood-fill (shipped to
@@ -213,10 +213,10 @@ exists for campaign trigger scripting only.)
 
 **`param_2 = 0x1F`** is the event-type ID. The constant matches `TriggerEvent::BridgeDestroyed`
 (= 31) per the `TriggerCondition::Evaluate @ 0x0071E940` case-cluster
-membership — see `TECHNOCLASS_PROCESSCELLACTION_0x1F_0x30_GHIDRA_REPORT.md` §2.
+membership — see [TECHNOCLASS_PROCESSCELLACTION_0x1F_0x30_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_PROCESSCELLACTION_0x1F_0x30_GHIDRA_REPORT.md) §2.
 
 **Evidence:** `decompile_function 0x006E53A0` (this session); cross-confirmed with
-`TECHNOCLASS_PROCESSCELLACTION_0x1F_0x30_GHIDRA_REPORT.md` §1–§5 (2026-05-20 audit).
+[TECHNOCLASS_PROCESSCELLACTION_0x1F_0x30_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_PROCESSCELLACTION_0x1F_0x30_GHIDRA_REPORT.md) §1–§5 (2026-05-20 audit).
 
 ---
 
@@ -330,7 +330,7 @@ variant* (RandomRanged(1, 5)) — a small integer that picks which frame of the
 loop to begin on for visual variety, not a warhead. The other three trailing args
 are the literal constants `1, 0x600, 0, 0`.
 
-**The DVC lookup** (per `BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md` §2):
+**The DVC lookup** (per [BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md) §2):
 - `g_RulesClass + 0x168` = `BridgeExplosions.ActiveCount` (DVC at base +0x158)
 - `g_RulesClass + 0x15C` = `BridgeExplosions.Vector` (data pointer to `AnimTypeClass*[]`)
 - Index by `iVar11 * 4` because each element is a 4-byte `AnimTypeClass*`
@@ -357,7 +357,7 @@ original?") is refuted: the original also has no warhead. Both engines spawn
 pure visual+SFX animations with no damage hook.
 
 **Evidence:** `decompile_function 0x00575BA0` (this session); cross-confirmed
-with `BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md` §2 (2026-05-18 audit) and
+with [BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md) §2 (2026-05-18 audit) and
 `artmd.ini:15656..15686` anim definitions.
 
 ---
@@ -471,7 +471,7 @@ order or the multiplayer state hash diverges.**
 substituted to `[0x4A..0x65]` and the destroyed-anchor sentinel changed from
 `0xE7`/`0xE8` to `0x64`/`0x65`. Same 4-iteration cap, same RNG order, same
 `DestroyBridge_Low` retry loop. EW variants of both Low and High exist at
-`0x00575220` and `0x00575870` respectively (per `BRIDGE_PAVEMENT_WALKER_AND_CELLLIST_DISPATCH_GHIDRA_REPORT.md`).
+`0x00575220` and `0x00575870` respectively (per [BRIDGE_PAVEMENT_WALKER_AND_CELLLIST_DISPATCH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/BRIDGE_PAVEMENT_WALKER_AND_CELLLIST_DISPATCH_GHIDRA_REPORT.md)).
 
 ---
 
@@ -538,7 +538,7 @@ broadcast walker** with no repair logic, no damage logic, and no overlay logic.
 These zero-init values look surprising — they should be `(0, ±1)` or `(±1, 0)`
 cell-offsets to land on perpendicular rails. The static value at link time is
 zero; they must be **populated at runtime** by `SetBridgeDirection_*` or similar
-during map load. (Out of scope for this report — see `BRIDGE_DIRECTION_TABLES_GHIDRA_REPORT.md`
+during map load. (Out of scope for this report — see [BRIDGE_DIRECTION_TABLES_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/01-assets-map-load-overlay/BRIDGE_DIRECTION_TABLES_GHIDRA_REPORT.md)
 for the runtime population path.) For Rust-port purposes this is a sim-detail that
 does not affect the chain question.
 
@@ -574,7 +574,7 @@ All addresses verified via `read_memory` (this session) where applicable.
 |-----|---------|------|---------|--------|
 | `BridgeExplosions=` | `[General]` | comma-list of AnimType names | `TWLT026, TWLT036, TWLT050, TWLT070` | Pool of cosmetic explosion anims spawned per cell by `CollapseBridge_*`. No damage. |
 | `MetallicDebris=` | `[General]` | comma-list of AnimType names | (varies) | Pool spawned by `CellClass::BlowUpBridge @ 0x0047DD70` — a sibling spawn site only reached via `ProcessBridgeDamageStateMachine_*` and `UpdateRamp_*_Collapse*`, NOT via `CollapseBridge_*`. Worth noting that the user's Rust `spawn_bridge_debris` covers both pools. |
-| `DestroyableBridges=` | `[General]` | bool | `yes` | Gates the whole damage-causes-collapse mechanic. If `no`, bridges absorb damage without overlay state transitions. See `DESTROYABLEBRIDGES_INI_GATE_GHIDRA_REPORT.md`. |
+| `DestroyableBridges=` | `[General]` | bool | `yes` | Gates the whole damage-causes-collapse mechanic. If `no`, bridges absorb damage without overlay state transitions. See [DESTROYABLEBRIDGES_INI_GATE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/DESTROYABLEBRIDGES_INI_GATE_GHIDRA_REPORT.md). |
 
 Each pool is parsed by `RulesClass::ReadGeneral @ 0x0066D530` into a
 `DynamicVectorClass<AnimTypeClass*>` instance at the offsets in § 7. Per-tile-anim
@@ -620,7 +620,7 @@ follow-up damage. On a 12-cell bridge with impact at midpoint, the user can
 destroy the entire bridge with one C4 in the port vs. half the bridge in gamemd.
 
 **Severity:** HIGH — gameplay-relevant. Lifts the C4 from "damages a segment" to
-"levels the whole bridge." The trace doc `CABHUT_PER_CELL_DESTRUCTION_CASCADE_TRACE.md`
+"levels the whole bridge." The trace doc [CABHUT_PER_CELL_DESTRUCTION_CASCADE_TRACE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/08-traces/CABHUT_PER_CELL_DESTRUCTION_CASCADE_TRACE.md)
 diagnosed the old code as "destroys ~3 cells, but gamemd destroys the whole span"
 — **the second half of that diagnosis is wrong.** gamemd destroys ~18 cells
 (3 perp × 6 axial), bounded by `local_2c = 4` (this report § 5).
@@ -649,7 +649,7 @@ visible: which half of the bridge gets destroyed depends on where the impact lan
 state hash diverges. Per § 4, the per-iteration RNG order is:
 X-jitter, Y-jitter, start-frame-variant, anim-type-index, **× 3 perpendicular cells × 4 axial iterations** = 48 RNG draws max.
 
-The `BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md` §4 and the existing test
+The [BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md) §4 and the existing test
 `debris_consumes_correct_rng_count_per_cell` already require this order. **Verify
 the test still passes after Disparity 1 fix changes the per-event cell count.**
 
@@ -693,14 +693,14 @@ correctly mirrors `DestroyBridgeWalker_*_High`'s 3-cell axial write + bilateral
 - `[RESOLVED]` Q4 — Does BridgeExplosions carry warhead/AoE? → No. AnimClass
   constructor has 7 args, none is a warhead pointer. anim entries in artmd.ini
   have no Warhead= key. (evidence: `decompile_function 0x00575BA0` lines mid-function,
-  this session; cross-check with `BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md` §2)
+  this session; cross-check with [BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md) §2)
 - `[RESOLVED]` Q5 — Is there any recursive chain re-entry? → No. CollapseBridge
   runs once per damage event, bounded to local_2c = 4 axial iterations.
   DestroyBridgeWalker writes overlay and dispatches to ApplyBridgeDestruction
   for adjacent columns, but no callee re-enters CollapseBridge. (evidence: callee
   graph for CollapseBridge_NS_High has no path back to CollapseBridge_*; verified
   via `get_function_callees 0x00575BA0` and decompilation of all 6 callees)
-- `[RESOLVED]` Q6 — CABHUT_PER_CELL_DESTRUCTION_CASCADE_TRACE.md Stage 2 claim
+- `[RESOLVED]` Q6 — [CABHUT_PER_CELL_DESTRUCTION_CASCADE_TRACE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/08-traces/CABHUT_PER_CELL_DESTRUCTION_CASCADE_TRACE.md) Stage 2 claim
   that gamemd CollapseBridge walks the whole span → **WRONG.** The walker is
   bounded to 4 axial iterations. (evidence: `decompile_function 0x00575BA0`
   `local_2c = 4` assignment line, this session; cross-checked with LOW twin
@@ -719,7 +719,7 @@ correctly mirrors `DestroyBridgeWalker_*_High`'s 3-cell axial write + bilateral
   reason: Static value is zero; runtime population is by `SetBridgeDirection_*`
   at map load. Out of scope for the chain-mechanism question — does not affect
   whether ProcessCellAction is a no-op. next-step-if-pursued: read
-  `BRIDGE_DIRECTION_TABLES_GHIDRA_REPORT.md` or decompile
+  [BRIDGE_DIRECTION_TABLES_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/01-assets-map-load-overlay/BRIDGE_DIRECTION_TABLES_GHIDRA_REPORT.md) or decompile
   `SetBridgeDirection_NS_High` @ 0x0056A610.)
 - `[DEFERRED]` Q10 — `DAT_00ABDE88` (bridge-layer Z scale) exact value and
   semantics. (category: `bounded-cost-too-high`; reason: cosmetic Z-coord
@@ -788,12 +788,12 @@ correctly mirrors `DestroyBridgeWalker_*_High`'s 3-cell axial write + bilateral
 
 ### Prior research docs cross-referenced
 
-- `TECHNOCLASS_PROCESSCELLACTION_0x1F_0x30_GHIDRA_REPORT.md` (2026-05-20) — primary source for Q1, Q2 doc-side claims; all confirmed live this session
+- [TECHNOCLASS_PROCESSCELLACTION_0x1F_0x30_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_PROCESSCELLACTION_0x1F_0x30_GHIDRA_REPORT.md) (2026-05-20) — primary source for Q1, Q2 doc-side claims; all confirmed live this session
 - `HIGH_BRIDGE_DAMAGE_STATE_MACHINE_GHIDRA_REPORT.md` (2026-05-20) — call chain and the NS/EW-label-swap caveat
-- `BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md` (2026-05-18) — DVC layout and BlowUpBridge sibling spawn site
-- `BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md` (2026-05-20) — caller-chain context for DestroyBridge_High_OnHutDeath
-- `CABHUT_PER_CELL_DESTRUCTION_CASCADE_TRACE.md` (2026-05-20) — diagnosed the OLD Rust truncation bug correctly but mischaracterized gamemd's CollapseBridge as full-span; this report corrects that
-- `BRIDGE_PAVEMENT_WALKER_AND_CELLLIST_DISPATCH_GHIDRA_REPORT.md` (2026-05-18) — confirmed addresses for all 4 CollapseBridge_*_* variants
+- [BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md) (2026-05-18) — DVC layout and BlowUpBridge sibling spawn site
+- [BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md) (2026-05-20) — caller-chain context for DestroyBridge_High_OnHutDeath
+- [CABHUT_PER_CELL_DESTRUCTION_CASCADE_TRACE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/08-traces/CABHUT_PER_CELL_DESTRUCTION_CASCADE_TRACE.md) (2026-05-20) — diagnosed the OLD Rust truncation bug correctly but mischaracterized gamemd's CollapseBridge as full-span; this report corrects that
+- [BRIDGE_PAVEMENT_WALKER_AND_CELLLIST_DISPATCH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/BRIDGE_PAVEMENT_WALKER_AND_CELLLIST_DISPATCH_GHIDRA_REPORT.md) (2026-05-18) — confirmed addresses for all 4 CollapseBridge_*_* variants
 - `BRIDGE_SYSTEM.md` (2026-05-18) — master overview (consulted but not load-bearing for this report)
 
 ### INI files consulted

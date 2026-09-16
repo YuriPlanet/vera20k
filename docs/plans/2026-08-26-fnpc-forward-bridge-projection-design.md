@@ -30,8 +30,8 @@ probe is looked up once, and its signed level and raw flags come from that same 
 CellClass. Only when candidate `0x1000` is set does probe `0x100` add four to the signed height
 delta. The helper returns either the current probe cell after the projected-axis comparison or
 the candidate after the later equality check. [Ghidra `0x006D641B..0x006D6588`;
-docs/research/PHASE3_AI_BASE_PLACEMENT_VECTOR_SELECTOR_005060B0_GHIDRA_REPORT.md
-§2.2, §9 Handoff B; docs/research/PHASE3_HOUSECLASS_ORDINARY_BASE_PLACEMENT_005060B0_GHIDRA_REPORT.md
+[docs/research/PHASE3_AI_BASE_PLACEMENT_VECTOR_SELECTOR_005060B0_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_AI_BASE_PLACEMENT_VECTOR_SELECTOR_005060B0_GHIDRA_REPORT.md)
+§2.2, §9 Handoff B; [docs/research/PHASE3_HOUSECLASS_ORDINARY_BASE_PLACEMENT_005060B0_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_HOUSECLASS_ORDINARY_BASE_PLACEMENT_005060B0_GHIDRA_REPORT.md)
 §8.2, §11.1 item 13]
 
 ## Impact Analysis

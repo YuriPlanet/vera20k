@@ -4,9 +4,9 @@ Provenance: /brainstorm 2026-06-02 for Slice 7b of the Mission/Radio Substrate p
 Supersedes the thin 7b stub in that plan (which only added `bunker_host` + link helpers
   and wrongly assumed a bunker lifecycle already existed). 7b = the WHOLE lifecycle.
 Load-bearing research (verified this session against the binary, see Ledger):
-  - TANK_BUNKER_ENTRY_EXIT_VISIBLE_LIFECYCLE_GHIDRA_REPORT.md
-  - BUNKER_0X2E4_LIFECYCLE_EXIT_CLEAR_PATH_GHIDRA_REPORT.md
-  - BUNKER_SERVICEDEPOT_0X2E4_RECIPROCAL_LINK_TEARDOWN_GHIDRA_REPORT.md (2026-06-02)
+  - [TANK_BUNKER_ENTRY_EXIT_VISIBLE_LIFECYCLE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TANK_BUNKER_ENTRY_EXIT_VISIBLE_LIFECYCLE_GHIDRA_REPORT.md)
+  - [BUNKER_0X2E4_LIFECYCLE_EXIT_CLEAR_PATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUNKER_0X2E4_LIFECYCLE_EXIT_CLEAR_PATH_GHIDRA_REPORT.md)
+  - [BUNKER_SERVICEDEPOT_0X2E4_RECIPROCAL_LINK_TEARDOWN_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUNKER_SERVICEDEPOT_0X2E4_RECIPROCAL_LINK_TEARDOWN_GHIDRA_REPORT.md) (2026-06-02)
 Status: DESIGN — approved approach (A). Not a plan, not code. Feed to /write-plan next.
 -->
 
@@ -316,7 +316,7 @@ draw count/order). No new `HashMap`, no float in the tick path.
 
 ## Open RE gaps — RESOLVED (2026-06-02 re-investigation)
 
-The full-6-state RE gaps are closed by `TANK_BUNKER_INSTALL_MICROSTATES_GHIDRA_REPORT.md`:
+The full-6-state RE gaps are closed by [TANK_BUNKER_INSTALL_MICROSTATES_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TANK_BUNKER_INSTALL_MICROSTATES_GHIDRA_REPORT.md):
 - **Inter-state waits are facing-turn completions, not timers.** The install drives the unit's body
   `FacingClass @ unit+0x388`; no magic frame durations exist. `0x8000` = desired facing South.
 - **No `DockingOffset`/entry cell math** — the unit reaches the footprint via its own move;

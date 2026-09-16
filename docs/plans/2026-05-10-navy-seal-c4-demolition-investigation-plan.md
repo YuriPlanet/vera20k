@@ -7,7 +7,7 @@
 
 **Topic:** The walk-up-and-detonate building-demolition mechanic used by Navy
 SEAL, Tanya, and (to a lesser extent) Yuri. *Distinct from* Crazy Ivan's timed
-BombClass — already documented separately in `BOMB_CLASS_GHIDRA_REPORT.md`.
+BombClass — already documented separately in [BOMB_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BOMB_CLASS_GHIDRA_REPORT.md).
 
 **Scope Size:** Medium — ~17 functions, 14 INI keys, 3 known offset conflicts to
 resolve, 5 confirmed flag offsets to disambiguate.
@@ -24,7 +24,7 @@ ANIMCLASS RING1, building destruction, warhead detonate) and mention C4 in
 passing, often with conflicting offsets.
 
 **Expected Output:**
-`docs/research/NAVY_SEAL_TANYA_C4_GHIDRA_REPORT.md`
+[docs/research/NAVY_SEAL_TANYA_C4_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/NAVY_SEAL_TANYA_C4_GHIDRA_REPORT.md)
 
 **Next Pipeline Step:** `/brainstorm navy seal c4 demolition implementation`,
 then `/write-plan` once the design is settled. The implementation itself is
@@ -81,18 +81,18 @@ The doc must classify every finding as **Active in YR / TS-legacy / dormant**
 | Report | Relevant Scope | Confidence | Known Gaps |
 |--------|---------------|------------|------------|
 | `ENGINEER_CAPTURE_GHIDRA_REPORT.md` §5 ("C4 / Sabotage") | C4 vs. capture distinction; says C4 flag at `InfantryType+0xEC2` | HIGH on capture, MEDIUM on C4 | Conflicts with Agent D's finding that C4 uses `+0xebe` (likely two distinct flags with overlapping semantics) |
-| `FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md` §9 | `Mission_Capture` at `0x004D4B20` handles BOTH Capture (mission enum 8) AND Sabotage (enum 17) | HIGH on the function existing | Does NOT decompile the Sabotage branch internals |
-| `FOOTCLASS_MISSION_ATTACK_GHIDRA_REPORT.md` §10 | Open question: TypeClass+0x695 unnamed flag; suspected C4/melee marker | MEDIUM | Resolution deferred — re-evaluate |
-| `BUILDINGCLASS_MASTER_GHIDRA_REPORT_V2.md` / `_V3.md` | `CanC4=` at `BuildingTypeClass+0x1577` | HIGH | — |
-| `BUILDINGCLASS_UPDATE_AI_TICK_GHIDRA_REPORT.md` | References `Type+0x16A9` for CanC4 in garrison-fire path | MEDIUM | **Conflicts with V2/V3 (+0x1577)** — must reconcile |
-| `MISSION_GUARD_AREAGUARD_GHIDRA_REPORT.md` §1 | Corrects prior mislabeling of "Assaulter" — says **C4= is at `InfantryType+0xEC2`** (gates AI auto-Sabotage) | HIGH | Conflicts with Agent D's `+0xebe` finding |
-| `ANIMCLASS_CHAINING_DAMAGE_OWNERSHIP.md` (RING1) | `RING1` animation uses hardcoded `Rules->C4Warhead` | HIGH | RING1 may be the post-detonation explosion anim spawned by `Apply_area_damage` — verify |
-| `ANIM_CLASS_DEEP_DIVE.md` (RING1 path) | RING1 applies area damage with C4Warhead, 0-radius | HIGH | — |
-| `WARHEAD_DETONATE_GHIDRA_REPORT.md` | C4Warhead at `Rules+0xFAC` (note variant) | HIGH | **Conflicts with Agent D's `+0xfa8`** — likely a typo in one report; verify |
-| `BUILDING_DAMAGE_DESTRUCTION_GHIDRA_REPORT.md` | C4Warhead used in forced-damage mode | HIGH | Doesn't trace the SEAL-side caller |
-| `BOMB_CLASS_GHIDRA_REPORT.md` | EXPLICITLY notes BombClass is Crazy Ivan, NOT SEAL/Tanya C4 | HIGH | Useful as reference for what C4 is *not* |
-| `READINI_FIELD_MAPS.md` | INI key index | MEDIUM | Not yet checked for C4=/CanC4= entries — verify in execution |
-| `MouseClass_research.md` | Notes `IvanBomb=yes` flag at `InfTypeClass+0xEBE` | HIGH on Ivan | Likely confused with C4 in some prior reports — reconcile |
+| [FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md) §9 | `Mission_Capture` at `0x004D4B20` handles BOTH Capture (mission enum 8) AND Sabotage (enum 17) | HIGH on the function existing | Does NOT decompile the Sabotage branch internals |
+| [FOOTCLASS_MISSION_ATTACK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_ATTACK_GHIDRA_REPORT.md) §10 | Open question: TypeClass+0x695 unnamed flag; suspected C4/melee marker | MEDIUM | Resolution deferred — re-evaluate |
+| [BUILDINGCLASS_MASTER_GHIDRA_REPORT_V2.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_MASTER_GHIDRA_REPORT_V2.md) / `_V3.md` | `CanC4=` at `BuildingTypeClass+0x1577` | HIGH | — |
+| [BUILDINGCLASS_UPDATE_AI_TICK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_UPDATE_AI_TICK_GHIDRA_REPORT.md) | References `Type+0x16A9` for CanC4 in garrison-fire path | MEDIUM | **Conflicts with V2/V3 (+0x1577)** — must reconcile |
+| [MISSION_GUARD_AREAGUARD_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MISSION_GUARD_AREAGUARD_GHIDRA_REPORT.md) §1 | Corrects prior mislabeling of "Assaulter" — says **C4= is at `InfantryType+0xEC2`** (gates AI auto-Sabotage) | HIGH | Conflicts with Agent D's `+0xebe` finding |
+| [ANIMCLASS_CHAINING_DAMAGE_OWNERSHIP.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ANIMCLASS_CHAINING_DAMAGE_OWNERSHIP.md) (RING1) | `RING1` animation uses hardcoded `Rules->C4Warhead` | HIGH | RING1 may be the post-detonation explosion anim spawned by `Apply_area_damage` — verify |
+| [ANIM_CLASS_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ANIM_CLASS_DEEP_DIVE.md) (RING1 path) | RING1 applies area damage with C4Warhead, 0-radius | HIGH | — |
+| [WARHEAD_DETONATE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WARHEAD_DETONATE_GHIDRA_REPORT.md) | C4Warhead at `Rules+0xFAC` (note variant) | HIGH | **Conflicts with Agent D's `+0xfa8`** — likely a typo in one report; verify |
+| [BUILDING_DAMAGE_DESTRUCTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_DAMAGE_DESTRUCTION_GHIDRA_REPORT.md) | C4Warhead used in forced-damage mode | HIGH | Doesn't trace the SEAL-side caller |
+| [BOMB_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BOMB_CLASS_GHIDRA_REPORT.md) | EXPLICITLY notes BombClass is Crazy Ivan, NOT SEAL/Tanya C4 | HIGH | Useful as reference for what C4 is *not* |
+| [READINI_FIELD_MAPS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/READINI_FIELD_MAPS.md) | INI key index | MEDIUM | Not yet checked for C4=/CanC4= entries — verify in execution |
+| [MouseClass_research.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MouseClass_research.md) | Notes `IvanBomb=yes` flag at `InfTypeClass+0xEBE` | HIGH on Ivan | Likely confused with C4 in some prior reports — reconcile |
 
 **Conflicts between reports — must be resolved during execution:**
 1. **C4 flag offset on InfantryTypeClass** — three candidates surfaced:
@@ -127,7 +127,7 @@ The doc must classify every finding as **Active in YR / TS-legacy / dormant**
 | 9 | 2 | `0x0051df70` | `InfantryClass__Fire_At_Override` | Override of TechnoClass::Fire_At. Tests `+0xebf` (Suicide-on-fire?) and mission ∈ {1,0xf} → calls vtable+0x1e8 (self-destruct). Likely the C4 self-immolation path — but the original game does NOT kill the SEAL on C4, so this may be either dormant or only fired in specific edge cases. **Critical to verify whether this fires for SEAL/Tanya in stock YR.** | FULL | MEDIUM — possibly TS Demolition-Truck legacy that aliases here |
 | 10 | 2 | `0x005206b0` | `InfantryClass__Fire_At_Target` | Walks DoType cycle to firing-frame; calls vtable+0x3cc (FireWeapon) when frame matches. Sequences 0x1b–0x1e are the C4 firing frames. Map: which frame number triggers the actual `Apply_area_damage` call? | FULL | LOW |
 | 11 | 2 | `0x0051e3b0` | `InfantryClass__What_Action_OnObject` | Cursor-action picker. `+0xebe` true + iVar7==5 returns 0x10 (DEMOLISH cursor) when target has `Type+0x1577 (CanC4)`. Also branches: `+0xec3` → 0x39 (capture), `+0xeae` → 0x35/0x36, `+0xec8` → 0x40/0x47. Extract every action enum value and what it maps to in cursor space. | FULL | LOW |
-| 12 | 2 | `0x00489280` | `Apply_area_damage` | Wraps `WarheadTypeClass::Detonate`. Light pass — already documented elsewhere; we just need to confirm the exact entry signature and how the C4Warhead flows into building damage. Cross-reference with `WARHEAD_DETONATE_GHIDRA_REPORT.md`. | LIGHT | LOW |
+| 12 | 2 | `0x00489280` | `Apply_area_damage` | Wraps `WarheadTypeClass::Detonate`. Light pass — already documented elsewhere; we just need to confirm the exact entry signature and how the C4Warhead flows into building damage. Cross-reference with [WARHEAD_DETONATE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WARHEAD_DETONATE_GHIDRA_REPORT.md). | LIGHT | LOW |
 | 13 | 3 | `0x004d4dc0` | `FootClass__Mission_Attack` | Generic fallback called by #2 after special branches don't match. Issues vtable+0x484/0x53c walk-toward-target. We need this to confirm the "infantry walks to building" path is the same one as for normal attacks. | LIGHT | LOW |
 | 14 | 3 | `0x006fdd50` | `TechnoClass::Fire_At` | Ancestor of Fire_At_Override. Generic weapon-fire dispatch. We need its call signature and how the C4 weapon (Sapper) flows through, but not its full body. | LIGHT | LOW |
 | 15 | 3 | (vtable lookup) | `TActionClass[mission_id]` dispatch table | The mission-state → mission-handler indirect. Confirm slot 0x11 (Mission_Enter) and slot 8/17 (Mission_Capture) point at #1 and #4. Just verify the dispatch — no decompile needed. | LIGHT | LOW |
@@ -161,7 +161,7 @@ the plan before Phase 2.
 - DoType codes `0x1b`, `0x1c`, `0x1d`, `0x1e` → Fire1–Fire4; map to art.ini
   Sequence entries
 - Mission state codes `0x11` (Enter), `8` (Capture), `17` (Sabotage) →
-  confirm enum values match `MISSIONCLASS_STATE_MACHINE.md`
+  confirm enum values match [MISSIONCLASS_STATE_MACHINE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MISSIONCLASS_STATE_MACHINE.md)
 - Action enum values `0x10`, `0x35`, `0x36`, `0x39`, `0x40`, `0x47` → cursor
   IDs from MouseClass
 
@@ -238,8 +238,8 @@ Every key in §5 must be confirmed parsed at the correct offset and confirmed
 - `vtable+0x484` / `vtable+0x53c` from #13 — walk-toward-target
 
 Resolve each by walking the appropriate vtable from base class addresses
-already documented in `TECHNOCLASS_VTABLE_COMPLETE.md` /
-`FOOTCLASS_VTABLE_COMPLETE.md`.
+already documented in [TECHNOCLASS_VTABLE_COMPLETE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_VTABLE_COMPLETE.md) /
+[FOOTCLASS_VTABLE_COMPLETE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_VTABLE_COMPLETE.md).
 
 ---
 
@@ -448,7 +448,7 @@ Rationale:
 5. Phase 2 — DoType cycle (#7, #8, #10), Fire_At_Override (#9), What_Action
    (#11), Apply_area_damage skim (#12), ReceiveDamage skim (#17).
 6. Phase 3 — caller confirmations (#13, #14, #15), RING1 anim (#16).
-7. Write final report to `NAVY_SEAL_TANYA_C4_GHIDRA_REPORT.md`.
+7. Write final report to [NAVY_SEAL_TANYA_C4_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/NAVY_SEAL_TANYA_C4_GHIDRA_REPORT.md).
 
 If Phase 1 reveals the function inventory is wrong — e.g., Mission_Capture
 (#4) turns out to be irrelevant and the actual Sabotage handler is
@@ -497,19 +497,19 @@ plus xrefs from string `"CHARGE"`, `"CHARGEN"`, `"C4Warhead"`,
 
 **Docs searched (`docs/research/`):**
 `ENGINEER_CAPTURE_GHIDRA_REPORT.md`,
-`FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md`,
-`FOOTCLASS_MISSION_ATTACK_GHIDRA_REPORT.md`,
-`BUILDINGCLASS_MASTER_GHIDRA_REPORT_V2.md`,
-`BUILDINGCLASS_MASTER_GHIDRA_REPORT_V3.md`,
-`BUILDINGCLASS_UPDATE_AI_TICK_GHIDRA_REPORT.md`,
-`MISSION_GUARD_AREAGUARD_GHIDRA_REPORT.md`,
-`ANIMCLASS_CHAINING_DAMAGE_OWNERSHIP.md`,
-`ANIM_CLASS_DEEP_DIVE.md`,
-`WARHEAD_DETONATE_GHIDRA_REPORT.md`,
-`BUILDING_DAMAGE_DESTRUCTION_GHIDRA_REPORT.md`,
-`BOMB_CLASS_GHIDRA_REPORT.md`,
-`READINI_FIELD_MAPS.md`,
-`MouseClass_research.md`.
+[FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md),
+[FOOTCLASS_MISSION_ATTACK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_ATTACK_GHIDRA_REPORT.md),
+[BUILDINGCLASS_MASTER_GHIDRA_REPORT_V2.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_MASTER_GHIDRA_REPORT_V2.md),
+[BUILDINGCLASS_MASTER_GHIDRA_REPORT_V3.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_MASTER_GHIDRA_REPORT_V3.md),
+[BUILDINGCLASS_UPDATE_AI_TICK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_UPDATE_AI_TICK_GHIDRA_REPORT.md),
+[MISSION_GUARD_AREAGUARD_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MISSION_GUARD_AREAGUARD_GHIDRA_REPORT.md),
+[ANIMCLASS_CHAINING_DAMAGE_OWNERSHIP.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ANIMCLASS_CHAINING_DAMAGE_OWNERSHIP.md),
+[ANIM_CLASS_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ANIM_CLASS_DEEP_DIVE.md),
+[WARHEAD_DETONATE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/WARHEAD_DETONATE_GHIDRA_REPORT.md),
+[BUILDING_DAMAGE_DESTRUCTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_DAMAGE_DESTRUCTION_GHIDRA_REPORT.md),
+[BOMB_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BOMB_CLASS_GHIDRA_REPORT.md),
+[READINI_FIELD_MAPS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/READINI_FIELD_MAPS.md),
+[MouseClass_research.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MouseClass_research.md).
 
 **INI files checked:**
 `ini/rulesmd.ini` (sections `[SEAL]`, `[TANY]`, `[VIRUS]`, `[CHRONO]`,

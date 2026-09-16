@@ -27,22 +27,22 @@ shader-bridge synthesis step.
 
 **Prior Research:**
 
-- `CLOAKING_VISUAL_PIPELINE.md` (1257 lines, HIGH) — dedicated visual pipeline,
+- [CLOAKING_VISUAL_PIPELINE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CLOAKING_VISUAL_PIPELINE.md) (1257 lines, HIGH) — dedicated visual pipeline,
   state→blitter mapping, **per-pixel blend formulas** for shimmer/50%/25%
   blitters, allied-shimmer pulse cycle, VXL draw entry. **THE primary
   reference.**
-- `CLOAKING_STEALTH_SYSTEM_GHIDRA_REPORT.md` (902 lines, HIGH) — consolidating
+- [CLOAKING_STEALTH_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CLOAKING_STEALTH_SYSTEM_GHIDRA_REPORT.md) (902 lines, HIGH) — consolidating
   master report; covers state machine, triggers, decloak triggers, detection,
   gap generator, disguise, visual rendering, struct fields, INI keys.
-- `CLOAKING_INTERACTIONS_REPORT.md` (356 lines, HIGH) — transport / chronoshift
+- [CLOAKING_INTERACTIONS_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CLOAKING_INTERACTIONS_REPORT.md) (356 lines, HIGH) — transport / chronoshift
   / mind control / disguise interactions with cloak.
-- `DISGUISE_SYSTEM_GHIDRA_REPORT.md` (1117 lines, HIGH, with MEDIUM detection
+- [DISGUISE_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DISGUISE_SYSTEM_GHIDRA_REPORT.md) (1117 lines, HIGH, with MEDIUM detection
   consumer) — full Mirage tree-disguise mechanics, Spy disguise, GetDisplayType
   /GetDisplayOwner rendering hooks.
-- `SENSOR_CLOAK_DETECTION.md` (319 lines, HIGH) — cloak vs sensors detection.
-- `BUILDINGCLASS_CLOAK_SENSOR_GHIDRA_REPORT.md` (632 lines, HIGH) — building
+- [SENSOR_CLOAK_DETECTION.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SENSOR_CLOAK_DETECTION.md) (319 lines, HIGH) — cloak vs sensors detection.
+- [BUILDINGCLASS_CLOAK_SENSOR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_CLOAK_SENSOR_GHIDRA_REPORT.md) (632 lines, HIGH) — building
   cloak generators (mostly TS-legacy in YR retail).
-- `SPY_INFILTRATION_SYSTEM_GHIDRA_REPORT.md` (434 lines) — spy effects on
+- [SPY_INFILTRATION_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPY_INFILTRATION_SYSTEM_GHIDRA_REPORT.md) (434 lines) — spy effects on
   buildings (post-disguise; not the disguise itself).
 
 **Conflicts / discrepancies between reports:** None found between the cloak
@@ -97,7 +97,7 @@ When this investigation finishes, the resulting research document must answer:
    written by `UnitClass::TurretAI` as the Mirage disguise frame counter? If
    so, what is the dual-use contract — does Mirage cloak-shimmer therefore
    reset every time the disguise is picked, by design?
-6. **Address verification.** Are the addresses cited in `CLOAKING_VISUAL_PIPELINE.md`
+6. **Address verification.** Are the addresses cited in [CLOAKING_VISUAL_PIPELINE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CLOAKING_VISUAL_PIPELINE.md)
    (specifically the `CloakingTick` address `0x006FB740`) correct?
 
 The shader-bridge recipe (item 1) is the **primary deliverable**. Items 2-6
@@ -109,13 +109,13 @@ exist to make item 1 trustworthy.
 
 | Report | Scope | Confidence | Known Gaps |
 |--------|-------|------------|------------|
-| `CLOAKING_VISUAL_PIPELINE.md` | State→visual_state→blitter→pixel blend; allied shimmer; VXL draw entry; complete timeline | HIGH | Intensity LUT layout for shimmer blitter; a-buffer semantics; whether VXL state-4 0x200A/0x200C bits produce a distinct blend ratio downstream or just brightness modulation; `CloakingTick` address may be wrong |
-| `CLOAKING_STEALTH_SYSTEM_GHIDRA_REPORT.md` | Master overview; state machine; triggers; decloak triggers; detection; gap gen; disguise rendering | HIGH (MEDIUM on disguise rendering only) | Repeats `0x006FB740` as `CloakingTick` — same verification risk |
-| `CLOAKING_INTERACTIONS_REPORT.md` | Transport, chronoshift, mind-control, disguise cross-effects | HIGH | None FX-specific |
-| `DISGUISE_SYSTEM_GHIDRA_REPORT.md` | Mirage tree-disguise mechanics; tree-pick site; damage-breaks; rendering observer (GetDisplayType / GetDisplayOwner) | HIGH | Whether the cloak-fade animation runs on the disguised (tree) sprite or only the un-disguised one; relative tick-order of TurretAI vs CloakingTick |
-| `SENSOR_CLOAK_DETECTION.md` | Sensor sight, sensor arrays, psychic detection, disguise detection | HIGH | None FX-specific (detection affects visibility, not pixel blend) |
-| `BUILDINGCLASS_CLOAK_SENSOR_GHIDRA_REPORT.md` | Building cloak generators | HIGH | TS-legacy in YR retail — likely out of scope for Phase 2 |
-| `SPY_INFILTRATION_SYSTEM_GHIDRA_REPORT.md` | Spy post-infiltration effects | HIGH | Out of scope (not rendering) |
+| [CLOAKING_VISUAL_PIPELINE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CLOAKING_VISUAL_PIPELINE.md) | State→visual_state→blitter→pixel blend; allied shimmer; VXL draw entry; complete timeline | HIGH | Intensity LUT layout for shimmer blitter; a-buffer semantics; whether VXL state-4 0x200A/0x200C bits produce a distinct blend ratio downstream or just brightness modulation; `CloakingTick` address may be wrong |
+| [CLOAKING_STEALTH_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CLOAKING_STEALTH_SYSTEM_GHIDRA_REPORT.md) | Master overview; state machine; triggers; decloak triggers; detection; gap gen; disguise rendering | HIGH (MEDIUM on disguise rendering only) | Repeats `0x006FB740` as `CloakingTick` — same verification risk |
+| [CLOAKING_INTERACTIONS_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CLOAKING_INTERACTIONS_REPORT.md) | Transport, chronoshift, mind-control, disguise cross-effects | HIGH | None FX-specific |
+| [DISGUISE_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DISGUISE_SYSTEM_GHIDRA_REPORT.md) | Mirage tree-disguise mechanics; tree-pick site; damage-breaks; rendering observer (GetDisplayType / GetDisplayOwner) | HIGH | Whether the cloak-fade animation runs on the disguised (tree) sprite or only the un-disguised one; relative tick-order of TurretAI vs CloakingTick |
+| [SENSOR_CLOAK_DETECTION.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SENSOR_CLOAK_DETECTION.md) | Sensor sight, sensor arrays, psychic detection, disguise detection | HIGH | None FX-specific (detection affects visibility, not pixel blend) |
+| [BUILDINGCLASS_CLOAK_SENSOR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_CLOAK_SENSOR_GHIDRA_REPORT.md) | Building cloak generators | HIGH | TS-legacy in YR retail — likely out of scope for Phase 2 |
+| [SPY_INFILTRATION_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPY_INFILTRATION_SYSTEM_GHIDRA_REPORT.md) | Spy post-infiltration effects | HIGH | Out of scope (not rendering) |
 
 **Net coverage:** ~80% of cloak FX rendering is already documented at HIGH
 confidence. The remaining 20% is the load-bearing items in Section 9.
@@ -147,7 +147,7 @@ Phase 3 closes context + edge cases.
 | 15 | 2 | `0x006F4EB0` | `TechnoClass::DoUncloak` | Forced uncloak entry — check if it touches +0x1DC/+0x1EC | LIGHT | Low |
 | 16 | 2 | `0x006691E0` (entry) | `RulesClass::ReadAudioVisual` | Locate `CloakSound` parse at xref `0x0066A6FA`. Confirm field offset on RulesClass (Agent D reported `+0x6A0`, requires `param_1 type` check per CLAUDE.md decompilation pitfall). | LIGHT | Low |
 | 17 | 2 | _TBD_ (function containing `0x0066F146`) | `RulesClass::ReadGeneral` (or similar) | Locate `CloakingStages` parse at xref `0x0066F146`. Confirm field offset (Agent D reported `[0x628]` indexed which translates to **byte offset 0x628 if `param_1` is `int`** OR **byte offset 0x1898 if `param_1` is `int*`** — must verify per CLAUDE.md `param_1` pitfall). | LIGHT | Low |
-| 18 | 3 | _TBD_ | `VXL_CacheBlit` and/or `FUN_006C89E0` | Trace where bits `0x200A`/`0x200C` (VXL state-4 brightness variant) are decoded downstream of `TechnoClass__Draw`. Determine whether this resolves to a distinct blitter or just brightness modulation on the lit rasterizer. **Cross-check against `VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md` §2 — the live YR dispatch entries (4/5/6/7) don't enumerate a "brightness variant".** Possible TS-legacy dead path; verify before implementing. | MEDIUM | **HIGH — confirm the brightness variant is reachable from a normal YR voxel cloak frame** |
+| 18 | 3 | _TBD_ | `VXL_CacheBlit` and/or `FUN_006C89E0` | Trace where bits `0x200A`/`0x200C` (VXL state-4 brightness variant) are decoded downstream of `TechnoClass__Draw`. Determine whether this resolves to a distinct blitter or just brightness modulation on the lit rasterizer. **Cross-check against [VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md) §2 — the live YR dispatch entries (4/5/6/7) don't enumerate a "brightness variant".** Possible TS-legacy dead path; verify before implementing. | MEDIUM | **HIGH — confirm the brightness variant is reachable from a normal YR voxel cloak frame** |
 | 19 | 3 | `0x006FC0B0` | `TechnoClass::GetFireError` (DecloakToFire path) | Confirms the decloak-on-fire trigger; cross-reference into per-weapon `DecloakToFire=` INI key (already parsed in Rust per Agent C) | LIGHT | Low |
 | 20 | 3 | _TBD_ | `TechnoClass::AI` (caller of #1) and `UnitClass::AI` (caller of #10) | Determine per-tick invocation order: does CloakingTick run before or after UnitClass::TurretAI? This decides whether Mirage tree-pick and cloak-fade can ever conflict on +0x1DC mid-tick. | LIGHT | Low |
 | 21 | 3 | _TBD_ | `TechnoTypeClass::ReadINI` near `Cloakable` / `CloakingSpeed` / `CloakStop` | Confirm field offsets for the 3 per-type cloak INI keys; verify `param_1` type for the decompilation pitfall. Spot-check default values (CLOAKABLE is default=no). | LIGHT | Low — keys are YR-active on SUB/DLPH/SQD |
@@ -196,7 +196,7 @@ sprite-swap decision.
   (warping), `0x06` (combined). Confirm each in `TechnoClass__Draw`.
 - **SHP draw flags** `0x02`, `0x04`, `0x06`, `0x08`, `0x20`, `0x800`. Same.
 - **`Blitter_selector`'s `flags & 6` dispatch**. Reproduce the four-row dispatch
-  table from `CLOAKING_VISUAL_PIPELINE.md` §"Blitter Selection" exactly,
+  table from [CLOAKING_VISUAL_PIPELINE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CLOAKING_VISUAL_PIPELINE.md) §"Blitter Selection" exactly,
   including the `+0x3000` and `+0x08` variants.
 - **CloakState enum**: 0=Uncloaked, 1=Cloaking, 2=Cloaked, 3=Uncloaking. Verify
   no 4th state exists.
@@ -298,7 +298,7 @@ re-derived:
 
 - **Cloaked Mirage Tank fires its weapon**: does `DecloakToFire` apply? Does
   the disguise also break? Cross-reference `GetFireError` (#19) with
-  `DISGUISE_SYSTEM_GHIDRA_REPORT.md` damage-breaks-disguise rule.
+  [DISGUISE_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DISGUISE_SYSTEM_GHIDRA_REPORT.md) damage-breaks-disguise rule.
 - **Mirage on water cell**: the user's brief says "tree disguise only on
   non-water cells". Verify the cell-type gate inside `TurretAI`.
 - **Mirage adjacent to enemy sensor**: cloak state can be 0 (visible) while
@@ -341,14 +341,14 @@ re-derived:
   (GetVisualState), #3 (TechnoClass__Draw), #1 (CloakingTick) for
   `SpecialFlags & 0x????`. None expected (cloak is YR-active) but flag any
   that appear.
-- **Building cloak generators**: `BUILDINGCLASS_CLOAK_SENSOR_GHIDRA_REPORT.md`
+- **Building cloak generators**: [BUILDINGCLASS_CLOAK_SENSOR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_CLOAK_SENSOR_GHIDRA_REPORT.md)
   marks `CloakGenerator=yes` and `Cloakable=yes` as TS-legacy on stock-YR
   buildings — Agent B confirmed no INI key `CloakGenerator=` appears in
   retail rulesmd.ini (only `GapGenerator=` on GAGAP). **Building cloak FX
   is OUT OF SCOPE for Phase 2.**
 - **VXL state-4 brightness variant** (`0x200A` / `0x200C` bits): listed as
   HIGH TS-legacy risk in #18. The live-YR voxel dispatch table per
-  `VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md` §2.1 only enumerates 4 reachable
+  [VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md) §2.1 only enumerates 4 reachable
   slots (4/5/6/7 = lit, no/mirror, OBB-half), none of which are described as
   "brightness variants". The 0x200A/0x200C path may be a dormant SHP-only
   flag that VXL inherits but never resolves to a distinct visual.
@@ -416,8 +416,8 @@ that's `/write-plan`'s job; this investigation produces the offsets.
 ### Callers NOT in scope
 
 - All BuildingClass cloak-generator callers (gap generator code) — TS-legacy
-  per `BUILDINGCLASS_CLOAK_SENSOR_GHIDRA_REPORT.md`.
-- Spy-infiltration callers — covered in `SPY_INFILTRATION_SYSTEM_GHIDRA_REPORT.md`,
+  per [BUILDINGCLASS_CLOAK_SENSOR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_CLOAK_SENSOR_GHIDRA_REPORT.md).
+- Spy-infiltration callers — covered in [SPY_INFILTRATION_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPY_INFILTRATION_SYSTEM_GHIDRA_REPORT.md),
   but spy-infiltration is post-spy-infiltrates-building, not cloak FX.
 - Chronosphere warp-in/out (`IsWarpingIn` / `IsWarpingOut` at +0x270/+0x271) —
   these compose with cloak draw flags but are the subject of Phase 5 (Warp
@@ -471,7 +471,7 @@ implementing.
   scope.
 - **VXL state-4 brightness variant flags `0x200A`/`0x200C` (#18)**: HIGHEST
   TS-legacy risk in this investigation. The live YR voxel rasterizer table
-  per `VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md` §2.1 enumerates only 4
+  per [VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md) §2.1 enumerates only 4
   reachable slots (4/5/6/7), none described as "brightness variants". The
   `0x200A`/`0x200C` path may be dormant. **The investigation must
   determine** whether these bits resolve to a visually distinct downstream
@@ -571,7 +571,7 @@ xref-to-data on the timer fields directly.
 
 ### OQ#3 — What is the `intensity_table` for the shimmer blitter?
 
-**Source of doubt:** Per `CLOAKING_VISUAL_PIPELINE.md` line 755, the shimmer
+**Source of doubt:** Per [CLOAKING_VISUAL_PIPELINE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CLOAKING_VISUAL_PIPELINE.md) line 755, the shimmer
 blitter reads `alpha = intensity_table[intensity * 512 + a_buffer_pixel]`.
 The `intensity * 512` stride suggests a 512-entry-per-intensity-level table.
 Agent D found that the LUT base is stored at `BlitterInfo+8` (per-instance);
@@ -585,7 +585,7 @@ suffices in our shader).
 **Source of doubt:** `TechnoClass__Draw` for VXL units sets these bits for
 visual_state 4 (the only place differing from SHP), and `param_11` propagates
 them downstream. But the live YR rasterizer dispatch table per
-`VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md` doesn't enumerate a "brightness
+[VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md) doesn't enumerate a "brightness
 variant" — only 4 reachable slots (4/5/6/7), all of which are described as
 "lit, with/without mirror, OBB-half". **The bits may be dead** (shipping-but-
 unreachable) or they may modulate the lit rasterizer's intensity. If dead,
@@ -608,7 +608,7 @@ parity item to preserve.
 
 ### OQ#6 — Does the Mirage tree-disguise sprite path participate in cloak FX?
 
-**Source of doubt:** `DISGUISE_SYSTEM_GHIDRA_REPORT.md` documents that
+**Source of doubt:** [DISGUISE_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DISGUISE_SYSTEM_GHIDRA_REPORT.md) documents that
 `GetDisplayType` returns the tree's TypeClass pointer for a fully-disguised
 Mirage. But does the cloak draw flag path (`TechnoClass__Draw` at #3) still
 fire on this tree-sprite output, with the cloak-fade alpha multiply
@@ -705,7 +705,7 @@ The executed research document must:
   re-derived from the binary on this pass.
 
 - Note any newly-found TS-legacy paths in the cloak rendering pipeline beyond
-  those already cataloged in `BUILDINGCLASS_CLOAK_SENSOR_GHIDRA_REPORT.md`.
+  those already cataloged in [BUILDINGCLASS_CLOAK_SENSOR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_CLOAK_SENSOR_GHIDRA_REPORT.md).
 
 ---
 
@@ -738,7 +738,7 @@ The executed research document must:
     CLOAKING_INTERACTIONS_REPORT.md, DISGUISE_SYSTEM_GHIDRA_REPORT.md,
     SENSOR_CLOAK_DETECTION.md, BUILDINGCLASS_CLOAK_SENSOR_GHIDRA_REPORT.md,
     SPY_INFILTRATION_SYSTEM_GHIDRA_REPORT.md).
-  - `VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md` and
+  - [VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md) and
     `VXL_RASTERIZER_DISPATCH_GHIDRA_REPORT.md` for VXL-pipeline cross-reference
     (re: state-4 brightness flag).
 

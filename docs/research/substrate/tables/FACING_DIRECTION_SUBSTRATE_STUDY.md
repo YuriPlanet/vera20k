@@ -31,7 +31,7 @@ This family answers every "which direction / where is the next cell / what sub-c
 
 - **Adjacent-cell stepping** — A* neighbor expansion, bridge passability, wall auto-connect,
   ore/anim neighbor scans, tube jumps. `g_DirectionOffsets @ 0x0089F688` alone has 500+
-  xrefs. (Stage-1 get_xrefs_to 0x0089F688; DRIVE_PROCESS_MOVEMENT_GHIDRA_REPORT.md "All
+  xrefs. (Stage-1 get_xrefs_to 0x0089F688; [DRIVE_PROCESS_MOVEMENT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_PROCESS_MOVEMENT_GHIDRA_REPORT.md) "All
   Global Data Addresses".)
 - **Sub-cell (lepton) movement vectors** — EVERY locomotor's per-tick body translation:
   Drive, Walk (infantry), Hover, Ship, Tube, ObjectClass UpdatePosition. Reads
@@ -96,9 +96,9 @@ RET `0xC3`).
 `Facing__IsWithinROT @ 0x005B2990`, `Facing__ClampToROT @ 0x005B29C0`. `[V]` Stage-1
 decompile each; get_function_callers 0x005B29C0 = ONLY BulletClass__HomingTrack.
 
-**Cross-doc anchors:** `[D]` SPATIAL_PRIMITIVES_LAYER_GHIDRA_REPORT.md §8;
-DRIVE_PROCESS_MOVEMENT_GHIDRA_REPORT.md "All Global Data Addresses";
-FACING_BYTE_VS_DIRECTION_INDEX_GHIDRA_REPORT.md §§5,8,9.
+**Cross-doc anchors:** `[D]` [SPATIAL_PRIMITIVES_LAYER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPATIAL_PRIMITIVES_LAYER_GHIDRA_REPORT.md) §8;
+[DRIVE_PROCESS_MOVEMENT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_PROCESS_MOVEMENT_GHIDRA_REPORT.md) "All Global Data Addresses";
+[FACING_BYTE_VS_DIRECTION_INDEX_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FACING_BYTE_VS_DIRECTION_INDEX_GHIDRA_REPORT.md) §§5,8,9.
 
 ### Verified table values (gamemd dump)
 

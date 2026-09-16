@@ -10,7 +10,7 @@ Active in YR: Conditional
 
 ### Target Question
 
-Starting from `RADIO_MSG_0X11_SENDERS_AND_MEANING_GHIDRA_REPORT.md`, trace the `UnitClass+0x350` deploy/door tracker around the `0x11` passenger-entry poll. Determine the timer duration, how the poll gates/restarts closure, and whether the path is live for stock YR transports.
+Starting from [RADIO_MSG_0X11_SENDERS_AND_MEANING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADIO_MSG_0X11_SENDERS_AND_MEANING_GHIDRA_REPORT.md), trace the `UnitClass+0x350` deploy/door tracker around the `0x11` passenger-entry poll. Determine the timer duration, how the poll gates/restarts closure, and whether the path is live for stock YR transports.
 
 ### Non-goals
 
@@ -47,7 +47,7 @@ This report is PARTIAL because no live Ghidra MCP was exposed in this subagent s
 
 | Offset | Owner | Meaning | Evidence | Active in YR |
 |---:|---|---|---|---|
-| `+0x350` | Techno/Unit instance | Embedded deploy animation tracker | Existing decompiled layout `TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md`; helper assembly `0x004A50F0..0x004A5385` | Yes, generic Techno field |
+| `+0x350` | Techno/Unit instance | Embedded deploy animation tracker | Existing decompiled layout [TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md); helper assembly `0x004A50F0..0x004A5385` | Yes, generic Techno field |
 | `+0x350` | tracker `+0x00` | `double` scaled duration = `DeployTime * 900.0` | `0x004A5254..0x004A5264`; constant bytes at `0x007E27F8` = `900.0` | Conditional |
 | `+0x358` | tracker `+0x08` | start frame copied from global frame counter `0x00A8ED84` | `0x004A5269..0x004A5276`; constructor `0x004A50F2..0x004A50F8` | Yes |
 | `+0x360` | tracker `+0x10` | duration ticks from `_ftol` | `0x004A527F`; `_ftol @ 0x007C5F00` | Yes |
@@ -200,7 +200,7 @@ Rust passenger boarding is direct state mutation, not a radio/status-poll-contro
 
 | Area / function / branch | Status | Evidence | What remains |
 |---|---|---|---|
-| Prior `0x11` sender/receiver meaning | verified | `RADIO_MSG_0X11_SENDERS_AND_MEANING_GHIDRA_REPORT.md`; assembly `0x0073668F..0x007366E6`, `0x004D9219..0x004D9253` | none for anchor |
+| Prior `0x11` sender/receiver meaning | verified | [RADIO_MSG_0X11_SENDERS_AND_MEANING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADIO_MSG_0X11_SENDERS_AND_MEANING_GHIDRA_REPORT.md); assembly `0x0073668F..0x007366E6`, `0x004D9219..0x004D9253` | none for anchor |
 | Tracker query helpers | verified | local disassembly `0x004A5110..0x004A51E3`; existing decompiled layout doc | none for byte truth table |
 | `0x004A5240` timer start/restart | verified | local disassembly `0x004A5240..0x004A5289` | fresh Ghidra decompile would improve confidence wording |
 | Completion/transition | verified | local disassembly `0x004A5150..0x004A51AB`, `0x004A5360..0x004A5385`, caller `0x006FA5BE..0x006FA5D1` | none for state transition |
@@ -261,8 +261,8 @@ Recommended caveat for docs saying `DeployTime` directly drives visible passenge
 
 ## Sources
 
-- Prior report: `docs/research/RADIO_MSG_0X11_SENDERS_AND_MEANING_GHIDRA_REPORT.md`
-- Existing layout report: `docs/research/TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md`
+- Prior report: [docs/research/RADIO_MSG_0X11_SENDERS_AND_MEANING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADIO_MSG_0X11_SENDERS_AND_MEANING_GHIDRA_REPORT.md)
+- Existing layout report: [docs/research/TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md)
 - Existing type report: `docs/research/TECHNOTYPECLASS_BASE_GHIDRA_REPORT.md`
 - Local binary disassembly from `gamemd.exe`: `0x004A50F0..0x004A5385`, `0x006FA5BE..0x006FA5D1`, `0x0073668F..0x007366E6`, `0x004D9219..0x004D9253`, `0x00740A90..0x00740B50`, `0x00744180..0x007441AF`
 - INI files checked: `ini/rulesmd.ini`, `ini/rules.ini`

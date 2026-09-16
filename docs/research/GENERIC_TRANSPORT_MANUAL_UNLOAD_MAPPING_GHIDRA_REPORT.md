@@ -145,7 +145,7 @@ Path: `docs/research/UNIT_MISSION_DEPLOY_BUILDING_GHIDRA_REPORT.md`
 Replacement wording:
 `UnitTypeClass+0x5E0 is Passengers, not Storage. In UnitClass::Mission_Deploy_Building @ 0x0073D630, the Passengers > 0 branch includes generic vehicle transport passenger unload. State 3 pops one passenger from CargoClass and performs generic placement/destination handoff; it is not only a harvester/refinery approach state.`
 
-Path: `docs/research/IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md`
+Path: [docs/research/IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md)
 
 Replacement wording:
 `Successful generic passenger unload from UnitClass::Mission_Deploy_Building @ 0x0073D630 calls TechnoClass::ClearInOpenTransport @ 0x007104A0 for OpenTopped transports at 0x0073DB85..0x0073DB98. Any earlier no-clear statement should be scoped away from the generic passenger disgorge body.`

@@ -1042,7 +1042,7 @@ buffer currently handles terrain occlusion only:
   bias constants. Depth only determines terrain occlusion, not sprite ordering.
 
 Source note: the per-class `GetYSort` details above come from
-`docs/research/PERCLASS_VTABLE_B8_YSORT_OVERRIDE_CENSUS_GHIDRA_REPORT.md`.
+[docs/research/PERCLASS_VTABLE_B8_YSORT_OVERRIDE_CENSUS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PERCLASS_VTABLE_B8_YSORT_OVERRIDE_CENSUS_GHIDRA_REPORT.md).
 
 ### BUILDNGZ.SHA — Removed (removal was a mistake)
 

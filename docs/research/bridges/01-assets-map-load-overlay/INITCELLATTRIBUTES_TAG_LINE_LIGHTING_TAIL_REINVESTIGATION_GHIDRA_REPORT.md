@@ -323,7 +323,7 @@ Evidence:
 - `MapClass::InitCellAttributes @ 0x00568CB2` writes the same zero immediately before lighting.
 - `CellClass::Load @ 0x004839F0` calls `SwizzleManagerClass::Swizzle` on `Cell+0x30` (`param+0xC`) alongside other object pointers, proving the serialized payload is pointer-shaped rather than numeric scratch.
 - `MapClass::Resize @ 0x00565C10` copies/restores the slot in cell relocation state and zeros it alongside `Cell+0x2C` in the temporary relocation copy.
-- The prior exhaustive cell-layout study (`CELLCLASS_MAPCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md`, `LIVE-0610`) found no runtime writer beyond lifecycle/reset paths and classified the role dormant/unknown.
+- The prior exhaustive cell-layout study ([CELLCLASS_MAPCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELLCLASS_MAPCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md), `LIVE-0610`) found no runtime writer beyond lifecycle/reset paths and classified the role dormant/unknown.
 
 This slice found no new reader or semantic producer. Exact classification:
 
@@ -519,7 +519,7 @@ Owns any decision to retain, serialize, restore, swizzle-equate, or otherwise mo
 
 ## Stale-Document Corrections
 
-### `FUN_00483E30_BRIDGE_Z_AT_MAP_LOAD_GHIDRA_REPORT.md`
+### [FUN_00483E30_BRIDGE_Z_AT_MAP_LOAD_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/01-assets-map-load-overlay/FUN_00483E30_BRIDGE_Z_AT_MAP_LOAD_GHIDRA_REPORT.md)
 
 That report's central ordinary-cell claim is superseded. It says the map-load call writes literal `1000` to `Cell+0x10E` and that height-plus-four appears only in a later superweapon path. Live decompile of `FUN_00483E30 @ 0x00483E30` shows why that reading is incomplete: for an ordinary cell with null explicit converter, the function passes `param_3..param_7` by address into `FUN_00484180`, which overwrites the defaults before the final stores. `FUN_00484180 @ 0x00484180` computes a level-plus-four alternate value in the ordinary no-superweapon branch as part of the same call. Literal all-1000 storage applies only to sentinel ids `(0,0)` and `(-1,-1)`.
 
@@ -666,12 +666,12 @@ No Ghidra metadata was modified. High-confidence candidates for a later parent s
 
 ### Existing research checked, corrected, or routed
 
-- `docs/research/MAP_LIGHTCONVERT_CACHE_00483E30_00544E70_GHIDRA_REPORT.md`
-- `docs/research/MAP_LIGHTING_CELL_COMPUTE_00484180_GHIDRA_REPORT.md`
-- `docs/research/MAPCLASS_GHIDRA_REPORT_FOLLOWUP.md` (stale/partial; used only as a lead)
-- `docs/research/CELLCLASS_MAPCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md`
-- `docs/research/REGULAR_OVERLAY_WALL_AUTOFILL_COMMIT_GHIDRA_REPORT.md`
-- `docs/research/bridges/01-assets-map-load-overlay/FUN_00483E30_BRIDGE_Z_AT_MAP_LOAD_GHIDRA_REPORT.md` (ordinary-cell conclusion superseded above)
+- [docs/research/MAP_LIGHTCONVERT_CACHE_00483E30_00544E70_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAP_LIGHTCONVERT_CACHE_00483E30_00544E70_GHIDRA_REPORT.md)
+- [docs/research/MAP_LIGHTING_CELL_COMPUTE_00484180_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAP_LIGHTING_CELL_COMPUTE_00484180_GHIDRA_REPORT.md)
+- [docs/research/MAPCLASS_GHIDRA_REPORT_FOLLOWUP.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAPCLASS_GHIDRA_REPORT_FOLLOWUP.md) (stale/partial; used only as a lead)
+- [docs/research/CELLCLASS_MAPCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELLCLASS_MAPCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md)
+- [docs/research/REGULAR_OVERLAY_WALL_AUTOFILL_COMMIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/REGULAR_OVERLAY_WALL_AUTOFILL_COMMIT_GHIDRA_REPORT.md)
+- [docs/research/bridges/01-assets-map-load-overlay/FUN_00483E30_BRIDGE_Z_AT_MAP_LOAD_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/01-assets-map-load-overlay/FUN_00483E30_BRIDGE_Z_AT_MAP_LOAD_GHIDRA_REPORT.md) (ordinary-cell conclusion superseded above)
 
 ### OpenTS lead-only reference
 

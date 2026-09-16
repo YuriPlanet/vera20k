@@ -11,7 +11,7 @@
 
 **Active in YR:** Yes. The harvester dock path (`Mission == Unload`) is reached on every standard cargo cycle for War Miner / Chrono Miner. Refineries (`Refinery=yes` at `BuildingTypeClass+0x16BB`) are the primary consumer.
 
-**Parent doc:** [BUILDING_ANIM_STATE_MACHINE.md](BUILDING_ANIM_STATE_MACHINE.md) — covers the full 21-slot table, damage state switching, power on/off, cloaking. This report extends it for the refinery-dock-specific case.
+**Parent doc:** [BUILDING_ANIM_STATE_MACHINE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_ANIM_STATE_MACHINE.md) — covers the full 21-slot table, damage state switching, power on/off, cloaking. This report extends it for the refinery-dock-specific case.
 
 ---
 
@@ -351,7 +351,7 @@ These are the details that compound into parity drift if missed.
 
 ### 9.1. Unit `+0xF8` increment site — RESOLVED (corrected 2026-07-10)
 
-> **CORRECTION — 2026-05-19.** This section's original "never incremented" and "Unlimbo seeds Random(0,2)×30" claims were both wrong. The byte-pattern scan missed the actual incrementer (a `MOV [reg+0xF8], <reg holding sum>` rather than `INC`/`ADD` with imm8) and misread the Unlimbo seed. Authoritative reference for this field is now **`UNIT_0x3E_BALE_CADENCE_TIMER_GHIDRA_REPORT.md`** (2026-05-19 swarm slot-5).
+> **CORRECTION — 2026-05-19.** This section's original "never incremented" and "Unlimbo seeds Random(0,2)×30" claims were both wrong. The byte-pattern scan missed the actual incrementer (a `MOV [reg+0xF8], <reg holding sum>` rather than `INC`/`ADD` with imm8) and misread the Unlimbo seed. Authoritative reference for this field is now **[UNIT_0x3E_BALE_CADENCE_TIMER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNIT_0x3E_BALE_CADENCE_TIMER_GHIDRA_REPORT.md)** (2026-05-19 swarm slot-5).
 
 **Corrected finding:** unit byte offset `+0xF8` (shown as `param_1[0x3E]` only because the decompiler types the receiver as `int *`) is a **plain `int` accumulator**, not a `CDTimerClass` embed. It is explicitly incremented:
 
@@ -449,8 +449,8 @@ Only **one** of the four is selected by this refinery-tier mechanism at a moment
   - `0x459900` (vtable+0x468) — particle emitter
   - `0x65AE30` (current label `RadioClass__In_Radio_Contact` (formerly mislabeled PathType__Has_Valid_Steps)) — state-4 receiver `+0xE4/+0xE8` contact-vector nonempty test; current label is misleading
   - `0x460A6C` (Refinery flag write) — confirms `+0x16BB`
-- **Parent doc:** [BUILDING_ANIM_STATE_MACHINE.md](BUILDING_ANIM_STATE_MACHINE.md) — 21-slot table, damage/power/cloak switching
-- **Related doc:** [BUILDING_DOCK_AND_HEAL_STATE_MACHINES.md](BUILDING_DOCK_AND_HEAL_STATE_MACHINES.md) — *NOTE: Part 2 of that doc is INCORRECT* (confused harvester dock with `SlaveManagerClass::AI_Update`). The slot 7/8/10 claims it makes are accurate; the FSM structure it claims is not.
+- **Parent doc:** [BUILDING_ANIM_STATE_MACHINE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_ANIM_STATE_MACHINE.md) — 21-slot table, damage/power/cloak switching
+- **Related doc:** [BUILDING_DOCK_AND_HEAL_STATE_MACHINES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/BUILDING_DOCK_AND_HEAL_STATE_MACHINES.md) — *NOTE: Part 2 of that doc is INCORRECT* (confused harvester dock with `SlaveManagerClass::AI_Update`). The slot 7/8/10 claims it makes are accurate; the FSM structure it claims is not.
 - **INI files:**
   - `ini/rulesmd.ini` — `[GAREFN]`, `[NAREFN]`, `[YAREFN]` rules-side keys
   - `ini/artmd.ini` — `[GAREFN]`, `[GAREFNL1]`–`[GAREFNL4]`, `[GAREFNOR]`, Soviet equivalents

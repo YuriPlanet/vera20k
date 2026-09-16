@@ -535,7 +535,7 @@ on cached terrain outside any unit's sight.
 
 **Identity: HIGH** — `+0x12C` is the 32-bit `ShroudFlags` field per
 `CELLCLASS_STRUCT_GHIDRA_REPORT.md` row at +0x12C. The complete bit-map
-investigation in `MAPCLASS_COMPLETE_DECODE.md` §E confirms only bits 3 and 4
+investigation in [MAPCLASS_COMPLETE_DECODE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAPCLASS_COMPLETE_DECODE.md) §E confirms only bits 3 and 4
 are ever read or written across the full shroud pipeline (bits 0,1,2,5..31
 unobserved). Bit 4 = `0x10` is unambiguously the gate bit.
 
@@ -727,7 +727,7 @@ Plate comments documenting the algorithm have been added to:
 - xrefs to `0x00A8ED84` (`g_CurrentFrameCounter`): used in many places, traced to `Main_Tick` as the source of truth.
 
 **Companion docs cross-referenced:**
-- `SEA_TILES_GHIDRA_REPORT.md` (same session, earlier) — for cell field offsets and water tile data flow
+- [SEA_TILES_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SEA_TILES_GHIDRA_REPORT.md) (same session, earlier) — for cell field offsets and water tile data flow
 - `ISOMETRIC_TILE_TYPE_CLASS_GHIDRA_REPORT.md` — for the static tile pixel data (ruled out as the source of "twinkling" — pixels are static, not cycled)
 - `CELLCLASS_STRUCT_GHIDRA_REPORT.md` — for cell+0x140 flag bit assignments
 
@@ -755,13 +755,13 @@ Plate comments documenting the algorithm have been added to:
 
 **Companion docs cross-referenced this session:**
 - `CELLCLASS_STRUCT_GHIDRA_REPORT.md` — `+0x12C` row (ShroudFlags, bits 3+4 only) and `+0x140` row (Flags bit 12 listed MED as "BridgeDirectionBit"; upgraded here).
-- `MAPCLASS_COMPLETE_DECODE.md` §E — full bit-map evidence matrix for `+0x12C` bits 3 and 4.
+- [MAPCLASS_COMPLETE_DECODE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAPCLASS_COMPLETE_DECODE.md) §E — full bit-map evidence matrix for `+0x12C` bits 3 and 4.
 
 **Symbols renamed this session in the live Ghidra DB (post-investigation update):**
 
 | Address | Old name | New name | Confidence |
 |---|---|---|---|
-| `0x00568140` | `FUN_00568140` | `MapClass__Invalidate_Radius_For_Redraw` | HIGH — matches the name already used in `MAPCLASS_COMPLETE_DECODE.md` §E; body unambiguously matches. |
+| `0x00568140` | `FUN_00568140` | `MapClass__Invalidate_Radius_For_Redraw` | HIGH — matches the name already used in [MAPCLASS_COMPLETE_DECODE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAPCLASS_COMPLETE_DECODE.md) §E; body unambiguously matches. |
 | `0x00567F70` | `FUN_00567F70` | `MapClass__Conceal_Radius` | HIGH — exact inverse of the above (same loop shape, opposite bit ops). |
 
 **Plate comments added (no rename):**

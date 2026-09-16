@@ -12,7 +12,7 @@
 
 ## Grounding Summary
 
-**Research docs (R1):** Primary reports are `MAIN_MENU_SIDEBAR_GHIDRA_REPORT.md`, `MAIN_MENU_VISUAL_ASSETS_GHIDRA_REPORT.md`, and `MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md`. They report **High** confidence for dialog `0xE2`, the `0x71A` RA2TS child, Bink-before-VQA selection, 34 ms poll vs 15 fps playback timing, LANGUAGE.MIX over LANGMD.MIX for RA2TS duplicates, and owner-draw button PCX family selection. No TS-legacy warning applies to this standard YR shell path.
+**Research docs (R1):** Primary reports are [MAIN_MENU_SIDEBAR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_SIDEBAR_GHIDRA_REPORT.md), [MAIN_MENU_VISUAL_ASSETS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_VISUAL_ASSETS_GHIDRA_REPORT.md), and [MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md). They report **High** confidence for dialog `0xE2`, the `0x71A` RA2TS child, Bink-before-VQA selection, 34 ms poll vs 15 fps playback timing, LANGUAGE.MIX over LANGMD.MIX for RA2TS duplicates, and owner-draw button PCX family selection. No TS-legacy warning applies to this standard YR shell path.
 
 **Ghidra verification (R2):** Live Ghidra decompile reconfirmed:
 - `FUN_00531CC0 @ 0x00531CC0`: creates main-menu dialog, moves child `0x71A`, sends `0x4E3`, chooses `Ra2ts_s` when `g_ScreenWidth == 640`, otherwise `Ra2ts_l`, then sends `0x4E4`.
@@ -32,7 +32,7 @@
 
 - **Native `0xE2` is the default main-menu path** with egui only as asset/load failure fallback. **Confidence:** high. **Source:** design doc + verified `FUN_00531CC0`.
 - **Do not add a generic Win32 dialog framework.** Encode only the verified `0xE2` layout/control identities. **Confidence:** high. **Source:** design doc, small fixed control surface.
-- **Use existing `AssetManager` first-match lookup for RA2TS.** Do not bypass archive priority or scan physical archives for RA2TS. **Confidence:** high. **Source:** `MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md`; current `AssetManager` order already has `language.mix` before `langmd.mix`.
+- **Use existing `AssetManager` first-match lookup for RA2TS.** Do not bypass archive priority or scan physical archives for RA2TS. **Confidence:** high. **Source:** [MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md); current `AssetManager` order already has `language.mix` before `langmd.mix`.
 - **Add `GUIMainButtonSound` parsing to rules data.** UI click sound comes from INI, not a hardcoded string. **Confidence:** high. **Source:** `RULESCLASS_FIELDS.csv` lists `[AudioVisual] GUIMainButtonSound`; INI grep confirms value.
 - **Bink movie surface lives in `render/`.** It owns a GPU texture and depends only on `assets` + render GPU/batch primitives, not app or UI. **Confidence:** high. **Source:** architecture boundary in design and `BatchRenderer::create_updatable_texture`.
 - **Playback advances by Bink fps, not timer interval.** Use real-time accumulator and catch-up. **Confidence:** high. **Source:** `OwnerDraw_Static_006153E0` timer plus Bink vtable delay report.
@@ -1777,12 +1777,12 @@ Mention:
 
 - **Design doc:** [docs/plans/2026-05-17-initial-main-menu-dialog-0xe2-design.md](2026-05-17-initial-main-menu-dialog-0xe2-design.md)
 - **Ghidra reports:**
-  - `docs/research/MAIN_MENU_SIDEBAR_GHIDRA_REPORT.md`
-  - `docs/research/MAIN_MENU_VISUAL_ASSETS_GHIDRA_REPORT.md`
-  - `docs/research/MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md`
+  - [docs/research/MAIN_MENU_SIDEBAR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_SIDEBAR_GHIDRA_REPORT.md)
+  - [docs/research/MAIN_MENU_VISUAL_ASSETS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_VISUAL_ASSETS_GHIDRA_REPORT.md)
+  - [docs/research/MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md)
   - `docs/research/SKIRMISH_OWNERDRAW_CALLBACKS_GHIDRA_REPORT.md`
   - `docs/research/SKIRMISH_OWNERDRAW_CALLBACKS_FOLLOWUP_GHIDRA_REPORT.md`
-  - `docs/research/BITFONT_SHELL_TEXT_GHIDRA_REPORT.md`
+  - [docs/research/BITFONT_SHELL_TEXT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BITFONT_SHELL_TEXT_GHIDRA_REPORT.md)
 - **Live Ghidra addresses verified during planning:**
   - `FUN_00531CC0 @ 0x00531CC0` main-menu dialog creation and RA2TS child message sequence
   - `OwnerDraw_Static_006153E0 @ 0x006153E0` custom static movie messages/timer/loop

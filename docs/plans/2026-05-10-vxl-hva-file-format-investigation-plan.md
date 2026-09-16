@@ -8,7 +8,7 @@ status: awaiting approval
 > **For Claude:** This plan scopes a `/re-investigate` pass. Execute it by running
 > `/re-investigate` with this plan loaded as context, OR dispatch the function inventory
 > to subagents in batches of 5–8 (see Section 10). The deliverable is
-> `ra2-rust-game-docs/VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md` (split into two files if
+> [ra2-rust-game-docs/VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md) (split into two files if
 > length warrants).
 
 **Topic:** On-disk byte layout of VXL/HVA, the loader → drawer pipeline, per-section
@@ -26,7 +26,7 @@ per LIGHT. Inventory: 14 FULL + 13 MEDIUM + 8 LIGHT → roughly **8–12 hours**
 *on-disk* byte layout. See Section 2.
 
 **Expected Output:**
-`docs/research/VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md`
+[docs/research/VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_HVA_FILE_FORMAT_GHIDRA_REPORT.md)
 (or split into `VXL_FILE_FORMAT_GHIDRA_REPORT.md` + `HVA_FILE_FORMAT_GHIDRA_REPORT.md`
 if combined doc exceeds ~1500 lines).
 
@@ -70,10 +70,10 @@ The five concrete questions the report must answer:
 
 | Report | Scope | Confidence | Known Gaps |
 |---|---|---|---|
-| `VOXEL_RENDERING_ANALYSIS.md` | Software rasterization pipeline; in-memory layout post-load; references loader at `0x00755DB0` | HIGH on rendering, MEDIUM on loader | **No on-disk byte layout** — describes loaded memory, not file bytes |
+| [VOXEL_RENDERING_ANALYSIS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VOXEL_RENDERING_ANALYSIS.md) | Software rasterization pipeline; in-memory layout post-load; references loader at `0x00755DB0` | HIGH on rendering, MEDIUM on loader | **No on-disk byte layout** — describes loaded memory, not file bytes |
 | `VOXEL_SLOPE_TILT_SYSTEM.md` | 20 slope types, tilt angles, body-vs-turret rotation, matrix `Rz×Rx×Rz⁻¹` construction | HIGH | Does not touch file format |
-| `VXL_DRAW_MATRIX_GHIDRA_REPORT.md` | 4×3 row-major matrix, facing lookup `0x7559B0`, SLERP `0x755A40`, table `0xB45188`, quaternions `0xB43188` | HIGH | Does not touch file format |
-| `VOXELANIMCLASS_GHIDRA_REPORT.md` | Bouncing voxel debris physics, `BounceClass`, `VoxelAnimTypeClass` INI parsing | HIGH | Does not touch file format |
+| [VXL_DRAW_MATRIX_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_DRAW_MATRIX_GHIDRA_REPORT.md) | 4×3 row-major matrix, facing lookup `0x7559B0`, SLERP `0x755A40`, table `0xB45188`, quaternions `0xB43188` | HIGH | Does not touch file format |
+| [VOXELANIMCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VOXELANIMCLASS_GHIDRA_REPORT.md) | Bouncing voxel debris physics, `BounceClass`, `VoxelAnimTypeClass` INI parsing | HIGH | Does not touch file format |
 
 **Conflicts between reports:** None found. All three matrix-touching reports agree on
 **3×4 row-major, 12 floats, translation in column index 3 of each row (linear indices
@@ -130,7 +130,7 @@ column-major" verified from at least two reading sites in the binary.
 | 24 | 2 | `0x005AE750` | `Matrix3x4_BuildAxisAngleRotation` | Axis-angle rotation primitive used through pipeline. Anchors matrix conventions. | MEDIUM | Low |
 | 25 | 2 | `0x005AF980` | `Locomotion_Matrix` | Generic locomotion-matrix dispatcher. | MEDIUM | Low |
 | 26 | 2 | `0x00754C00` | `VXL_LightDirection_Setup` | Light vector built per-section. | MEDIUM | Low |
-| 27 | 2 | `0x00749F30` | `VoxelAnimClass__AI` | Per-tick voxel-anim update; **reveals HVA frame-selection cadence** for animated voxels. Cross-check against `VOXELANIMCLASS_GHIDRA_REPORT.md`. | MEDIUM | Low |
+| 27 | 2 | `0x00749F30` | `VoxelAnimClass__AI` | Per-tick voxel-anim update; **reveals HVA frame-selection cadence** for animated voxels. Cross-check against [VOXELANIMCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VOXELANIMCLASS_GHIDRA_REPORT.md). | MEDIUM | Low |
 
 ### Phase 3 — Context & Edges (8 functions)
 
@@ -170,7 +170,7 @@ column-major" verified from at least two reading sites in the binary.
 - [ ] **`frame_count`, `section_count` u32s** — confirm offsets and sign.
 - [ ] **Section name table**: `section_count × 16` bytes (Rust assumption) or `× 24`? Check.
 - [ ] **Matrix block ordering**: frame-major (`for f in frames: for s in sections: matrix`) vs section-major. **Rust assumes frame-major** — confirm.
-- [ ] **Matrix layout per section**: 12 floats — row-major 3×4 (3 rows, 4 cols, translation in col 3) per Rust. Cross-check against `VXL_DRAW_MATRIX_GHIDRA_REPORT.md` claim and a fresh read of the loader. Verify translation indices (Rust uses 3, 7, 11).
+- [ ] **Matrix layout per section**: 12 floats — row-major 3×4 (3 rows, 4 cols, translation in col 3) per Rust. Cross-check against [VXL_DRAW_MATRIX_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_DRAW_MATRIX_GHIDRA_REPORT.md) claim and a fresh read of the loader. Verify translation indices (Rust uses 3, 7, 11).
 - [ ] **Section-name → VXL-limb pairing rule**: by name match, by index, by both? What if HVA names don't match VXL limb names?
 - [ ] **`section_count != limb_count`** behavior: extra sections ignored? Missing sections → identity matrix? Crash?
 - [ ] **`frame_count == 0` or `frame_count == 1`** edge cases.
@@ -237,7 +237,7 @@ read by the composition functions in Phase 1.
 |---|---|---|---|
 | Asset preload (game start) | `VXL_Load_File` (#1) | Each unique VXL filename referenced by `Image=` | YES — confirm filename canonicalization |
 | Asset preload (game start) | HVA loader (#2, TBD) | Paired with #1 for each `Image=` | YES — find this function (Phase-1 priority) |
-| `TechnoClass::Draw` (already documented) | Locomotor matrix (#9/#10/#11) → `VXL_Section_Rasterizer` (#12) | Per draw call per unit per frame | LIGHT — context is already in `VOXEL_RENDERING_ANALYSIS.md` |
+| `TechnoClass::Draw` (already documented) | Locomotor matrix (#9/#10/#11) → `VXL_Section_Rasterizer` (#12) | Per draw call per unit per frame | LIGHT — context is already in [VOXEL_RENDERING_ANALYSIS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VOXEL_RENDERING_ANALYSIS.md) |
 | `BuildingClass::Draw` | `FUN_0043DA80` (#33) | Per building voxel turret per frame | LIGHT — confirm path is reachable in YR |
 | `VoxelAnimClass::AI` (#27) | HVA frame index for animated voxels | Per game tick per voxel-anim | MEDIUM — frame-selection cadence is parity-critical |
 | INI loader (`VoxelAnimTypeClass::ReadINI` #35) | Sets type fields | Once per match | LIGHT — only verify offsets |
@@ -427,11 +427,11 @@ function in Section 3 is silently dropped without a written justification.
   `0x0069F670`, `0x004CFB00`, `0x005AF980`, `0x005AE750`, `0x00749F30`,
   `0x007493B0`, `0x0074AD80`, `0x0074B050`, `0x00748AF0`, `0x0046B0C0`,
   `0x0043E63E`. **Note:** HVA loader address is TBD — first task in execution.
-- **Docs searched:** `ra2-rust-game-docs/VOXEL_RENDERING_ANALYSIS.md`,
-  `VOXEL_SLOPE_TILT_SYSTEM.md`, `VXL_DRAW_MATRIX_GHIDRA_REPORT.md`,
-  `VOXELANIMCLASS_GHIDRA_REPORT.md`, `OBJECTCLASS_DRAW_LIMBO_CELLLIST.md`,
-  `TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md`, `UNIT_DRAW_EXTRAS_REPORT.md`,
-  `RENDERING_PARITY_CHECKLIST.md`.
+- **Docs searched:** [ra2-rust-game-docs/VOXEL_RENDERING_ANALYSIS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VOXEL_RENDERING_ANALYSIS.md),
+  `VOXEL_SLOPE_TILT_SYSTEM.md`, [VXL_DRAW_MATRIX_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_DRAW_MATRIX_GHIDRA_REPORT.md),
+  [VOXELANIMCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VOXELANIMCLASS_GHIDRA_REPORT.md), [OBJECTCLASS_DRAW_LIMBO_CELLLIST.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/OBJECTCLASS_DRAW_LIMBO_CELLLIST.md),
+  [TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TACTICAL_RENDER_PIPELINE_GHIDRA_REPORT.md), [UNIT_DRAW_EXTRAS_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNIT_DRAW_EXTRAS_REPORT.md),
+  [RENDERING_PARITY_CHECKLIST.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RENDERING_PARITY_CHECKLIST.md).
 - **INI files checked:** `ini/rulesmd.ini`, `ini/artmd.ini`.
 - **Rust source surveyed:** `src/assets/{vxl_file,hva_file,vxl_decode,vpl_file}.rs`,
   `src/render/{vxl_raster,vxl_normals,vxl_compute,unit_atlas}.rs`,

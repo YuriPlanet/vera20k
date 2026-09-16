@@ -15,7 +15,7 @@ from .database import rebuild_database
 from .metadata import document_metadata, iter_indexable_files
 
 
-DEFAULT_ROOTS: tuple[str, ...] = ("docs/research", "docs/plans", "ini")
+DEFAULT_ROOTS: tuple[str, ...] = ("docs/research", "ini")
 
 
 @dataclass(frozen=True)

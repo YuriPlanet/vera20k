@@ -13,7 +13,7 @@ modal) must be landed first; this slice consumes the `ModalKind` enum (incl. `In
 SOURCE OF TRUTH — READ FIRST:
 - `docs/plans/2026-06-01-shell-substrate-slice5-plan.md` — execute its **sub-steps 3, 5a, 5b** (the rest
   were done in Slice 5). All facts below are PROOFED and cited there.
-- `docs/research/SHELL_DIALOG_FRAMEWORK_SUBSTRATE_SERVICE.md` — substrate contract C2 (pump/lifecycle).
+- [docs/research/SHELL_DIALOG_FRAMEWORK_SUBSTRATE_SERVICE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SHELL_DIALOG_FRAMEWORK_SUBSTRATE_SERVICE.md) — substrate contract C2 (pump/lifecycle).
 
 SCOPE — sub-steps to execute (re-anchor by CONTENT; line numbers drift):
 3. **Pure pump decision + `service_tick` + `SessionMode`** (`src/app_sim_tick.rs`, `src/app.rs`).

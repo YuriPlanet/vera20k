@@ -6,7 +6,7 @@
 **Scope Size:** **Very Large** — 45 items, 7 phases, ~5–6 working days of `/re-investigate` work
 **Est. Effort:** ~30–40 hours total at the depths called out below; ~15–30 min per FULL function, ~5–10 min per MEDIUM, ~2–5 min per LIGHT
 **Prior Research:** 30+ docs in `docs/research/` plus 2026-05-11 and 2026-05-12 disparity scans (see §2). One stale doc identified.
-**Expected Output:** Per-item research doc in `docs/research/` per item, PLUS the synthesis `BRIDGE_PATHFINDING_LOCOMOTION_OVERVIEW.md` after all items close. Plus `/verify-doc` of `PATH_SMOOTHING_AND_SPEED_RAMPING_GHIDRA_REPORT.md`.
+**Expected Output:** Per-item research doc in `docs/research/` per item, PLUS the synthesis `BRIDGE_PATHFINDING_LOCOMOTION_OVERVIEW.md` after all items close. Plus `/verify-doc` of [PATH_SMOOTHING_AND_SPEED_RAMPING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/PATH_SMOOTHING_AND_SPEED_RAMPING_GHIDRA_REPORT.md).
 **Next Pipeline Step:** Synthesis doc → `/brainstorm` for any divergence found; existing implementation work continues unblocked.
 
 ---
@@ -47,10 +47,10 @@ The deliverable must answer, with binary evidence (Ghidra address + decompilatio
 | `BRIDGE_SYSTEM.md` | Cell flags, height arithmetic, dual occupancy, damage states overview, A* multipliers, CheckBridgeTraversal, AoE routing, TooBigToFitUnderBridge, g_BridgeZ_Offset_Ship, tunnel notes | HIGH | None internal |
 | `BRIDGE_DEFERRED_MECHANICS_GHIDRA_REPORT.md` | A* bridge gates, diff-1 SlopeIndex, two-pass Can_Enter_Cell, cost multipliers (0x42ACF0), zone precheck, bridge audio | HIGH w/ deferred items | **STALE: `CliffBackImpassability` claim is wrong** — it IS implemented in Rust per 2026-05-12 audit |
 | `HIGH_BRIDGE_DAMAGE_STATE_MACHINE_GHIDRA_REPORT.md` | 18-state damage machine, NS/EW axis, 4-path dispatcher, BridgeStrength RNG | HIGH | Bridgehead 4-step is open |
-| `BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md` | Repair hut dispatch, walker spawn, overlay reverse, EVA cue | HIGH | Entire pipeline missing from Rust |
-| `BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md` | Lifecycle post-load, path-grid refresh, zone graph updates, endpoint-active flags | HIGH | None |
+| [BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md) | Repair hut dispatch, walker spawn, overlay reverse, EVA cue | HIGH | Entire pipeline missing from Rust |
+| [BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/00-system-models/BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md) | Lifecycle post-load, path-grid refresh, zone graph updates, endpoint-active flags | HIGH | None |
 | `LAT_RETRIGGER_AND_BRIDGE_DAMAGE_VARIANT_GHIDRA_REPORT.md` | ToggleBridgePavement bit 0x2000, 8-neighbor flood, TMP +0x24 bit 0x04 | HIGH | Damaged-variant flag missing from Rust |
-| `PHASE_F_BRIDGE_DAMAGE_DISPATCH_VERIFICATION.md` | Damage dispatcher 4-path verification | HIGH | None |
+| [PHASE_F_BRIDGE_DAMAGE_DISPATCH_VERIFICATION.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/00-system-models/PHASE_F_BRIDGE_DAMAGE_DISPATCH_VERIFICATION.md) | Damage dispatcher 4-path verification | HIGH | None |
 | `BRIDGE_DISPLAY_TABLE_GHIDRA_REPORT.md` | Damage-state → variant lookup, animation sequencing | HIGH | Render-only |
 
 ### Pathfinding core
@@ -58,40 +58,40 @@ The deliverable must answer, with binary evidence (Ghidra address + decompilatio
 | Report | Scope | Confidence | Known Gaps |
 |--------|-------|------------|------------|
 | `PATHFINDING_ASTAR_GHIDRA_REPORT.md` | Find_Path orchestrator (0x42c900), AStar main loop (0x429a90), node expansion, edge cost, neighbor walkability | HIGH | Hierarchical detail; bridge-specific cost shaping |
-| `PATHFINDERCLASS_GHIDRA_REPORT.md` | Singleton, heaps, zone vtable, UpdateBridgePassability @ 0x42ACF0 | HIGH | None |
+| [PATHFINDERCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/PATHFINDERCLASS_GHIDRA_REPORT.md) | Singleton, heaps, zone vtable, UpdateBridgePassability @ 0x42ACF0 | HIGH | None |
 | `PATHFINDING_CELL_ENTRY_VERIFICATION_REPORT.md` | Can_Enter_Cell vtable integration | MEDIUM | Two-pass Phase-6 bridgehead override re-reads cell+0x128 — open |
-| `PATHFINDING_STANDALONE_FUNCTIONS_GHIDRA_REPORT.md` | Zone system, neighbor walkers, path cost table | HIGH | None |
-| `UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md` | Phases 1–12, return codes 0–7, bridge pre-check (Phase 1), crushable logic | HIGH (2026-05-12 corrections applied) | Phase-6 two-pass open |
-| `PATH_SMOOTHING_AND_SPEED_RAMPING_GHIDRA_REPORT.md` | Path smoothing, speed ramping | HIGH | **Will be /verify-doc target in STEP 3** |
+| [PATHFINDING_STANDALONE_FUNCTIONS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/PATHFINDING_STANDALONE_FUNCTIONS_GHIDRA_REPORT.md) | Zone system, neighbor walkers, path cost table | HIGH | None |
+| [UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md) | Phases 1–12, return codes 0–7, bridge pre-check (Phase 1), crushable logic | HIGH (2026-05-12 corrections applied) | Phase-6 two-pass open |
+| [PATH_SMOOTHING_AND_SPEED_RAMPING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/PATH_SMOOTHING_AND_SPEED_RAMPING_GHIDRA_REPORT.md) | Path smoothing, speed ramping | HIGH | **Will be /verify-doc target in STEP 3** |
 
 ### Cell state & zones
 
 | Report | Scope | Confidence | Known Gaps |
 |--------|-------|------------|------------|
-| `CELLCLASS_ZONES_SPEED_BRIDGES.md` | Cell layout, dual lists (+0xE4/+0xE8), zone fields, bridge height arithmetic | HIGH | Prior audit found inverted ternary in perpendicular-walk — verify GetZoneID fresh |
-| `CELL_OCCUPATION_MARKING_GHIDRA_REPORT.md` | Occupancy set/clear in ground + bridge lists | HIGH | None |
-| `TIMER_CLASSES_AND_ZONE_MAP_GHIDRA_REPORT.md` | Zone connectivity, bridge marking (0x100000/0x200000) | HIGH | None |
-| `ZONE_INCREMENTAL_DIVERGENCE_GHIDRA_REPORT.md` | Incremental updates, bridge spawn/destroy propagation | MEDIUM | `bridge_kind` field missing in Rust |
-| `ZONE_PASSABILITY_VERIFIED.md` | Zone passability truth table | HIGH | None |
+| [CELLCLASS_ZONES_SPEED_BRIDGES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/CELLCLASS_ZONES_SPEED_BRIDGES.md) | Cell layout, dual lists (+0xE4/+0xE8), zone fields, bridge height arithmetic | HIGH | Prior audit found inverted ternary in perpendicular-walk — verify GetZoneID fresh |
+| [CELL_OCCUPATION_MARKING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELL_OCCUPATION_MARKING_GHIDRA_REPORT.md) | Occupancy set/clear in ground + bridge lists | HIGH | None |
+| [TIMER_CLASSES_AND_ZONE_MAP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TIMER_CLASSES_AND_ZONE_MAP_GHIDRA_REPORT.md) | Zone connectivity, bridge marking (0x100000/0x200000) | HIGH | None |
+| [ZONE_INCREMENTAL_DIVERGENCE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ZONE_INCREMENTAL_DIVERGENCE_GHIDRA_REPORT.md) | Incremental updates, bridge spawn/destroy propagation | MEDIUM | `bridge_kind` field missing in Rust |
+| [ZONE_PASSABILITY_VERIFIED.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/ZONE_PASSABILITY_VERIFIED.md) | Zone passability truth table | HIGH | None |
 
 ### Locomotion
 
 | Report | Scope | Confidence | Known Gaps |
 |--------|-------|------------|------------|
 | `FOOTCLASS_PATHFINDING_AND_MOVEMENT.md` | FootClass layout, NavCom, path lifecycle | HIGH | None |
-| `DRIVE_LOCOMOTION_CLASS.md` | Drive COM object, Process_Movement, Process_Drive_Track, bridge transition flag | HIGH | Reactive height heuristic in Rust vs binary's planned-step layer |
-| `DRIVE_TRACK_SYSTEM.md` | TurnTrack[72], RawTrack[16], sub-step interp | HIGH | None |
-| `DRIVE_PROCESS_MOVEMENT_GHIDRA_REPORT.md` | Process_Drive_Track @ 0x4b26b0, ramp detection asm sites | HIGH | None |
-| `DRIVE_SHARP_TURN_FALLBACK_RE.md` | Sharp-turn recovery | MEDIUM | None |
+| [DRIVE_LOCOMOTION_CLASS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_LOCOMOTION_CLASS.md) | Drive COM object, Process_Movement, Process_Drive_Track, bridge transition flag | HIGH | Reactive height heuristic in Rust vs binary's planned-step layer |
+| [DRIVE_TRACK_SYSTEM.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_TRACK_SYSTEM.md) | TurnTrack[72], RawTrack[16], sub-step interp | HIGH | None |
+| [DRIVE_PROCESS_MOVEMENT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_PROCESS_MOVEMENT_GHIDRA_REPORT.md) | Process_Drive_Track @ 0x4b26b0, ramp detection asm sites | HIGH | None |
+| [DRIVE_SHARP_TURN_FALLBACK_RE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_SHARP_TURN_FALLBACK_RE.md) | Sharp-turn recovery | MEDIUM | None |
 | `JUMPJET_LOCOMOTION_CLASS_GHIDRA_REPORT.md` | JumpJet locomotor; bridge passability | HIGH | Bridge interaction not explicit — re-verify in this plan |
 | `HOVER_LOCOMOTION_CLASS_GHIDRA_REPORT.md` | Hover locomotor | HIGH | Bridge interaction not explicit — re-verify |
-| `TELEPORT_LOCOMOTION_DEEP_DIVE.md` | Chrono locomotor | HIGH | None |
-| `SHIP_VS_DRIVE_LOCOMOTION_COMPARISON.md` | 95% identical, 6 concrete differences (bridge Z-offset is one) | HIGH | None |
-| `AIRCRAFTCLASS_GHIDRA_REPORT.md` | Aircraft pathfinding, bridge clearance | HIGH | `FlyBridgeHeight` clearance not implemented; INI key not parsed |
-| `NAVAL_ZONE_LEGALITY_GHIDRA_REPORT.md` | Ship passability, LowBridge water cells (LandType=Tunnel(10)) | HIGH | None |
-| `NAVAL_SYSTEM_RESEARCH.md` | Naval movement | MEDIUM | g_BridgeZ_Offset_Ship init not decomp'd |
+| [TELEPORT_LOCOMOTION_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TELEPORT_LOCOMOTION_DEEP_DIVE.md) | Chrono locomotor | HIGH | None |
+| [SHIP_VS_DRIVE_LOCOMOTION_COMPARISON.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SHIP_VS_DRIVE_LOCOMOTION_COMPARISON.md) | 95% identical, 6 concrete differences (bridge Z-offset is one) | HIGH | None |
+| [AIRCRAFTCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AIRCRAFTCLASS_GHIDRA_REPORT.md) | Aircraft pathfinding, bridge clearance | HIGH | `FlyBridgeHeight` clearance not implemented; INI key not parsed |
+| [NAVAL_ZONE_LEGALITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/NAVAL_ZONE_LEGALITY_GHIDRA_REPORT.md) | Ship passability, LowBridge water cells (LandType=Tunnel(10)) | HIGH | None |
+| [NAVAL_SYSTEM_RESEARCH.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/NAVAL_SYSTEM_RESEARCH.md) | Naval movement | MEDIUM | g_BridgeZ_Offset_Ship init not decomp'd |
 | `TOO_BIG_TO_FIT_UNDER_BRIDGE_GHIDRA_REPORT.md` | Semantic question (eviction vs nav-block) | MEDIUM | Open |
-| `LOCOMOTION_MATH_AND_CONSTANTS.md` | Bridge Z offsets, height constants | HIGH | None |
+| [LOCOMOTION_MATH_AND_CONSTANTS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOCOMOTION_MATH_AND_CONSTANTS.md) | Bridge Z offsets, height constants | HIGH | None |
 
 ### Recent disparity scans (in-repo, treat as live spec)
 
@@ -104,7 +104,7 @@ The deliverable must answer, with binary evidence (Ghidra address + decompilatio
 ### Cross-doc contradictions surfaced
 
 1. **`BRIDGE_DEFERRED_MECHANICS_GHIDRA_REPORT.md` is stale**: it claims `CliffBackImpassability` is NOT implemented in Rust, but it IS at `src/app_init.rs:308-319` and consumed at `src/map/resolved_terrain.rs:809-858`. The synthesis doc must note this and recommend update.
-2. **`CELLCLASS_ZONES_SPEED_BRIDGES.md`** — prior audit flagged an inverted ternary in `GetZoneID @ 0x56D230` perpendicular-walk direction. Item #16 in this plan re-verifies fresh.
+2. **[CELLCLASS_ZONES_SPEED_BRIDGES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/CELLCLASS_ZONES_SPEED_BRIDGES.md)** — prior audit flagged an inverted ternary in `GetZoneID @ 0x56D230` perpendicular-walk direction. Item #16 in this plan re-verifies fresh.
 3. **Cost constant `0x7E37B8` (10.0f)** is reused by damage code (`Apply_area_damage`, `WarheadTypeClass__Detonate`). Naming it `AStar_Cost_10` in Ghidra would mislead. Item #7 notes this.
 
 ---
@@ -160,8 +160,8 @@ The deliverable must answer, with binary evidence (Ghidra address + decompilatio
 | 19 | 3 | `0x4AFD40` | `DriveLocomotionClass__Set_Destination` | Reads cell+0x140 & 0x100; adds `g_BridgeZOffset_Drive` to dest Z at `0x4AFDE2`. | FULL | Low |
 | 20 | 3 | `0x4AF4A0` | `DriveLocomotionClass__ComputeBridgeZOffset` | Init `g_BridgeZOffset_Drive = ftol(g_DriveHeightStep * 4)`. Constructor-time. **Decompile and confirm `4 * height_step` formula.** | FULL | Low |
 | 21 | 3 | `0x4B0500` | `DriveLocomotionClass__Process` | Caller of #18. Confirm dispatch. | MEDIUM | Low |
-| 22 | 3 | `0x69EBB0` | `ShipLocomotionClass__Compute_BridgeZOffset` | Ship counterpart. **Confirm `g_BridgeZOffset_Ship` init value.** Open question from `NAVAL_SYSTEM_RESEARCH.md`. | FULL | Low — but confirm |
-| 23 | 3 | Ship vtable | `ShipLocomotion::Set_Destination` / `Process_Drive_Track` | Per `SHIP_VS_DRIVE_LOCOMOTION_COMPARISON.md` 95% identical with 6 differences — confirm bridge behavior. | MEDIUM | Low |
+| 22 | 3 | `0x69EBB0` | `ShipLocomotionClass__Compute_BridgeZOffset` | Ship counterpart. **Confirm `g_BridgeZOffset_Ship` init value.** Open question from [NAVAL_SYSTEM_RESEARCH.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/NAVAL_SYSTEM_RESEARCH.md). | FULL | Low — but confirm |
+| 23 | 3 | Ship vtable | `ShipLocomotion::Set_Destination` / `Process_Drive_Track` | Per [SHIP_VS_DRIVE_LOCOMOTION_COMPARISON.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SHIP_VS_DRIVE_LOCOMOTION_COMPARISON.md) 95% identical with 6 differences — confirm bridge behavior. | MEDIUM | Low |
 | 24 | 3 | JumpJet vtable | `JumpJetLocomotion::Set_Destination` / `Process` / `Is_Moving` | Resolve via constructor `0x54AC40` vtable. **Search for on-bridge flag reads** — if none, document JumpJet ignores bridge layer. | FULL | Low |
 | 25 | 3 | Hover Move @ `0x514310`, SpeedUpdate @ `0x515ED0` | `HoverLocomotion::Move` / `SpeedUpdate` | **Search for cell+0x140 & 0x100 reads.** Confirm whether Hover follows bridge layer or floats. | FULL | Low |
 | 26 | 3 | Float locomotor | **JUSTIFY NON-COVERAGE.** No symbols. Phase 6 task — document that FloatLocomotion is not a YR locomotor class; ship/naval handling is in Ship locomotor. | N/A | n/a |
@@ -180,7 +180,7 @@ The deliverable must answer, with binary evidence (Ghidra address + decompilatio
 |---|---|---|---|---|---|---|
 | 33 | 4 | `0x56C510` | `MapClass__UpdateBridgeZonesHelper` | **Full 8-phase decompilation (re-verify fresh).** Floods 3 zone arrays, then walks BridgeRecords baking edges. Wide caller list. | FULL | Low |
 | 34 | 4 | `0x56CB90` | `MapClass__ZoneFloodFillScanLine` | **Re-verify asymmetric height thresholds.** Scan-line flood, assigns zone IDs via g_PassabilityMatrix. Recursive self-caller. | FULL | Low |
-| 35 | 4 | `0x56D230` | `MapClass__GetZoneID` | **Re-verify perpendicular-walk direction** — prior audit found inverted ternary in `CELLCLASS_ZONES_SPEED_BRIDGES.md`. Walk perpendicular to land endpoint when bridge destroyed. | FULL | Low — known-prior-error to re-confirm |
+| 35 | 4 | `0x56D230` | `MapClass__GetZoneID` | **Re-verify perpendicular-walk direction** — prior audit found inverted ternary in [CELLCLASS_ZONES_SPEED_BRIDGES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/CELLCLASS_ZONES_SPEED_BRIDGES.md). Walk perpendicular to land endpoint when bridge destroyed. | FULL | Low — known-prior-error to re-confirm |
 | 36 | 4 | `0x56D100` | `MapClass__Can_Reach_Zone` | High-level reachability. Wide caller list. Confirm same-zone test and out-of-playfield short-circuit. | FULL | Low |
 | 37 | 4 | `0x56D6E0` | `MapClass__ComputeBridgeZones` | Initial scan: iterates every cell, detects bridge tile via IsoTileTypeIndex tables (`DAT_0082A734`/`DAT_0082A774`), pushes BridgeRecord at MapClass+0x54. Records never removed; `+0x08 is_intact` toggled. | FULL | Low |
 | 38 | 4 | `0x56DA10` | `MapClass__FindBridgeRecord` | Linear scan; skips records with `+0x0C != 0` (low bridges — i.e., FindBridgeRecord is **high-only**). Confirm. | FULL | Low |
@@ -213,7 +213,7 @@ The deliverable must answer, with binary evidence (Ghidra address + decompilatio
 | 58 | 5 | `LowBridge AllowBurrowing` from theater INI | Cross-check theater INI keys (`Tunnels=53`, `AllowBurrowing=false`) against any binary read site. Confirm burrowing is TS-dead in YR. | MEDIUM | TS-suspect — verify |
 | 59 | 5 | `SpeedType` per locomotor × bridge-cell speed table | g_PassabilityMatrix lookup with bridge cells. Confirm each SpeedType's bridge-cell legality. | MEDIUM | Low |
 | 60 | 5 | `MovementZone` per locomotor × bridge cell in PassabilityMatrix | Same as above, but for MovementZone enum. | MEDIUM | Low |
-| 61 | 5 | `FlyBridgeHeight` (open from `AIRCRAFTCLASS_GHIDRA_REPORT.md`) | Confirm INI key exists / doesn't, binary read site, semantic. | MEDIUM | Low |
+| 61 | 5 | `FlyBridgeHeight` (open from [AIRCRAFTCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AIRCRAFTCLASS_GHIDRA_REPORT.md)) | Confirm INI key exists / doesn't, binary read site, semantic. | MEDIUM | Low |
 
 ### Phase 6 — TS-Legacy Justifications (no decompilation required, just documentation)
 
@@ -230,7 +230,7 @@ The deliverable must answer, with binary evidence (Ghidra address + decompilatio
 | # | Phase | Topic | Action |
 |---|---|---|---|
 | 67 | 7 | Write `BRIDGE_PATHFINDING_LOCOMOTION_OVERVIEW.md` | Cross-reference every per-system doc. List every parity divergence with severity = player-visibility × trigger-frequency (per CLAUDE.md). Quote address for every binary claim. |
-| 68 | 7 | Update `AUDIT_LOG.md` | One entry per `/re-investigate` and `/verify-doc` run. |
+| 68 | 7 | Update [AUDIT_LOG.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AUDIT_LOG.md) | One entry per `/re-investigate` and `/verify-doc` run. |
 | 69 | 7 | Update stale `BRIDGE_DEFERRED_MECHANICS_GHIDRA_REPORT.md` | Correct the CliffBackImpassability claim per 2026-05-12 audit. |
 
 ---
@@ -362,11 +362,11 @@ This surface is NOT being modified by this plan — the plan produces research o
 (Questions the scoping pass surfaced but couldn't answer — the executor must close each.)
 
 1. **Two-pass Can_Enter_Cell Phase-6**: under what exact condition does the binary re-read `cell+0x128` instead of `cell+0x124`? Prior audit suspected `prevFacing == cell.height + 4`. Resolve in item #10.
-2. **`g_BridgeZOffset_Ship` initialization**: where and how is the ship Z-offset constant set? Open in `NAVAL_SYSTEM_RESEARCH.md`. Resolve in item #22.
+2. **`g_BridgeZOffset_Ship` initialization**: where and how is the ship Z-offset constant set? Open in [NAVAL_SYSTEM_RESEARCH.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/NAVAL_SYSTEM_RESEARCH.md). Resolve in item #22.
 3. **`FlyBridgeHeight` INI key**: does it exist? Where read? What gates aircraft bridge clearance? Resolve in item #61.
 4. **`TooBigToFitUnderBridge` semantic**: navigation block vs eviction-only? Resolve in item #57.
 5. **`AircraftClass__Can_Enter_Cell @ 0x415B10`**: what is this actually? Decomp opening lines suggest landing-pad finder, not vtable Can_Enter_Cell. Resolve in items #12 and #56.
-6. **GetZoneID perpendicular-walk inverted-ternary**: prior audit flagged `CELLCLASS_ZONES_SPEED_BRIDGES.md` had it backwards. Resolve in item #35.
+6. **GetZoneID perpendicular-walk inverted-ternary**: prior audit flagged [CELLCLASS_ZONES_SPEED_BRIDGES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/CELLCLASS_ZONES_SPEED_BRIDGES.md) had it backwards. Resolve in item #35.
 7. **DropPodLocomotion live-in-YR**: who calls it? Cinematic? Triggered? Resolve in item #28.
 8. **Bridgehead-exit boundary-tick two-layer divergence**: the bounded parity gap from prior audit. Resolve in item #49.
 9. **InfantryClass / BuildingClass / FootClass Can_Enter_Cell**: addresses not yet resolved (require vtable+0x1B0 reads). Resolve in items #11, #13.
@@ -393,16 +393,16 @@ This plan exceeds the normal single-`/re-investigate` ceiling. Single-session wo
 
 **Per-item naming convention** for output docs in `docs/research/`:
 
-- `BRIDGE_ASTAR_DUAL_CLOSED_LIST_GHIDRA_REPORT.md` (items #1, #2, #3, #7)
-- `BRIDGE_ASTAR_COSTS_AND_ZONE_PRECHECK_GHIDRA_REPORT.md` (items #4, #5, #6)
-- `BRIDGE_CAN_ENTER_CELL_HIERARCHY_GHIDRA_REPORT.md` (items #10–#14)
-- `BRIDGE_CHECK_TRAVERSAL_AND_CELL_OFFSETS_GHIDRA_REPORT.md` (items #15–#17)
-- `BRIDGE_LOCOMOTOR_DRIVE_SHIP_GHIDRA_REPORT.md` (items #18–#23)
-- `BRIDGE_LOCOMOTOR_AIR_HOVER_GHIDRA_REPORT.md` (items #24–#25)
-- `BRIDGE_LOCOMOTOR_WALK_DROPPOD_TELEPORT_GHIDRA_REPORT.md` (items #27–#29)
-- `BRIDGE_LOCOMOTOR_NONCOVERAGE_JUSTIFICATION.md` (items #26, #30, #31, #62–#66)
-- `BRIDGE_ZONE_LIFECYCLE_GHIDRA_REPORT.md` (items #33–#42)
-- `BRIDGE_ZONE_HELPERS_GHIDRA_REPORT.md` (items #43–#46)
+- [BRIDGE_ASTAR_DUAL_CLOSED_LIST_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/03-traversal-pathfinding-entry/BRIDGE_ASTAR_DUAL_CLOSED_LIST_GHIDRA_REPORT.md) (items #1, #2, #3, #7)
+- [BRIDGE_ASTAR_COSTS_AND_ZONE_PRECHECK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/BRIDGE_ASTAR_COSTS_AND_ZONE_PRECHECK_GHIDRA_REPORT.md) (items #4, #5, #6)
+- [BRIDGE_CAN_ENTER_CELL_HIERARCHY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/03-traversal-pathfinding-entry/BRIDGE_CAN_ENTER_CELL_HIERARCHY_GHIDRA_REPORT.md) (items #10–#14)
+- [BRIDGE_CHECK_TRAVERSAL_AND_CELL_OFFSETS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/03-traversal-pathfinding-entry/BRIDGE_CHECK_TRAVERSAL_AND_CELL_OFFSETS_GHIDRA_REPORT.md) (items #15–#17)
+- [BRIDGE_LOCOMOTOR_DRIVE_SHIP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/04-locomotion-height-tubes/BRIDGE_LOCOMOTOR_DRIVE_SHIP_GHIDRA_REPORT.md) (items #18–#23)
+- [BRIDGE_LOCOMOTOR_AIR_HOVER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/04-locomotion-height-tubes/BRIDGE_LOCOMOTOR_AIR_HOVER_GHIDRA_REPORT.md) (items #24–#25)
+- [BRIDGE_LOCOMOTOR_WALK_DROPPOD_TELEPORT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/04-locomotion-height-tubes/BRIDGE_LOCOMOTOR_WALK_DROPPOD_TELEPORT_GHIDRA_REPORT.md) (items #27–#29)
+- [BRIDGE_LOCOMOTOR_NONCOVERAGE_JUSTIFICATION.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/04-locomotion-height-tubes/BRIDGE_LOCOMOTOR_NONCOVERAGE_JUSTIFICATION.md) (items #26, #30, #31, #62–#66)
+- [BRIDGE_ZONE_LIFECYCLE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/BRIDGE_ZONE_LIFECYCLE_GHIDRA_REPORT.md) (items #33–#42)
+- [BRIDGE_ZONE_HELPERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/BRIDGE_ZONE_HELPERS_GHIDRA_REPORT.md) (items #43–#46)
 - `BRIDGE_EDGE_CASES_GHIDRA_REPORT.md` (items #47–#61)
 - `BRIDGE_PATHFINDING_LOCOMOTION_OVERVIEW.md` (item #67 — synthesis)
 
@@ -418,8 +418,8 @@ This investigation closes only when ALL of the following hold:
 - [ ] Every TS-legacy concern in §7 has a documented resolution.
 - [ ] Every deferred question in §9 is closed (or explicitly re-deferred with a reason).
 - [ ] The synthesis doc `BRIDGE_PATHFINDING_LOCOMOTION_OVERVIEW.md` exists, cross-references every per-system doc, and lists every parity divergence with severity = player-visibility × trigger-frequency.
-- [ ] `PATH_SMOOTHING_AND_SPEED_RAMPING_GHIDRA_REPORT.md` has a `/verify-doc` audit appended.
-- [ ] `AUDIT_LOG.md` has one entry per `/re-investigate` and `/verify-doc` run.
+- [ ] [PATH_SMOOTHING_AND_SPEED_RAMPING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/PATH_SMOOTHING_AND_SPEED_RAMPING_GHIDRA_REPORT.md) has a `/verify-doc` audit appended.
+- [ ] [AUDIT_LOG.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AUDIT_LOG.md) has one entry per `/re-investigate` and `/verify-doc` run.
 - [ ] `BRIDGE_DEFERRED_MECHANICS_GHIDRA_REPORT.md` stale CliffBackImpassability claim is corrected (item #69).
 - [ ] Confidence (HIGH / MEDIUM / LOW) is tagged on every finding.
 - [ ] Cross-doc contradictions surfaced in §2 are resolved in the synthesis doc.

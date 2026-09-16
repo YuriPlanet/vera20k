@@ -77,7 +77,7 @@ Used both standalone (per harvester unit, per refinery building) and indirectly 
 
 | Offset | Type | Purpose | Confidence |
 |--------|------|---------|------------|
-| `+0x184` | int | **AI player difficulty index** (0/1/2 for Hard/Medium/Easy, used to index AIVirtualPurifiers) | HIGH — resolved 2026-05-19 via `HouseClass::SetDifficulty @ 0x004F6EC0` decompile and INI comment `AIVirtualPurifiers=4,2,0 ; h,m,e` (rulesmd.ini:89). See `ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md`. |
+| `+0x184` | int | **AI player difficulty index** (0/1/2 for Hard/Medium/Easy, used to index AIVirtualPurifiers) | HIGH — resolved 2026-05-19 via `HouseClass::SetDifficulty @ 0x004F6EC0` decompile and INI comment `AIVirtualPurifiers=4,2,0 ; h,m,e` (rulesmd.ini:89). See [ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md). |
 | `+0x1EC` | bool (byte) | `IsHuman` flag (non-zero = human player) | HIGH (gates the AIVirtualPurifiers add) |
 | `+0x30C` | int | Credits — likely the cached/display value | MEDIUM (written by Add_Tiberium_Credits; relationship to +0x54E8 unconfirmed — see Open Q §7.3) |
 | `+0x538C` | int | **OrePurifier building count** — used directly as the bonus multiplier in the PurifierBonus formula. Incremented at `OnConstructionComplete` (`0x0044637C`) and `ChangeOwner` new-owner side (`0x004491EB`), decremented at `ChangeOwner` old-owner side (`0x00448AC2`) and `Limbo` (`0x00445925`), all gated on `Type+0x16CC`. Not a "storage facility count" (corrected 2026-09-06). | HIGH (binary) |
@@ -301,7 +301,7 @@ Then **two** `Add_Tiberium_Credits` calls:
 
 **Indexing:** `REFINERY_OWNER[+0x184]` — the owner's *difficulty index*. **Resolved 2026-05-19: order is `Hard=0, Medium=1, Easy=2`.** Evidence:
 
-- `HouseClass::SetDifficulty @ 0x004F6EC0` writes `param_2` directly to `HouseClass+0x184`; the skirmish AI-house construction path passes 0, 1, 2 in Brutal/Medium/Easy order. Verified via `decompile_function 0x004F6EC0` (see `ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md` slot-4 of the 2026-05-19 miner-docking swarm).
+- `HouseClass::SetDifficulty @ 0x004F6EC0` writes `param_2` directly to `HouseClass+0x184`; the skirmish AI-house construction path passes 0, 1, 2 in Brutal/Medium/Easy order. Verified via `decompile_function 0x004F6EC0` (see [ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md) slot-4 of the 2026-05-19 miner-docking swarm).
 - `ini/rulesmd.ini:89` carries an inline comment that is definitive: `AIVirtualPurifiers=4,2,0 ; h,m,e` — i.e., Hard=4, Medium=2, Easy=0.
 
 Brutal AI (`index=0`) gets +4 virtual purifiers → bonus = `4 × 0.25 × amount = +100%` on every bale. Doubles AI ore income.
@@ -389,7 +389,7 @@ The current `docs/gap-scans/2026-05-12-gap-scan-miner-deep.md` lists 11 detail-d
 
 7.4 **Add_Tiberium_To_Storage host.** The decompile shows it calls `StorageClass::AddAmount` and `StorageClass::GetTotalAmount` without an obvious `this` argument visible at this level. Likely it operates on a global/static StorageClass (TS-era `HouseClass::Storage` field?). Since this path is dead in YR, identifying the host doesn't matter for parity — flagging only.
 
-7.5 **AIDifficulty index order — RESOLVED 2026-05-19.** Order is `{Brutal=0, Medium=1, Easy=2}` — Brutal AI gets `{4,2,0}[0] = 4` virtual purifiers (+100% ore income). Verified via `HouseClass::SetDifficulty @ 0x004F6EC0` decompile + `rulesmd.ini:89` inline comment `AIVirtualPurifiers=4,2,0 ; h,m,e`. See `ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md`.
+7.5 **AIDifficulty index order — RESOLVED 2026-05-19.** Order is `{Brutal=0, Medium=1, Easy=2}` — Brutal AI gets `{4,2,0}[0] = 4` virtual purifiers (+100% ore income). Verified via `HouseClass::SetDifficulty @ 0x004F6EC0` decompile + `rulesmd.ini:89` inline comment `AIVirtualPurifiers=4,2,0 ; h,m,e`. See [ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md).
 
 7.6 **HouseClass+0x538C vs +0x5398 relationship — RESOLVED 2026-09-06.** `+0x538C` is the OrePurifier *building count*: `INC [Owner+0x538C]` at `OnConstructionComplete` `0x0044637C` and `ChangeOwner` `0x004491EB`, `DEC` at `ChangeOwner` `0x00448AC2` and `Limbo` `0x00445925`, each gated on `Type+0x16CC` (`OrePurifier=`, bound at `BuildingTypeClass::ReadINI` `0x004604ED`/`0x004604FA`). It is not a storage-facility count and is not written by `RecalcBonuses`.
 
@@ -408,7 +408,7 @@ The current `docs/gap-scans/2026-05-12-gap-scan-miner-deep.md` lists 11 detail-d
 - **Related docs (cross-referenced):**
   - [docs/plans/2026-05-12-refinery-storage-flow-investigation-plan.md](docs/plans/2026-05-12-refinery-storage-flow-investigation-plan.md) — this investigation's plan
   - [docs/gap-scans/2026-05-12-gap-scan-miner-deep.md](docs/gap-scans/2026-05-12-gap-scan-miner-deep.md) — findings #5, #6, #7, #8, #16 cross-referenced
-  - `BUILDINGCLASS_UPDATE_ANIMATION_GHIDRA_REPORT.md` — phase F (tier visual) — verified
-  - `ORE_VALUE_CREDIT_DEPOSIT_GHIDRA_REPORT.md` — StorageClass struct — verified
-  - `RULESCLASS_GHIDRA_REPORT.md` — RulesClass offsets — partially verified (Open Q §7.5/§7.6 leave some unresolved)
+  - [BUILDINGCLASS_UPDATE_ANIMATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_UPDATE_ANIMATION_GHIDRA_REPORT.md) — phase F (tier visual) — verified
+  - [ORE_VALUE_CREDIT_DEPOSIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/ORE_VALUE_CREDIT_DEPOSIT_GHIDRA_REPORT.md) — StorageClass struct — verified
+  - [RULESCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RULESCLASS_GHIDRA_REPORT.md) — RulesClass offsets — partially verified (Open Q §7.5/§7.6 leave some unresolved)
 - **INI files checked:** `ini/rulesmd.ini`, `ini/rules.ini`, `ini/artmd.ini`, `ini/art.ini`.

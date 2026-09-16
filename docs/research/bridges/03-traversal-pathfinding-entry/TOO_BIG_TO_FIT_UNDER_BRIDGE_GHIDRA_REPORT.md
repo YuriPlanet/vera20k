@@ -33,7 +33,7 @@ big land units (see Section 4.2).
 
 > **2026-05-13 Update:** A follow-up `/re-investigate` resolved the previously-uncertain
 > `TypeClass+0xCA1` dispatch byte. It is the **`Turret` bool**, not "SHP-vs-voxel".
-> See [TECHNOTYPECLASS_TURRET_FIELD_GHIDRA_REPORT.md](../../TECHNOTYPECLASS_TURRET_FIELD_GHIDRA_REPORT.md).
+> See [TECHNOTYPECLASS_TURRET_FIELD_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOTYPECLASS_TURRET_FIELD_GHIDRA_REPORT.md).
 > The corrections are inlined below; the original framing is struck through where
 > wrong.
 
@@ -109,7 +109,7 @@ Z-blit-helper, `+0x2F0` Z-pre-helper, `+0x50C` actual draw, `+0x510` voxel main 
 ### The `TypeClass+0xCA1` dispatch byte — RESOLVED (2026-05-13)
 
 `TypeClass+0xCA1` is the **`Turret`** bool (INI key `Turret=`, default false).
-Fully verified in [TECHNOTYPECLASS_TURRET_FIELD_GHIDRA_REPORT.md](../../TECHNOTYPECLASS_TURRET_FIELD_GHIDRA_REPORT.md).
+Fully verified in [TECHNOTYPECLASS_TURRET_FIELD_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOTYPECLASS_TURRET_FIELD_GHIDRA_REPORT.md).
 Decisive proof: `BuildingClass::HasTurret` at `0x004527D0` literally reads
 `[Type+0xCA1]` as its turret check, and `TechnoTypeClass::ReadINI` writes
 `AL = ReadBool("Turret")` into this offset at `0x007133C2`.
@@ -513,7 +513,7 @@ binary. Recommend running `/verify-doc` on each.
 ## 7. Open questions
 
 1. ~~**What is `TypeClass+0xCA1`?**~~ **RESOLVED 2026-05-13.** It is the **`Turret`**
-   bool. See [TECHNOTYPECLASS_TURRET_FIELD_GHIDRA_REPORT.md](../../TECHNOTYPECLASS_TURRET_FIELD_GHIDRA_REPORT.md).
+   bool. See [TECHNOTYPECLASS_TURRET_FIELD_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOTYPECLASS_TURRET_FIELD_GHIDRA_REPORT.md).
 
 2. **`BuildingTypeClass+0x16BD`** — the second-OR-clause condition in `FUN_0073B140`
    triggers the split-blit if the unit's destination is a Building whose TypeClass
@@ -560,11 +560,11 @@ binary. Recommend running `/verify-doc` on each.
 - Byte-pattern audit at `16 0E 00 00` (6 hits, 2 real readers)
 
 **Existing reports cross-checked:**
-- `BRIDGE_SYSTEM.md`, `BRIDGE_RENDERING_GHIDRA_REPORT.md`, `BRIDGE_DISPLAY_TABLE_GHIDRA_REPORT.md`,
-  `NAVAL_SYSTEM_RESEARCH.md`, `SUBMARINE_AND_SINKING_GHIDRA_REPORT.md`,
-  `MCV_DEPLOY_GHIDRA_REPORT.md`, `DRIVE_LOCOMOTION_CLASS.md`,
+- `BRIDGE_SYSTEM.md`, [BRIDGE_RENDERING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/06-render-presentation-audio/BRIDGE_RENDERING_GHIDRA_REPORT.md), `BRIDGE_DISPLAY_TABLE_GHIDRA_REPORT.md`,
+  [NAVAL_SYSTEM_RESEARCH.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/NAVAL_SYSTEM_RESEARCH.md), [SUBMARINE_AND_SINKING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SUBMARINE_AND_SINKING_GHIDRA_REPORT.md),
+  [MCV_DEPLOY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MCV_DEPLOY_GHIDRA_REPORT.md), [DRIVE_LOCOMOTION_CLASS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_LOCOMOTION_CLASS.md),
   `HIGH_BRIDGE_DAMAGE_STATE_MACHINE_GHIDRA_REPORT.md`,
-  `CELLCLASS_ZONES_SPEED_BRIDGES.md`
+  [CELLCLASS_ZONES_SPEED_BRIDGES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/CELLCLASS_ZONES_SPEED_BRIDGES.md)
 
 **INI files:**
 - `ini/rulesmd.ini`, `ini/rules.ini` (artmd.ini and art.ini do not contain the key)

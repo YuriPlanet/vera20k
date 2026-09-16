@@ -15,7 +15,7 @@ is always modeled as `ground_height_level + 4` in the height system.
 |--------|------|-------|---------|
 | +0x24 | i16+i16 | packed_cell | Packed cell coordinate {X, Y} |
 | +0x38 | i32 | iso_tile_type_index | IsoTileType index (0xFFFF/-1 = clear) |
-| +0x11A | byte | iso_sub_tile_idx | Universal IsoTileType sub-tile (icon) index. Consumed by `TMP_TileBlitter` for all terrain (sand/grass/slope/water/bridges). Bridge-rim matchers (`UpdateAdjacentBridges_High @ 0x576770`, `UpdateBridgeEdgeTiles_High @ 0x576200`) compare it against literal slot numbers (2, 4, 5, 7, 8, 12). NOT bridge-specific, NOT an orientation byte, NOT a damage state — damage state lives at `+0x11E`. See `CELL_0x11A_POLARITY_RECONCILE_GHIDRA_REPORT.md`. |
+| +0x11A | byte | iso_sub_tile_idx | Universal IsoTileType sub-tile (icon) index. Consumed by `TMP_TileBlitter` for all terrain (sand/grass/slope/water/bridges). Bridge-rim matchers (`UpdateAdjacentBridges_High @ 0x576770`, `UpdateBridgeEdgeTiles_High @ 0x576200`) compare it against literal slot numbers (2, 4, 5, 7, 8, 12). NOT bridge-specific, NOT an orientation byte, NOT a damage state — damage state lives at `+0x11E`. See [CELL_0x11A_POLARITY_RECONCILE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/CELL_0x11A_POLARITY_RECONCILE_GHIDRA_REPORT.md). |
 | +0x11B | i8 | height_level | Signed height level (each level = 15 pixels up) |
 | +0x11C | u8 | slope_type | Terrain slope (0-20) — set by TMP_ReadSlopeType, NOT a bridge flag |
 | +0x11E | u8 | bridge_damage_state | 18-state damage machine (0x00-0x11) |
@@ -33,8 +33,8 @@ is always modeled as `ground_height_level + 4` in the height system.
 | 7 | 0x0080 | Has bridge overlay (body cell). Used by GetEffectiveHeight to add +4 | SetBridgeDirection (NOT RecalcAttributes) |
 | 8 | 0x0100 | **Bridge structural cell** (head/ramp). Primary flag for movement/pathfinding | SetBridgeDirection, bridge state machine |
 | 9 | 0x0200 | Bridgehead (entry/exit point). Required for bridge entry in Can_Enter_Cell | SetBridgeDirection |
-| 10 | 0x0400 | **Bridge body cell, destroyed state** (mutually exclusive with bit 0x100 = alive). SetBridgeDirection_NESW @ 0x47E040 writes via `param_3 = (uint)(cVar14 == '\0') << 10` — SET when collapse (state.byte0==0), CLEAR otherwise. Read by `DestroyBridge_{High,Low}_OnHutDeath @ 0x5742E4 / 0x574F00` (`TEST [reg+0x140], 0x400`) and `UpdateAdjacentBridges_High @ 0x576770` to walk destroyed-run boundaries. No rendering reader; NOT a rail/guard post. See `CELL_FLAGS_0x400_SEMANTIC_GHIDRA_REPORT.md`. | SetBridgeDirection |
-| 11 | 0x0800 | Bridge orientation (1=N-S, 0=E-W) — verified via `SetBridgeDirection_NESW @ 0x47E040`: `SETZ DL; SHL EDX,0xb` on direction param; direction=0 (NS) → bit SET, direction=6 (EW) → bit CLEAR. See `BRIDGE_ANCHOR_OVERLAY_18_19_AXIS_GHIDRA_REPORT.md`. | SetBridgeDirection |
+| 10 | 0x0400 | **Bridge body cell, destroyed state** (mutually exclusive with bit 0x100 = alive). SetBridgeDirection_NESW @ 0x47E040 writes via `param_3 = (uint)(cVar14 == '\0') << 10` — SET when collapse (state.byte0==0), CLEAR otherwise. Read by `DestroyBridge_{High,Low}_OnHutDeath @ 0x5742E4 / 0x574F00` (`TEST [reg+0x140], 0x400`) and `UpdateAdjacentBridges_High @ 0x576770` to walk destroyed-run boundaries. No rendering reader; NOT a rail/guard post. See [CELL_FLAGS_0x400_SEMANTIC_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/CELL_FLAGS_0x400_SEMANTIC_GHIDRA_REPORT.md). | SetBridgeDirection |
+| 11 | 0x0800 | Bridge orientation (1=N-S, 0=E-W) — verified via `SetBridgeDirection_NESW @ 0x47E040`: `SETZ DL; SHL EDX,0xb` on direction param; direction=0 (NS) → bit SET, direction=6 (EW) → bit CLEAR. See [BRIDGE_ANCHOR_OVERLAY_18_19_AXIS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/01-assets-map-load-overlay/BRIDGE_ANCHOR_OVERLAY_18_19_AXIS_GHIDRA_REPORT.md). | SetBridgeDirection |
 | 16 | 0x10000 | Tall tile neighbor marker | RecalcAttributes |
 | 17 | 0x20000 | Tile animation placed | RecalcAttributes |
 | 13 | 0x2000 | Bridge pavement bit | ToggleBridgePavement (0x0056e990) |
@@ -833,7 +833,7 @@ cell has flag 0x100 (bridge structural). NOT used by rendering pipeline.
 
 > **⚠ CORRECTION 2026-05-12 (Phase 1 of bridge-repair RE pass).**
 > Three load-bearing claims in the section below are WRONG.
-> See **`BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md`** for the verified
+> See **[BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md)** for the verified
 > chain. Summary of corrections:
 >
 > 1. **`field_0x6DF` is NOT a "repair pending flag"** set on engineer enter.

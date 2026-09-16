@@ -669,10 +669,10 @@ for override presence. YR does not merge base RA2 `rules.ini` beneath it; the
 older inventory above is not evidence of such a merge.
 
 ### Existing docs referenced
-- `BULLET_CLASS_AI_GHIDRA_REPORT.md` — SubjectToCliffs field offset verification
-- `TERRAIN_COST_FACTSHEET.md` — LandType enum, passability matrix
+- [BULLET_CLASS_AI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLET_CLASS_AI_GHIDRA_REPORT.md) — SubjectToCliffs field offset verification
+- [TERRAIN_COST_FACTSHEET.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TERRAIN_COST_FACTSHEET.md) — LandType enum, passability matrix
 - `BRIDGE_SYSTEM.md` — Bridge flags (0x80, 0x100), height conventions
-- `COORDINATE_ATOMS_AUDIT.md` — Height-to-pixel conversion constants
-- `ZONE_PASSABILITY_VERIFIED.md` — MovementZone/SpeedType passability matrix
-- `UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md` — Height difference thresholds
+- [COORDINATE_ATOMS_AUDIT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/COORDINATE_ATOMS_AUDIT.md) — Height-to-pixel conversion constants
+- [ZONE_PASSABILITY_VERIFIED.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/ZONE_PASSABILITY_VERIFIED.md) — MovementZone/SpeedType passability matrix
+- [UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md) — Height difference thresholds
 - `VOXEL_SLOPE_TILT_SYSTEM.md` — Slope type values

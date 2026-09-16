@@ -98,7 +98,7 @@ when `69BBE0` reports no suspended in-game session. Reusing the pre-match
 renderer without this distinction would omit each browser's central prompt.
 Background painting delegates to `622B50` and active `72F540`; use the same
 themed physical in-game SHP layers and SIDEBTTN mechanism as B5/BBB.
-[The in-game controls evidence](2026-09-12-in-game-controls-shell.md) records
+[The in-game controls evidence](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/2026-09-12-in-game-controls-shell.md) records
 their original asset identities, geometry and text paint scope.
 
 Static low style bits select alignment: the centered title/prompt uses native

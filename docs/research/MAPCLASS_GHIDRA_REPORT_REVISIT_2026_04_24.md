@@ -2,7 +2,7 @@
 
 Third pass over `MapClass` at `0x565090` / vtable `0x7ED404` / global
 `0x0087F7E8`. Extends and **corrects** `MAPCLASS_GHIDRA_REPORT.md`
-(original, 2026-04-06) and `MAPCLASS_GHIDRA_REPORT_FOLLOWUP.md`
+(original, 2026-04-06) and [MAPCLASS_GHIDRA_REPORT_FOLLOWUP.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAPCLASS_GHIDRA_REPORT_FOLLOWUP.md)
 (2026-04-22).
 
 **Confidence:** HIGH (every finding below is backed by a freshly-read
@@ -356,7 +356,7 @@ MapClass itself never calls `INIClass::Read*`. `[Map]` keys arrive via
 
 **Update (2026-04-24, Task 13):** Items 3, 4, 5 below have been
 resolved; 1 and 2 remain low-priority and out of MapClass scope. See
-`MAPCLASS_COMPLETE_DECODE.md` §M.5 for the final open-question list.
+[MAPCLASS_COMPLETE_DECODE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAPCLASS_COMPLETE_DECODE.md) §M.5 for the final open-question list.
 
 1. **Exact world↔cell coord-transform audit.** The three functions
    `FUN_005654A0`, `FUN_00565520`, `FUN_00565660` encode the
@@ -366,32 +366,32 @@ resolved; 1 and 2 remain low-priority and out of MapClass scope. See
    not the real tactical transforms. Real tactical transforms live
    at `0x6D1EB0 / 0x6D1F10 / 0x6D1FE0 / 0x6D2140 / 0x6D6590` and
    belong to DisplayClass/TacticalClass — out of MapClass scope.
-   See `COORD_TRANSFORM_AUDIT_GHIDRA_REPORT.md`.
+   See [COORD_TRANSFORM_AUDIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/COORD_TRANSFORM_AUDIT_GHIDRA_REPORT.md).
 
 2. **Zone-incremental algorithm divergence.** gamemd adopts a
    neighbor's cluster_id if ≤3 conflicts; Rust clears bbox and
    refloods per category. → **Deferred:** covered in depth in
-   `ZONE_INCREMENTAL_DIVERGENCE_GHIDRA_REPORT.md`. Not a MapClass
+   [ZONE_INCREMENTAL_DIVERGENCE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ZONE_INCREMENTAL_DIVERGENCE_GHIDRA_REPORT.md). Not a MapClass
    decoding gap; needs test-driven behavior comparison, not more RE.
 
 3. ~~**DisplayClass.** MapClass ends at `+0x1174`. Everything
    player-visible lives in DisplayClass starting at that offset.~~
-   → **Resolved:** `DISPLAYCLASS_DISCOVERY_GHIDRA_REPORT.md` +
-   `DISPLAYCLASS_BANDBOX_AND_MI_CORRECTION_GHIDRA_REPORT.md` document
+   → **Resolved:** [DISPLAYCLASS_DISCOVERY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DISPLAYCLASS_DISCOVERY_GHIDRA_REPORT.md) +
+   [DISPLAYCLASS_BANDBOX_AND_MI_CORRECTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DISPLAYCLASS_BANDBOX_AND_MI_CORRECTION_GHIDRA_REPORT.md) document
    DisplayClass struct (50-slot vtable, single-inheritance confirmed,
    fields +0x1174..+0x11E0), BandBox state machine, and the MI
    correction (the adjacent `0x7E61E0` was `BufferStraw`'s vtable,
    not a secondary-inheritance fragment).
 
 4. ~~**The bridge-repair-hut registry at `DAT_008B41A8`.**~~
-   → **Resolved:** `MAPCLASS_COMPLETE_DECODE.md` §A shows this is
+   → **Resolved:** [MAPCLASS_COMPLETE_DECODE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAPCLASS_COMPLETE_DECODE.md) §A shows this is
    the "tags with destroyed events (bit 0x04)" DynVec, which happens
    to get iterated by `UnregisterBridgeRepairHut` because hut
    destruction fires triggers. The DynVec is generic (any
    destroyed-event tag), not hut-specific.
 
 5. ~~**Vtable slots 18–21** (`0x4C9150` ×4).~~
-   → **Resolved:** `MAPCLASS_COMPLETE_DECODE.md` §C — these are
+   → **Resolved:** [MAPCLASS_COMPLETE_DECODE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAPCLASS_COMPLETE_DECODE.md) §C — these are
    `Stub__ReturnZero` (callable no-op returning 0), not `__purecall`.
    30+ `.rdata` vtable slots across the display-chain hierarchy
    share this stub as their default. Dispatching slots 18–21 on a
@@ -439,9 +439,9 @@ resolved; 1 and 2 remain low-priority and out of MapClass scope. See
 
 ### Doc files referenced
 - `MAPCLASS_GHIDRA_REPORT.md` (2026-04-06)
-- `MAPCLASS_GHIDRA_REPORT_FOLLOWUP.md` (2026-04-22)
+- [MAPCLASS_GHIDRA_REPORT_FOLLOWUP.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAPCLASS_GHIDRA_REPORT_FOLLOWUP.md) (2026-04-22)
 - `CELLCLASS_STRUCT_GHIDRA_REPORT.md` (for cell+0x12C ShroudFlags bit meanings)
-- `SHROUD_SYSTEM_COMPLETE.md` (for explored-bit semantics)
+- [SHROUD_SYSTEM_COMPLETE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SHROUD_SYSTEM_COMPLETE.md) (for explored-bit semantics)
 
 ### INI files checked
 - `ini/rulesmd.ini` — `[CrateRules]`, `[General]`, `[SpecialFlags]`

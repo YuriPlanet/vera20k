@@ -371,7 +371,7 @@ The only material uncertainty for this high-chain slice is the real runtime valu
 - Ghidra decompile: `0x00576770`, `0x00576200`, `0x00570AE0`, `0x0047E040`, `0x0047DD70`, `0x00576BA0`.
 - Ghidra xrefs: `0x00576770`, `0x00576200`, `0x00570AE0`, `0x0047E040`.
 - Assembly contexts: `0x0057671C`, `0x00576AB7`, `0x00576B38`, `0x00576748`, `0x00571028`, `0x005713BB`, `0x0057142E`, `0x0047E0F0`, `0x0047E10D`, `0x0047E114`.
-- Prior docs checked: `docs/research/bridges/06-render-presentation-audio/BRIDGE_DISPLAY_TABLE_GHIDRA_REPORT.md`, `docs/research/bridges/05-damage-collapse-repair-cabhut/HIGH_BRIDGE_DAMAGE_STATE_MACHINE_GHIDRA_REPORT.md`, `docs/research/bridges/02-cell-state-layering-zones/CELL_0x11A_POLARITY_RECONCILE_GHIDRA_REPORT.md`.
+- Prior docs checked: `docs/research/bridges/06-render-presentation-audio/BRIDGE_DISPLAY_TABLE_GHIDRA_REPORT.md`, `docs/research/bridges/05-damage-collapse-repair-cabhut/HIGH_BRIDGE_DAMAGE_STATE_MACHINE_GHIDRA_REPORT.md`, [docs/research/bridges/02-cell-state-layering-zones/CELL_0x11A_POLARITY_RECONCILE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/CELL_0x11A_POLARITY_RECONCILE_GHIDRA_REPORT.md).
 - Rust surfaces checked: `src/sim/world/bridge_orchestrator.rs`, `src/sim/bridge_specs.rs`, `src/sim/bridge_state/mod.rs`.
 
 **Status:** PARTIAL - algorithm and writes verified; concrete runtime tile-table values require debugger capture.

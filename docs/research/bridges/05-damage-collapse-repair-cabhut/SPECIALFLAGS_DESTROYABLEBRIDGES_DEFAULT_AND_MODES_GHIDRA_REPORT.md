@@ -78,13 +78,13 @@ Active in YR: Yes for multiplayer/skirmish load. Evidence: decompile `0x00686B20
 
 Retail `ini/rulesmd.ini:804` and `ini/rules.ini:664` contain `[CombatDamage] DestroyableBridges=yes`, but this is not the binary reader for the active gate. The active map reader is `[SpecialFlags] DestroyableBridges`; the multiplayer lobby default is the separate `[MultiplayerDialogSettings] BridgeDestruction=yes` at `ini/rulesmd.ini:3029` / `ini/rules.ini:2509`, parsed to `Rules+0x14AC`.
 
-Active in YR: `[CombatDamage] DestroyableBridges` is not active as a rules key; `[SpecialFlags] DestroyableBridges` is active conditionally; `[MultiplayerDialogSettings] BridgeDestruction` is active for lobby/session defaulting. Evidence: `0x006B8CA0`, `0x00671EA0`, retail INI lines above, and no `DestroyableBridges` read in `RulesClass::ReadCombatDamage` per `WEAPON_AOE_BRIDGE_DAMAGE_ENTRY_GHIDRA_REPORT.md`.
+Active in YR: `[CombatDamage] DestroyableBridges` is not active as a rules key; `[SpecialFlags] DestroyableBridges` is active conditionally; `[MultiplayerDialogSettings] BridgeDestruction` is active for lobby/session defaulting. Evidence: `0x006B8CA0`, `0x00671EA0`, retail INI lines above, and no `DestroyableBridges` read in `RulesClass::ReadCombatDamage` per [WEAPON_AOE_BRIDGE_DAMAGE_ENTRY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/WEAPON_AOE_BRIDGE_DAMAGE_ENTRY_GHIDRA_REPORT.md).
 
 ### 3.6 Consumer Identity
 
 The bridge tile damage consumer remains the standard AoE gate in `Apply_area_damage`: SpecialFlags bit `0x8000` must be set and the warhead must have `Wall=yes`.
 
-Active in YR: Yes. Evidence: consumer spot-check `0x00489280` and prior report `WEAPON_AOE_BRIDGE_DAMAGE_ENTRY_GHIDRA_REPORT.md`. This report did not re-drain bridge collapse outcomes after the gate.
+Active in YR: Yes. Evidence: consumer spot-check `0x00489280` and prior report [WEAPON_AOE_BRIDGE_DAMAGE_ENTRY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/WEAPON_AOE_BRIDGE_DAMAGE_ENTRY_GHIDRA_REPORT.md). This report did not re-drain bridge collapse outcomes after the gate.
 
 ## 4. INI Keys
 
@@ -140,9 +140,9 @@ Main Rust delta: split the binary concepts. `[CombatDamage] DestroyableBridges` 
 - `[RESOLVED] OQ-8 - What overrides multiplayer active flags? -> session staging `DAT_00A8E960`, copied to active scenario flags late in load.` (evidence: `0x00686B20`, assembly `0x00687C16..0x00687C29`)
 - `[RESOLVED] OQ-9 - What clears multiplayer bridge destruction when disabled? -> `DAT_00A8B260==0` clears bit `0x8000` in staging before the copy.` (evidence: `0x00686B20`, assembly `0x0068794D..0x00687966`)
 - `[RESOLVED] OQ-10 - Where is `BridgeDestruction` default read? -> `[MultiplayerDialogSettings] BridgeDestruction` to `Rules+0x14AC`.` (evidence: `0x00671EA0`, `ini/rulesmd.ini:3029`)
-- `[RESOLVED] OQ-11 - Is `[CombatDamage] DestroyableBridges` the binary rules key? -> no as a rules key; it is stock INI text without this parser binding.` (evidence: `WEAPON_AOE_BRIDGE_DAMAGE_ENTRY_GHIDRA_REPORT.md`, `ini/rulesmd.ini:804`)
+- `[RESOLVED] OQ-11 - Is `[CombatDamage] DestroyableBridges` the binary rules key? -> no as a rules key; it is stock INI text without this parser binding.` (evidence: [WEAPON_AOE_BRIDGE_DAMAGE_ENTRY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/WEAPON_AOE_BRIDGE_DAMAGE_ENTRY_GHIDRA_REPORT.md), `ini/rulesmd.ini:804`)
 - `[RESOLVED] OQ-12 - What writes `[SpecialFlags] DestroyableBridges`? -> `FUN_006B8B30` writes bit 15 under the same key.` (evidence: `0x006B8B30`, assembly `0x006B8B92..0x006B8BA0`)
-- `[RESOLVED] OQ-13 - What is the gameplay consumer? -> `Apply_area_damage` tests active scenario bit `0x8000` before bridge tile damage.` (evidence: `0x00489280`, `WEAPON_AOE_BRIDGE_DAMAGE_ENTRY_GHIDRA_REPORT.md`)
+- `[RESOLVED] OQ-13 - What is the gameplay consumer? -> `Apply_area_damage` tests active scenario bit `0x8000` before bridge tile damage.` (evidence: `0x00489280`, [WEAPON_AOE_BRIDGE_DAMAGE_ENTRY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/WEAPON_AOE_BRIDGE_DAMAGE_ENTRY_GHIDRA_REPORT.md))
 - `[RESOLVED] OQ-14 - Does Rust parse the right owner? -> no; rules parser reads `[CombatDamage] DestroyableBridges`.` (evidence: `src/rules/ruleset.rs:754..757`)
 - `[RESOLVED] OQ-15 - Does Rust already parse map `[SpecialFlags]`? -> yes, but application must respect mode ownership.` (evidence: `src/map/basic.rs:28..67`)
 - `[DEFERRED] OQ-16 - Full map-save/editor caller census for `FUN_006B8B30`.` (category: bounded-cost-too-high; reason: writer body/bit mapping is verified and caller inventory does not affect runtime bridge-damage handoff; next-step-if-pursued: xref the writer in a save/load-focused investigation)
@@ -164,7 +164,7 @@ Deferred items are not load-bearing for the Rust bridge-damage parser ownership 
 - Do not apply map `[SpecialFlags] DestroyableBridges` in normal skirmish/multiplayer when editor is false; Active in YR: No for that mode. Evidence: `0x006B8CA0` mode gate plus `Full_Init` staging overwrite.
 - Do not delete `src/map/basic.rs` parsing of `[SpecialFlags] DestroyableBridges`; Active in YR: Yes for campaign/editor. Evidence: `0x006B8CA0`.
 - Do not treat `[MultiplayerDialogSettings] BridgeDestruction` as the same INI key as `[SpecialFlags] DestroyableBridges`; Active in YR: both are active in different ownership layers. Evidence: `0x00671EA0` vs `0x006B8CA0`.
-- Do not route C4/CABHUT collapse through this SpecialFlags gate; Active in YR: separate path per bridge-collapse reports. Evidence: `CABHUT_C4_COLLAPSE_ENTRY_GHIDRA_REPORT.md`.
+- Do not route C4/CABHUT collapse through this SpecialFlags gate; Active in YR: separate path per bridge-collapse reports. Evidence: [CABHUT_C4_COLLAPSE_ENTRY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/CABHUT_C4_COLLAPSE_ENTRY_GHIDRA_REPORT.md).
 
 ### Remaining Uncertainty
 
@@ -175,7 +175,7 @@ Deferred items are not load-bearing for the Rust bridge-damage parser ownership 
 
 - `docs/research/DESTROYABLEBRIDGES_INI_GATE_GHIDRA_REPORT.md`: replace the Open Question "Runtime SpecialFlags constructor default..." with: "Closed by `SPECIALFLAGS_DESTROYABLEBRIDGES_DEFAULT_AND_MODES_GHIDRA_REPORT.md`: `FUN_006B8AE0` applies `flags = (flags & 0xFFF88088) | 0x8088`; constructor `0x006832C0` calls it for active scenario flags and init `0x0052F620` calls it for staging `DAT_00A8E960`, so bit `0x8000` defaults on."
 - `docs/research/SPECIAL_FLAGS_SYSTEM.md`: replace the uncertain `DAT_00A8E960 uses a DIFFERENT bit layout` paragraph with: "For the bridge-destruction bit specifically, staging and active flags both use bit `0x8000`. `Full_Init` clears staging bit `0x8000` when `g_GameMode != 0 && DAT_00A8B260 == 0`, then later copies `DAT_00A8E960` into active `*g_ScenarioClass_Instance` for multiplayer. This report does not claim the other packed lobby bits."
-- `docs/research/SCENARIO_INIT_DEEP_DIVE.md`: replace wording that calls bit `0x8000` "superweapons flag" with: "`0x8000` is `DestroyableBridges`; in multiplayer, `DAT_00A8B260 == 0` clears this bridge-destruction bit in staging before staging is copied to active scenario flags."
+- [docs/research/SCENARIO_INIT_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SCENARIO_INIT_DEEP_DIVE.md): replace wording that calls bit `0x8000` "superweapons flag" with: "`0x8000` is `DestroyableBridges`; in multiplayer, `DAT_00A8B260 == 0` clears this bridge-destruction bit in staging before staging is copied to active scenario flags."
 
 ## Sources
 

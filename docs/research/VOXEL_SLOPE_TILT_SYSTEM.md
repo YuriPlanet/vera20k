@@ -89,7 +89,7 @@ TunnelLocomotion's body, not on aircraft turrets. **Do not implement states
 2–7 in the Rust port** — they are unreachable in standard YR.
 
 For full state-machine details (state-field offset, timer fields, π/2 constants
-verified), see [TURRET_TILT_STATE_MACHINE_FUN_00729B40_GHIDRA_REPORT.md](TURRET_TILT_STATE_MACHINE_FUN_00729B40_GHIDRA_REPORT.md).
+verified), see [TURRET_TILT_STATE_MACHINE_FUN_00729B40_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TURRET_TILT_STATE_MACHINE_FUN_00729B40_GHIDRA_REPORT.md).
 The filename retains the historical "turret tilt" wording for traceability;
 the report itself corrects the identity.
 
@@ -520,11 +520,11 @@ not a separate engineering effort.
    does NOT cancel this — Process does not dispatch slot `+0x50`
    (`Update_Facing_From_Type`) inline. `Force_New_Slope` is only invoked at
    move-start, via direct call from `TechnoClass::Set_Destination` @
-   `0x00742BE6` (see [FORCE_NEW_SLOPE_CALLERS_GHIDRA_REPORT.md](FORCE_NEW_SLOPE_CALLERS_GHIDRA_REPORT.md)).
+   `0x00742BE6` (see [FORCE_NEW_SLOPE_CALLERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FORCE_NEW_SLOPE_CALLERS_GHIDRA_REPORT.md)).
    Net behavior: every slope-cell-crossing during normal driving produces a
    3-tick slerp via `VXL_InterpolatedFacing` and the
    `DAT_00b43188` quaternion table — interpolation is YR-active, not dead
-   code. See [VXL_INTERPOLATED_FACING_AND_SLOPE_TRANSITION_GHIDRA_REPORT.md](VXL_INTERPOLATED_FACING_AND_SLOPE_TRANSITION_GHIDRA_REPORT.md)
+   code. See [VXL_INTERPOLATED_FACING_AND_SLOPE_TRANSITION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VXL_INTERPOLATED_FACING_AND_SLOPE_TRANSITION_GHIDRA_REPORT.md)
    for the slerp / quaternion-table mechanism (note: that report's "no
    runtime writer" conclusion at the top is itself wrong — see swarm
    reconciliation notes for why).

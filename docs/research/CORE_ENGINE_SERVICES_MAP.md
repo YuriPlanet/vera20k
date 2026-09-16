@@ -26,23 +26,23 @@ during the frontier pass; addresses carry prior-doc citations) — tracked in §
 | Slug | One-line purpose | Doc |
 |---|---|---|
 | `logicclass` | Per-tick spine: active-object vector `0x0087F778` + driver `PerTickUpdate 0x0055AFB0` running a fixed global-rung ladder + one ordered object-AI fan-out per frame; defines the order every other per-tick service runs in. | `core-services-map/logicclass.md` |
-| `abstract-object` | Root object hierarchy (AbstractClass→ObjectClass): identity, world coords, health, cell occupancy, limbo↔active lifecycle FSM, active-vector membership, selection, save/load — the entity-store + lifecycle chokepoint. | `core-services-map/abstract-object.md` |
-| `techno-foot` | Per-object update layer: the AI spine (Leaf::AI → FootClass::AI → TechnoClass::AI_Update → Mission_Dispatch → locomotor Process) run for every live object each tick. | `core-services-map/techno-foot.md` |
-| `mission-radio` | Per-object mission scheduler (CurrentMission + Mission_Dispatch switch + frame-anchored timer + Assign/Queue/Commence/Override/Restore) + synchronous RadioClass contact RPC bus carrying dock/board/tether/repair handshakes. | `core-services-map/mission-radio.md` |
-| `random-scenario` | Session substrate: deterministic R(250,103) RNG streams (Scen->Random / g_MainRng / g_MapGenRng) + loaded-scenario singleton (identity, map metadata, waypoints, per-map flags). | `core-services-map/random-scenario.md` |
-| `rules-class` | Global parsed-INI gameplay-tunables singleton (`0x008871E0`): all game-wide tuning constants loaded once at scenario init, served read-only. | `core-services-map/rules-class.md` |
-| `cell-map` | Spatial substrate: MapClass 512×512 CellClass* grid (`g_Map 0x0087F7E8`) + lookup/playfield/zone/bridge/shroud/crate services; CellClass = 328-byte per-cell record. | `core-services-map/cell-map.md` |
-| `factory-house` | Per-house economy/power/prereqs/diplomacy (HouseClass) + per-(house,category) 54-step pay-as-you-go production state machine (FactoryClass) — the production tick and the wallet. | `core-services-map/factory-house.md` |
-| `damage-helpers` | Warhead/armor damage kernel + AoE distributor: (raw damage, warhead, armor, distance, mods, immunity) → ftol-truncated HP delta with MaxDamage cap; fans one detonation to many targets. | `core-services-map/damage-helpers.md` |
-| `cell-validation` | Read-only cell-legality primitives: rectangle passability/occupancy, diamond-ring nearby-passable search, `y*0x200+x` cell lookup with dummy fallback. | `core-services-map/cell-validation.md` |
-| `bridge-helpers` | Read-only bridge-topology service: IsBridge/IsWood/IsLow/anchor/bridgehead predicates, effective deck height, CheckBridgeTraversal gate, AoE/occupancy/render layer selectors. | `core-services-map/bridge-helpers.md` |
-| `ini-parsing` | CCINIClass typed-accessor layer over INIClass: (section,key,default) → typed values with gamemd-exact parse rules; the load-time data substrate. | `core-services-map/ini-parsing.md` |
-| `pathfinding-helpers` | Path-search helper layer over A*: zone classification, per-neighbor edge cost, hierarchical zone-corridor Dijkstra + marker gate, mover-gated slope/bridge fallback. | `core-services-map/pathfinding-helpers.md` |
-| `target-scoring` | Per-unit "what do I shoot at": scan region → gate → integer threat score → best target by strictly-greater + scan-order tie-break (Calculate_Threat_Score → Evaluate_Candidate → Greatest_Threat). | `core-services-map/target-scoring.md` |
-| `drawing-helpers` | Render-side draw-primitive substrate: object draw order (two-pass 5-layer), screen/FLH math, layer/Y-sort + z resolution, palette/remap, DrawExtras placement. Strictly downstream of `sim/`. | `core-services-map/drawing-helpers.md` |
-| `lookup-tables` | Pure read-only static lookup-table substrate (facing/lepton deltas, drive-track, cell-spread AoE spiral, A* geometry/cost, bridge classifiers, passability/speed matrix, remap/palette/sound tables). No mutable state, no RNG. | `core-services-map/lookup-tables.md` |
-| `gadget-dialog` | Framework A retained-mode in-game gadget tree: per-tick input+draw authority for all in-game chrome (sidebar/cameos/command bar/radar/tactical catchers/chat) with 3-tier dispatch. | `core-services-map/gadget-dialog.md` |
-| `shell-dialog` | Win32 owner-draw shell (Framework B): menu/setup/options/load-save shells, dialog factory, modal pump, Main_Game navigation state machine. Entry gate to a scenario. | `core-services-map/shell-dialog.md` |
+| `abstract-object` | Root object hierarchy (AbstractClass→ObjectClass): identity, world coords, health, cell occupancy, limbo↔active lifecycle FSM, active-vector membership, selection, save/load — the entity-store + lifecycle chokepoint. | [core-services-map/abstract-object.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/abstract-object.md) |
+| `techno-foot` | Per-object update layer: the AI spine (Leaf::AI → FootClass::AI → TechnoClass::AI_Update → Mission_Dispatch → locomotor Process) run for every live object each tick. | [core-services-map/techno-foot.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/techno-foot.md) |
+| `mission-radio` | Per-object mission scheduler (CurrentMission + Mission_Dispatch switch + frame-anchored timer + Assign/Queue/Commence/Override/Restore) + synchronous RadioClass contact RPC bus carrying dock/board/tether/repair handshakes. | [core-services-map/mission-radio.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/mission-radio.md) |
+| `random-scenario` | Session substrate: deterministic R(250,103) RNG streams (Scen->Random / g_MainRng / g_MapGenRng) + loaded-scenario singleton (identity, map metadata, waypoints, per-map flags). | [core-services-map/random-scenario.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/random-scenario.md) |
+| `rules-class` | Global parsed-INI gameplay-tunables singleton (`0x008871E0`): all game-wide tuning constants loaded once at scenario init, served read-only. | [core-services-map/rules-class.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/rules-class.md) |
+| `cell-map` | Spatial substrate: MapClass 512×512 CellClass* grid (`g_Map 0x0087F7E8`) + lookup/playfield/zone/bridge/shroud/crate services; CellClass = 328-byte per-cell record. | [core-services-map/cell-map.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/cell-map.md) |
+| `factory-house` | Per-house economy/power/prereqs/diplomacy (HouseClass) + per-(house,category) 54-step pay-as-you-go production state machine (FactoryClass) — the production tick and the wallet. | [core-services-map/factory-house.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/factory-house.md) |
+| `damage-helpers` | Warhead/armor damage kernel + AoE distributor: (raw damage, warhead, armor, distance, mods, immunity) → ftol-truncated HP delta with MaxDamage cap; fans one detonation to many targets. | [core-services-map/damage-helpers.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/damage-helpers.md) |
+| `cell-validation` | Read-only cell-legality primitives: rectangle passability/occupancy, diamond-ring nearby-passable search, `y*0x200+x` cell lookup with dummy fallback. | [core-services-map/cell-validation.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/cell-validation.md) |
+| `bridge-helpers` | Read-only bridge-topology service: IsBridge/IsWood/IsLow/anchor/bridgehead predicates, effective deck height, CheckBridgeTraversal gate, AoE/occupancy/render layer selectors. | [core-services-map/bridge-helpers.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/bridge-helpers.md) |
+| `ini-parsing` | CCINIClass typed-accessor layer over INIClass: (section,key,default) → typed values with gamemd-exact parse rules; the load-time data substrate. | [core-services-map/ini-parsing.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/ini-parsing.md) |
+| `pathfinding-helpers` | Path-search helper layer over A*: zone classification, per-neighbor edge cost, hierarchical zone-corridor Dijkstra + marker gate, mover-gated slope/bridge fallback. | [core-services-map/pathfinding-helpers.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/pathfinding-helpers.md) |
+| `target-scoring` | Per-unit "what do I shoot at": scan region → gate → integer threat score → best target by strictly-greater + scan-order tie-break (Calculate_Threat_Score → Evaluate_Candidate → Greatest_Threat). | [core-services-map/target-scoring.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/target-scoring.md) |
+| `drawing-helpers` | Render-side draw-primitive substrate: object draw order (two-pass 5-layer), screen/FLH math, layer/Y-sort + z resolution, palette/remap, DrawExtras placement. Strictly downstream of `sim/`. | [core-services-map/drawing-helpers.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/drawing-helpers.md) |
+| `lookup-tables` | Pure read-only static lookup-table substrate (facing/lepton deltas, drive-track, cell-spread AoE spiral, A* geometry/cost, bridge classifiers, passability/speed matrix, remap/palette/sound tables). No mutable state, no RNG. | [core-services-map/lookup-tables.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/lookup-tables.md) |
+| `gadget-dialog` | Framework A retained-mode in-game gadget tree: per-tick input+draw authority for all in-game chrome (sidebar/cameos/command bar/radar/tactical catchers/chat) with 3-tier dispatch. | [core-services-map/gadget-dialog.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/gadget-dialog.md) |
+| `shell-dialog` | Win32 owner-draw shell (Framework B): menu/setup/options/load-save shells, dialog factory, modal pump, Main_Game navigation state machine. Entry gate to a scenario. | [core-services-map/shell-dialog.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/shell-dialog.md) |
 
 ### Frontier (23) — PROFILED; full edge profile under `core-services-map/frontier-<slug>.md`
 
@@ -853,7 +853,7 @@ edge the target's `used_by` does not list; reconciled in §6.
 
 ## §4 Per-tick spine — `LogicClass::PerTickUpdate` ordered sequence
 
-> **Authoritative spine spec:** `docs/research/LOGICCLASS_PERTICKUPDATE_SPINE_SPEC.md`
+> **Authoritative spine spec:** [docs/research/LOGICCLASS_PERTICKUPDATE_SPINE_SPEC.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOGICCLASS_PERTICKUPDATE_SPINE_SPEC.md)
 > (prelude → 28 verified rungs → postlude, with per-rung evidence + the RNG-draw lockstep
 > contract). The table below is the connected-map summary; the SPEC doc is ground truth.
 
@@ -874,7 +874,7 @@ execution) → RenderFrame → [state-hash record/verify] → PerTickUpdate (run
 
 Ordered ladder = **28 rungs** (the disassembly body order; the decompiler reordered/elided
 the laser/EMP/shroud region — trust `disassemble_function 0x0055AFB0`). Full evidence:
-`LOGICCLASS_PERTICKUPDATE_SPINE_SPEC.md` + `core-services-map/_spine-anchor.md` +
+[LOGICCLASS_PERTICKUPDATE_SPINE_SPEC.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOGICCLASS_PERTICKUPDATE_SPINE_SPEC.md) + [core-services-map/_spine-anchor.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/_spine-anchor.md) +
 `core-services-map/_spine-rung-*.md`.
 
 | Order | Rung | Driver fn @ addr | Service ticked | Active-in-YR / gate | Draws RNG (stream) |
@@ -1083,7 +1083,7 @@ NOT part of the lockstep contract.
 
 ### Frontier-pass reconciliations (profiling corrected the catalog stubs)
 The frontier profiling pass **located** every previously-UNVERIFIED stub address and **corrected
-several rung/representative errors** carried in the old `_frontier.md` catalog. Corrections folded
+several rung/representative errors** carried in the old [_frontier.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/_frontier.md) catalog. Corrections folded
 into §1/§3/§4 + carried for §7:
 - **C3 frontier-audio-theme** — representative now **located**: `ThemeClass::AI 0x007209D0`
   (ThemeClass singleton `g_Theme 0x00A83D10`), polled from the audio pump `0x00406F70`, NOT a
@@ -1135,7 +1135,7 @@ frontier service's claimed edge and the target's listing):
 - **G2 capture → render-tactical (DrawLinks).** A render-side draw call inside TacticalClass::Draw
   (`0x006D47BF`); kept as G2→A1, consistent with A1 listing capture-link overlays in Pass 2.
 
-### Drawing-helpers result-parity gates (OPEN design choices, from `drawing-helpers.md`)
+### Drawing-helpers result-parity gates (OPEN design choices, from [drawing-helpers.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/core-services-map/drawing-helpers.md))
 - Bridge-body z-remap blitter (`0x00495A50`) PIXEL RESULT vs GPU substitute — golden-image gate.
 - Palette-remap RESULT equivalence (Rust PaletteSet/shader vs native 256×256 LUT) — UNCHECKED.
 - Airborne-aircraft layer index (Top 4 vs Air 3) — both unsorted so observable order matches, but

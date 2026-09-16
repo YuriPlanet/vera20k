@@ -1,6 +1,6 @@
 ---
 name: RadarEventClass Research Report
-description: Event queue that drives minimap pulsing diamonds — type table, callers, lifecycle, and INI-vs-binary reconciliation. Companion to RADAR_MINIMAP_DEEP_DIVE.md and RADAR_MINIMAP_RENDERING.md.
+description: Event queue that drives minimap pulsing diamonds — type table, callers, lifecycle, and INI-vs-binary reconciliation. Companion to [RADAR_MINIMAP_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADAR_MINIMAP_DEEP_DIVE.md) and RADAR_MINIMAP_RENDERING.md.
 ---
 
 # RadarEventClass — Ghidra Research Report
@@ -39,7 +39,7 @@ These are separate queues. They are *correlated* (most callers fire both), and f
 
 ## 2. Event object layout (64 bytes)
 
-Re-stated from `RADAR_MINIMAP_DEEP_DIVE.md` §"Per-Tick Lifecycle" and `RADAR_SYSTEM_COMPREHENSIVE.md` §"Event object layout" — verified previously from the binary:
+Re-stated from [RADAR_MINIMAP_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADAR_MINIMAP_DEEP_DIVE.md) §"Per-Tick Lifecycle" and [RADAR_SYSTEM_COMPREHENSIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADAR_SYSTEM_COMPREHENSIVE.md) §"Event object layout" — verified previously from the binary:
 
 | Offset | Type | Init | Name / Purpose |
 |-------:|------|------|----------------|
@@ -303,9 +303,9 @@ The **complete xref set** for `CreateRadarEvent` (`0x0065FA70`) — 25 distinct 
 ## 9. Integration points
 
 **Tick cycle placement:**
-- `RadarClass::Update` (the radar per-frame workhorse at `0x00656EC0`) calls `TickAllRadarEvents` (`0x0065FDD0`) and then `TickAndDrawRadarEvents` (`0x00660000`) every frame — see `RADAR_MINIMAP_DEEP_DIVE.md` §7.
+- `RadarClass::Update` (the radar per-frame workhorse at `0x00656EC0`) calls `TickAllRadarEvents` (`0x0065FDD0`) and then `TickAndDrawRadarEvents` (`0x00660000`) every frame — see [RADAR_MINIMAP_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADAR_MINIMAP_DEEP_DIVE.md) §7.
 - `DrawViewportRect` (the rotating camera rectangle) shares the event struct layout — it's "just another event" that never expires, with a fixed rotation and type field.
-- The ring buffer at `0x00B04D48` is consumed by the Spacebar hotkey handler (see `HOTKEY_SYSTEM_GHIDRA_REPORT.md`) — it's how cycling through recent combat events works.
+- The ring buffer at `0x00B04D48` is consumed by the Spacebar hotkey handler (see [HOTKEY_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/HOTKEY_SYSTEM_GHIDRA_REPORT.md)) — it's how cycling through recent combat events works.
 
 **Inputs (RulesClass):**
 - `+0x78` `RadarEventColorSpeed`, `+0x7C` `RadarEventMinRadius`, `+0x80` `RadarEventSpeed`, `+0x84` `RadarEventRotationSpeed`
@@ -403,22 +403,22 @@ None statically. All 25 xrefs to `CreateRadarEvent` (`0x0065FA70`) load a non-ze
 ## Sources
 
 **Existing Ghidra reports referenced (all in `docs/research/`):**
-- `RADAR_MINIMAP_DEEP_DIVE.md` — event struct layout, per-tick lifecycle, DrawViewportRect coupling
+- [RADAR_MINIMAP_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADAR_MINIMAP_DEEP_DIVE.md) — event struct layout, per-tick lifecycle, DrawViewportRect coupling
 - `RADAR_MINIMAP_RENDERING.md` — type-config table values, color switch, event creation flow, full address map
-- `RADAR_SYSTEM_COMPREHENSIVE.md` — event globals, field offsets
-- `EVA_SYSTEM_GHIDRA_REPORT.md` §5 / §6 — BaseUnderAttack rate-limit coupling; EVA trigger table
+- [RADAR_SYSTEM_COMPREHENSIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADAR_SYSTEM_COMPREHENSIVE.md) — event globals, field offsets
+- [EVA_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/EVA_SYSTEM_GHIDRA_REPORT.md) §5 / §6 — BaseUnderAttack rate-limit coupling; EVA trigger table
 - `EVA_SYSTEM_DEEP_DIVE_GHIDRA_REPORT.md` §4 — 75-entry PlayEVA xref table
-- `BULLET_CLASS_AI_GHIDRA_REPORT.md` — impact radar blip
-- `CHRONOSPHERE_SUPERWEAPON_GHIDRA_REPORT.md` — ChronoWarp dual-event
+- [BULLET_CLASS_AI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLET_CLASS_AI_GHIDRA_REPORT.md) — impact radar blip
+- [CHRONOSPHERE_SUPERWEAPON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CHRONOSPHERE_SUPERWEAPON_GHIDRA_REPORT.md) — ChronoWarp dual-event
 - `NUKE_SUPERWEAPON_GHIDRA_REPORT.md` — special detonation radar blip
-- `LIGHTNING_STORM_SUPERWEAPON_GHIDRA_REPORT.md` — storm start radar blip
-- `PSYCHIC_DOMINATOR_SUPERWEAPON_GHIDRA_REPORT.md` — launch radar blip
-- `ION_BLAST_CLASS_GHIDRA_REPORT.md` — genetic mutator detonation
-- `TEMPORAL_WEAPON_SYSTEM_GHIDRA_REPORT.md` — ChronoLegionnaire player-building hit
-- `SPY_INFILTRATION_SYSTEM_GHIDRA_REPORT.md` — spy effect call table
-- `BUILDINGCLASS_MISSION_REPAIR_AND_PRODUCE.md` §0x21 — repair-complete eject
-- `BUILDINGCLASS_SPECIAL_BUILDINGS_GHIDRA_REPORT.md` — captured-building eject
-- `ADDRESS_MAP.md` — radar/EVA/sensor address clusters
+- [LIGHTNING_STORM_SUPERWEAPON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LIGHTNING_STORM_SUPERWEAPON_GHIDRA_REPORT.md) — storm start radar blip
+- [PSYCHIC_DOMINATOR_SUPERWEAPON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PSYCHIC_DOMINATOR_SUPERWEAPON_GHIDRA_REPORT.md) — launch radar blip
+- [ION_BLAST_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ION_BLAST_CLASS_GHIDRA_REPORT.md) — genetic mutator detonation
+- [TEMPORAL_WEAPON_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TEMPORAL_WEAPON_SYSTEM_GHIDRA_REPORT.md) — ChronoLegionnaire player-building hit
+- [SPY_INFILTRATION_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SPY_INFILTRATION_SYSTEM_GHIDRA_REPORT.md) — spy effect call table
+- [BUILDINGCLASS_MISSION_REPAIR_AND_PRODUCE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_MISSION_REPAIR_AND_PRODUCE.md) §0x21 — repair-complete eject
+- [BUILDINGCLASS_SPECIAL_BUILDINGS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_SPECIAL_BUILDINGS_GHIDRA_REPORT.md) — captured-building eject
+- [ADDRESS_MAP.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ADDRESS_MAP.md) — radar/EVA/sensor address clusters
 
 **INI:**
 - `ini/rulesmd.ini` lines 451–470 (radar event keys + ordering comment)

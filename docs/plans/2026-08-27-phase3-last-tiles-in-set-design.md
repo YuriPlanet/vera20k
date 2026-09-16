@@ -6,7 +6,7 @@
 
 Implement the live YR theater compatibility table and exact IsoMap tile-index
 translation proven in
-`PHASE3_LAST_TILES_IN_SET_COMPATIBILITY_TRANSLATION_GHIDRA_REPORT.md`.
+[PHASE3_LAST_TILES_IN_SET_COMPATIBILITY_TRANSLATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_LAST_TILES_IN_SET_COMPATIBILITY_TRANSLATION_GHIDRA_REPORT.md).
 Installed stock theaters produce an empty table, so the change must preserve
 all stock outputs while closing the active executable path for retail-format
 legacy/custom theater data.

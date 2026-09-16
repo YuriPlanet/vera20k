@@ -13,7 +13,7 @@ invent a designated enemy before the verified Strategy chain exists.
 ## Native contract
 
 Active-retail evidence is
-`PHASE3_HOUSECLASS_ORDINARY_BASE_PLACEMENT_005060B0_GHIDRA_REPORT.md`, sections
+[PHASE3_HOUSECLASS_ORDINARY_BASE_PLACEMENT_005060B0_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_HOUSECLASS_ORDINARY_BASE_PLACEMENT_005060B0_GHIDRA_REPORT.md), sections
 7.6.4 and 10, backed by the live functions below.
 
 - The registered House constructor cross-appends one zero-score

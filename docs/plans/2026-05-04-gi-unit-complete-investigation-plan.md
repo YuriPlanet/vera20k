@@ -24,7 +24,7 @@ RECEIVE_DAMAGE, DAMAGE_MATH. The investigation **synthesizes** these into one GI
 report; it does NOT re-cover ground already verified at HIGH confidence — only
 GI-specific gaps and integration questions.
 
-**Expected Output:** `docs/research/GI_GHIDRA_REPORT.md`
+**Expected Output:** [docs/research/GI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GI_GHIDRA_REPORT.md)
 
 **Next Pipeline Step:** `/brainstorm` for a GI implementation design (deploy-fire
 state machine, panic/fear runtime, kill-count veterancy, mission handlers for
@@ -58,22 +58,22 @@ Specifically the report must let an implementer answer without further research:
 
 | Report | Confidence | GI Coverage | Gap |
 |--------|------------|-------------|-----|
-| `INFANTRYCLASS_GHIDRA_REPORT.md` | HIGH | Struct layout, DoType sequencer, fear, IsCrawling, Fire_At_Target | Doesn't cite a single unit — generic infantry only |
-| `INFANTRY_SUBCELL_POSITIONING.md` | HIGH | 3-per-cell, sub-cell 2/3/4, walk locomotor placement | Notes Rust bug `[0,3,4]` should be `[2,3,4]` |
-| `FOOTCLASS_COMPLETE_GHIDRA_REPORT.md` | HIGH | Parent fields 0x520–0x6BF, NavCom, deploy flag 0x6AD | Parent class only; no GI specifics |
-| `FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md` | HIGH | Mission_Move with infantry crawl-state branch | Full coverage; cross-link only |
-| `FOOTCLASS_MISSION_ATTACK_GHIDRA_REPORT.md` | HIGH | Mission_Attack with infantry panic-state branch | Full coverage; cross-link only |
-| `GARRISON_SYSTEM_GHIDRA_REPORT.md` | HIGH | OccupyWeapon, EliteOccupyWeapon, round-robin, OccupyDamage/ROFMult | OK; need to confirm GI's UCPara math |
-| `GARRISON_OCCUPANT_SYSTEM_GHIDRA_REPORT.md` | HIGH | Occupant DVec layout, AddOccupy/RemoveOccupy | OK |
-| `VETERANCY_SYSTEM_GHIDRA_REPORT.md` | HIGH (5 passes) | Kill XP formula, thresholds, attribution | OK; need to confirm GI's elite weapon swap timing |
-| `IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md` | HIGH | IFVMode dispatch, SetGunnerWeapon, turret index | OK; cross-link only |
-| `CRUSH_SYSTEM_GHIDRA_REPORT.md` | HIGH | Crushable, DeployedCrushable, deployed-state field 0x2A4 | Conflict: 0x2A4 byte identity (prone vs deployed?) |
-| `RECEIVE_DAMAGE_GHIDRA_REPORT.md` | HIGH | TechnoClass::ReceiveDamage chain | Doesn't isolate InfantryClass override |
-| `DAMAGE_MATH_GHIDRA_REPORT.md` | HIGH | Verses + ProneDamage application | `InfantryDamageMultiplier` not traced |
-| `MIND_CONTROL_SYSTEM_GHIDRA_REPORT.md` | HIGH | CaptureManager, ImmuneToPsionics, overload | OK; cross-link |
-| `CHAOS_DRONE_BERSERK_GHIDRA_REPORT.md` | HIGH | Berserk flag 0x298, Psychedelic warhead | Berserk vs fear interaction undocumented |
-| `MAGNETRON_SYSTEM_GHIDRA_REPORT.md` | HIGH | SizeWeight gate excludes infantry | OK |
-| `MCV_DEPLOY_GHIDRA_REPORT.md` | HIGH | Deploy state machine for vehicles | Different code path; reference only |
+| [INFANTRYCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/INFANTRYCLASS_GHIDRA_REPORT.md) | HIGH | Struct layout, DoType sequencer, fear, IsCrawling, Fire_At_Target | Doesn't cite a single unit — generic infantry only |
+| [INFANTRY_SUBCELL_POSITIONING.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/INFANTRY_SUBCELL_POSITIONING.md) | HIGH | 3-per-cell, sub-cell 2/3/4, walk locomotor placement | Notes Rust bug `[0,3,4]` should be `[2,3,4]` |
+| [FOOTCLASS_COMPLETE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_COMPLETE_GHIDRA_REPORT.md) | HIGH | Parent fields 0x520–0x6BF, NavCom, deploy flag 0x6AD | Parent class only; no GI specifics |
+| [FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_MOVE_GHIDRA_REPORT.md) | HIGH | Mission_Move with infantry crawl-state branch | Full coverage; cross-link only |
+| [FOOTCLASS_MISSION_ATTACK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_ATTACK_GHIDRA_REPORT.md) | HIGH | Mission_Attack with infantry panic-state branch | Full coverage; cross-link only |
+| [GARRISON_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GARRISON_SYSTEM_GHIDRA_REPORT.md) | HIGH | OccupyWeapon, EliteOccupyWeapon, round-robin, OccupyDamage/ROFMult | OK; need to confirm GI's UCPara math |
+| [GARRISON_OCCUPANT_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GARRISON_OCCUPANT_SYSTEM_GHIDRA_REPORT.md) | HIGH | Occupant DVec layout, AddOccupy/RemoveOccupy | OK |
+| [VETERANCY_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VETERANCY_SYSTEM_GHIDRA_REPORT.md) | HIGH (5 passes) | Kill XP formula, thresholds, attribution | OK; need to confirm GI's elite weapon swap timing |
+| [IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md) | HIGH | IFVMode dispatch, SetGunnerWeapon, turret index | OK; cross-link only |
+| [CRUSH_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CRUSH_SYSTEM_GHIDRA_REPORT.md) | HIGH | Crushable, DeployedCrushable, deployed-state field 0x2A4 | Conflict: 0x2A4 byte identity (prone vs deployed?) |
+| [RECEIVE_DAMAGE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RECEIVE_DAMAGE_GHIDRA_REPORT.md) | HIGH | TechnoClass::ReceiveDamage chain | Doesn't isolate InfantryClass override |
+| [DAMAGE_MATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_MATH_GHIDRA_REPORT.md) | HIGH | Verses + ProneDamage application | `InfantryDamageMultiplier` not traced |
+| [MIND_CONTROL_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MIND_CONTROL_SYSTEM_GHIDRA_REPORT.md) | HIGH | CaptureManager, ImmuneToPsionics, overload | OK; cross-link |
+| [CHAOS_DRONE_BERSERK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CHAOS_DRONE_BERSERK_GHIDRA_REPORT.md) | HIGH | Berserk flag 0x298, Psychedelic warhead | Berserk vs fear interaction undocumented |
+| [MAGNETRON_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAGNETRON_SYSTEM_GHIDRA_REPORT.md) | HIGH | SizeWeight gate excludes infantry | OK |
+| [MCV_DEPLOY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MCV_DEPLOY_GHIDRA_REPORT.md) | HIGH | Deploy state machine for vehicles | Different code path; reference only |
 | `UNIT_MISSION_DEPLOY_BUILDING_GHIDRA_REPORT.md` | (not read) | Generic deploy mission | Reference only |
 
 **Conflicts to resolve during /re-investigate:**
@@ -410,7 +410,7 @@ The scoping pass surfaced these — they become the "must answer in the executed
   garrison fire, IFV, sub-cell, veterancy promotion, fear runtime.
 - After approval, run Phase 3 (functions #37–#53). Output: spawn paths, mind
   control, crush-kill, render, voice, cursor logic.
-- Final synthesis pass: write `GI_GHIDRA_REPORT.md` consolidating all three
+- Final synthesis pass: write [GI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GI_GHIDRA_REPORT.md) consolidating all three
   phases, adding the "Rust Implementation Status" section that maps each
   finding to COVERED/PARTIAL/MISSING.
 
@@ -422,7 +422,7 @@ checkpoints is the right shape.
 
 ## 11. Success Criteria
 
-The executed `GI_GHIDRA_REPORT.md` must:
+The executed [GI_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GI_GHIDRA_REPORT.md) must:
 
 1. Answer all 10 questions in §1.
 2. Resolve every conflict in §2 (5 items) or explicitly re-document as unresolved.

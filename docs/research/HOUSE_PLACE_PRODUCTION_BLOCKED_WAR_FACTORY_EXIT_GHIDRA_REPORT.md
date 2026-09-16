@@ -88,7 +88,7 @@ For a blocked stock land war-factory vehicle:
 
 The `AbandonProduction` path is relevant to cancel/remove behavior and the non-vehicle failure branch, not to the vehicle-blocked `ExitCoord` case corrected here.
 
-Evidence: `HouseClass::Place_Production @ 0x004FB0E0`; `FUN_004FAA10 @ 0x004FAA10`; `FactoryClass::StartNextQueued @ 0x004CA5A0`; sibling `STRIP_AI_FACTORY_DELIVERY_GLOBALS_AND_QUEUE_RESTART_GHIDRA_REPORT.md`. Active in YR: Yes.
+Evidence: `HouseClass::Place_Production @ 0x004FB0E0`; `FUN_004FAA10 @ 0x004FAA10`; `FactoryClass::StartNextQueued @ 0x004CA5A0`; sibling [STRIP_AI_FACTORY_DELIVERY_GLOBALS_AND_QUEUE_RESTART_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/STRIP_AI_FACTORY_DELIVERY_GLOBALS_AND_QUEUE_RESTART_GHIDRA_REPORT.md). Active in YR: Yes.
 
 ### 3.5 Later WF mission is not pre-placement preservation
 
@@ -196,8 +196,8 @@ Tick-cycle context: `FactoryClass::AI @ 0x004C9B20` sets `IsSuspended = true` an
 
 ### Stale Docs / Follow-up Docs
 
-- `docs/research/timing/unit-build-time.md`: patched 2026-05-21 to describe pending vehicle globals, successful `Place_Production` restart, and blocked WF vehicle pending behavior.
-- `docs/research/BUILDINGCLASS_OPEN_QUESTIONS_VERIFICATION_R3.md`: no correction needed for the claim that stock WF ground exit does not call `GetDockCellForObject`; sibling slot 4 corroborates it. If edited, narrow wording to say stock land WF initial unlimbo uses `GetExitCoord=512,256,0`, while later door/bib state uses `ExitList+0x28`.
+- [docs/research/timing/unit-build-time.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/timing/unit-build-time.md): patched 2026-05-21 to describe pending vehicle globals, successful `Place_Production` restart, and blocked WF vehicle pending behavior.
+- [docs/research/BUILDINGCLASS_OPEN_QUESTIONS_VERIFICATION_R3.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_OPEN_QUESTIONS_VERIFICATION_R3.md): no correction needed for the claim that stock WF ground exit does not call `GetDockCellForObject`; sibling slot 4 corroborates it. If edited, narrow wording to say stock land WF initial unlimbo uses `GetExitCoord=512,256,0`, while later door/bib state uses `ExitList+0x28`.
 
 ## Sources
 
@@ -213,11 +213,11 @@ Tick-cycle context: `FactoryClass::AI @ 0x004C9B20` sets `IsSuspended = true` an
   - `BuildingClass::ClearBibArea @ 0x00449540`
   - `FUN_0044D880 @ 0x0044D880`
 - Prior docs checked:
-  - `docs/research/RALLY_POINTS_AND_UNIT_SPAWNING.md`
-  - `docs/research/timing/unit-build-time.md`
-  - `docs/research/BUILDINGCLASS_OPEN_QUESTIONS_VERIFICATION_R3.md`
-  - `docs/research/SCATTER_ALL_CALLERS_GHIDRA_REPORT.md`
-  - `docs/research/BUILDING_GETDOCKCELLFOROBJECT_STOCK_WAR_FACTORY_EXIT_GHIDRA_REPORT.md`
+  - [docs/research/RALLY_POINTS_AND_UNIT_SPAWNING.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RALLY_POINTS_AND_UNIT_SPAWNING.md)
+  - [docs/research/timing/unit-build-time.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/timing/unit-build-time.md)
+  - [docs/research/BUILDINGCLASS_OPEN_QUESTIONS_VERIFICATION_R3.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_OPEN_QUESTIONS_VERIFICATION_R3.md)
+  - [docs/research/SCATTER_ALL_CALLERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SCATTER_ALL_CALLERS_GHIDRA_REPORT.md)
+  - [docs/research/BUILDING_GETDOCKCELLFOROBJECT_STOCK_WAR_FACTORY_EXIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_GETDOCKCELLFOROBJECT_STOCK_WAR_FACTORY_EXIT_GHIDRA_REPORT.md)
 - INI files checked:
   - `ini/rulesmd.ini`
   - `ini/artmd.ini`

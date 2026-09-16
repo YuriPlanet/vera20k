@@ -984,12 +984,12 @@ See [JUMPJET_LOCOMOTION_CLASS_GHIDRA_REPORT.md §R3.7] for the open questions th
 - `ChuteSound` @ `0x0083A454` → Rules+0x71C
 
 **Prior research consumed (verified by spot-check, not blindly trusted):**
-- `SUPERWEAPON_SYSTEM_CONSOLIDATED_REPORT.md` — case-dispatch overview (correct on cases 5/6 but had the 0x1A constant misinterpreted as count rather than mission ID)
+- [SUPERWEAPON_SYSTEM_CONSOLIDATED_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SUPERWEAPON_SYSTEM_CONSOLIDATED_REPORT.md) — case-dispatch overview (correct on cases 5/6 but had the 0x1A constant misinterpreted as count rather than mission ID)
 - `SUPERWEAPON_LAUNCH_HANDLERS_REPORT.md` — spawner outline (param semantics partly wrong; corrected here)
-- `AIRCRAFTCLASS_GHIDRA_REPORT.md` — aircraft state offsets (mission-state numbers 30/31 disagree with the 26 we observed; mission-state numbering ambiguity flagged in Open Q 3)
-- `AIRCRAFTTYPECLASS_COMPLETE_GHIDRA_REPORT.md` — AircraftTypeClass field layout, used for cross-checking offsets
-- `SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md` — Type enum at `+0xB4`
-- `COUNTRY_SIDE_TYPE_CLASSES.md` — HouseClass.Side at `+0x1E8`
+- [AIRCRAFTCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AIRCRAFTCLASS_GHIDRA_REPORT.md) — aircraft state offsets (mission-state numbers 30/31 disagree with the 26 we observed; mission-state numbering ambiguity flagged in Open Q 3)
+- [AIRCRAFTTYPECLASS_COMPLETE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AIRCRAFTTYPECLASS_COMPLETE_GHIDRA_REPORT.md) — AircraftTypeClass field layout, used for cross-checking offsets
+- [SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SUPERWEAPON_TYPE_CLASS_GHIDRA_REPORT.md) — Type enum at `+0xB4`
+- [COUNTRY_SIDE_TYPE_CLASSES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/COUNTRY_SIDE_TYPE_CLASSES.md) — HouseClass.Side at `+0x1E8`
 
 **INI sources:**
 - `ini/rulesmd.ini` lines 202, 235–251, 564–565, 702, 2859–2867, 11536–11576, 12362, 13924, 23184–23191, 30952–30980 (paradrop SW + PDPLANE + AMRADR + CAAIRP + ParaDropWeapon)

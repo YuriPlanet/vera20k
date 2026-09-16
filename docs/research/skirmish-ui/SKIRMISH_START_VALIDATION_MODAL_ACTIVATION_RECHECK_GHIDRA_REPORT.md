@@ -68,7 +68,7 @@ Resource `0xCE` is verified as:
 
 | Item | Value | Evidence |
 |---|---:|---|
-| Dialog unit rect | `x=0 y=0 cx=300 cy=200` | resource parse in `VALIDATION_MODAL_0X005D3490_DIALOG_TEMPLATE_CONTROL_RECTS_GHIDRA_REPORT.md` |
+| Dialog unit rect | `x=0 y=0 cx=300 cy=200` | resource parse in [VALIDATION_MODAL_0X005D3490_DIALOG_TEMPLATE_CONTROL_RECTS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/VALIDATION_MODAL_0X005D3490_DIALOG_TEMPLATE_CONTROL_RECTS_GHIDRA_REPORT.md) |
 | Font | `8pt MS Sans Serif` | resource parse |
 | Child count | `2` | resource parse |
 | Body static | control `0x5B0`, `x=40 y=40 cx=220 cy=50` | resource parse + `FUN_005D3490` text write |
@@ -124,7 +124,7 @@ Current Rust delta vs native:
 | Start command reaches validation branch | verified | `FUN_006ACEE0` decompile | none for ordinary failures |
 | Start failure calls `FUN_005D3490` | verified | `FUN_006ACEE0` decompile | selected-mode lower branch remains conditional |
 | `FUN_005D3490` generic helper behavior | verified | `FUN_005D3490` decompile; prior assembly report for hidden dialog id | none for ordinary two-text calls |
-| `0xCE` template shape | verified | resource report `VALIDATION_MODAL_0X005D3490_DIALOG_TEMPLATE_CONTROL_RECTS_GHIDRA_REPORT.md` | final runtime pixels need capture |
+| `0xCE` template shape | verified | resource report [VALIDATION_MODAL_0X005D3490_DIALOG_TEMPLATE_CONTROL_RECTS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/VALIDATION_MODAL_0X005D3490_DIALOG_TEMPLATE_CONTROL_RECTS_GHIDRA_REPORT.md) | final runtime pixels need capture |
 | mode-2 parent background paint | verified | `FUN_00622B50`, `WM_PAINT_Handler @ 0x00621E90` | none for branch logic |
 | neutral vs side-themed asset selection | verified | `WM_PAINT_Handler @ 0x00621E90`; prior pointer extraction | none for branch logic |
 | exact DirectDraw RGB output | deferred | no runtime capture | capture native 800x600 screenshot |
@@ -153,6 +153,6 @@ Current Rust delta vs native:
 ## Sources
 
 - Ghidra read-only decompile: `FUN_006ACEE0`, `FUN_005D3490`, `FUN_00622650`, `FUN_00622B50`, `WM_PAINT_Handler @ 0x00621E90`.
-- `docs/research/skirmish-ui/VALIDATION_MODAL_0X005D3490_DIALOG_TEMPLATE_CONTROL_RECTS_GHIDRA_REPORT.md`
-- `docs/research/skirmish-ui/VALIDATION_MODAL_0X005D3490_PAINT_COMPOSITION_GHIDRA_REPORT.md`
-- `docs/research/skirmish-ui/SKIRMISH_START_VALIDATION_MODAL_CURRENT_CONTRACT_RECHECK_GHIDRA_REPORT.md`
+- [docs/research/skirmish-ui/VALIDATION_MODAL_0X005D3490_DIALOG_TEMPLATE_CONTROL_RECTS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/VALIDATION_MODAL_0X005D3490_DIALOG_TEMPLATE_CONTROL_RECTS_GHIDRA_REPORT.md)
+- [docs/research/skirmish-ui/VALIDATION_MODAL_0X005D3490_PAINT_COMPOSITION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/VALIDATION_MODAL_0X005D3490_PAINT_COMPOSITION_GHIDRA_REPORT.md)
+- [docs/research/skirmish-ui/SKIRMISH_START_VALIDATION_MODAL_CURRENT_CONTRACT_RECHECK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_START_VALIDATION_MODAL_CURRENT_CONTRACT_RECHECK_GHIDRA_REPORT.md)

@@ -3,7 +3,7 @@
 **Status:** DRAFTED — not approved.
 **Date:** 2026-06-02
 **Rule:** Rust-native structure, gamemd-native semantics.
-**Companion docs:** `docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md` (the design doc; §S6–S8, slice ledger, §10 negative facts) + the mission/radio substrate plan (Slices 0–6, of which 0–3 are landed: commits `d41352b7`, `792d6051`, `ff1d2a32`, `6943e8ed`).
+**Companion docs:** [docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md) (the design doc; §S6–S8, slice ledger, §10 negative facts) + the mission/radio substrate plan (Slices 0–6, of which 0–3 are landed: commits `d41352b7`, `792d6051`, `ff1d2a32`, `6943e8ed`).
 
 ---
 
@@ -197,7 +197,7 @@ New file `src/sim/world/slice7_aircraft_tests.rs` (modeled on `slice6_retask_tes
 - Do **not** flip `MissionCom` to authoritative here — S7 is iteration-order + deferred-death only.
 - Do **not** silently keep the original design test names `aircraft_ai_body_is_thin_shell` / `aircraft_never_areaguard_inherited_stub` — under approach (B) they assert structures that don't exist; use the rescoped names in §6 and document the S5 deferral inline.
 
-**Relevant files (absolute):** `src/sim/aircraft/mod.rs`, `...\src\sim\aircraft\idle_mode.rs`, `...\src\sim\world\mod.rs`, `...\src\sim\game_entity.rs`, `...\src\sim\docking\aircraft_dock.rs`, `...\src\sim\movement\air_movement.rs`, `...\src\sim\animation.rs`, `...\src\app_sim_tick.rs`, new `...\src\sim\world\slice7_aircraft_tests.rs`, model `...\src\sim\world\slice6_retask_tests.rs`. Design doc: `docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md` (§S7 `:862-876`, table `:902-914`, §10 negative facts `:938-939`).
+**Relevant files (absolute):** `src/sim/aircraft/mod.rs`, `...\src\sim\aircraft\idle_mode.rs`, `...\src\sim\world\mod.rs`, `...\src\sim\game_entity.rs`, `...\src\sim\docking\aircraft_dock.rs`, `...\src\sim\movement\air_movement.rs`, `...\src\sim\animation.rs`, `...\src\app_sim_tick.rs`, new `...\src\sim\world\slice7_aircraft_tests.rs`, model `...\src\sim\world\slice6_retask_tests.rs`. Design doc: [docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md) (§S7 `:862-876`, table `:902-914`, §10 negative facts `:938-939`).
 
 ---
 
@@ -262,7 +262,7 @@ The FACTS/corrections block lists "49/50/199." The ground-stage decompile of `Fe
 No code. Output: a verdict block (49/50 CONFIRMED / 199-source-found-or-UNVERIFIED / decay-gate-flag mapping), each cited inline with its `decompile_function` call.
 
 **Task 2 — Current-SEQUENCE Down/Up exclusion (parity gap, DRIFT today). ⚠️ CORRECTED 2026-06-02 — prior framing was a misread.**
-**CORRECTION (binary-verified):** gamemd does NOT gate this on the mission. `InfantryClass__Fear_Decay_Handler 0x005200B0` suppresses both Down (`Do_Action(5)`) and Up (`Do_Action(7)`) while the infantry's **current animation sequence (`Doing`, InfantryClass +0x6C4) ∈ {0x1B,0x1C,0x1D,0x1E}** (27–30 — deploy/special sequences; exact names TBD). It is read from +0x6C4 (the sequencer's `Doing` index into the per-type `SequenceData` at `TypeData+0xe3c`), **NOT** CurrentMission (+0xAC) and **NOT** the type index. BOTH the original "Capture/Sabotage family" AND the prior "interrupt-mission set {ParadropOverfly(27)…}" labels are WRONG. Verified `decompile_function 0x005200B0 / 0x00520AE0 / 0x00521B60 / 0x00517A50 / 0x00517CC0` — see `docs/research/READYTOCOMMENCE_S5_BLOCKER_CLOSURE_AND_FEAR_SEQUENCE_GATE_GHIDRA_REPORT.md`. The same {27-30} sequence set is also enforced inside `InfantryClass__DoType_Sequencer 0x00520AE0`.
+**CORRECTION (binary-verified):** gamemd does NOT gate this on the mission. `InfantryClass__Fear_Decay_Handler 0x005200B0` suppresses both Down (`Do_Action(5)`) and Up (`Do_Action(7)`) while the infantry's **current animation sequence (`Doing`, InfantryClass +0x6C4) ∈ {0x1B,0x1C,0x1D,0x1E}** (27–30 — deploy/special sequences; exact names TBD). It is read from +0x6C4 (the sequencer's `Doing` index into the per-type `SequenceData` at `TypeData+0xe3c`), **NOT** CurrentMission (+0xAC) and **NOT** the type index. BOTH the original "Capture/Sabotage family" AND the prior "interrupt-mission set {ParadropOverfly(27)…}" labels are WRONG. Verified `decompile_function 0x005200B0 / 0x00520AE0 / 0x00521B60 / 0x00517A50 / 0x00517CC0` — see [docs/research/READYTOCOMMENCE_S5_BLOCKER_CLOSURE_AND_FEAR_SEQUENCE_GATE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/READYTOCOMMENCE_S5_BLOCKER_CLOSURE_AND_FEAR_SEQUENCE_GATE_GHIDRA_REPORT.md). The same {27-30} sequence set is also enforced inside `InfantryClass__DoType_Sequencer 0x00520AE0`.
 
 Rust `tick_fear_decay_and_prone` has no current-sequence guard. **HARD BLOCKER:** the Rust engine does not model an infantry `Doing`/DoType sequence enum at gamemd parity, and sequences 27-30 are not yet named — so this gap CANNOT be implemented faithfully until the infantry `Doing` enum (and which entries are 27-30) is decoded (deferred follow-up: dump `TypeData+0xe3c` entries 27-30 or locate the DoType enum). Decay still runs (gamemd decrements regardless); only the Down/Up *transition* is gated. **Do NOT add a CurrentMission guard — that is the misread this correction fixes.** Signature (this gap) takes the current sequence, NOT the mission:
 ```
@@ -562,7 +562,7 @@ Sub-step B (the one rebaseline):
 - Do NOT let a busy-flag input participate in the golden (design line 840; test #11 proves exclusion).
 - Do NOT delete the legacy `Option<T>` executors — only the *selector authority* flips; they stay and feed the cross-check.
 
-**Files touched (absolute):** `src/sim/mission/verb.rs`, `...\src\sim\mission\retask.rs` (call-site signature updates only if the new `queue_mission` arity ripples — it does not today, since no live caller exists), `...\src\sim\game_entity.rs` (cross-check role on `derived_mission`; load-path version gate), `...\src\sim\world\mod.rs` (`refresh_mission_shadow` inversion), `...\src\sim\world\world_hash.rs` (fold), `...\src\sim\snapshot.rs` (version bump), `...\src\sim\world\slice6_retask_tests.rs` (rebaseline + new integration tests). READ-ONLY anchors: `...\src\map\entities.rs`, `...\src\sim\combat\combat_targeting.rs` (confirm unchanged), `...\src\sim\mission\mod.rs`, `...\src\sim\mission\timer.rs`. Design doc: `docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md` (§7.4, §8 row 6, Slice-S5 lines 801–841).
+**Files touched (absolute):** `src/sim/mission/verb.rs`, `...\src\sim\mission\retask.rs` (call-site signature updates only if the new `queue_mission` arity ripples — it does not today, since no live caller exists), `...\src\sim\game_entity.rs` (cross-check role on `derived_mission`; load-path version gate), `...\src\sim\world\mod.rs` (`refresh_mission_shadow` inversion), `...\src\sim\world\world_hash.rs` (fold), `...\src\sim\snapshot.rs` (version bump), `...\src\sim\world\slice6_retask_tests.rs` (rebaseline + new integration tests). READ-ONLY anchors: `...\src\map\entities.rs`, `...\src\sim\combat\combat_targeting.rs` (confirm unchanged), `...\src\sim\mission\mod.rs`, `...\src\sim\mission\timer.rs`. Design doc: [docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md) (§7.4, §8 row 6, Slice-S5 lines 801–841).
 
 ---
 
@@ -579,7 +579,7 @@ Sub-step B (the one rebaseline):
 
 **Naming:** the workflow task calls this "Slice L7"; the design doc's slice ledger (doc §9 :912) names it **"Slice S8 — Building leaf shell (LAST)."** Same slice. Cross-reference the doc's acceptance-test names under S8.
 
-**Source of truth:** `docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md` §9 S8 (:880–:897), §10.1–10.3 (:920–:949), plus the live Rust tree (every `file:line` below re-verified this session against the live file).
+**Source of truth:** [docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_FOOTCLASS_SUBSTRATE_SERVICE_DESIGN.md) §9 S8 (:880–:897), §10.1–10.3 (:920–:949), plus the live Rust tree (every `file:line` below re-verified this session against the live file).
 
 ---
 

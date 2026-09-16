@@ -201,7 +201,7 @@ Adversarial corner-case answers:
 ### Stale Docs / Follow-up Docs
 
 - `skirmish-ui/SKIRMISH_START_TO_FULL_INIT_SPAWN_TRACE.md`: keep the conclusion that deficient starts are generated, but replace any vague "8x8 clearance" sentence with "fallback calls `FootClass__Find_Nearby_Passable_Cell` with `8,8` rectangle dimensions that flow into `CellRect__CheckPassability`; lower-level passability semantics remain a separate slice."
-- `skirmish-ui/SKIRMISH_SPAWN_PLACEMENT_AFTER_ASSIGNED_START_GHIDRA_REPORT.md`: correct the fallback seed formula if reused. The verified formula is `x = RandomRanged(0, DAT_0087F918 - 10) + DAT_0087F910 + 10`, `y = RandomRanged(10, DAT_0087F914 - 10) + DAT_0087F90C`.
+- [skirmish-ui/SKIRMISH_SPAWN_PLACEMENT_AFTER_ASSIGNED_START_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_SPAWN_PLACEMENT_AFTER_ASSIGNED_START_GHIDRA_REPORT.md): correct the fallback seed formula if reused. The verified formula is `x = RandomRanged(0, DAT_0087F918 - 10) + DAT_0087F910 + 10`, `y = RandomRanged(10, DAT_0087F914 - 10) + DAT_0087F90C`.
 - Any implementation note saying deficient starts are unsupported/no-spawn should be replaced with "standard selected YR fills missing start-vector entries with random nearby-passable fallback cells before assignment."
 
 ## 10. Remaining Uncertainty
@@ -221,5 +221,5 @@ Adversarial corner-case answers:
 - Ghidra memory read: vtable `0x007EE184`, with `+0x80 -> 0x005D6BE0`
 - Ghidra read-only decompile: `FootClass__Find_Nearby_Passable_Cell @ 0x0056DC20`
 - Ghidra read-only decompile: `Random__RandomRanged @ 0x0065C7E0`
-- Prior reports referenced: `skirmish-ui/SKIRMISH_SPAWN_PLACEMENT_AFTER_ASSIGNED_START_GHIDRA_REPORT.md`, `skirmish-ui/SKIRMISH_START_TO_FULL_INIT_SPAWN_TRACE.md`, `skirmish-ui/SKIRMISH_START_GAME_TO_SPAWN_CONSUMERS_GHIDRA_REPORT.md`
+- Prior reports referenced: [skirmish-ui/SKIRMISH_SPAWN_PLACEMENT_AFTER_ASSIGNED_START_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_SPAWN_PLACEMENT_AFTER_ASSIGNED_START_GHIDRA_REPORT.md), `skirmish-ui/SKIRMISH_START_TO_FULL_INIT_SPAWN_TRACE.md`, [skirmish-ui/SKIRMISH_START_GAME_TO_SPAWN_CONSUMERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_START_GAME_TO_SPAWN_CONSUMERS_GHIDRA_REPORT.md)
 - Rust scan: `src/app_skirmish.rs`, `src/map/waypoints.rs`

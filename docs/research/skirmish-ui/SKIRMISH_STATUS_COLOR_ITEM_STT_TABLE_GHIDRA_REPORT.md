@@ -98,7 +98,7 @@ No INI key controls this status mapping. Active in YR: Yes. The path is binary c
 | `FUN_004E4230` | Color control-id recognizer | decompile; assembly `0x004E4230..` | Yes |
 | `FUN_004E4E20` | combo item-data getter with selected fallback if called with `-1` | decompile; assembly `0x004E4E2D..0x004E4E4D` | Yes |
 | `FUN_004E42A0` | item-data to `STT:PlayerColor*` key loader | decompile; assembly contexts through `0x004E43B9`; PE string reads | Yes / Conditional for `8` reachability |
-| `FUN_004E45A0` | normal color combo population, from prior report | `SKIRMISH_COLOR_COMBO_POPULATION_AND_SWATCH_ORDER_GHIDRA_REPORT.md` | Yes |
+| `FUN_004E45A0` | normal color combo population, from prior report | [SKIRMISH_COLOR_COMBO_POPULATION_AND_SWATCH_ORDER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_COLOR_COMBO_POPULATION_AND_SWATCH_ORDER_GHIDRA_REPORT.md) | Yes |
 
 ## 7. Current Rust Implementation Status
 
@@ -114,7 +114,7 @@ Evidence: `src/ui/skirmish_shell/state/combos.rs:283..284`, `src/ui/skirmish_she
 | Color control-id recognizer values | verified | `FUN_004E4230` | none |
 | Item-data getter return semantics and `-1` selected fallback | verified | `FUN_004E4E20`, assembly `0x004E4E2D..0x004E4E4D` | none |
 | Exact `-2,0..8` color status table | verified | `FUN_004E42A0`; PE string reads at `0x008229FC..0x00822AC4` | none |
-| Standard normal Skirmish population of color rows | verified-by-prior | `SKIRMISH_COLOR_COMBO_POPULATION_AND_SWATCH_ORDER_GHIDRA_REPORT.md` | none for this slice |
+| Standard normal Skirmish population of color rows | verified-by-prior | [SKIRMISH_COLOR_COMBO_POPULATION_AND_SWATCH_ORDER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_COLOR_COMBO_POPULATION_AND_SWATCH_ORDER_GHIDRA_REPORT.md) | none for this slice |
 | Observer row in normal standard Skirmish dropdown | verified-negative-by-prior | prior report: `FUN_004E45A0` inserts `0..7`, not `8` | none |
 | Online/lobby observer row reachability | deferred | out of scope | separate lobby/observer-mode investigation if needed |
 | Current Rust status mapping delta | verified | source scan paths listed above | implementation later |
@@ -128,7 +128,7 @@ Evidence: `src/ui/skirmish_shell/state/combos.rs:283..284`, `src/ui/skirmish_she
 - `[RESOLVED] OQ-005 - Is Observer item data `8` or a sentinel? -> Observer is item data `8`, not a separate negative sentinel.` (evidence: `FUN_004E42A0`, key pointer `0x008229FC`)
 - `[RESOLVED] OQ-006 - What happens for other item data? -> `FUN_004E42A0` returns null for values outside `-2,0..8`.` (evidence: `0x004E43B7..0x004E43B9`)
 - `[RESOLVED] OQ-007 - Does status item `-1` select the current row? -> Not in the standard parent item-status branch because `FUN_006AE3F0` guards `param_4[1] != -1`; if `FUN_004E4E20` is called directly with `-1`, it reads `CB_GETCURSEL` first.` (evidence: `FUN_006AE3F0`; `FUN_004E4E20` assembly)
-- `[RESOLVED] OQ-008 - Does normal Skirmish population insert Observer? -> No, prior verified `FUN_004E45A0` inserts `-2` and `0..7`; initialized row `8` is not inserted by that normal path.` (evidence: `SKIRMISH_COLOR_COMBO_POPULATION_AND_SWATCH_ORDER_GHIDRA_REPORT.md`)
+- `[RESOLVED] OQ-008 - Does normal Skirmish population insert Observer? -> No, prior verified `FUN_004E45A0` inserts `-2` and `0..7`; initialized row `8` is not inserted by that normal path.` (evidence: [SKIRMISH_COLOR_COMBO_POPULATION_AND_SWATCH_ORDER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_COLOR_COMBO_POPULATION_AND_SWATCH_ORDER_GHIDRA_REPORT.md))
 - `[RESOLVED] OQ-009 - Does current Rust use item-specific color status? -> No, color `ComboItem` falls back to generic `STT:SkirmishComboColor`.` (evidence: `state/hit_test.rs:138..142`, `:196..200`)
 - `[DEFERRED] OQ-010 - Which non-standard online/lobby paths can feed item data `8` to this helper?` (category: out-of-scope; reason: target is standard Skirmish status handoff and the helper mapping is already exact; next-step-if-pursued: investigate observer-mode/online color combo population)
 
@@ -158,12 +158,12 @@ This is a status text source slice, not a paint/composition slice. No SHP, palet
 
 ## 13. Stale Docs / Replacement Wording
 
-- `docs/research/skirmish-ui/SKIRMISH_STATUS_CHILD_0X695_TEXT_SOURCE_GHIDRA_REPORT.md`: replace the broad sentence "For other scoped combo/list families, `FUN_006AE3F0` attempts item-specific text through combo/list helper functions (`FUN_004E3830`, `FUN_004E4230`, `FUN_004E4EC0`, and related getters). This report did not expand those helper families..." with "For color combo controls, the item-specific status table is now verified in `SKIRMISH_STATUS_COLOR_ITEM_STT_TABLE_GHIDRA_REPORT.md`: `-2 -> STT:PlayerColorRandom`, `0..7 -> Gold/Red/Blue/Green/Orange/SkyBlue/Purple/Pink`, and `8 -> STT:PlayerColorObserver`; standard offline Skirmish normal population inserts `-2` and `0..7`, not Observer."
+- [docs/research/skirmish-ui/SKIRMISH_STATUS_CHILD_0X695_TEXT_SOURCE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_STATUS_CHILD_0X695_TEXT_SOURCE_GHIDRA_REPORT.md): replace the broad sentence "For other scoped combo/list families, `FUN_006AE3F0` attempts item-specific text through combo/list helper functions (`FUN_004E3830`, `FUN_004E4230`, `FUN_004E4EC0`, and related getters). This report did not expand those helper families..." with "For color combo controls, the item-specific status table is now verified in `SKIRMISH_STATUS_COLOR_ITEM_STT_TABLE_GHIDRA_REPORT.md`: `-2 -> STT:PlayerColorRandom`, `0..7 -> Gold/Red/Blue/Green/Orange/SkyBlue/Purple/Pink`, and `8 -> STT:PlayerColorObserver`; standard offline Skirmish normal population inserts `-2` and `0..7`, not Observer."
 
 ## Sources
 
 - Ghidra decompile: `FUN_006AE3F0`, `FUN_004E4230`, `FUN_004E4E20`, `FUN_004E42A0`.
 - Ghidra assembly contexts: `0x006AE531..0x006AE598`, `0x004E4230..0x004E4248`, `0x004E4E2D..0x004E4E4D`, `0x004E42A0..0x004E43B9`.
 - PE string reads from `<ra2-install>/gamemd.exe`: `0x00822AC4`, `0x00822AB0`, `0x00822A9C`, `0x00822A88`, `0x00822A70`, `0x00822A58`, `0x00822A40`, `0x00822A28`, `0x00822A14`, `0x008229FC`.
-- Prior docs: `SKIRMISH_0X102_STATUS_HELP_FULL_MAPPING_CURRENT_RUST_GHIDRA_REPORT.md`, `SKIRMISH_COLOR_COMBO_POPULATION_AND_SWATCH_ORDER_GHIDRA_REPORT.md`, `SKIRMISH_STATUS_CHILD_0X695_TEXT_SOURCE_GHIDRA_REPORT.md`.
+- Prior docs: [SKIRMISH_0X102_STATUS_HELP_FULL_MAPPING_CURRENT_RUST_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_0X102_STATUS_HELP_FULL_MAPPING_CURRENT_RUST_GHIDRA_REPORT.md), [SKIRMISH_COLOR_COMBO_POPULATION_AND_SWATCH_ORDER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_COLOR_COMBO_POPULATION_AND_SWATCH_ORDER_GHIDRA_REPORT.md), [SKIRMISH_STATUS_CHILD_0X695_TEXT_SOURCE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_STATUS_CHILD_0X695_TEXT_SOURCE_GHIDRA_REPORT.md).
 - Rust scan only: `src/ui/skirmish_shell/state/hit_test.rs`, `src/ui/skirmish_shell/state/combos.rs`, `src/ui/skirmish_shell/state/tests.rs`.

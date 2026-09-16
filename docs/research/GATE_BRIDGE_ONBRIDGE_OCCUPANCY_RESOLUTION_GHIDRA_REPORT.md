@@ -199,4 +199,4 @@ relayered down via DropIn.)
 - get_function_callers: `TechnoClass__EnterCell_AddToMultiCells`
 - get_struct_layout: `CellClass`
 - read_memory: `0x00b1d0ac` (cold = 0; runtime-init threshold)
-- Prior docs cross-checked: `bridges/02-cell-state-layering-zones/BRIDGE_OCCUPANCY_OBJECT_LISTS_GHIDRA_REPORT.md`, `bridges/02-cell-state-layering-zones/HIGH_BRIDGE_ONBRIDGE_OCCUPANCY_TRANSITION_SEQUENCE_GHIDRA_REPORT.md`, `CELLCLASS_SUBSTRATE_LIVE_OBJECT_LIST_WRITERS_GHIDRA_REPORT.md`
+- Prior docs cross-checked: `bridges/02-cell-state-layering-zones/BRIDGE_OCCUPANCY_OBJECT_LISTS_GHIDRA_REPORT.md`, [bridges/02-cell-state-layering-zones/HIGH_BRIDGE_ONBRIDGE_OCCUPANCY_TRANSITION_SEQUENCE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/HIGH_BRIDGE_ONBRIDGE_OCCUPANCY_TRANSITION_SEQUENCE_GHIDRA_REPORT.md), [CELLCLASS_SUBSTRATE_LIVE_OBJECT_LIST_WRITERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELLCLASS_SUBSTRATE_LIVE_OBJECT_LIST_WRITERS_GHIDRA_REPORT.md)

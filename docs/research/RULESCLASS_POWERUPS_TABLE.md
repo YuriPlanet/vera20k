@@ -1,7 +1,7 @@
 ---
 title: RulesClass [Powerups] crate-bonus table schema
 source_addr: 0x00673E80
-owner_report: RULESCLASS_GHIDRA_REPORT.md §5 (Master orchestrators, step 32)
+owner_report: [RULESCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RULESCLASS_GHIDRA_REPORT.md) §5 (Master orchestrators, step 32)
 yr_active_in_stock_game: YES
 writes_to_rulesclass: NO (writes to 4 parallel globals, not a RulesClass field)
 verified_from: gamemd.exe live decompilation (Ghidra MCP, 2026-04-24); token-3 semantics, flag-array width, default string, and static defaults re-verified 2026-09-02 against the live binary; cross-checked against ini/rulesmd.ini §[Powerups]

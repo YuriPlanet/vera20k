@@ -17,7 +17,7 @@ Do any active standard Yuri's Revenge paths pass a nonzero queued-mode argument 
 
 - Do not re-derive `0x00554AF0` falloff/math; that was covered by the prior cell-compute and dirty-scheduling reports.
 - Do not study unrelated map ambience, LightConvert RGB normalization, or spotlight beam rendering.
-- Do not mutate Ghidra labels/comments, Rust, INI, existing docs, or `.swarm-claims.md`.
+- Do not mutate Ghidra labels/comments, Rust, INI, existing docs, or [.swarm-claims.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/.swarm-claims.md).
 
 ## Evidence Needed To Mark COMPLETE
 

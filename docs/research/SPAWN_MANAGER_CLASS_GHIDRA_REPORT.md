@@ -464,7 +464,7 @@ path. The docking is *not* a `BuildingDock`-style hardpoint; it's just a proximi
 (`|child.Z - owner.Z| < 20`) in the Z axis combined with an XY-cell match.
 
 **Kirov / BombClass is NOT this class.** Kirov's `Primary=Bomb` uses the weapon/projectile
-path into `BombClass`, not `SpawnManagerClass`. See `BOMB_CLASS_GHIDRA_REPORT.md`.
+path into `BombClass`, not `SpawnManagerClass`. See [BOMB_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BOMB_CLASS_GHIDRA_REPORT.md).
 
 ---
 
@@ -527,7 +527,7 @@ if (!loco->Is_Moving()        /* vtable+0x10 */
 (Carrier, Destroyer) skip this check entirely — Hornets can launch while the carrier
 is moving.
 
-Evidence: `DRIVE_LOCOMOTION_CLASS.md` line 784 confirms vtable+0x10 = Is_Moving
+Evidence: [DRIVE_LOCOMOTION_CLASS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DRIVE_LOCOMOTION_CLASS.md) line 784 confirms vtable+0x10 = Is_Moving
 (0x4AFB80, three-tier dest/head_to/XY check) and line 812 confirms vtable+0x80 =
 Is_Moving_Now (0x4AFC20, CDTimer-active OR has waypoint+speed). The same two methods
 exist on every ILocomotor implementor (Drive, Fly, Rocket, Ship, Hover, JumpJet,
@@ -557,7 +557,7 @@ AccTime, Duration=2). Aircraft-style children skip the list entirely and die via
 | `0x6C4` | **TechnoTypeClass\*** (cached Type pointer) | Alternate cache of the type pointer (separate from the constructor-set 0x14C). Used by spawn code and `SelectWeaponAgainst`. | MEDIUM — behaves as a Type ptr; exact relationship to 0x14C not traced |
 | `0x6CA` | **IsRetreating / Abandoned** (byte) | Set to 1 by `FUN_0054e3b0` when a missile is pushed onto the retreat list. Combined with `HP=1`, guarantees the missile self-destructs on any hit and is owned by no targeting system. | HIGH (set inside 0x0054E3B0 under that specific condition only) |
 
-Additional back-pointer resolved in `TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md`:
+Additional back-pointer resolved in [TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md):
 - **`0x2D4` on the child = SpawnOwner** (back-pointer to the parent). Written by the
   constructor and by state-7 regen. Read by `RecordKill` (0x00702D40) to credit kills
   to the parent spawner rather than the missile.
@@ -635,11 +635,11 @@ physically never enter state 5 via any observed transition.
 - `ini/rules.ini` — base RA2 defaults (identical for these keys)
 
 **Related existing research docs:**
-- `ABSTRACTCLASS_GHIDRA_REPORT.md` — base class layout (0x24 bytes)
-- `TECHNOCLASS_STRUCT_LAYOUT.md` / `TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md` —
+- [ABSTRACTCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ABSTRACTCLASS_GHIDRA_REPORT.md) — base class layout (0x24 bytes)
+- [TECHNOCLASS_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_STRUCT_LAYOUT.md) / [TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md) —
   owner offsets `0x2D0` (SpawnManager*) and child's `0x2D4` (owner back-ptr)
-- `BOMB_CLASS_GHIDRA_REPORT.md` — Kirov bomb-drop mechanism (distinct system)
-- `SLAVE_MINER_ORE_SYSTEM_GHIDRA_REPORT.md` — sister manager class (SlaveManagerClass)
+- [BOMB_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BOMB_CLASS_GHIDRA_REPORT.md) — Kirov bomb-drop mechanism (distinct system)
+- [SLAVE_MINER_ORE_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/SLAVE_MINER_ORE_SYSTEM_GHIDRA_REPORT.md) — sister manager class (SlaveManagerClass)
 
 **Rust implementation files referenced:**
 - `src/rules/object_type.rs:295-303` — Slave manager INI (no spawn equivalent yet)

@@ -43,17 +43,17 @@ Read these first, in this order:
 | Order | Doc | Role |
 |---:|---|---|
 | 1 | `miner/STOCK_REFINERY_DOCK_UNLOAD_STATE_MACHINE_CURRENT_SYSTEM_MODEL_SYNTHESIS.md` | `CANONICAL`: one-screen stock flow and do-not-implement list. |
-| 2 | `ACCEPTED_CELL_GETDOCKCOORD_QUEUEINGCELL_DOC_CLUSTER_AUDIT_GHIDRA_REPORT.md` | `CANONICAL`: reconciles accepted `NW+(3,1)`, `GetDockCoord` `NW+(2,1)`, and `QueueingCell=4,1`. |
-| 3 | `REFINERY_ENTER_RETRY_TIMER_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md` | `PRIMARY`: stock `[Enter] Rate * 900 + RandomRanged(0,2)` retry timing and Rust deltas. |
-| 4 | `UNITCLASS_RECEIVE_RADIO_0X16_SECOND_CALL_SCHEDULING_GHIDRA_REPORT.md` | `PRIMARY`: first `0x16` vs later retry-driven `0x16`. |
-| 5 | `RADIO_0X18_CONTACT_FLAG_LIFECYCLE_GHIDRA_REPORT.md` | `PRIMARY`: `+0x418` contact state and clear paths. |
-| 6 | `RADIO_0X15_START_UNLOAD_SIDE_EFFECTS_GHIDRA_REPORT.md` | `PRIMARY`: `0x15` only queues mission `0x10` in stock DockUnload. |
-| 7 | `REFINERY_PAD_LINK_OCCUPANCY_LIFECYCLE_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md` | `PRIMARY`: no stock physical `on_pad` / `+0x2E4` link for normal unload. |
-| 8 | `STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md` | `PRIMARY`: mission `0x10`, zero-link unload state 3/4, `+0x6D1`, `+0xBC`. |
-| 9 | `REFINERY_DOCK_DEPLOY_SOUND_ANIM_TIMING_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md` | `PRIMARY`: no stock DockDeploy sound; slot 7 timing and stock no-op. |
-| 10 | `miner/HARV_UNLOADING_CLASS_DISPLAY_TIMING_GHIDRA_REPORT.md` | `PRIMARY`: HARV -> HORV render-time swap through `+0x6D1`. |
-| 11 | `miner/HARV_POST_UNLOAD_EXIT_PATH_GHIDRA_REPORT.md` | `PRIMARY`: healthy stock state-4 exit, contact cleanup, no `Force_Track(0x47)`. |
-| 12 | `DOCKING_QUEUE_EXIT_REFERENCE_POINTS_GHIDRA_REPORT.md` | `PRIMARY`: `QueueingCell`, `DockingOffset`, `ExitCoord`, `NumberOfDocks` reference-point split. |
+| 2 | [ACCEPTED_CELL_GETDOCKCOORD_QUEUEINGCELL_DOC_CLUSTER_AUDIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ACCEPTED_CELL_GETDOCKCOORD_QUEUEINGCELL_DOC_CLUSTER_AUDIT_GHIDRA_REPORT.md) | `CANONICAL`: reconciles accepted `NW+(3,1)`, `GetDockCoord` `NW+(2,1)`, and `QueueingCell=4,1`. |
+| 3 | [REFINERY_ENTER_RETRY_TIMER_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/REFINERY_ENTER_RETRY_TIMER_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md) | `PRIMARY`: stock `[Enter] Rate * 900 + RandomRanged(0,2)` retry timing and Rust deltas. |
+| 4 | [UNITCLASS_RECEIVE_RADIO_0X16_SECOND_CALL_SCHEDULING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNITCLASS_RECEIVE_RADIO_0X16_SECOND_CALL_SCHEDULING_GHIDRA_REPORT.md) | `PRIMARY`: first `0x16` vs later retry-driven `0x16`. |
+| 5 | [RADIO_0X18_CONTACT_FLAG_LIFECYCLE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADIO_0X18_CONTACT_FLAG_LIFECYCLE_GHIDRA_REPORT.md) | `PRIMARY`: `+0x418` contact state and clear paths. |
+| 6 | [RADIO_0X15_START_UNLOAD_SIDE_EFFECTS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADIO_0X15_START_UNLOAD_SIDE_EFFECTS_GHIDRA_REPORT.md) | `PRIMARY`: `0x15` only queues mission `0x10` in stock DockUnload. |
+| 7 | [REFINERY_PAD_LINK_OCCUPANCY_LIFECYCLE_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/REFINERY_PAD_LINK_OCCUPANCY_LIFECYCLE_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md) | `PRIMARY`: no stock physical `on_pad` / `+0x2E4` link for normal unload. |
+| 8 | [STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md) | `PRIMARY`: mission `0x10`, zero-link unload state 3/4, `+0x6D1`, `+0xBC`. |
+| 9 | [REFINERY_DOCK_DEPLOY_SOUND_ANIM_TIMING_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/REFINERY_DOCK_DEPLOY_SOUND_ANIM_TIMING_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md) | `PRIMARY`: no stock DockDeploy sound; slot 7 timing and stock no-op. |
+| 10 | [miner/HARV_UNLOADING_CLASS_DISPLAY_TIMING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/HARV_UNLOADING_CLASS_DISPLAY_TIMING_GHIDRA_REPORT.md) | `PRIMARY`: HARV -> HORV render-time swap through `+0x6D1`. |
+| 11 | [miner/HARV_POST_UNLOAD_EXIT_PATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/HARV_POST_UNLOAD_EXIT_PATH_GHIDRA_REPORT.md) | `PRIMARY`: healthy stock state-4 exit, contact cleanup, no `Force_Track(0x47)`. |
+| 12 | [DOCKING_QUEUE_EXIT_REFERENCE_POINTS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DOCKING_QUEUE_EXIT_REFERENCE_POINTS_GHIDRA_REPORT.md) | `PRIMARY`: `QueueingCell`, `DockingOffset`, `ExitCoord`, `NumberOfDocks` reference-point split. |
 
 ## Settled Lifecycle
 
@@ -115,116 +115,116 @@ flowchart TD
 
 | Doc | Authority | Use |
 |---|---|---|
-| `ACCEPTED_CELL_GETDOCKCOORD_QUEUEINGCELL_DOC_CLUSTER_AUDIT_GHIDRA_REPORT.md` | `CANONICAL` | Current wording for the three-cell split and stale wording audit. |
-| `DOCKING_QUEUE_EXIT_REFERENCE_POINTS_GHIDRA_REPORT.md` | `PRIMARY` | Parser units and reference-point consumers for `QueueingCell`, `DockingOffset`, `ExitCoord`, `NumberOfDocks`. |
-| `BUILDING_RECEIVE_RADIO_0E_STOCK_REFINERY_CANDOCK_CELL_GHIDRA_REPORT.md` | `STALE_IN_PART` | Correct for accepted `NW+(3,1)`; stale where it implies `+0x16BC` is the stock refinery `GetDockCoord` flag. |
-| `BUILDINGCLASS_GETDOCKCOORD_STOCK_REFINERY_BRANCH_GHIDRA_REPORT.md` | `PRIMARY` | Stock `GetDockCoord` branch proof. |
-| `BUILDING_RECEIVE_RADIO_0E_GETDOCKCOORD_SIDE_CHECK_GHIDRA_REPORT.md` | `SUPPORTING` | Early side-check inside `0x0E`; not the accepted target. |
-| `REFINERY_DOCK_PAD_CAN_ENTER_CELL_STACK_GHIDRA_REPORT.md` | `SUPPORTING` | Can-enter/passability stack around the refinery pad. |
-| `STOCK_REFINERY_ART_REMOVE_OCCUPY_PAD_CELL_GHIDRA_REPORT.md` | `SUPPORTING` | Art-opened `NW+(3,1)` pad/passability fact. |
-| `coord-cell-conversions/fn-building-getdockcoord.md` | `STALE_IN_PART` | Mostly correct; avoid wording that makes `NW+(2,1)` required for every unload. |
-| `coord-cell-conversions/_system.md` | `SUPPORTING` | Broader coordinate synthesis; current for this split after latest updates. |
+| [ACCEPTED_CELL_GETDOCKCOORD_QUEUEINGCELL_DOC_CLUSTER_AUDIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ACCEPTED_CELL_GETDOCKCOORD_QUEUEINGCELL_DOC_CLUSTER_AUDIT_GHIDRA_REPORT.md) | `CANONICAL` | Current wording for the three-cell split and stale wording audit. |
+| [DOCKING_QUEUE_EXIT_REFERENCE_POINTS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DOCKING_QUEUE_EXIT_REFERENCE_POINTS_GHIDRA_REPORT.md) | `PRIMARY` | Parser units and reference-point consumers for `QueueingCell`, `DockingOffset`, `ExitCoord`, `NumberOfDocks`. |
+| [BUILDING_RECEIVE_RADIO_0E_STOCK_REFINERY_CANDOCK_CELL_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_RECEIVE_RADIO_0E_STOCK_REFINERY_CANDOCK_CELL_GHIDRA_REPORT.md) | `STALE_IN_PART` | Correct for accepted `NW+(3,1)`; stale where it implies `+0x16BC` is the stock refinery `GetDockCoord` flag. |
+| [BUILDINGCLASS_GETDOCKCOORD_STOCK_REFINERY_BRANCH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_GETDOCKCOORD_STOCK_REFINERY_BRANCH_GHIDRA_REPORT.md) | `PRIMARY` | Stock `GetDockCoord` branch proof. |
+| [BUILDING_RECEIVE_RADIO_0E_GETDOCKCOORD_SIDE_CHECK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_RECEIVE_RADIO_0E_GETDOCKCOORD_SIDE_CHECK_GHIDRA_REPORT.md) | `SUPPORTING` | Early side-check inside `0x0E`; not the accepted target. |
+| [REFINERY_DOCK_PAD_CAN_ENTER_CELL_STACK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/REFINERY_DOCK_PAD_CAN_ENTER_CELL_STACK_GHIDRA_REPORT.md) | `SUPPORTING` | Can-enter/passability stack around the refinery pad. |
+| [STOCK_REFINERY_ART_REMOVE_OCCUPY_PAD_CELL_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/STOCK_REFINERY_ART_REMOVE_OCCUPY_PAD_CELL_GHIDRA_REPORT.md) | `SUPPORTING` | Art-opened `NW+(3,1)` pad/passability fact. |
+| [coord-cell-conversions/fn-building-getdockcoord.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/coord-cell-conversions/fn-building-getdockcoord.md) | `STALE_IN_PART` | Mostly correct; avoid wording that makes `NW+(2,1)` required for every unload. |
+| [coord-cell-conversions/_system.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/coord-cell-conversions/_system.md) | `SUPPORTING` | Broader coordinate synthesis; current for this split after latest updates. |
 
 ### B. Mission Enter Retry
 
 | Doc | Authority | Use |
 |---|---|---|
-| `REFINERY_ENTER_RETRY_TIMER_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md` | `PRIMARY` | Exact retry formula, start/duration storage, Rust timer deltas. |
-| `MISSIONENTER_RETRY_TIMER_STORAGE_AND_DISPATCH_GHIDRA_REPORT.md` | `PRIMARY` | Mission dispatcher timer storage and due logic. |
-| `FOOTCLASS_MISSION_ENTER_0X0E_REPEAT_TIMING_GHIDRA_REPORT.md` | `PRIMARY` | One `0x0E` per dispatch and repeat timing. |
-| `UNIT_MISSION_ENTER_REFINERY_RETRY_QUEUE_LOOP_GHIDRA_REPORT.md` | `SUPPORTING` | Refinery retry loop context. |
-| `miner/MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md` | `STALE_IN_PART` | Useful older Mission Enter facts; check wording against the current three-cell split. |
-| `miner/MISSION_ENTER_CANDOCK_RETRY_SAME_FRAME_ORDER_GHIDRA_REPORT.md` | `SUPPORTING` | Same-frame ordering around `CAN_DOCK` retry. |
+| [REFINERY_ENTER_RETRY_TIMER_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/REFINERY_ENTER_RETRY_TIMER_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md) | `PRIMARY` | Exact retry formula, start/duration storage, Rust timer deltas. |
+| [MISSIONENTER_RETRY_TIMER_STORAGE_AND_DISPATCH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MISSIONENTER_RETRY_TIMER_STORAGE_AND_DISPATCH_GHIDRA_REPORT.md) | `PRIMARY` | Mission dispatcher timer storage and due logic. |
+| [FOOTCLASS_MISSION_ENTER_0X0E_REPEAT_TIMING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_ENTER_0X0E_REPEAT_TIMING_GHIDRA_REPORT.md) | `PRIMARY` | One `0x0E` per dispatch and repeat timing. |
+| [UNIT_MISSION_ENTER_REFINERY_RETRY_QUEUE_LOOP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNIT_MISSION_ENTER_REFINERY_RETRY_QUEUE_LOOP_GHIDRA_REPORT.md) | `SUPPORTING` | Refinery retry loop context. |
+| [miner/MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MISSION_ENTER_REFINERY_DOCK_GHIDRA_REPORT.md) | `STALE_IN_PART` | Useful older Mission Enter facts; check wording against the current three-cell split. |
+| [miner/MISSION_ENTER_CANDOCK_RETRY_SAME_FRAME_ORDER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MISSION_ENTER_CANDOCK_RETRY_SAME_FRAME_ORDER_GHIDRA_REPORT.md) | `SUPPORTING` | Same-frame ordering around `CAN_DOCK` retry. |
 
 ### C. Radio Contact And Handoff
 
 | Doc | Authority | Use |
 |---|---|---|
-| `RADIO_0X18_CONTACT_FLAG_LIFECYCLE_GHIDRA_REPORT.md` | `PRIMARY` | `+0x418` set/clear/persistence and consumers. |
-| `UNITCLASS_RECEIVE_RADIO_0X16_SECOND_CALL_SCHEDULING_GHIDRA_REPORT.md` | `PRIMARY` | First `0x16` vs later retry-driven `0x16`; no self-schedule. |
-| `UNITCLASS_RECEIVE_RADIO_0X16_SECOND_CALL_TIMING_GHIDRA_REPORT.md` | `PRIMARY` | Timing-focused sibling for the later `0x16`. |
-| `RADIO_0X15_START_UNLOAD_SIDE_EFFECTS_GHIDRA_REPORT.md` | `PRIMARY` | `0x15` side effects: queue mission `0x10` only for stock DockUnload. |
-| `PERCELLPROCESS_ALTERNATE_0X15_PATH_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md` | `PRIMARY` | Alternate per-cell `0x15` source. |
-| `UNITCLASS_PERCELLPROCESS_CONTACT_FLAG_ADJACENT_BUILDING_0X15_BRANCH_GHIDRA_REPORT.md` | `PRIMARY` | Adjacent-building `0x15` branch gated by `+0x418`. |
-| `UNITCLASS_PERCELLPROCESS_GETDOCKCOORD_VS_0X16_RECONCILIATION_GHIDRA_REPORT.md` | `PRIMARY` | Reconciles `GetDockCoord` per-cell source with `0x16` source. |
-| `RADIOCLASS_CORE_PRIMITIVES_VERIFIED_GHIDRA_REPORT.md` | `SUPPORTING` | Generic RadioClass contact primitives. |
-| `RADIO_SYSTEM_MODEL_SYNTHESIS.md` | `SUPPORTING` | Broader radio model; not refinery-specific enough to override focused reports. |
+| [RADIO_0X18_CONTACT_FLAG_LIFECYCLE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADIO_0X18_CONTACT_FLAG_LIFECYCLE_GHIDRA_REPORT.md) | `PRIMARY` | `+0x418` set/clear/persistence and consumers. |
+| [UNITCLASS_RECEIVE_RADIO_0X16_SECOND_CALL_SCHEDULING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNITCLASS_RECEIVE_RADIO_0X16_SECOND_CALL_SCHEDULING_GHIDRA_REPORT.md) | `PRIMARY` | First `0x16` vs later retry-driven `0x16`; no self-schedule. |
+| [UNITCLASS_RECEIVE_RADIO_0X16_SECOND_CALL_TIMING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNITCLASS_RECEIVE_RADIO_0X16_SECOND_CALL_TIMING_GHIDRA_REPORT.md) | `PRIMARY` | Timing-focused sibling for the later `0x16`. |
+| [RADIO_0X15_START_UNLOAD_SIDE_EFFECTS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADIO_0X15_START_UNLOAD_SIDE_EFFECTS_GHIDRA_REPORT.md) | `PRIMARY` | `0x15` side effects: queue mission `0x10` only for stock DockUnload. |
+| [PERCELLPROCESS_ALTERNATE_0X15_PATH_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PERCELLPROCESS_ALTERNATE_0X15_PATH_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md) | `PRIMARY` | Alternate per-cell `0x15` source. |
+| [UNITCLASS_PERCELLPROCESS_CONTACT_FLAG_ADJACENT_BUILDING_0X15_BRANCH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNITCLASS_PERCELLPROCESS_CONTACT_FLAG_ADJACENT_BUILDING_0X15_BRANCH_GHIDRA_REPORT.md) | `PRIMARY` | Adjacent-building `0x15` branch gated by `+0x418`. |
+| [UNITCLASS_PERCELLPROCESS_GETDOCKCOORD_VS_0X16_RECONCILIATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNITCLASS_PERCELLPROCESS_GETDOCKCOORD_VS_0X16_RECONCILIATION_GHIDRA_REPORT.md) | `PRIMARY` | Reconciles `GetDockCoord` per-cell source with `0x16` source. |
+| [RADIOCLASS_CORE_PRIMITIVES_VERIFIED_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADIOCLASS_CORE_PRIMITIVES_VERIFIED_GHIDRA_REPORT.md) | `SUPPORTING` | Generic RadioClass contact primitives. |
+| [RADIO_SYSTEM_MODEL_SYNTHESIS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADIO_SYSTEM_MODEL_SYNTHESIS.md) | `SUPPORTING` | Broader radio model; not refinery-specific enough to override focused reports. |
 
 ### D. Mission Deploy / Unload Start
 
 | Doc | Authority | Use |
 |---|---|---|
-| `STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md` | `PRIMARY` | Zero-link reachability, state 3/4, `+0x6D1`, `+0xBC`, `PathType` polarity. |
-| `UNIT_MISSION_DEPLOY_BUILDING_UNLOAD_START_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md` | `PRIMARY` | Unload-start implementation handoff. |
+| [STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md) | `PRIMARY` | Zero-link reachability, state 3/4, `+0x6D1`, `+0xBC`, `PathType` polarity. |
+| [UNIT_MISSION_DEPLOY_BUILDING_UNLOAD_START_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNIT_MISSION_DEPLOY_BUILDING_UNLOAD_START_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md) | `PRIMARY` | Unload-start implementation handoff. |
 | `UNIT_MISSION_DEPLOY_BUILDING_GHIDRA_REPORT.md` | `PRIMARY` | Broader mission `0x10` function context. |
-| `MISSION_DEPLOY_BUILDING_0x73D630_STATE_MACHINE_GHIDRA_REPORT.md` | `PRIMARY` | State-machine body context. |
-| `MISSION_DEPLOY_BUILDING_DOCKED_VS_UNDOCKED_BRANCH_GHIDRA_REPORT.md` | `PRIMARY` | `+0x2E4` branch split. |
+| [MISSION_DEPLOY_BUILDING_0x73D630_STATE_MACHINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MISSION_DEPLOY_BUILDING_0x73D630_STATE_MACHINE_GHIDRA_REPORT.md) | `PRIMARY` | State-machine body context. |
+| [MISSION_DEPLOY_BUILDING_DOCKED_VS_UNDOCKED_BRANCH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MISSION_DEPLOY_BUILDING_DOCKED_VS_UNDOCKED_BRANCH_GHIDRA_REPORT.md) | `PRIMARY` | `+0x2E4` branch split. |
 | `miner/MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_GHIDRA_REPORT.md` | `SUPPORTING` | Older refinery unload body facts. |
-| `miner/MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_STATE3_STATE4_TIMING_GHIDRA_REPORT.md` | `SUPPORTING` | State 3/4 timing details. |
+| [miner/MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_STATE3_STATE4_TIMING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_STATE3_STATE4_TIMING_GHIDRA_REPORT.md) | `SUPPORTING` | State 3/4 timing details. |
 | `miner/STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_PATHTYPE_STATE4_GHIDRA_REPORT.md` | `SUPPORTING` | PathType/state-4 details. |
-| `miner/EMPTY_SLOT_UNLOAD_GATE_TO_STATE4_RELEASE_TIMING_GHIDRA_REPORT.md` | `SUPPORTING` | Empty-slot transition to state 4. |
+| [miner/EMPTY_SLOT_UNLOAD_GATE_TO_STATE4_RELEASE_TIMING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/EMPTY_SLOT_UNLOAD_GATE_TO_STATE4_RELEASE_TIMING_GHIDRA_REPORT.md) | `SUPPORTING` | Empty-slot transition to state 4. |
 
 ### E. Sound / Animation / Display / Credits
 
 | Doc | Authority | Use |
 |---|---|---|
-| `REFINERY_DOCK_DEPLOY_SOUND_ANIM_TIMING_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md` | `PRIMARY` | No stock DockDeploy sound; slot 7 call timing and stock no-op. |
-| `miner/HARV_UNLOADING_CLASS_DISPLAY_TIMING_GHIDRA_REPORT.md` | `PRIMARY` | HORV display gate: render-time swap when `+0x6D1 != 0`. |
-| `UNLOADINGCLASS_RENDER_ORIENTATION_GHIDRA_REPORT.md` | `SUPPORTING` | Rendering/orientation follow-up for UnloadingClass. |
+| [REFINERY_DOCK_DEPLOY_SOUND_ANIM_TIMING_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/REFINERY_DOCK_DEPLOY_SOUND_ANIM_TIMING_IMPLEMENTATION_VERIFICATION_GHIDRA_REPORT.md) | `PRIMARY` | No stock DockDeploy sound; slot 7 call timing and stock no-op. |
+| [miner/HARV_UNLOADING_CLASS_DISPLAY_TIMING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/HARV_UNLOADING_CLASS_DISPLAY_TIMING_GHIDRA_REPORT.md) | `PRIMARY` | HORV display gate: render-time swap when `+0x6D1 != 0`. |
+| [UNLOADINGCLASS_RENDER_ORIENTATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNLOADINGCLASS_RENDER_ORIENTATION_GHIDRA_REPORT.md) | `SUPPORTING` | Rendering/orientation follow-up for UnloadingClass. |
 | `miner/REFINERY_DOCK_ANIM_SLOTS_GHIDRA_REPORT.md` | `SUPPORTING` | Refinery anim slot details. |
 | `miner/REFINERY_STORAGE_FLOW_GHIDRA_REPORT.md` | `PRIMARY` | Storage/deposit flow. |
-| `miner/ORE_VALUE_CREDIT_DEPOSIT_GHIDRA_REPORT.md` | `PRIMARY` | Credit award values. |
-| `ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md` | `PRIMARY` | Purifier/credit modifiers and `Math__ftol` corroboration. |
+| [miner/ORE_VALUE_CREDIT_DEPOSIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/ORE_VALUE_CREDIT_DEPOSIT_GHIDRA_REPORT.md) | `PRIMARY` | Credit award values. |
+| [ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ADD_TIBERIUM_CREDITS_PURIFIER_VIRTUAL_PURIFIERS_GHIDRA_REPORT.md) | `PRIMARY` | Purifier/credit modifiers and `Math__ftol` corroboration. |
 | `HARVEST_ORE_TICK_TIMING_PARTIAL_FULL_EDGE_CASES_ORE_GEMS_GHIDRA_REPORT.md` | `SUPPORTING` | Harvest/cargo edge behavior outside docking. |
 
 ### F. Healthy Exit / Contact Cleanup
 
 | Doc | Authority | Use |
 |---|---|---|
-| `miner/HARV_POST_UNLOAD_EXIT_PATH_GHIDRA_REPORT.md` | `PRIMARY` | Healthy state-4 exit and contact cleanup. |
-| `BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_NAVCOM_GHIDRA_REPORT.md` | `PRIMARY` | Slot-8 depart wait guard. |
-| `miner/BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_GHIDRA_REPORT.md` | `SUPPORTING` | Same guard in miner folder. |
-| `miner/REFINERY_DOCK_EXIT_CHAIN_VERIFIED_GHIDRA_REPORT.md` | `SUPPORTING` | Exit-chain corroboration. |
-| `miner/CHRONO_MINER_POST_UNLOAD_EXIT_ANCHOR_GHIDRA_REPORT.md` | `STALE_IN_PART` | Useful chrono context; do not use to make healthy stock exit a `Force_Track` path. |
+| [miner/HARV_POST_UNLOAD_EXIT_PATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/HARV_POST_UNLOAD_EXIT_PATH_GHIDRA_REPORT.md) | `PRIMARY` | Healthy state-4 exit and contact cleanup. |
+| [BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_NAVCOM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_NAVCOM_GHIDRA_REPORT.md) | `PRIMARY` | Slot-8 depart wait guard. |
+| [miner/BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_GHIDRA_REPORT.md) | `SUPPORTING` | Same guard in miner folder. |
+| [miner/REFINERY_DOCK_EXIT_CHAIN_VERIFIED_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/REFINERY_DOCK_EXIT_CHAIN_VERIFIED_GHIDRA_REPORT.md) | `SUPPORTING` | Exit-chain corroboration. |
+| [miner/CHRONO_MINER_POST_UNLOAD_EXIT_ANCHOR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/CHRONO_MINER_POST_UNLOAD_EXIT_ANCHOR_GHIDRA_REPORT.md) | `STALE_IN_PART` | Useful chrono context; do not use to make healthy stock exit a `Force_Track` path. |
 
 ### G. Two-Miner / Queue Contention
 
 | Doc | Authority | Use |
 |---|---|---|
-| `miner/TWO_MINER_ONE_REFINERY_ZERO_LINK_HANDOFF_TIMING_GHIDRA_REPORT.md` | `EDGE` | Two-miner handoff timing. |
-| `miner/TWO_MINER_ONE_REFINERY_ZERO_LINK_HANDOFF_FRAME_ORDER_GHIDRA_REPORT.md` | `EDGE` | Frame order for two-miner handoff. |
-| `miner/TWO_CMIN_ONE_REFINERY_TAKEOVER_TIMING_GHIDRA_REPORT.md` | `EDGE` | Chrono two-miner takeover. |
-| `miner/TWO_CMIN_TAKEOVER_FRAME_ORDER_RETRY_GHIDRA_REPORT.md` | `EDGE` | Retry/frame-order detail. |
-| `miner/LIVE_OBJECT_VECTOR_ORDER_TWO_MINERS_REFINERY_GHIDRA_REPORT.md` | `EDGE` | Live object order effect. |
-| `CHRONO_MINER_REFINERY_CONTACT_SATURATION_QUEUE_EVICTION_GHIDRA_REPORT.md` | `EDGE` | Contact saturation/queue eviction context. |
-| `miner/CURRENT_RUST_TWO_MINER_TESTS_VS_BINARY_RULE_GHIDRA_REPORT.md` | `EDGE` | Rust test comparison for two-miner rules. |
-| `miner/WAITING_MINER_MISSION_TIMER_AFTER_BUSY_CANDOCK_GHIDRA_REPORT.md` | `EDGE` | Busy/waiting retry timer behavior. |
+| [miner/TWO_MINER_ONE_REFINERY_ZERO_LINK_HANDOFF_TIMING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/TWO_MINER_ONE_REFINERY_ZERO_LINK_HANDOFF_TIMING_GHIDRA_REPORT.md) | `EDGE` | Two-miner handoff timing. |
+| [miner/TWO_MINER_ONE_REFINERY_ZERO_LINK_HANDOFF_FRAME_ORDER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/TWO_MINER_ONE_REFINERY_ZERO_LINK_HANDOFF_FRAME_ORDER_GHIDRA_REPORT.md) | `EDGE` | Frame order for two-miner handoff. |
+| [miner/TWO_CMIN_ONE_REFINERY_TAKEOVER_TIMING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/TWO_CMIN_ONE_REFINERY_TAKEOVER_TIMING_GHIDRA_REPORT.md) | `EDGE` | Chrono two-miner takeover. |
+| [miner/TWO_CMIN_TAKEOVER_FRAME_ORDER_RETRY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/TWO_CMIN_TAKEOVER_FRAME_ORDER_RETRY_GHIDRA_REPORT.md) | `EDGE` | Retry/frame-order detail. |
+| [miner/LIVE_OBJECT_VECTOR_ORDER_TWO_MINERS_REFINERY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/LIVE_OBJECT_VECTOR_ORDER_TWO_MINERS_REFINERY_GHIDRA_REPORT.md) | `EDGE` | Live object order effect. |
+| [CHRONO_MINER_REFINERY_CONTACT_SATURATION_QUEUE_EVICTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CHRONO_MINER_REFINERY_CONTACT_SATURATION_QUEUE_EVICTION_GHIDRA_REPORT.md) | `EDGE` | Contact saturation/queue eviction context. |
+| [miner/CURRENT_RUST_TWO_MINER_TESTS_VS_BINARY_RULE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/CURRENT_RUST_TWO_MINER_TESTS_VS_BINARY_RULE_GHIDRA_REPORT.md) | `EDGE` | Rust test comparison for two-miner rules. |
+| [miner/WAITING_MINER_MISSION_TIMER_AFTER_BUSY_CANDOCK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/WAITING_MINER_MISSION_TIMER_AFTER_BUSY_CANDOCK_GHIDRA_REPORT.md) | `EDGE` | Busy/waiting retry timer behavior. |
 
 ### H. Interrupt / Destroyed / Sold / Conditional Release
 
 | Doc | Authority | Use |
 |---|---|---|
-| `miner/HARV_DESTROYED_REFINERY_UNLOAD_ABORT_GHIDRA_REPORT.md` | `EDGE` | Destroyed-refinery abort behavior. |
-| `miner/MISSING_DESTROYED_REFINERY_MID_UNLOAD_ORDERING_GHIDRA_REPORT.md` | `EDGE` | Missing/destroyed mid-unload ordering. |
-| `miner/REFINERY_DESTROYED_OR_SOLD_MID_UNLOAD_CONTACTS_DISPLAY_CREDITS_GHIDRA_REPORT.md` | `EDGE` | Contacts/display/credits during loss. |
-| `miner/REFINERY_SOLD_DESTROYED_MID_UNLOAD_RUNTIME_EFFECTS_GHIDRA_REPORT.md` | `EDGE` | Runtime effects of sold/destroyed refinery. |
-| `miner/UNLOAD_VISUAL_STALE_FRAME_AFTER_REFINERY_LOSS_GHIDRA_REPORT.md` | `EDGE` | Stale visual frame risk. |
-| `miner/BUILDING_UNDOCKUNIT_0x4593A0_CHRONO_MINER_GHIDRA_REPORT.md` | `EDGE` | Interrupt/undock helper, not healthy stock completion. |
-| `miner/RELEASEDOCKEDHARVESTER_0x4595C0_GHIDRA_REPORT.md` | `EDGE` | Conditional reciprocal-link release helper. |
-| `RELEASEDOCKEDHARVESTER_EXIT_ANCHOR_RECHECK_GHIDRA_REPORT.md` | `EDGE` | Conditional release anchor recheck. |
-| `miner/STANDARD_REFINERY_0X2E4_WRITER_INVENTORY_GHIDRA_REPORT.md` | `PRIMARY` | Writer inventory proving stock `+0x2E4` absence/conditionality. |
+| [miner/HARV_DESTROYED_REFINERY_UNLOAD_ABORT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/HARV_DESTROYED_REFINERY_UNLOAD_ABORT_GHIDRA_REPORT.md) | `EDGE` | Destroyed-refinery abort behavior. |
+| [miner/MISSING_DESTROYED_REFINERY_MID_UNLOAD_ORDERING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MISSING_DESTROYED_REFINERY_MID_UNLOAD_ORDERING_GHIDRA_REPORT.md) | `EDGE` | Missing/destroyed mid-unload ordering. |
+| [miner/REFINERY_DESTROYED_OR_SOLD_MID_UNLOAD_CONTACTS_DISPLAY_CREDITS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/REFINERY_DESTROYED_OR_SOLD_MID_UNLOAD_CONTACTS_DISPLAY_CREDITS_GHIDRA_REPORT.md) | `EDGE` | Contacts/display/credits during loss. |
+| [miner/REFINERY_SOLD_DESTROYED_MID_UNLOAD_RUNTIME_EFFECTS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/REFINERY_SOLD_DESTROYED_MID_UNLOAD_RUNTIME_EFFECTS_GHIDRA_REPORT.md) | `EDGE` | Runtime effects of sold/destroyed refinery. |
+| [miner/UNLOAD_VISUAL_STALE_FRAME_AFTER_REFINERY_LOSS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/UNLOAD_VISUAL_STALE_FRAME_AFTER_REFINERY_LOSS_GHIDRA_REPORT.md) | `EDGE` | Stale visual frame risk. |
+| [miner/BUILDING_UNDOCKUNIT_0x4593A0_CHRONO_MINER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/BUILDING_UNDOCKUNIT_0x4593A0_CHRONO_MINER_GHIDRA_REPORT.md) | `EDGE` | Interrupt/undock helper, not healthy stock completion. |
+| [miner/RELEASEDOCKEDHARVESTER_0x4595C0_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/RELEASEDOCKEDHARVESTER_0x4595C0_GHIDRA_REPORT.md) | `EDGE` | Conditional reciprocal-link release helper. |
+| [RELEASEDOCKEDHARVESTER_EXIT_ANCHOR_RECHECK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RELEASEDOCKEDHARVESTER_EXIT_ANCHOR_RECHECK_GHIDRA_REPORT.md) | `EDGE` | Conditional release anchor recheck. |
+| [miner/STANDARD_REFINERY_0X2E4_WRITER_INVENTORY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/STANDARD_REFINERY_0X2E4_WRITER_INVENTORY_GHIDRA_REPORT.md) | `PRIMARY` | Writer inventory proving stock `+0x2E4` absence/conditionality. |
 
 ### I. Stale / Superseded Watchlist
 
 | Doc | Authority | Problem |
 |---|---|---|
-| `miner/DOCK_ARRIVAL_PIVOT_SEQUENCE_GHIDRA_REPORT.md` | `STALE_IN_PART` | Old conclusions around arrival/pivot need conflict-audit corrections. |
-| `miner/DOCK_ARRIVAL_PIVOT_SEQUENCE_DOC_CONFLICT_AUDIT_GHIDRA_REPORT.md` | `CANONICAL_FOR_STALENESS` | Use this audit to interpret the stale pivot doc. |
-| `miner/RADIO_LINK_REFINERY_DOCK_STATE_MACHINE_GHIDRA_REPORT.md` | `STALE_IN_PART` | Old radio/link wording can collapse stages. |
-| `miner/RADIO_LINK_REFINERY_DOCK_STATE_MACHINE_DOC_CONFLICT_AUDIT_GHIDRA_REPORT.md` | `CANONICAL_FOR_STALENESS` | Use this audit to interpret the stale radio-link doc. |
+| [miner/DOCK_ARRIVAL_PIVOT_SEQUENCE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/DOCK_ARRIVAL_PIVOT_SEQUENCE_GHIDRA_REPORT.md) | `STALE_IN_PART` | Old conclusions around arrival/pivot need conflict-audit corrections. |
+| [miner/DOCK_ARRIVAL_PIVOT_SEQUENCE_DOC_CONFLICT_AUDIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/DOCK_ARRIVAL_PIVOT_SEQUENCE_DOC_CONFLICT_AUDIT_GHIDRA_REPORT.md) | `CANONICAL_FOR_STALENESS` | Use this audit to interpret the stale pivot doc. |
+| [miner/RADIO_LINK_REFINERY_DOCK_STATE_MACHINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/RADIO_LINK_REFINERY_DOCK_STATE_MACHINE_GHIDRA_REPORT.md) | `STALE_IN_PART` | Old radio/link wording can collapse stages. |
+| [miner/RADIO_LINK_REFINERY_DOCK_STATE_MACHINE_DOC_CONFLICT_AUDIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/RADIO_LINK_REFINERY_DOCK_STATE_MACHINE_DOC_CONFLICT_AUDIT_GHIDRA_REPORT.md) | `CANONICAL_FOR_STALENESS` | Use this audit to interpret the stale radio-link doc. |
 | `miner/HARVESTER_DOCK_UNLOAD.md` | `SUPERSEDED` | Older narrative; do not implement from it without rechecking. |
-| `miner/HARVESTER_DOCK_UNLOAD_SEQUENCE.md` | `SUPERSEDED` | Older sequence; do not implement from it without rechecking. |
-| `CHRONO_MINER_REFINERY_DOCK_UNLOAD_SYSTEM_MODEL_SYNTHESIS.md` | `STALE_IN_PART` | Useful older synthesis; current stock split is in `miner/STOCK_REFINERY_DOCK_UNLOAD_STATE_MACHINE_CURRENT_SYSTEM_MODEL_SYNTHESIS.md`. |
+| [miner/HARVESTER_DOCK_UNLOAD_SEQUENCE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/HARVESTER_DOCK_UNLOAD_SEQUENCE.md) | `SUPERSEDED` | Older sequence; do not implement from it without rechecking. |
+| [CHRONO_MINER_REFINERY_DOCK_UNLOAD_SYSTEM_MODEL_SYNTHESIS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CHRONO_MINER_REFINERY_DOCK_UNLOAD_SYSTEM_MODEL_SYNTHESIS.md) | `STALE_IN_PART` | Useful older synthesis; current stock split is in `miner/STOCK_REFINERY_DOCK_UNLOAD_STATE_MACHINE_CURRENT_SYSTEM_MODEL_SYNTHESIS.md`. |
 | `coord-cell-conversions` docs mentioning a physical `NW+3 -> NW+2` bridge | `SUPERSEDED_FOR_THIS_CLAIM` | Replace with accepted `NW+3`, `GetDockCoord` `NW+2`, no physical bridge. |
 
 ## Current Implementation-Relevant Deltas To Recheck

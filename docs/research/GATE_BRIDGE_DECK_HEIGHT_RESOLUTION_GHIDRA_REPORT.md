@@ -118,7 +118,7 @@ cell-grid frame (X/Y are cell*256+offset leptons). No level/lepton mixing occurs
 ```text
 if target_cell.flags & 0x100:  local height = target_cell.Level + 4   # LEVEL units
 ```
-(per `BRIDGE_JUMPJET_HEIGHT_MINUS_ONE_RUNTIME_GHIDRA_REPORT.md` Executive Summary; and
+(per [BRIDGE_JUMPJET_HEIGHT_MINUS_ONE_RUNTIME_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/04-locomotion-height-tubes/BRIDGE_JUMPJET_HEIGHT_MINUS_ONE_RUNTIME_GHIDRA_REPORT.md) Executive Summary; and
 `CellClass::GetEffectiveHeight @ 0x00487D50` = `Level + ((flags>>7)&1)*4`, Level units —
 `decompile_function 0x00487D50`). This `+4` is a discrete **terrain Level index** (1
 ElevationIncrement), used for layer/occupancy/cliff decisions — **not** the lepton deck Z.
@@ -165,7 +165,7 @@ from the same place the AoE threshold uses (`DAT_0089E870` family) so all three 
 - `get_function_by_address`: 0x00578080, 0x0047b3a0, 0x005F5FA0, 0x00487D50, 0x005F3880 (no defined fn → raw bytes)
 - `get_xrefs_to`: 0x00AC13BC, 0x00AC13C8
 - `read_memory`: 0x005F3850(80), 0x005F37C0(64), 0x007E1738(8)=0.5, 0x00AC13BC(4)=0, 0x00AC13C8(4)=0
-- Prior docs cross-checked: `DAT_0089E864_BRIDGE_THRESHOLD_IDENTITY_GHIDRA_REPORT.md`,
-  `GETEFFECTIVEHEIGHT_PLUS4_UNIT_GHIDRA_REPORT.md`,
-  `bridges/04-locomotion-height-tubes/BRIDGE_JUMPJET_HEIGHT_MINUS_ONE_RUNTIME_GHIDRA_REPORT.md`,
-  `bridges/04-locomotion-height-tubes/BRIDGE_LOCOMOTOR_WALK_DROPPOD_TELEPORT_GHIDRA_REPORT.md`
+- Prior docs cross-checked: [DAT_0089E864_BRIDGE_THRESHOLD_IDENTITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/01-assets-map-load-overlay/DAT_0089E864_BRIDGE_THRESHOLD_IDENTITY_GHIDRA_REPORT.md),
+  [GETEFFECTIVEHEIGHT_PLUS4_UNIT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GETEFFECTIVEHEIGHT_PLUS4_UNIT_GHIDRA_REPORT.md),
+  [bridges/04-locomotion-height-tubes/BRIDGE_JUMPJET_HEIGHT_MINUS_ONE_RUNTIME_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/04-locomotion-height-tubes/BRIDGE_JUMPJET_HEIGHT_MINUS_ONE_RUNTIME_GHIDRA_REPORT.md),
+  [bridges/04-locomotion-height-tubes/BRIDGE_LOCOMOTOR_WALK_DROPPOD_TELEPORT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/04-locomotion-height-tubes/BRIDGE_LOCOMOTOR_WALK_DROPPOD_TELEPORT_GHIDRA_REPORT.md)

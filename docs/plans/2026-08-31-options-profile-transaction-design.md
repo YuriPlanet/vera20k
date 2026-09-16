@@ -9,7 +9,7 @@ Status: APPROVED by final corrective `/design-review`; implementation-ready
 September 12 correction: this historical design incorrectly equated the early
 configured game pair with the frontend window pair. Fresh original instructions
 establish separate sizes and a post-load mode change. The sizing claims below
-are superseded by [the shell resolution lifecycle evidence](../research/skirmish-ui/2026-09-12-shell-resolution-lifecycle.md);
+are superseded by [the shell resolution lifecycle evidence](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/2026-09-12-shell-resolution-lifecycle.md);
 the profile read/write and audio contracts remain separate concerns.
 
 ## Goal
@@ -18,7 +18,7 @@ Replace VERA20k's fragmented startup/options/audio persistence with one process-
 
 This mechanism closes only the Options/Video/Audio profile transaction established by:
 
-- `docs/research/OPTIONS_PROFILE_TRANSACTION_GHIDRA_REPORT.md`
+- [docs/research/OPTIONS_PROFILE_TRANSACTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/OPTIONS_PROFILE_TRANSACTION_GHIDRA_REPORT.md)
 - `docs/contracts/2026-08-31-options-profile-transaction-implementation-contract.md`
 - `docs/gap-scans/2026-08-31-disparity-scan-phase-14.md`
 

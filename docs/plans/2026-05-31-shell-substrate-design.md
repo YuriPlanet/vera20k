@@ -2,7 +2,7 @@
 title: Shell Substrate (ui::shell) — Design Spec
 date: 2026-05-31
 status: design (live-src-verified this session; Slice 0 only is approved-for-implementation scope)
-source doc: docs/research/SHELL_DIALOG_FRAMEWORK_SUBSTRATE_SERVICE.md
+source doc: [docs/research/SHELL_DIALOG_FRAMEWORK_SUBSTRATE_SERVICE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SHELL_DIALOG_FRAMEWORK_SUBSTRATE_SERVICE.md)
 scope: consolidate the three front-end shells' duplicated geometry into one ui/shell/geom.rs;
        full substrate (descriptor/layout/paint-trait/controller/modal/slide) is roadmap-only.
 verification: every current-code claim below is quoted file:line from a live read this run.
@@ -119,7 +119,7 @@ session may be mid-edit).
 
 ---
 
-## 2. Doc-vs-code drift found (corrections to SHELL_DIALOG_FRAMEWORK_SUBSTRATE_SERVICE.md §4/§7)
+## 2. Doc-vs-code drift found (corrections to [SHELL_DIALOG_FRAMEWORK_SUBSTRATE_SERVICE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SHELL_DIALOG_FRAMEWORK_SUBSTRATE_SERVICE.md) §4/§7)
 
 1. **§4 table & §7.1 say single_player DLU copy is `layout.rs:50-74`** — CONFIRMED exact
    (mul_div_round 50-57, dlu_rect 59-66, center_offset 68-74).

@@ -34,8 +34,8 @@ decompiled lines.
 ## 2. Class Hierarchy
 
 The *type-class* hierarchy is parallel to — but structurally separate from —
-the *instance* hierarchy documented in `ABSTRACTCLASS_GHIDRA_REPORT.md` /
-`OBJECTCLASS_GHIDRA_REPORT.md` / `TECHNOCLASS_STRUCT_LAYOUT.md`. Every
+the *instance* hierarchy documented in [ABSTRACTCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ABSTRACTCLASS_GHIDRA_REPORT.md) /
+[OBJECTCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/OBJECTCLASS_GHIDRA_REPORT.md) / [TECHNOCLASS_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_STRUCT_LAYOUT.md). Every
 live techno object (an actual unit/building on the map) points to one of
 these type-class templates via its `TechnoClass + 0x14C` field.
 
@@ -174,7 +174,7 @@ subobject (0x1C bytes).
 
 4 vtable slots at 0x00/0x04/0x08/0x0C plus ~0x14 bytes of AbstractClass
 instance state (flags, ID, registration). Not extended in this report — see
-ABSTRACTCLASS_GHIDRA_REPORT.md.
+[ABSTRACTCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ABSTRACTCLASS_GHIDRA_REPORT.md).
 
 ### 5.2 AbstractTypeClass portion (`[0x24 .. 0x94]`)
 
@@ -1084,12 +1084,12 @@ for this report; use it as the reference for the audit.
   entries [E1], [GREIN], [ORCA], [NAPOWR] sampled for key coverage).
 - **Prior research (cross-referenced, not superseded):**
   [BUILDINGTYPECLASS_FIELDS.csv](BUILDINGTYPECLASS_FIELDS.csv),
-  [BUILDINGTYPECLASS_CTOR_DEFAULTS.md](BUILDINGTYPECLASS_CTOR_DEFAULTS.md),
-  [OWNER_BITMASK_TECH_PREREQUISITE_SYSTEM.md](OWNER_BITMASK_TECH_PREREQUISITE_SYSTEM.md),
-  [ABSTRACTCLASS_GHIDRA_REPORT.md](ABSTRACTCLASS_GHIDRA_REPORT.md),
-  [OBJECTCLASS_GHIDRA_REPORT.md](OBJECTCLASS_GHIDRA_REPORT.md),
-  [READINI_FIELD_MAPS.md](READINI_FIELD_MAPS.md),
-  [COUNTRY_MULTIPLIERS_APPLICATION.md](COUNTRY_MULTIPLIERS_APPLICATION.md).
+  [BUILDINGTYPECLASS_CTOR_DEFAULTS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGTYPECLASS_CTOR_DEFAULTS.md),
+  [OWNER_BITMASK_TECH_PREREQUISITE_SYSTEM.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/OWNER_BITMASK_TECH_PREREQUISITE_SYSTEM.md),
+  [ABSTRACTCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ABSTRACTCLASS_GHIDRA_REPORT.md),
+  [OBJECTCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/OBJECTCLASS_GHIDRA_REPORT.md),
+  [READINI_FIELD_MAPS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/READINI_FIELD_MAPS.md),
+  [COUNTRY_MULTIPLIERS_APPLICATION.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/COUNTRY_MULTIPLIERS_APPLICATION.md).
 - **Investigation plan:** `docs/plans/2026-04-24-technotypeclass-base-investigation-plan.md`
   (executed in 3 phases: 6 Phase-1 FULL/MEDIUM fns + Phase-1 checkpoint + 11
   Phase-2 fns + 5 Phase-3 items + static table reads).

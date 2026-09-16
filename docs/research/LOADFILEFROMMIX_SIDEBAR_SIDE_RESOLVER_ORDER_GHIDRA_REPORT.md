@@ -31,7 +31,7 @@ used by sidebar SHP loads such as `REPAIR.SHP`, `SELL.SHP`, `SIDE1.SHP`,
 - Stop if Ghidra MCP read-only access is unavailable.
 - Stop if the list order requires mutating Ghidra to recover a missing function boundary.
 - Stop if the target expands into retail archive-content auditing.
-- Stop after writing this one report and updating only `.swarm-claims.md`.
+- Stop after writing this one report and updating only [.swarm-claims.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/.swarm-claims.md).
 
 ## Verified findings
 
@@ -176,7 +176,7 @@ Evidence: `MixFileSystem_InitSentinels` decompile and assembly
 
 ## Stale-doc replacement wording
 
-Suggested replacement for `docs/research/SIDEBAR_REPAIR_SELL_BUTTON_GHIDRA_REPORT.md`
+Suggested replacement for [docs/research/SIDEBAR_REPAIR_SELL_BUTTON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_REPAIR_SELL_BUTTON_GHIDRA_REPORT.md)
 section 7.2 first paragraph:
 
 > The art varies through `LoadFileFromMIX` precedence, not through sidebar-side filename

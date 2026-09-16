@@ -239,7 +239,7 @@ Verified facts:
 
 - A unit at bridge/deck height selects `cell+0xE8` in `Can_Enter_Cell`.
 - Bridge occupancy bits are `cell+0x128` when the post-traversal height equals `cell.Level+4`.
-- `AddContent` and `RemoveContent` use `ObjectClass+0x8C` as their normal list selector via Techno enter/exit callers (`TechnoClass__EnterCell_AddToMultiCells @ 0x005683C0`, `ExitCell_RemoveFromMultiCells @ 0x005687F0`, assembly verified in prior `BRIDGE_OBJECT_ONBRIDGE_FIELD_GHIDRA_REPORT.md`).
+- `AddContent` and `RemoveContent` use `ObjectClass+0x8C` as their normal list selector via Techno enter/exit callers (`TechnoClass__EnterCell_AddToMultiCells @ 0x005683C0`, `ExitCell_RemoveFromMultiCells @ 0x005687F0`, assembly verified in prior [BRIDGE_OBJECT_ONBRIDGE_FIELD_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/BRIDGE_OBJECT_ONBRIDGE_FIELD_GHIDRA_REPORT.md)).
 
 Result: bridge-deck movement reads and writes the bridge list and bridge bits. Ground occupants on `+0xE4` are not scanned by the normal bridge-deck list loop.
 
@@ -250,7 +250,7 @@ Verified facts:
 - `CheckBridgeTraversal @ 0x004D9C60` enforces bridge entry/exit height rules.
 - Height-diff `4` is the bridge transition case.
 - Entering bridge requires structural bridge and bridgehead flags in the relevant branch.
-- Normal drive/walk/ship movement updates `ObjectClass+0x8C` after old-cell removal and coordinate update, before new-cell insertion. This was verified in `BRIDGE_OBJECT_ONBRIDGE_FIELD_GHIDRA_REPORT.md` at `DriveLocomotionClass::Process_Drive_Track`, `WalkLocomotionClass::ProcessMovement`, and ship counterparts.
+- Normal drive/walk/ship movement updates `ObjectClass+0x8C` after old-cell removal and coordinate update, before new-cell insertion. This was verified in [BRIDGE_OBJECT_ONBRIDGE_FIELD_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/BRIDGE_OBJECT_ONBRIDGE_FIELD_GHIDRA_REPORT.md) at `DriveLocomotionClass::Process_Drive_Track`, `WalkLocomotionClass::ProcessMovement`, and ship counterparts.
 
 Important order:
 
@@ -287,14 +287,14 @@ Tiny details:
 - The function does not damage `AltObject` entries with C4Warhead. They are dropped in.
 - `DropIn` clears `ObjectClass+0x8C` before re-submitting and marking.
 
-Active in YR: Yes, except the global death-list push is confirmed TS-legacy/dead in `BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md`.
+Active in YR: Yes, except the global death-list push is confirmed TS-legacy/dead in [BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/00-system-models/BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md).
 
 ### Falling / debris
 
 Two different mechanisms matter:
 
 - Falling bridge-deck objects: `BlowUpBridge` calls `DropIn` on every `AltObject`. `DropIn` clears `OnBridge`, removes/re-submits display-layer membership, and marks the object again. This is not a damage/despawn path.
-- Bridge debris/explosion visuals: `BlowUpBridge` uses `RulesClass` debris lists (`MetallicDebris`, `BridgeExplosions`) after the list walks. These are animation/world-effect spawns, not CellClass object-list occupants in the same sense as units. The detailed RNG and list labels are covered by `BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md`.
+- Bridge debris/explosion visuals: `BlowUpBridge` uses `RulesClass` debris lists (`MetallicDebris`, `BridgeExplosions`) after the list walks. These are animation/world-effect spawns, not CellClass object-list occupants in the same sense as units. The detailed RNG and list labels are covered by [BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/00-system-models/BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md).
 
 Result: falling units are relayered through `DropIn`; debris visuals do not use the high-bridge unit occupancy lists as blockers.
 
@@ -402,8 +402,8 @@ Existing verified reports checked:
 - `docs/research/BRIDGE_OBJECT_ONBRIDGE_FIELD_GHIDRA_REPORT.md`
 - `docs/research/BRIDGE_RUNTIME_DEEP_DIVE_GHIDRA_REPORT.md`
 - `docs/research/CELLCLASS_STRUCT_GHIDRA_REPORT.md`
-- `docs/research/CELL_OCCUPATION_MARKING_GHIDRA_REPORT.md`
-- `docs/research/OBJECTCLASS_GHIDRA_REPORT.md`
+- [docs/research/CELL_OCCUPATION_MARKING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELL_OCCUPATION_MARKING_GHIDRA_REPORT.md)
+- [docs/research/OBJECTCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/OBJECTCLASS_GHIDRA_REPORT.md)
 
 Rust files compared:
 

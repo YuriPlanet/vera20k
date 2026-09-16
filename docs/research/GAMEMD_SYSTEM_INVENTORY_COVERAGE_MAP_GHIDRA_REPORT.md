@@ -169,7 +169,7 @@ material ways:
 - `MissionClass` exposes 32 mission rows with different handler/reachability
   outcomes through dispatch `0x005B3060`; they cannot share one parity status.
 - Mech, DropPod, and Tunnel locomotors are compiled but dormant under stock YR
-  data according to `TS_DORMANT_LOCOMOTORS_GHIDRA_REPORT.md`.
+  data according to [TS_DORMANT_LOCOMOTORS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TS_DORMANT_LOCOMOTORS_GHIDRA_REPORT.md).
 - Magnetron locomotor hijack (`0x004690B0`, `0x00710000`) and IFV/Gunner weapon
   selection (`0x0070DC70`) are independent stock mechanisms.
 - EBolt, LaserDraw, DiskLaser, WaveClass, AlphaShape, gattling, prism support,
@@ -865,20 +865,20 @@ Recommended order is the dependency spine rather than the most visible feature:
 - `docs/research/CORE_ENGINE_SERVICES_MAP.md`
 - `docs/research/GAMEMD_ARCHITECTURE.md` — historical, never-audited broad map;
   used only as a discovery lead
-- `docs/research/LOGICCLASS_GLOBAL_SUBSYSTEM_ORDER_0055AFB0_GHIDRA_REPORT.md`
-- `docs/research/MISSIONCLASS_STATE_MACHINE.md`
-- `docs/research/REPLAY_ACTIVE_VECTOR_RESTORE_CORNER_RESWARM_20260528.md`
-- `docs/research/TS_DORMANT_LOCOMOTORS_GHIDRA_REPORT.md`
-- `docs/research/MAGNETRON_SYSTEM_GHIDRA_REPORT.md`
-- `docs/research/IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md`
-- `docs/research/EBOLT_SYSTEM_GHIDRA_REPORT.md`
-- `docs/research/GATTLING_WEAPON_STAGE_SYSTEM_GHIDRA_REPORT.md`
-- `docs/research/skirmish-ui/SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md`
-- `docs/research/skirmish-ui/SKIRMISH_TEAM_ADJUNCT_HOUSE_ALLIANCE_HANDOFF_GHIDRA_REPORT.md`
-- `docs/research/combat/INDEX_COMBAT.md`
-- `docs/research/units/INDEX_UNITS.md`
-- `docs/research/ENGINE_STATE_OVERVIEW.md`
-- `docs/research/.audit-coverage-index.md`
+- [docs/research/LOGICCLASS_GLOBAL_SUBSYSTEM_ORDER_0055AFB0_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOGICCLASS_GLOBAL_SUBSYSTEM_ORDER_0055AFB0_GHIDRA_REPORT.md)
+- [docs/research/MISSIONCLASS_STATE_MACHINE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MISSIONCLASS_STATE_MACHINE.md)
+- [docs/research/REPLAY_ACTIVE_VECTOR_RESTORE_CORNER_RESWARM_20260528.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/REPLAY_ACTIVE_VECTOR_RESTORE_CORNER_RESWARM_20260528.md)
+- [docs/research/TS_DORMANT_LOCOMOTORS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TS_DORMANT_LOCOMOTORS_GHIDRA_REPORT.md)
+- [docs/research/MAGNETRON_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAGNETRON_SYSTEM_GHIDRA_REPORT.md)
+- [docs/research/IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/IFV_AND_OPEN_TOPPED_TRANSPORT_GHIDRA_REPORT.md)
+- [docs/research/EBOLT_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/EBOLT_SYSTEM_GHIDRA_REPORT.md)
+- [docs/research/GATTLING_WEAPON_STAGE_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GATTLING_WEAPON_STAGE_SYSTEM_GHIDRA_REPORT.md)
+- [docs/research/skirmish-ui/SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md)
+- [docs/research/skirmish-ui/SKIRMISH_TEAM_ADJUNCT_HOUSE_ALLIANCE_HANDOFF_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_TEAM_ADJUNCT_HOUSE_ALLIANCE_HANDOFF_GHIDRA_REPORT.md)
+- [docs/research/combat/INDEX_COMBAT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/combat/INDEX_COMBAT.md)
+- [docs/research/units/INDEX_UNITS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/units/INDEX_UNITS.md)
+- [docs/research/ENGINE_STATE_OVERVIEW.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ENGINE_STATE_OVERVIEW.md)
+- [docs/research/.audit-coverage-index.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/.audit-coverage-index.md)
 - rebuilt repo-local research index database and validator output, 2026-07-20
 - retail repo INIs under `ini/`, with `*md` override precedence
 - live read-only Ghidra discovery and spine queries listed above

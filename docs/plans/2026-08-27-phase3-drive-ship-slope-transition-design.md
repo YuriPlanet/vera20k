@@ -11,7 +11,7 @@ general locomotion, or any excluded locomotor class.
 The representative production path is an ordinary stock YR skirmish in which a
 voxel-bodied vehicle or ship using its currently active Drive or Ship locomotor
 spawns on, idles on, or crosses a ramp. The complete native evidence is
-`docs/research/PHASE3_DRIVE_SHIP_SLOPE_TRANSITION_LIFECYCLE_GHIDRA_REPORT.md`.
+[docs/research/PHASE3_DRIVE_SHIP_SLOPE_TRANSITION_LIFECYCLE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_DRIVE_SHIP_SLOPE_TRANSITION_LIFECYCLE_GHIDRA_REPORT.md).
 That report proves stock activation for 52 Drive and 13 Ship types and leaves no
 load-bearing native question open.
 
@@ -27,7 +27,7 @@ with an inactive timer; successful `FootClass::Unlimbo` immediately snaps both
 slopes to the final containing cell. At each eligible `Process` entry, before
 any movement or track work, a changed current-cell byte copies current to
 previous, installs the sample as current, and starts duration/total `3`.
-[doc: `PHASE3_DRIVE_SHIP_SLOPE_TRANSITION_LIFECYCLE_GHIDRA_REPORT.md`
+[doc: [PHASE3_DRIVE_SHIP_SLOPE_TRANSITION_LIFECYCLE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_DRIVE_SHIP_SLOPE_TRANSITION_LIFECYCLE_GHIDRA_REPORT.md)
 §§2–3; GHIDRA `0x004AF540`, `0x0069EC50`, `0x004D7170`, `0x004B0500`,
 `0x0069FC10`]
 

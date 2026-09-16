@@ -187,7 +187,7 @@ Trace:
 
 Result: real receiver calls can occur in the same game frame as fire, after A returns and when the tail-appended bullet reaches its AI position.
 
-Evidence: fresh Bullet AI decompile and <code>disassemble_bytes(0x00466D20..0x00466E1F)</code>, plus the corrected exact-math result in <code>AAHEATSEEKER2_HOMINGTRACK_EXACT_MATH_GHIDRA_REPORT.md</code>. The older <code>current_speed * 90</code> wording is not reused.
+Evidence: fresh Bullet AI decompile and <code>disassemble_bytes(0x00466D20..0x00466E1F)</code>, plus the corrected exact-math result in <code>[AAHEATSEEKER2_HOMINGTRACK_EXACT_MATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AAHEATSEEKER2_HOMINGTRACK_EXACT_MATH_GHIDRA_REPORT.md)</code>. The older <code>current_speed * 90</code> wording is not reused.
 
 Important ordering consequence: P is appended after every object present at insertion time. In the simple fixture B and C run before P damages anything. “Same frame” does not mean “inside A's fire call” or “before every later pre-existing attacker.”
 
@@ -266,7 +266,7 @@ Task 3A proved that <code>Apply_area_damage</code> first completes fixed-record 
 - literal false, including <code>ignore_defenses=false</code>;
 - unchanged source house.
 
-Fresh evidence: <code>decompile_function(0x00489280)</code> and <code>disassemble_bytes(0x00489A78..0x00489AC4)</code>. Full collection/filter/order proof: <code>DAMAGE_AREA_DISPATCH_REINVESTIGATION_2026-07-13.md</code>.
+Fresh evidence: <code>decompile_function(0x00489280)</code> and <code>disassemble_bytes(0x00489A78..0x00489AC4)</code>. Full collection/filter/order proof: <code>[DAMAGE_AREA_DISPATCH_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_AREA_DISPATCH_REINVESTIGATION_2026-07-13.md)</code>.
 
 ## 8. Exact ProjectileImpactDamageCall provenance
 
@@ -388,8 +388,8 @@ Per the approved plan, do not directly patch combat damage from this report. Run
 
 | Prior/current claim | Rechecked result | Classification |
 |---|---|---|
-| <code>FIRE_AT_PIPELINE_GHIDRA_REPORT.md:548..552</code> says Sonic/Laser have instant fire-time HP paths | Fire_At has no HP/area/detonation callee. Wave and DiskLaser damage is effect-owned after Fire_At returns. Laser/electric/rad effect-specific damage remains route-specific. | WRONG / MISLEADING at the fire-call boundary |
-| <code>L2_FIRE_DAMAGE_TIMING_VERDICT_GHIDRA_REPORT.md:12..27</code> says deferred projectile is uniform and no shot changes HP in the firing pass | No HP occurs inside Fire_At, but an appended Bullet can impact later in the same live object pass, and a Wave can run in later same-frame rung P. DiskLaser first AI waits because rung G already passed. | PARTLY CORRECT call boundary; WRONG uniform timing |
+| <code>[FIRE_AT_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FIRE_AT_PIPELINE_GHIDRA_REPORT.md):548..552</code> says Sonic/Laser have instant fire-time HP paths | Fire_At has no HP/area/detonation callee. Wave and DiskLaser damage is effect-owned after Fire_At returns. Laser/electric/rad effect-specific damage remains route-specific. | WRONG / MISLEADING at the fire-call boundary |
+| <code>[L2_FIRE_DAMAGE_TIMING_VERDICT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/L2_FIRE_DAMAGE_TIMING_VERDICT_GHIDRA_REPORT.md):12..27</code> says deferred projectile is uniform and no shot changes HP in the firing pass | No HP occurs inside Fire_At, but an appended Bullet can impact later in the same live object pass, and a Wave can run in later same-frame rung P. DiskLaser first AI waits because rung G already passed. | PARTLY CORRECT call boundary; WRONG uniform timing |
 | <code>L2...:70..75</code> calls projectile impact a later-tick gap | A later tick is possible, not guaranteed. Same-frame impact is mechanically reachable. | WRONG as a universal timing claim |
 | <code>AAHEATSEEKER2_FIRST_TICK_DAMAGE_LATENCY...</code> preserves scheduler/same-tick eligibility but its old <code>speed * 90</code> scalar and numeric minima were marked provisional | Exact HomingTrack research and fresh assembly show the ROT close comparison uses <code>current_speed * 0.5</code>. This report uses only the corrected branch and does not certify the old minimum-range tick table. | scheduler finding retained; numeric examples not relied upon |
 | Ghidra local label <code>BulletClass__SetOwner @ 0x0046B260</code> | body writes WeaponType pointer to <code>Bullet+0x130</code>; source object is initialized at <code>Bullet+0xB0</code> | VERIFIED label drift |
@@ -527,15 +527,15 @@ Rust-only goldens can regression-test this mechanism but cannot certify gamemd p
 
 ### Research used
 
-- <code>docs/research/DAMAGE_AREA_DISPATCH_REINVESTIGATION_2026-07-13.md</code>
-- <code>docs/research/AAHEATSEEKER2_HOMINGTRACK_EXACT_MATH_GHIDRA_REPORT.md</code>
-- <code>docs/research/AAHEATSEEKER2_FIRST_TICK_DAMAGE_LATENCY_GHIDRA_REPORT.md</code>, scheduler finding only; reconciliation warning honored
-- <code>docs/research/AAHEATSEEKER2_GUARDWH_DETONATION_PARAMETERS_GHIDRA_REPORT.md</code>
-- <code>docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md</code>
-- <code>docs/research/BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md</code>
-- <code>docs/research/BULLETCLASS_VTABLE_F8_TEARDOWN_REMOVAL_PATH_RESWARM_20260528.md</code>
-- <code>docs/research/FIRE_AT_PIPELINE_GHIDRA_REPORT.md</code>
-- <code>docs/research/L2_FIRE_DAMAGE_TIMING_VERDICT_GHIDRA_REPORT.md</code>
+- <code>[docs/research/DAMAGE_AREA_DISPATCH_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_AREA_DISPATCH_REINVESTIGATION_2026-07-13.md)</code>
+- <code>[docs/research/AAHEATSEEKER2_HOMINGTRACK_EXACT_MATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AAHEATSEEKER2_HOMINGTRACK_EXACT_MATH_GHIDRA_REPORT.md)</code>
+- <code>[docs/research/AAHEATSEEKER2_FIRST_TICK_DAMAGE_LATENCY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AAHEATSEEKER2_FIRST_TICK_DAMAGE_LATENCY_GHIDRA_REPORT.md)</code>, scheduler finding only; reconciliation warning honored
+- <code>[docs/research/AAHEATSEEKER2_GUARDWH_DETONATION_PARAMETERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AAHEATSEEKER2_GUARDWH_DETONATION_PARAMETERS_GHIDRA_REPORT.md)</code>
+- <code>[docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOGICCLASS_ENGINE_SUBSTRATE_SERVICE_STUDY.md)</code>
+- <code>[docs/research/BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLETCLASS_INIT_AND_FIRE_GHIDRA_REPORT.md)</code>
+- <code>[docs/research/BULLETCLASS_VTABLE_F8_TEARDOWN_REMOVAL_PATH_RESWARM_20260528.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BULLETCLASS_VTABLE_F8_TEARDOWN_REMOVAL_PATH_RESWARM_20260528.md)</code>
+- <code>[docs/research/FIRE_AT_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FIRE_AT_PIPELINE_GHIDRA_REPORT.md)</code>
+- <code>[docs/research/L2_FIRE_DAMAGE_TIMING_VERDICT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/L2_FIRE_DAMAGE_TIMING_VERDICT_GHIDRA_REPORT.md)</code>
 
 ### Stock data and current Rust
 

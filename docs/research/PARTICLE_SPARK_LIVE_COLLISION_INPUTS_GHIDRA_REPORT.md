@@ -14,7 +14,7 @@
 
 **Post-implementation status (2026-08-27):** Spark shared-dummy routing and
 invalid/unallocated-cell continuation are implemented. The current authority is
-the [Phase 3 Spark shared-dummy routing contract](PHASE3_SPARK_SHARED_DUMMY_ROUTING_GHIDRA_REPORT.md).
+the [Phase 3 Spark shared-dummy routing contract](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_SPARK_SHARED_DUMMY_ROUTING_GHIDRA_REPORT.md).
 Implementation and review repairs are `4c71b488`, `72bf8e15`, `96779c16`, and
 `0054549e`. Any statement below that says Spark still returns typed unavailable,
 has not integrated the dummy, or leaves invalid-cell parity open is a historical
@@ -22,7 +22,7 @@ pre-`4c71b488` Rust baseline, not current behavior. The native evidence remains
 valid; only those dated Rust-state conclusions are superseded.
 
 **2026-08-27 numeric correction:** active runtime capture in
-`PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md`
+[PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md)
 supersedes this report's original 90/360/340 interpretation. Cell ground is
 104; Particle's independently owned structural offset is 416; Spark's
 ascending commit is ground +396. The text below incorporates that correction.
@@ -60,7 +60,7 @@ is closed by `4c71b488` and the three review-repair commits listed above.
 
 ### Explicitly outside this slice
 
-- Spark movement/collision/color arithmetic and the pixel compositor, already covered by `PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md`.
+- Spark movement/collision/color arithmetic and the pixel compositor, already covered by [PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md).
 - Spawn, public dispatch, rendering activation, Railgun behavior, and final retail display masks.
 - A complete taxonomy of all mutations to the shared off-map dummy `CellClass`.
 - Mod-only LaserFence construction and connectivity semantics.
@@ -136,7 +136,7 @@ The ground evaluator owns only the 104-based floor and slope result. Cell's
 that Cell-owned offset: it reads Particle's independently initialized 416 and
 composes `ground + 416` in its collision path. See the active-runtime ownership
 census in
-`PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md`.
+[PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md).
 
 Base height is:
 
@@ -271,11 +271,11 @@ High repair dispatch `0x0057F440` and high repair walkers `0x005800D0`/`0x005806
 
 The complete `RecalcAttributes` body does not re-establish high structural bit `0x100`. Its only nearby flag write ORs unrelated bit `0x10000` into neighboring cells under an animation-list path. Therefore engineer repair does **not** restore the Spark-visible bridge bit after a full collapse.
 
-This corrects `BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md` lines 1477-1481, which say `RecalcAttributes` re-derives `0x80/0x100/0x400`. Replace that claim conceptually with:
+This corrects [BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md) lines 1477-1481, which say `RecalcAttributes` re-derives `0x80/0x100/0x400`. Replace that claim conceptually with:
 
 > Repair walkers rewrite overlays and recalculate terrain attributes, but neither they nor `RecalcAttributes @ 0x0047D2B0` restore structural bit `0x100`; a collapsed-and-repaired high bridge remains non-structural to readers of `CellClass+0x140 & 0x100`.
 
-The later `REPAIRBRIDGEWALKER_BODIES_GHIDRA_REPORT.md` write audit already supports this correction.
+The later [REPAIRBRIDGEWALKER_BODIES_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/REPAIRBRIDGEWALKER_BODIES_GHIDRA_REPORT.md) write audit already supports this correction.
 
 ### 5.3 Rust mapping
 
@@ -461,7 +461,7 @@ Historical implementation surface and integration seam:
    - replace analytic corner/edge tilt constants with §4.2's lookup-derived values;
    - replace “entry 0 is BSS zero and never read” with “master init writes identity to entry 0; Spark directly queries it for flat candidate cells”;
    - record the complete initializer tail that sets entries17-20 to identity.
-2. `BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md` lines 1477-1481:
+2. [BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md) lines 1477-1481:
    - replace the claim that `RecalcAttributes` re-derives `0x80/0x100/0x400` with §5.2's no-restore result.
 
 These are corrections to prior prose, not changes to active binary evidence.
@@ -472,12 +472,12 @@ These are corrections to prior prose, not changes to active binary evidence.
 - Retail executable bytes: `<ra2-install>/gamemd.exe`, used to cold-reread PE constants, lookup-table entries, and exact matrix initialization arithmetic after the live bridge became unstable.
 - Stock INIs: `ini/rules.ini`, `ini/rulesmd.ini`.
 - Existing research read before and cross-checked during this pass:
-  - `PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md`
+  - [PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PARTICLE_SPARK_COLLISION_AND_PIXEL_COMPOSITOR_GHIDRA_REPORT.md)
   - `GATE_BRIDGE_DECK_HEIGHT_RESOLUTION_GHIDRA_REPORT.md`
   - `VXL_SLOPE_MATRIX_SIGN_GHIDRA_REPORT.md`
   - `VOXEL_SLOPE_TILT_SYSTEM.md`
-  - `bridges/01-assets-map-load-overlay/BRIDGE_SETBRIDGEDIRECTION_STAMPING_GHIDRA_REPORT.md`
+  - [bridges/01-assets-map-load-overlay/BRIDGE_SETBRIDGEDIRECTION_STAMPING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/01-assets-map-load-overlay/BRIDGE_SETBRIDGEDIRECTION_STAMPING_GHIDRA_REPORT.md)
   - `bridges/05-damage-collapse-repair-cabhut/HIGH_BRIDGE_DAMAGE_STATE_MACHINE_GHIDRA_REPORT.md`
-  - `bridges/05-damage-collapse-repair-cabhut/REPAIRBRIDGEWALKER_BODIES_GHIDRA_REPORT.md`
-  - `bridges/05-damage-collapse-repair-cabhut/BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md`
+  - [bridges/05-damage-collapse-repair-cabhut/REPAIRBRIDGEWALKER_BODIES_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/REPAIRBRIDGEWALKER_BODIES_GHIDRA_REPORT.md)
+  - [bridges/05-damage-collapse-repair-cabhut/BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGE_REPAIR_AND_HUT_DEATH_GHIDRA_REPORT.md)
 - Current Rust owners inspected read-only: `src/map/bridge_facts.rs`, `src/map/resolved_terrain.rs`, `src/sim/bridge_state/`, `src/sim/occupancy.rs`, `src/sim/particles/spark.rs`, `src/rules/ini_value.rs`, `src/rules/particle_type.rs`, and `src/rules/ruleset.rs`.

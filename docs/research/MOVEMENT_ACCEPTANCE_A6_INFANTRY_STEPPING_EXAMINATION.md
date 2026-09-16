@@ -320,7 +320,7 @@ remain (U2, U3).
 
 ## 4. Documentation correction
 
-`docs/research/INFANTRY_SUBCELL_POSITIONING.md` lines ~475–523
+[docs/research/INFANTRY_SUBCELL_POSITIONING.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/INFANTRY_SUBCELL_POSITIONING.md) lines ~475–523
 ("Current Rust Engine Status", "Dead Code", "Authenticity Bug: Wrong Functional
 Sub-Cells", "Missing: Preference Table Logic") are **stale**. They describe
 `movement.rs:1862`, `FUNCTIONAL_SUB_CELLS = [0,3,4]`, an instant snap on

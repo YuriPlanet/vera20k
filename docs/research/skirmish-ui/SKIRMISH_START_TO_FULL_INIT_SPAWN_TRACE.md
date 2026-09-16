@@ -57,7 +57,7 @@ OwnerDrawButton::StartGame0x617
 
 ### Stage 1 - Start Button Trigger
 
-**gamemd verified finding:** `FUN_006AE3F0` routes `WM_COMMAND` to `FUN_006ACEE0`; command `0x617` is Start only when the notification word is `0`. Successful Start writes `0x617` through the dialog result pointer after packing. Active in YR: Yes. Evidence: existing `SKIRMISH_START_GAME_HANDOFF_SESSION_PACKING_GHIDRA_REPORT.md`; parent-settled facts.
+**gamemd verified finding:** `FUN_006AE3F0` routes `WM_COMMAND` to `FUN_006ACEE0`; command `0x617` is Start only when the notification word is `0`. Successful Start writes `0x617` through the dialog result pointer after packing. Active in YR: Yes. Evidence: existing [SKIRMISH_START_GAME_HANDOFF_SESSION_PACKING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_START_GAME_HANDOFF_SESSION_PACKING_GHIDRA_REPORT.md); parent-settled facts.
 
 **Rust comparison:** `src/ui/skirmish_shell/state.rs:97` maps `OwnerDrawButton::StartGame0x617` to `SkirmishShellAction::StartGame`, and `src/app.rs:547` immediately builds `SkirmishSettings` and calls `start_selected_skirmish`.
 
@@ -65,7 +65,7 @@ OwnerDrawButton::StartGame0x617
 
 ### Stage 2 - Shell Handoff Data
 
-**gamemd verified finding:** `FUN_006ACEE0` commits map token/index mirrors, local node record, seven AI row arrays, active AI count, compact launch table, random country/color resolution, trackbars, checkboxes, and forced launch flags before modal exit. Active in YR: Yes. Evidence: `SKIRMISH_START_GAME_HANDOFF_SESSION_PACKING_GHIDRA_REPORT.md` plus Ghidra report source list for `0x006ACEE0`.
+**gamemd verified finding:** `FUN_006ACEE0` commits map token/index mirrors, local node record, seven AI row arrays, active AI count, compact launch table, random country/color resolution, trackbars, checkboxes, and forced launch flags before modal exit. Active in YR: Yes. Evidence: [SKIRMISH_START_GAME_HANDOFF_SESSION_PACKING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_START_GAME_HANDOFF_SESSION_PACKING_GHIDRA_REPORT.md) plus Ghidra report source list for `0x006ACEE0`.
 
 **Rust comparison:** `src/ui/skirmish_shell/state.rs:70` emits only `selected_map_idx`, `player_country`, first enabled `ai_country`, `starting_credits`, local `start_position`, `short_game`, and `zoom_enabled`.
 
@@ -73,7 +73,7 @@ OwnerDrawButton::StartGame0x617
 
 ### Stage 3 - Map Selection / Load Entry
 
-**gamemd verified finding:** selected map token/index are mirrored at Start and consumed by the scenario/map load path before or around `Full_Init`; exact loader entry was not expanded in this slot. Active in YR: Yes for non-campaign Skirmish. Evidence: `SKIRMISH_START_GAME_TO_SPAWN_CONSUMERS_GHIDRA_REPORT.md`; `ScenarioClass__Full_Init @ 0x00686B20` spot-check confirms non-campaign init path.
+**gamemd verified finding:** selected map token/index are mirrored at Start and consumed by the scenario/map load path before or around `Full_Init`; exact loader entry was not expanded in this slot. Active in YR: Yes for non-campaign Skirmish. Evidence: [SKIRMISH_START_GAME_TO_SPAWN_CONSUMERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_START_GAME_TO_SPAWN_CONSUMERS_GHIDRA_REPORT.md); `ScenarioClass__Full_Init @ 0x00686B20` spot-check confirms non-campaign init path.
 
 **Rust comparison:** `src/app.rs:411` resolves `available_maps[selected_map_idx].file_name`, stores `GameScreen::Loading { map_name }`, and `src/app_transitions.rs:38` passes it to `app_init::load_map`.
 
@@ -97,7 +97,7 @@ OwnerDrawButton::StartGame0x617
 
 ### Stage 6 - Start Table / AssignStartingPoints
 
-**gamemd verified finding:** Battle-style mode `+0x80` writes explicit starts from `House+0x16058` into `ScenarioClass+0x1180`; `ScenarioClass__AssignStartingPoints @ 0x005EE9D0` calls `Gather_Start_Positions`, builds a 16-byte occupied table, assigns human houses first, then AI houses. Active in YR: Yes for standard Battle/ManBattle-style Skirmish; conditional for other mode objects. Evidence: `SKIRMISH_START_GAME_TO_SPAWN_CONSUMERS_GHIDRA_REPORT.md`; live Ghidra decompile `0x005EE9D0`; Ghidra xrefs show data vtable references to `0x005D6BE0`.
+**gamemd verified finding:** Battle-style mode `+0x80` writes explicit starts from `House+0x16058` into `ScenarioClass+0x1180`; `ScenarioClass__AssignStartingPoints @ 0x005EE9D0` calls `Gather_Start_Positions`, builds a 16-byte occupied table, assigns human houses first, then AI houses. Active in YR: Yes for standard Battle/ManBattle-style Skirmish; conditional for other mode objects. Evidence: [SKIRMISH_START_GAME_TO_SPAWN_CONSUMERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_START_GAME_TO_SPAWN_CONSUMERS_GHIDRA_REPORT.md); live Ghidra decompile `0x005EE9D0`; Ghidra xrefs show data vtable references to `0x005D6BE0`.
 
 **Rust comparison:** `src/app_skirmish.rs:47` swaps the chosen local waypoint into vector index `0`; AI explicit starts are ignored. There is no human-first/AI-second assignment pass.
 
@@ -113,9 +113,9 @@ OwnerDrawButton::StartGame0x617
 
 ### Stage 8 - Post Map Start Units / MCVs
 
-**gamemd verified finding:** `ScenarioClass__Post_Map_Init @ 0x00686890` runs after map/object load. With a selected mode object it calls vtable `+0x84` then `FUN_005D6D80`; `FUN_005D6D80` exits early if `DAT_00A8B270 <= 0`, computes an eligible unit value budget from spawnable unit/infantry costs and house side masks, then iterates non-special houses through mode callbacks. Active in YR: Yes for Battle-style Skirmish; exact mode callback internals are partially unresolved. Evidence: live Ghidra decompile `0x00686890` and `0x005D6D80`; `SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md`.
+**gamemd verified finding:** `ScenarioClass__Post_Map_Init @ 0x00686890` runs after map/object load. With a selected mode object it calls vtable `+0x84` then `FUN_005D6D80`; `FUN_005D6D80` exits early if `DAT_00A8B270 <= 0`, computes an eligible unit value budget from spawnable unit/infantry costs and house side masks, then iterates non-special houses through mode callbacks. Active in YR: Yes for Battle-style Skirmish; exact mode callback internals are partially unresolved. Evidence: live Ghidra decompile `0x00686890` and `0x005D6D80`; [SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md).
 
-**gamemd supporting finding:** fallback/null-mode `ScenarioClass__Generate_Random_Units @ 0x006886B0` shows the concrete native pattern: `DAT_00A8B270` budget, start-position gathering, first start random then farthest spacing, `DAT_00A8B258` Bases-gated BaseUnit MCV creation, centered lepton placement, fallback placement, MCVDeploy check, then extra units. Active in YR: Yes/Conditional; standard selected Battle path routes through mode callbacks and `0x005D6D80`, not necessarily the null-mode body directly. Evidence: live Ghidra decompile `0x006886B0`; `MCV_CREATION_STARTING_UNITS_DEEP_DIVE.md`.
+**gamemd supporting finding:** fallback/null-mode `ScenarioClass__Generate_Random_Units @ 0x006886B0` shows the concrete native pattern: `DAT_00A8B270` budget, start-position gathering, first start random then farthest spacing, `DAT_00A8B258` Bases-gated BaseUnit MCV creation, centered lepton placement, fallback placement, MCVDeploy check, then extra units. Active in YR: Yes/Conditional; standard selected Battle path routes through mode callbacks and `0x005D6D80`, not necessarily the null-mode body directly. Evidence: live Ghidra decompile `0x006886B0`; [MCV_CREATION_STARTING_UNITS_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MCV_CREATION_STARTING_UNITS_DEEP_DIVE.md).
 
 **Rust comparison:** `src/app_skirmish.rs:58` sets credits, then `src/app_skirmish.rs:62` uses `pairings.take(2)` and `spawn_object` for exactly two MCVs. No `UnitCount` budget, all-house loop, side-mask generator, native fallback, or startup deploy queue exists.
 
@@ -123,7 +123,7 @@ OwnerDrawButton::StartGame0x617
 
 ### Stage 9 - Visible Startup State
 
-**gamemd expected output:** enabled players/AI receive houses and starts according to session rows, map waypoints, mode callbacks, UnitCount, Bases/BaseUnit, and placement fallback. Initial crates may also be placed when `DAT_00A8B261` is enabled. Active in YR: Yes/Conditional by options. Evidence: live decompiles above plus `SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md`.
+**gamemd expected output:** enabled players/AI receive houses and starts according to session rows, map waypoints, mode callbacks, UnitCount, Bases/BaseUnit, and placement fallback. Initial crates may also be placed when `DAT_00A8B261` is enabled. Active in YR: Yes/Conditional by options. Evidence: live decompiles above plus [SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md).
 
 **Rust observed shape from source:** at most two MCV entities are added to `Simulation.entities`; credits are set only for spawned pairings; `base_center` and `waypoint_edge` are set for those houses; AI setup is based on playable map houses except local owner.
 
@@ -140,7 +140,7 @@ OwnerDrawButton::StartGame0x617
 ## Negative Facts / Do Not Do
 
 - Do not treat Start Game as a direct spawn command. Active in YR: Yes. Evidence: `0x006ACEE0` only packs and exits; spawn consumers begin in `Full_Init`/post-map reports.
-- Do not use `House+0x1605C` as the Battle explicit-start field. Active in YR: Yes for Battle-style mode. Evidence: `SKIRMISH_START_GAME_TO_SPAWN_CONSUMERS_GHIDRA_REPORT.md` verifies `House+0x16058`; `House+0x1605C` is team/adjunct.
+- Do not use `House+0x1605C` as the Battle explicit-start field. Active in YR: Yes for Battle-style mode. Evidence: [SKIRMISH_START_GAME_TO_SPAWN_CONSUMERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_START_GAME_TO_SPAWN_CONSUMERS_GHIDRA_REPORT.md) verifies `House+0x16058`; `House+0x1605C` is team/adjunct.
 - Do not cap startup to two players. Active in YR: Yes. Evidence: `Create_Houses` loops `DAT_00A8DA84` humans and `DAT_00A8B274` AIs; Rust `take(2)` is a shortcut.
 - Do not ignore `UnitCount` just because MCVs spawn. Active in YR: Yes. Evidence: `FUN_005D6D80` reads `DAT_00A8B270` and computes start-unit budget; `Generate_Random_Units` shows the same option family.
 - Do not implement deficient waypoint fallback as "no spawn." Active in YR: Yes. Evidence: `Gather_Start_Positions @ 0x00688380` generates random passable fallback starts with 8x8 clearance.
@@ -155,5 +155,5 @@ OwnerDrawButton::StartGame0x617
 
 - Live Ghidra read-only decompile: `ScenarioClass__Full_Init @ 0x00686B20`, `ScenarioClass__Create_Houses @ 0x00687F10`, `ScenarioClass__AssignStartingPoints @ 0x005EE9D0`, `ScenarioClass__Gather_Start_Positions @ 0x00688380`, `ScenarioClass__Post_Map_Init @ 0x00686890`, `ScenarioClass__Generate_Random_Units @ 0x006886B0`, `FUN_005D6D80 @ 0x005D6D80`.
 - Live Ghidra read-only xrefs: vtable/data references to `0x005D6BE0`.
-- Existing reports: `SKIRMISH_START_GAME_HANDOFF_SESSION_PACKING_GHIDRA_REPORT.md`, `SKIRMISH_START_GAME_TO_SPAWN_CONSUMERS_GHIDRA_REPORT.md`, `SKIRMISH_START_SESSION_VTABLE_0X14_ACCEPTANCE_GHIDRA_REPORT.md`, `SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md`, `SCENARIO_INIT_DEEP_DIVE.md`, `MCV_CREATION_STARTING_UNITS_DEEP_DIVE.md`, `MCVDEPLOY_START_FLAG_AUTO_DEPLOY_GHIDRA_REPORT.md`.
+- Existing reports: [SKIRMISH_START_GAME_HANDOFF_SESSION_PACKING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_START_GAME_HANDOFF_SESSION_PACKING_GHIDRA_REPORT.md), [SKIRMISH_START_GAME_TO_SPAWN_CONSUMERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_START_GAME_TO_SPAWN_CONSUMERS_GHIDRA_REPORT.md), [SKIRMISH_START_SESSION_VTABLE_0X14_ACCEPTANCE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_START_SESSION_VTABLE_0X14_ACCEPTANCE_GHIDRA_REPORT.md), [SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md), [SCENARIO_INIT_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SCENARIO_INIT_DEEP_DIVE.md), [MCV_CREATION_STARTING_UNITS_DEEP_DIVE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MCV_CREATION_STARTING_UNITS_DEEP_DIVE.md), [MCVDEPLOY_START_FLAG_AUTO_DEPLOY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MCVDEPLOY_START_FLAG_AUTO_DEPLOY_GHIDRA_REPORT.md).
 - Rust scan: `src/ui/skirmish_shell/state.rs`, `src/app.rs`, `src/app_transitions.rs`, `src/app_init.rs`, `src/app_skirmish.rs`, `src/sim/world/world_spawn.rs`, `src/sim/house_state.rs`, `src/sim/game_options.rs`.

@@ -958,7 +958,7 @@ a different argument than Ghidra labels as `param_1`.
 
 **Docs cross-referenced:**
 - `CELLCLASS_STRUCT_GHIDRA_REPORT.md` — CellClass offsets (+0x38 IsoTileTypeIndex, +0xEC LandType, +0x11C SlopeIndex confirmed)
-- `CELLCLASS_ZONES_SPEED_BRIDGES.md` — bridge tile ranges
+- [CELLCLASS_ZONES_SPEED_BRIDGES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/CELLCLASS_ZONES_SPEED_BRIDGES.md) — bridge tile ranges
 - `HIGH_BRIDGE_DAMAGE_STATE_MACHINE_GHIDRA_REPORT.md` — bridge damage
 - `2026-04-23-gap-scan-xref.md` — flagged LAT rewriter as deferred
 - `2026-04-21-gap-scan-classes.md` — flagged IsometricTileTypeClass field coverage as thin

@@ -144,7 +144,7 @@ Because `InitSideMixFiles` sets up the side MIX files before `FUN_006D02B0`, and
 
 ## Stale-doc replacement wording
 
-Suggested replacement for `docs/research/SIDEBAR_REPAIR_SELL_BUTTON_GHIDRA_REPORT.md` section 7.3:
+Suggested replacement for [docs/research/SIDEBAR_REPAIR_SELL_BUTTON_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_REPAIR_SELL_BUTTON_GHIDRA_REPORT.md) section 7.3:
 
 > Current Rust builds separate Allied/Soviet/Yuri sidebar atlases from `sidec01.mix`, `sidec02.mix`, and `sidec02md.mix`. Fresh `FUN_006D02B0` / `SidebarClass__LoadSHPs` proof shows gamemd does not explicitly reload `REPAIR.SHP` or `SELL.SHP` through a side branch; it calls the generic CDFile/MIX resolver after `InitSideMixFiles` has installed the current side MIX state. Treat current Rust as potentially resolver-order-aware only if its direct per-theme lookup matches gamemd's active MIX search order for the same side; otherwise it is still more side-directed than the binary path.
 

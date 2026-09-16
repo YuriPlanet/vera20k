@@ -264,7 +264,7 @@ cargo test -q zone_map --lib
 **Steps:**
 
 1. Before adding production activation, verify that the selected Rust blocker inputs match the scoped `CellClass+0x122` writer behavior for flat normal pathing.
-2. Use existing `CELL_0x122_CAN_ENTER_CELL_SEMANTIC_GHIDRA_REPORT.md` evidence first. If it does not identify the writer timing/source precisely enough for Rust's hard/soft blocker split, stop this plan and run a narrow `/re-investigate CellClass+0x122 writer timing for flat AStar`.
+2. Use existing [CELL_0x122_CAN_ENTER_CELL_SEMANTIC_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/CELL_0x122_CAN_ENTER_CELL_SEMANTIC_GHIDRA_REPORT.md) evidence first. If it does not identify the writer timing/source precisely enough for Rust's hard/soft blocker split, stop this plan and run a narrow `/re-investigate CellClass+0x122 writer timing for flat AStar`.
 3. Only after the source is verified, add `BlockerNeighborCounts::from_blockers(...)` or an equivalent crate-private builder.
 4. Inputs must be the verified count-source surfaces:
    - grid width/height;
@@ -337,7 +337,7 @@ cargo test -q zone_search --lib
 **Steps:**
 
 1. Before implementing production retry, prove the failed-A*-to-zone-edge mapping for this flat scope.
-2. Use `UPDATE_HIERARCHICAL_EDGES_RETRY_PRODUCER_SCOPE_GHIDRA_REPORT.md` and `BRIDGE_ASTAR_PRECHECK_RETRY_INTEGRATION_GHIDRA_REPORT.md` first.
+2. Use [UPDATE_HIERARCHICAL_EDGES_RETRY_PRODUCER_SCOPE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UPDATE_HIERARCHICAL_EDGES_RETRY_PRODUCER_SCOPE_GHIDRA_REPORT.md) and [BRIDGE_ASTAR_PRECHECK_RETRY_INTEGRATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/03-traversal-pathfinding-entry/BRIDGE_ASTAR_PRECHECK_RETRY_INTEGRATION_GHIDRA_REPORT.md) first.
 3. If those reports do not identify which selected-path edge(s) are invalidated from the failed A* state, stop this plan and run `/re-investigate UpdateHierarchicalEdges failed A* edge selection input`.
 4. Only after the mapping is verified, add a helper that attempts to add search-local exclusions from a failed attempt.
 5. Use retained `ZonePrecheckResult.paths` plus the A* hierarchy progress cell, per-level cell-zone ids, graph adjacency, and a `FloodFillReachableZones`-equivalent split detector. No A* frontier object is required.

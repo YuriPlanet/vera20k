@@ -3,7 +3,7 @@
 **Status:** proposed bounded design
 **Phase/GSI:** Phase 3 / GSI-04.05
 **Native owner:** `UnitClass__Deploy @ 0x007393C0`, straight-line stores `0x007398FF..0x00739919`
-**Research authority:** `docs/research/PHASE3_UNIT_DEPLOY_HOUSE_FLAGS_GHIDRA_REPORT.md`
+**Research authority:** [docs/research/PHASE3_UNIT_DEPLOY_HOUSE_FLAGS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_UNIT_DEPLOY_HOUSE_FLAGS_GHIDRA_REPORT.md)
 
 ## 1. Bounded requirement
 

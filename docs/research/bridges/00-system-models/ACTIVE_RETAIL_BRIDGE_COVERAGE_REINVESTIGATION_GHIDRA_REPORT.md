@@ -44,14 +44,14 @@ Authority order for this investigation is:
 
 The prior bridge corpus is useful but not a closed scope. In particular:
 
-- `BRIDGE_PARITY_GAP_SYSTEM_MODEL_SYNTHESIS.md` is superseded as a completeness claim. It does not include the active RMG low-deck path, low-bridge/TubeClass split, projectile/bounce collision, or the full cross-consumer surface.
-- `BRIDGE_PARITY_IMPLEMENTATION_CONTRACT.md` remains a useful dated requirement set, but its residual list is not exhaustive and some source statuses have changed.
-- `LOW_BRIDGE_TUBECLASS_DOC_VERIFICATION.md` correctly warned that constructor shells and parsed tubes are distinct; the new retail/overlay evidence now proves stock low bridges do not use either path for ordinary traversal.
+- [BRIDGE_PARITY_GAP_SYSTEM_MODEL_SYNTHESIS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/00-system-models/BRIDGE_PARITY_GAP_SYSTEM_MODEL_SYNTHESIS.md) is superseded as a completeness claim. It does not include the active RMG low-deck path, low-bridge/TubeClass split, projectile/bounce collision, or the full cross-consumer surface.
+- [BRIDGE_PARITY_IMPLEMENTATION_CONTRACT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/BRIDGE_PARITY_IMPLEMENTATION_CONTRACT.md) remains a useful dated requirement set, but its residual list is not exhaustive and some source statuses have changed.
+- [LOW_BRIDGE_TUBECLASS_DOC_VERIFICATION.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/04-locomotion-height-tubes/LOW_BRIDGE_TUBECLASS_DOC_VERIFICATION.md) correctly warned that constructor shells and parsed tubes are distinct; the new retail/overlay evidence now proves stock low bridges do not use either path for ordinary traversal.
 - `HIGH_BRIDGE_DAMAGE_STATE_MACHINE_GHIDRA_REPORT.md` statements that `ComputeBridgeZones` fills tube exits or that one TubeClass represents each low bridge are wrong.
 - old rendering claims that normal under-deck occlusion is driven by `CellClass+0x10E` are stale; later reports prove the normal scanline/depth path and map-load literal values.
 - old `TooBigToFitUnderBridge` movement-gate claims are stale; the verified active consumer is sprite/shadow split rendering.
 - old paradrop “bridge target abort” claims are stale; active code attempts replacement and retains the original target when replacement fails.
-- `WHAT_ACTION_BRIDGE_CELLS_CURSOR_GHIDRA_REPORT.md` and `PIER_BRIDGE_WATER_CLASSIFICATION_RESWARM_20260527.md` are stale where they classify stock low Road overlays as TubeClass/tunnel cells.
+- [WHAT_ACTION_BRIDGE_CELLS_CURSOR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/07-cross-system-consumers/WHAT_ACTION_BRIDGE_CELLS_CURSOR_GHIDRA_REPORT.md) and [PIER_BRIDGE_WATER_CLASSIFICATION_RESWARM_20260527.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/PIER_BRIDGE_WATER_CLASSIFICATION_RESWARM_20260527.md) are stale where they classify stock low Road overlays as TubeClass/tunnel cells.
 
 ## 3. Active-retail activation and data evidence
 

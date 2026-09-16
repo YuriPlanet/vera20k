@@ -333,5 +333,5 @@ Repo: `src/sim/pathfinding/path_smooth.rs`, `path_smooth_tests.rs`,
 `docs/plans/2026-09-15-movement-retail-acceptance.md:22,65`,
 `docs/research/FOOTCLASS_STRUCT_LAYOUT.md:51,272`,
 `docs/research/core-services-map/cell-map.md:169`,
-`docs/research/pathfinding/MAPCLASS_GET_SLOPE_COST_AT_CELL_PATH_SMOOTHING_GHIDRA_REPORT.md`,
+[docs/research/pathfinding/MAPCLASS_GET_SLOPE_COST_AT_CELL_PATH_SMOOTHING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/MAPCLASS_GET_SLOPE_COST_AT_CELL_PATH_SMOOTHING_GHIDRA_REPORT.md),
 `ini/RULESMD.INI` (main checkout).

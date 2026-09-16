@@ -13,7 +13,7 @@ stored in two different fields (direction + body overlay). When the final hit la
 body cell, a collapse walker iterates outward along the bridge axis, destroying the full
 span and spawning debris animations.
 
-This doc mirrors §3.3 of `CELLCLASS_ZONES_SPEED_BRIDGES.md` (Low state machine) for
+This doc mirrors §3.3 of [CELLCLASS_ZONES_SPEED_BRIDGES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/CELLCLASS_ZONES_SPEED_BRIDGES.md) (Low state machine) for
 high-bridge parity.
 
 ## 2. Key Fields
@@ -450,9 +450,9 @@ Remaining implementation-facing cautions found in this pass:
 | 2 | Overlay values 0xD4 / 0xD5 origin | **Resolved** — `ApplyBridgeDestruction` picks via 16-entry neighbor table (§11.2); values come from neighbor-lookup, not walker sets | |
 | 3 | All 8 `UpdateRamp_*_High` transitions | **Resolved** — full table in §11.1 | |
 | 4 | `(8<state)-1` + direction offset 2/4/6/0 meaning | **Resolved** — compass table mapping: N=0, NE=1, E=2, SE=3, S=4, SW=5, W=6, NW=7 (§11.7) | |
-| 5 | BridgeExplosions anim-list layout | **Resolved 2026-05-18.** DVC base for MetallicDebris is `+0x13C`; for BridgeExplosions is `+0x158`. Live reads (`+0x140/+0x14C`, `+0x15C/+0x168`) are `data*` and `ActiveCount` through standard DVC offsets. See §11.13 + [BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md](BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md). | |
+| 5 | BridgeExplosions anim-list layout | **Resolved 2026-05-18.** DVC base for MetallicDebris is `+0x13C`; for BridgeExplosions is `+0x158`. Live reads (`+0x140/+0x14C`, `+0x15C/+0x168`) are `data*` and `ActiveCount` through standard DVC offsets. See §11.13 + [BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md). | |
 | 6 | `RepairBridgeSegment` actual behavior | **Resolved — misnamed.** Does NOT repair. Walks span and fires `ProcessCellAction(0x1F, ...)` on each occupied cell. §11.3 | |
-| 7 | Anchor overlays 0x18 / 0x19 NS vs EW | **Resolved 2026-05-18.** 0x18 = N-S, 0x19 = E-W. Axis carried by `+0x11E` (0 vs 9) and `Flags & 0x800` (SET=NS, CLEAR=EW). See [BRIDGE_ANCHOR_OVERLAY_18_19_AXIS_GHIDRA_REPORT.md](../01-assets-map-load-overlay/BRIDGE_ANCHOR_OVERLAY_18_19_AXIS_GHIDRA_REPORT.md). | |
+| 7 | Anchor overlays 0x18 / 0x19 NS vs EW | **Resolved 2026-05-18.** 0x18 = N-S, 0x19 = E-W. Axis carried by `+0x11E` (0 vs 9) and `Flags & 0x800` (SET=NS, CLEAR=EW). See [BRIDGE_ANCHOR_OVERLAY_18_19_AXIS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/01-assets-map-load-overlay/BRIDGE_ANCHOR_OVERLAY_18_19_AXIS_GHIDRA_REPORT.md). | |
 
 Remaining open items:
 - `g_Tactical+0xD7C` reader (who consumes the deferred-rebuild flag)
@@ -911,12 +911,12 @@ Memory dump confirms 16 `int32` entries:
 Classic 4×4 Latin square. Used at `CellClass::DrawOverlay_Body` @ `0x0047F7D3` to
 pick one of 4 frame variants per bridge cell based on `(cell.Y & 3) << 2 | (cell.X & 3)`.
 
-**Resolves the self-contradiction in `BRIDGE_RENDERING_GHIDRA_REPORT.md`** which said
+**Resolves the self-contradiction in [BRIDGE_RENDERING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/06-render-presentation-audio/BRIDGE_RENDERING_GHIDRA_REPORT.md)** which said
 both "0-3 range" and "0-8 range" in different sections. Correct is **0-3, 4 variants**.
 
 ### 11.13 Rules offsets corrected (RESOLVED 2026-05-18)
 
-**Discrepancy resolved by [BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md](BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md).**
+**Discrepancy resolved by [BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md).**
 The earlier "Rules offsets corrected" table was off by 0xC bytes: the three
 trailing writes after `CopyFrom` are the `DynamicVectorClass` extension fields
 (`ActiveCount / GrowthStep / trailing`), not `data*/cap/count`. The actual DVC
@@ -1325,7 +1325,7 @@ bit-identical across clients.
 
 ### 12.11 RulesClass `DynamicVectorClass` layout — RESOLVED 2026-05-18
 
-**Superseded by [BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md](BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md).**
+**Superseded by [BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/05-damage-collapse-repair-cabhut/BRIDGEEXPLOSIONS_RULES_OFFSETS_GHIDRA_REPORT.md).**
 
 The §11.13 / §12.11 layouts in earlier passes were wrong by 0xC bytes. Correct
 DVC layout (verified via `CopyFrom @ 0x00525060` decomp): `vtable +0 / data* +4
@@ -2596,7 +2596,7 @@ resolved.
 
 ### 16.1 `DAT_0081CC20` direction table — RESOLVED
 
-Per `ADDRESS_MAP.md` line 1189:
+Per [ADDRESS_MAP.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ADDRESS_MAP.md) line 1189:
 
 | Address | Type | Name | Values |
 |---------|------|------|--------|
@@ -2650,13 +2650,13 @@ the two class layouts are independent.
 
 | Offset | Type | Name | Source |
 |--------|------|------|--------|
-| `+0xEB4` | int | `AdjacentRange=` (Adjacent range) | `BUILDING_SYSTEMS_GHIDRA_REPORT.md` line 713 |
-| `+0xEB8` | int | `Factory=` (class-kind enum) | `BUILDINGCLASS_MASTER_GHIDRA_REPORT_V2.md` line 175 |
-| `+0xEBC` | int | `TargetCoordOffset.X` | `COORDINATE_SYSTEM_GAMEMD.md` line 351 |
+| `+0xEB4` | int | `AdjacentRange=` (Adjacent range) | [BUILDING_SYSTEMS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDING_SYSTEMS_GHIDRA_REPORT.md) line 713 |
+| `+0xEB8` | int | `Factory=` (class-kind enum) | [BUILDINGCLASS_MASTER_GHIDRA_REPORT_V2.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_MASTER_GHIDRA_REPORT_V2.md) line 175 |
+| `+0xEBC` | int | `TargetCoordOffset.X` | [COORDINATE_SYSTEM_GAMEMD.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/COORDINATE_SYSTEM_GAMEMD.md) line 351 |
 | `+0xEC0` | int | `TargetCoordOffset.Y` | same |
 | `+0xEC4` | int | `TargetCoordOffset.Z` | same |
-| `+0xEC8` | int | `ExitCoord.X` | `BUILDINGCLASS_MASTER_GHIDRA_REPORT_V2.md` line 176 |
-| `+0xECC` | int | `ExitCoord.Y` | `BUILDINGCLASS_OPEN_QUESTIONS_VERIFICATION_R3.md` |
+| `+0xEC8` | int | `ExitCoord.X` | [BUILDINGCLASS_MASTER_GHIDRA_REPORT_V2.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_MASTER_GHIDRA_REPORT_V2.md) line 176 |
+| `+0xECC` | int | `ExitCoord.Y` | [BUILDINGCLASS_OPEN_QUESTIONS_VERIFICATION_R3.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_OPEN_QUESTIONS_VERIFICATION_R3.md) |
 | `+0xED0` | int | `ExitCoord.Z` | inferred |
 
 **No gap for flags in this layout.** The `+0xEC2 / +0xEC3` check seen in
@@ -2667,16 +2667,16 @@ InfantryTypeClass**, not on the target building's BuildingTypeClass.
 
 | Offset | Type | Name | Source |
 |--------|------|------|--------|
-| `+0xEB4` | bool | `Occupier=` (can garrison civilian buildings) | `GARRISON_SYSTEM_GHIDRA_REPORT.md` |
+| `+0xEB4` | bool | `Occupier=` (can garrison civilian buildings) | [GARRISON_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GARRISON_SYSTEM_GHIDRA_REPORT.md) |
 | `+0xEB5` | bool | `Assaulter=` (can storm garrisoned bldgs) | `BUILDING_CHANGE_OWNER_GHIDRA_REPORT.md` |
-| `+0xEBC` | bool | `Fearless=` | `INFANTRYCLASS_GHIDRA_REPORT.md` line 120 |
-| `+0xEBE` | bool | Team-related flag (convoy reassign) | `CONVOY_FORMATION_SYSTEM_GHIDRA_REPORT.md` |
-| `+0xEBF` | bool | `Fraidycat=` | `INFANTRYCLASS_GHIDRA_REPORT.md` line 119 |
-| `+0xEC2` | bool | `Infiltrate=` (spy infiltrate cap.) | `FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md` line 286 |
-| `+0xEC3` | bool | `Engineer=` (capture capability) | `FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md` line 285 |
+| `+0xEBC` | bool | `Fearless=` | [INFANTRYCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/INFANTRYCLASS_GHIDRA_REPORT.md) line 120 |
+| `+0xEBE` | bool | Team-related flag (convoy reassign) | [CONVOY_FORMATION_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CONVOY_FORMATION_SYSTEM_GHIDRA_REPORT.md) |
+| `+0xEBF` | bool | `Fraidycat=` | [INFANTRYCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/INFANTRYCLASS_GHIDRA_REPORT.md) line 119 |
+| `+0xEC2` | bool | `Infiltrate=` (spy infiltrate cap.) | [FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md) line 286 |
+| `+0xEC3` | bool | `Engineer=` (capture capability) | [FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md) line 285 |
 | `+0xEC5` | bool | Possibly `Engineer=` (conflicts with +0xEC3) | `ENGINEER_CAPTURE_GHIDRA_REPORT.md` line 30 |
-| `+0xEC6` | bool | `C4=` (bomb plant capability) | `FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md` line 287 |
-| `+0xEC9` | bool | `Crawls=` (prone-capable) | `TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md` line 716 |
+| `+0xEC6` | bool | `C4=` (bomb plant capability) | [FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_MISSION_HANDLERS_GHIDRA_REPORT.md) line 287 |
+| `+0xEC9` | bool | `Crawls=` (prone-capable) | [TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md) line 716 |
 
 **Conflict on Engineer flag**: `FOOTCLASS_MISSION_HANDLERS` says `+0xEC3`,
 `ENGINEER_CAPTURE_GHIDRA_REPORT` says `+0xEC5`. Without Ghidra I can't
@@ -2796,9 +2796,9 @@ inferred from caller context.
 
 **Prior docs cross-referenced:**
 - `BRIDGE_SYSTEM.md` — overlay-ID tables, function directory
-- `CELLCLASS_ZONES_SPEED_BRIDGES.md` §3.3 — Low state machine (format template)
-- `BRIDGE_RENDERING_GHIDRA_REPORT.md` — cell flags, overlay rendering paths
-- `DAMAGE_MATH_GHIDRA_REPORT.md` — area-damage pipeline
+- [CELLCLASS_ZONES_SPEED_BRIDGES.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/02-cell-state-layering-zones/CELLCLASS_ZONES_SPEED_BRIDGES.md) §3.3 — Low state machine (format template)
+- [BRIDGE_RENDERING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/06-render-presentation-audio/BRIDGE_RENDERING_GHIDRA_REPORT.md) — cell flags, overlay rendering paths
+- [DAMAGE_MATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_MATH_GHIDRA_REPORT.md) — area-damage pipeline
 
 **INI files:**
 - `ini/rulesmd.ini`, `ini/artmd.ini`, `ini/rules.ini`, `ini/art.ini`

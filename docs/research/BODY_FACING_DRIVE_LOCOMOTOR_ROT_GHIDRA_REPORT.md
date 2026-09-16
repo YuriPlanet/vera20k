@@ -6,7 +6,7 @@ Confidence: HIGH on body/turret facing identity, ROT source, and duration formul
 split of the +0x370 facing (irrelevant to the body question). PARTIAL on the exact
 in-place-vs-arc translation threshold (located, not fully decoded).
 
-Corrects: `FRAME_BASIS_MOVEMENT_TURRET_GHIDRA_REPORT.md` §5.2 / Handoff H-1 and
+Corrects: [FRAME_BASIS_MOVEMENT_TURRET_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FRAME_BASIS_MOVEMENT_TURRET_GHIDRA_REPORT.md) §5.2 / Handoff H-1 and
 `UNITCLASS_TURRET_TRACKING_AND_FIRE_TIMING_GHIDRA_REPORT.md` §1.2 — both claim the
 **body** facing is the FacingClass at TechnoClass+0x370 with a constructor-default
 **ROT=3**. That is **WRONG**. See "Verdict" below.

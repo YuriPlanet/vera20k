@@ -81,7 +81,7 @@ authority.
 | Techno has only Foot and Building direct code callers | live `get_function_callers/get_xrefs_to(0x00701900)` | HIGH for static direct calls | yes |
 | Foot is reached by Aircraft, Unit, and the Infantry body call at `0x00518042` | live `get_xrefs_to(0x004D7330)` and `get_assembly_context` | HIGH | yes |
 | All concrete Techno entries forward one seven-field packet | live assembly contexts at `0x004165EC`, `0x00737D52`, `0x00518042`, `0x004D742C`, and `0x00442425` | HIGH | yes |
-| Fatal membership policy is class-specific | fresh wrapper decompilation/assembly plus `DAMAGE_CONCRETE_RECEIVER_REINVESTIGATION_2026-07-13.md` | HIGH for handoff; PARTIAL for all effects | yes |
+| Fatal membership policy is class-specific | fresh wrapper decompilation/assembly plus [DAMAGE_CONCRETE_RECEIVER_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_CONCRETE_RECEIVER_REINVESTIGATION_2026-07-13.md) | HIGH for handoff; PARTIAL for all effects | yes |
 | Terrain directly calls Object and UnInit inline on fatal result `4` | live `decompile/disassemble 0x0071B920`, context at `0x0071BB73` | HIGH | yes when Wood/non-Immune gates pass |
 | Object UnInit calls Limbo, clears alive, then queues deferred physical deletion | live `decompile/disassemble 0x005F65F0` | HIGH | yes |
 | Rust ordinary combat remains unsigned and batched | `src/sim/combat/mod.rs` current source | HIGH | implementation fact |
@@ -571,13 +571,13 @@ is silently converted into an implementation assumption.
 ## 17. Sources read
 
 - `DAMAGE_RECEIVER_CORE_REINVESTIGATION_2026-07-13.md`
-- `DAMAGE_CONCRETE_RECEIVER_REINVESTIGATION_2026-07-13.md`
-- `DAMAGE_RECEIVER_RULE_HOUSE_ASSEMBLY_REINVESTIGATION_2026-07-13.md`
-- `DAMAGE_MATH_GHIDRA_REPORT.md`
-- `ANIMCLASS_BUILDING_OBJECT_DAMAGE_RUNTIME_SPAWNS_GHIDRA_REPORT.md`
-- `TERRAIN_CLASS_GHIDRA_REPORT.md`
-- `TIBTRE_TERRAIN_OBJECT_LIFECYCLE_AND_SEEDING_GHIDRA_REPORT.md`
-- `traces/TIBTRE_NONIMMUNE_DAMAGE_REMOVES_SPAWNER_TRACE_2026-05-27.md`
+- [DAMAGE_CONCRETE_RECEIVER_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_CONCRETE_RECEIVER_REINVESTIGATION_2026-07-13.md)
+- [DAMAGE_RECEIVER_RULE_HOUSE_ASSEMBLY_REINVESTIGATION_2026-07-13.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_RECEIVER_RULE_HOUSE_ASSEMBLY_REINVESTIGATION_2026-07-13.md)
+- [DAMAGE_MATH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DAMAGE_MATH_GHIDRA_REPORT.md)
+- [ANIMCLASS_BUILDING_OBJECT_DAMAGE_RUNTIME_SPAWNS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ANIMCLASS_BUILDING_OBJECT_DAMAGE_RUNTIME_SPAWNS_GHIDRA_REPORT.md)
+- [TERRAIN_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TERRAIN_CLASS_GHIDRA_REPORT.md)
+- [TIBTRE_TERRAIN_OBJECT_LIFECYCLE_AND_SEEDING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TIBTRE_TERRAIN_OBJECT_LIFECYCLE_AND_SEEDING_GHIDRA_REPORT.md)
+- [traces/TIBTRE_NONIMMUNE_DAMAGE_REMOVES_SPAWNER_TRACE_2026-05-27.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/traces/TIBTRE_NONIMMUNE_DAMAGE_REMOVES_SPAWNER_TRACE_2026-05-27.md)
 - `docs/plans/2026-07-13-damage-authoritative-cutover-plan.md`
 - `docs/plans/2026-07-22-entity-state-authority-substrate-design.md`
 - current Rust source in `src/sim/combat`, `src/sim/world/lifecycle.rs`,

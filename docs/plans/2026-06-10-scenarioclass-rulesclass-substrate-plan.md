@@ -37,9 +37,9 @@ edited by this plan while dirty:
 ## Grounding Summary
 
 - **Binary truth comes from the contract's sources** —
-  `RANDOM_SCENARIO_ENGINE_SUBSTRATE_SERVICE_STUDY.md` (seed pipeline
+  [RANDOM_SCENARIO_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RANDOM_SCENARIO_ENGINE_SUBSTRATE_SERVICE_STUDY.md) (seed pipeline
   `Init_Random_Number_System @ 0x0052FC20`, ScenarioClass field map, lifecycle)
-  and `RULESCLASS_GHIDRA_REPORT.md` (`Process @ 0x006686C0` re-running
+  and [RULESCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RULESCLASS_GHIDRA_REPORT.md) (`Process @ 0x006686C0` re-running
   `Read_INI @ 0x00668BF0` on the map file). Every load-bearing claim was
   re-verified live in those sessions; no new Ghidra work is required for these
   three slices (confidence: verified-from-binary, by citation).
@@ -94,7 +94,7 @@ edited by this plan while dirty:
   semantics of index-keyed overwrite (`0=` in a map [VehicleTypes] replacing
   rules entry 0). — **Confidence:** high for "don't allocate" (contract);
   medium for the exact exclusion list (flag for `/review-plan`). **Source:**
-  contract RC-1; `RULESCLASS_GHIDRA_REPORT.md` §9.3.
+  contract RC-1; [RULESCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RULESCLASS_GHIDRA_REPORT.md) §9.3.
 - **SC-2 moves fields with compiler-driven renames, not sed**: delete the five
   moved fields, fix every `E0609` the compiler reports (~365 references across
   `tick`/clock/`game_options`/`seed`). Hash folds keep their exact current
@@ -1236,7 +1236,7 @@ Optionally append an implementation-status note to the contract doc
 - **RC-6** — LANGRULE.INI retail-MIX inspection (`/re-investigate`).
 - **RC-1 BLOCKED** — map-INI type *allocation* semantics (`/re-investigate`
   the second `Read_INI` pass, report §9.3).
-- **RC-8** — doc patch of `RULESCLASS_GHIDRA_REPORT.md` §8 + offset comments in
+- **RC-8** — doc patch of [RULESCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RULESCLASS_GHIDRA_REPORT.md) §8 + offset comments in
   `game_options.rs` (file not dirty, but cosmetic — bundle with RC-3).
 - **Value-sensitive `rules_hash`** — pre-existing gap surfaced during
   planning (`app_sim_tick.rs:1356` hashes registries only).
@@ -1257,10 +1257,10 @@ possible; own feature plan), the value-sensitive `rules_hash` gap, SC-6/SC-7.
 
 - **Design doc / contract:** `docs/contracts/2026-06-10-scenarioclass-rulesclass-engine-substrate-implementation-contract.md`
 - **Ghidra reports (via contract; no new RE this session):**
-  `docs/research/RANDOM_SCENARIO_ENGINE_SUBSTRATE_SERVICE_STUDY.md`,
-  `docs/research/RULESCLASS_GHIDRA_REPORT.md` (+ defaults CSVs),
-  `docs/research/SESSIONCLASS_GHIDRA_REPORT.md`,
-  `docs/research/SCENARIOCLASS_PERTICKUPDATE_FRAME_TIMERS_GHIDRA_REPORT.md`
+  [docs/research/RANDOM_SCENARIO_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RANDOM_SCENARIO_ENGINE_SUBSTRATE_SERVICE_STUDY.md),
+  [docs/research/RULESCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RULESCLASS_GHIDRA_REPORT.md) (+ defaults CSVs),
+  [docs/research/SESSIONCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SESSIONCLASS_GHIDRA_REPORT.md),
+  [docs/research/SCENARIOCLASS_PERTICKUPDATE_FRAME_TIMERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SCENARIOCLASS_PERTICKUPDATE_FRAME_TIMERS_GHIDRA_REPORT.md)
 - **gamemd.exe addresses (kept here, never in Rust comments):**
   `Init_Random_Number_System @ 0x0052FC20`, `Start_Scenario @ 0x00683AB0`,
   `RulesClass::Process @ 0x006686C0`, `Read_INI @ 0x00668BF0`,

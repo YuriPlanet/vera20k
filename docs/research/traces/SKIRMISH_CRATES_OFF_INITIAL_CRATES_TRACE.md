@@ -27,7 +27,7 @@ YR equivalent:
 - Rust output: `SkirmishShellState.crates == false`; UI control maps `CratesAppear0x696` to `state.crates`.
 - Rust evidence: `src/ui/skirmish_shell/state/trackbars.rs:70`, `src/app_skirmish_shell_render/controls.rs:49`.
 - YR output: checkbox `0x696` off means `DAT_00A8B261 = 0`.
-- YR evidence: `SKIRMISH_CHECKBOX_CONTROL_LABEL_MAPPING_GHIDRA_REPORT.md` maps `0x696` to `CratesAppear`, `Rules+0x14B1`, and `DAT_00A8B261`.
+- YR evidence: [SKIRMISH_CHECKBOX_CONTROL_LABEL_MAPPING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_CHECKBOX_CONTROL_LABEL_MAPPING_GHIDRA_REPORT.md) maps `0x696` to `CratesAppear`, `Rules+0x14B1`, and `DAT_00A8B261`.
 - Verdict: **PASS** for this stage (`false == 0`).
 
 ### Stage 2 - Start Game Packing
@@ -36,7 +36,7 @@ YR equivalent:
 - Rust output: `options.crates = state.crates`, so `SkirmishLaunchSession.options.crates == false`.
 - Rust evidence: `src/ui/skirmish_shell/state/launch.rs:178`, `src/skirmish_launch.rs:144`.
 - YR output: Start branch writes `DAT_00A8B261 = (BM_GETCHECK(0x696) == 1)`, so off writes `0`.
-- YR evidence: `SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md` section 2, Crates Appear row; Start write `0x006AD806..0x006AD81B`.
+- YR evidence: [SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md) section 2, Crates Appear row; Start write `0x006AD806..0x006AD81B`.
 - Verdict: **PASS** (`false == 0`).
 
 ### Stage 3 - Session To Match Options
@@ -91,8 +91,8 @@ No direct FAIL was found for the exact Crates-off initial-random-crate first fra
 ## Sources
 
 - Read-only Ghidra decompile: `ScenarioClass__Post_Map_Init @ 0x00686890`.
-- `docs/research/skirmish-ui/SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md`.
-- `docs/research/skirmish-ui/SKIRMISH_CHECKBOX_CONTROL_LABEL_MAPPING_GHIDRA_REPORT.md`.
+- [docs/research/skirmish-ui/SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_PACKED_OPTION_GLOBAL_CONSUMERS_GHIDRA_REPORT.md).
+- [docs/research/skirmish-ui/SKIRMISH_CHECKBOX_CONTROL_LABEL_MAPPING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_CHECKBOX_CONTROL_LABEL_MAPPING_GHIDRA_REPORT.md).
 - `docs/research/CRATE_SYSTEM_GHIDRA_REPORT.md`.
 - Rust surfaces: `src/ui/skirmish_shell/state/launch.rs`, `src/skirmish_launch.rs`, `src/app_skirmish.rs`, `src/sim/game_options.rs`, `src/map/overlay_types.rs`.
 

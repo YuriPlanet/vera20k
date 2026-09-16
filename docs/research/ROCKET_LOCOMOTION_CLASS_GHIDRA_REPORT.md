@@ -121,7 +121,7 @@ Each `RocketStruct` is 0x30 bytes; the type-pointer field at `+0x30` is the
 | +0x30 | AircraftTypeClass* | (associated rocket type) | `V3RocketType=V3ROCKET` |
 
 **Verified field offsets** by cross-checking Process accesses against the existing
-`LOCOMOTION_MATH_AND_CONSTANTS.md` table:
+[LOCOMOTION_MATH_AND_CONSTANTS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOCOMOTION_MATH_AND_CONSTANTS.md) table:
 - Case 1 reads `*(iVar9 + 4)` → TiltFrames after PauseFrames ✓
 - Case 2 reads `*(local_a0 + 0x8)` (PitchInitial) and `*(local_a0 + 0xc)` (PitchFinal) ✓
 - Case 3 adds `*(float *)(iVar9 + 0x18)` (Acceleration) to Altitude; tests against `*(int *)(iVar9 + 0x1c)` (Altitude) ✓

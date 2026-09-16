@@ -17,7 +17,7 @@
 
 **Active in YR:** Yes — entire pipeline runs every tick for every UnitClass instance with a `Target` set, in standard YR skirmish.
 
-**Scope of this report:** This document covers the **UnitClass-specific layer** that wraps `TechnoClass::Fire_At` (already documented in `FIRE_AT_PIPELINE_GHIDRA_REPORT.md`). It focuses on:
+**Scope of this report:** This document covers the **UnitClass-specific layer** that wraps `TechnoClass::Fire_At` (already documented in [FIRE_AT_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FIRE_AT_PIPELINE_GHIDRA_REPORT.md)). It focuses on:
 - How turret rotation is interpolated frame-by-frame (`FacingClass`)
 - How idle units acquire targets via 8-cell scan (`TurretAI`)
 - How a unit decides whether to actually fire vs continue rotating (`Fire_At_Target`, `GetFireError`)
@@ -29,7 +29,7 @@ Out of scope (covered elsewhere): the post-fire pipeline (bullet creation, ROF r
 
 ## 1. Three FacingClass instances on every TechnoClass
 
-Every TechnoClass instance holds **three** embedded `FacingClass` objects, each 24 bytes (`0x18`). Verified via `LEA` instructions in TechnoClass / UnitClass constructors (existing `TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md` §726-728, cross-checked here).
+Every TechnoClass instance holds **three** embedded `FacingClass` objects, each 24 bytes (`0x18`). Verified via `LEA` instructions in TechnoClass / UnitClass constructors (existing [TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md) §726-728, cross-checked here).
 
 | Offset (TechnoClass) | Name | Default ROT | UnitClass override | Role |
 |---|---|---|---|---|
@@ -250,7 +250,7 @@ To check if a turret has finished rotating, code calls `CDTimerClass::Remaining`
 
 ## 3. UnitClass::TurretAI (`0x007468C0`)
 
-Called from `UnitClass::AI` (per `UNITCLASS_GHIDRA_REPORT.md` §3j) **only when** `Type+0xD2F (TurretNotHidden) != 0` AND `Type+0xD30 (TurretLocked) == 0`. So units without a visible turret OR with a locked turret skip this entirely.
+Called from `UnitClass::AI` (per [UNITCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNITCLASS_GHIDRA_REPORT.md) §3j) **only when** `Type+0xD2F (TurretNotHidden) != 0` AND `Type+0xD30 (TurretLocked) == 0`. So units without a visible turret OR with a locked turret skip this entirely.
 
 ### 3.1 Three-phase logic
 
@@ -347,7 +347,7 @@ Cross-checking with `FootClass` constructor: `param_1[0x192] = 0`, `param_1[0x19
 
 ## 4. UnitClass::Fire_At_Target (`0x00736DF0`)
 
-The wrapper that calls `TechnoClass::Fire_At` from `UnitClass::AI` (§3m of UNITCLASS_GHIDRA_REPORT.md). Despite the name, this function is **not** the firing pipeline itself — it's the gate that decides whether to call Fire_At and what to do based on the fire error code.
+The wrapper that calls `TechnoClass::Fire_At` from `UnitClass::AI` (§3m of [UNITCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNITCLASS_GHIDRA_REPORT.md)). Despite the name, this function is **not** the firing pipeline itself — it's the gate that decides whether to call Fire_At and what to do based on the fire error code.
 
 ### 4.1 Top-level structure
 
@@ -416,7 +416,7 @@ Code 5 is the "general not-now" code. Code 3 specifically means "can fire eventu
 
 ### 4.3 The `err == 0 || err == 2` + `vtable+0x4E4` early-out
 
-When fire is ready (err=0) OR rotating-into-position (err=2), AND the unit's vtable+0x4E4 returns true, the function calls `vtable+0x1E8(0x10, 0)` and returns. This sets the unit's mission state to **0x10** (Deployed mission, per `OPPORTUNITY_FIRE_GHIDRA_REPORT.md` §4 case description).
+When fire is ready (err=0) OR rotating-into-position (err=2), AND the unit's vtable+0x4E4 returns true, the function calls `vtable+0x1E8(0x10, 0)` and returns. This sets the unit's mission state to **0x10** (Deployed mission, per [OPPORTUNITY_FIRE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/OPPORTUNITY_FIRE_GHIDRA_REPORT.md) §4 case description).
 
 **Tiny detail:** This is the IFV/deploy interaction. `vtable+0x4E4` is likely "should auto-deploy on fire ready" — units with deploy-fire capability (Engineer in IFV, Mirage Tank in deployed state, etc.) auto-trigger a deploy when ready to fire.
 
@@ -501,6 +501,8 @@ This is the "user-issued force-fire on unfireable target" handler. `CanFireAt` d
 ### 4.8 Gattling stage post-update (always runs)
 
 After the switch, regardless of the path taken:
+
+```c
 // corrected 2026-05-28: the branch condition and spin-up label were SWAPPED in the original.
 // Binary (decompile_function 0x736DF0): IncreaseGattlingStage fires when
 //   gattling==true AND err IN {0,2,3,4}  (i.e., spinning UP while firing/rotating/cooling).
@@ -522,7 +524,7 @@ if (Type+0xCD5 != 0) {
 }
 ```
 
-`Type+0xCD5` is the **IsGattling** flag on TechnoTypeClass (existing `GATTLING_WEAPON_STAGE_SYSTEM_GHIDRA_REPORT.md` confirms). Gattling weapons spin up while firing and decay while idle. The accumulator `field_0x148` is the current spin level.
+`Type+0xCD5` is the **IsGattling** flag on TechnoTypeClass (existing [GATTLING_WEAPON_STAGE_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GATTLING_WEAPON_STAGE_SYSTEM_GHIDRA_REPORT.md) confirms). Gattling weapons spin up while firing and decay while idle. The accumulator `field_0x148` is the current spin level.
 
 ---
 
@@ -675,7 +677,7 @@ For our re-implementation: using `atan2(self_y - target_y, target_x - self_x)` a
 
 ## 7. Tick order — where this all runs
 
-From `UNITCLASS_GHIDRA_REPORT.md` §3 (UnitClass::AI):
+From [UNITCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNITCLASS_GHIDRA_REPORT.md) §3 (UnitClass::AI):
 
 ```
 ... [§3a-3l: sinking, transport, parasite, parachute, deploy, tube, warp, FootClass::AI]
@@ -706,7 +708,7 @@ From `UNITCLASS_GHIDRA_REPORT.md` §3 (UnitClass::AI):
 | `TurretScansNearby` | per-unit | false | `Type+0xD32`. Enables idle 8-cell scan in TurretAI. | HIGH |
 | `OmniFire` | per-unit | false | "No facing required to fire" — likely `Type+0xCA1` inverse, but actual offset for OmniFire is **unconfirmed in this pass**. | LOW |
 | `TurretSpins` | per-unit | `no` | `Type+0xD21`. Permaspin: turret target advances 8 8-bit-facing units per tick (= 11.25°/tick = 32 ticks/revolution). Set only on `[DISK]` in vanilla YR. See §5.2. | HIGH |
-| `OpportunityFire` | per-unit | false | `TechnoTypeClass+0x6AF`. **Does NOT gate firing** — only gates TarCom-persistence at mission transitions (per `OPPORTUNITY_FIRE_GHIDRA_REPORT.md`). | HIGH |
+| `OpportunityFire` | per-unit | false | `TechnoTypeClass+0x6AF`. **Does NOT gate firing** — only gates TarCom-persistence at mission transitions (per [OPPORTUNITY_FIRE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/OPPORTUNITY_FIRE_GHIDRA_REPORT.md)). | HIGH |
 | `FireAngle` | per-unit | 0 | Vertical firing arc. Affects projectile pitch, NOT facing. Out of scope here. | HIGH (out-of-scope) |
 | `MissileROTVar` | `[General]` | `.25` | Guided missile rotation variance. Affects bullet ROT, NOT unit ROT. Out of scope. | HIGH |
 | `VeteranROF` | `[General]` | `0.6` | Veteran ROF multiplier. Applied in `TechnoClass::GetROF` (vtable+0x318) — not in Fire_At_Target. | HIGH |
@@ -805,14 +807,14 @@ For implementation, every one of these must match gamemd.exe exactly:
 - `0x004D31E0` (FootClass::Constructor) — relevant offsets
 
 **Companion docs cross-referenced:**
-- `UNITCLASS_GHIDRA_REPORT.md` §3, §5, §6, §7 (UnitClass::AI tick order, TurretAI summary)
-- `TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md` §726-728 (FacingClass offsets confirmed)
-- `FIRE_AT_PIPELINE_GHIDRA_REPORT.md` (TechnoClass::Fire_At pipeline; deliberately NOT re-investigated here)
-- `OPPORTUNITY_FIRE_GHIDRA_REPORT.md` §4 (mission 0x10, OpportunityFire flag scope)
-- `TECHNOCLASS_COMBAT_WEAPON_SYSTEMS_REPORT.md` §3 (GetFireError architecture)
-- `BUILDINGCLASS_MISSION_ATTACK_GHIDRA_REPORT.md` (FIRE_FACING gate, tolerance formula `abs(ROT << 8)`)
-- `FLY_LOCOMOTION_CLASS_GHIDRA_REPORT.md` §FacingClass turn algorithm (cross-check)
-- `GATTLING_WEAPON_STAGE_SYSTEM_GHIDRA_REPORT.md` (Type+0xCD5 IsGattling flag)
+- [UNITCLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/UNITCLASS_GHIDRA_REPORT.md) §3, §5, §6, §7 (UnitClass::AI tick order, TurretAI summary)
+- [TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_EXPANDED_STRUCT_LAYOUT.md) §726-728 (FacingClass offsets confirmed)
+- [FIRE_AT_PIPELINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FIRE_AT_PIPELINE_GHIDRA_REPORT.md) (TechnoClass::Fire_At pipeline; deliberately NOT re-investigated here)
+- [OPPORTUNITY_FIRE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/OPPORTUNITY_FIRE_GHIDRA_REPORT.md) §4 (mission 0x10, OpportunityFire flag scope)
+- [TECHNOCLASS_COMBAT_WEAPON_SYSTEMS_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TECHNOCLASS_COMBAT_WEAPON_SYSTEMS_REPORT.md) §3 (GetFireError architecture)
+- [BUILDINGCLASS_MISSION_ATTACK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BUILDINGCLASS_MISSION_ATTACK_GHIDRA_REPORT.md) (FIRE_FACING gate, tolerance formula `abs(ROT << 8)`)
+- [FLY_LOCOMOTION_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FLY_LOCOMOTION_CLASS_GHIDRA_REPORT.md) §FacingClass turn algorithm (cross-check)
+- [GATTLING_WEAPON_STAGE_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GATTLING_WEAPON_STAGE_SYSTEM_GHIDRA_REPORT.md) (Type+0xCD5 IsGattling flag)
 
 **INI files checked:**
 - `ini/rulesmd.ini` — ROT, ROF, Burst, OmniFire, FireAngle, OpportunityFire, TurretAnim*, [General] VeteranROF, CloseEnough, MissileROTVar

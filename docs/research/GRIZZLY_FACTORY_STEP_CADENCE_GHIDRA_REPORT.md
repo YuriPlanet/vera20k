@@ -181,7 +181,7 @@ Rust therefore naturally completes a stock MTNK after about `661` base frames at
 
 | Area / function / branch | Status | Evidence | What remains |
 |---|---|---|---|
-| Stock total `661` input | verified by prior slot | `GRIZZLY_BUILDTIMEMULTIPLIER_CONSUMER_GHIDRA_REPORT.md` | none in this slot |
+| Stock total `661` input | verified by prior slot | [GRIZZLY_BUILDTIMEMULTIPLIER_CONSUMER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GRIZZLY_BUILDTIMEMULTIPLIER_CONSUMER_GHIDRA_REPORT.md) | none in this slot |
 | `/54` and clamp to `[1,255]` | verified | `0x004C9EEF..0x004C9F34`, `0x004C9FB0` | none |
 | Fresh production progress/timer initialization | verified | `0x004C9D6E..0x004C9DED` | none for no-headstart scenario |
 | Timer expiry inclusive boundary | verified | `0x00426630` | none |
@@ -205,7 +205,7 @@ Rust therefore naturally completes a stock MTNK after about `661` base frames at
 - `[RESOLVED] OQ-10 - Does completion happen in the same AI pass as the 54th step? -> Yes; after the credit branch, `Production_Value == 54` sets suspended, clears timer duration, spends remaining balance, and zeroes balance.` (evidence: `0x004C9C06..0x004C9C34`)
 - `[RESOLVED] OQ-11 - Does `FactoryClass::IsComplete` use `>=54`? -> No, it checks exactly `==0x36` with non-null object or special item.` (evidence: `0x004CA130`)
 - `[RESOLVED] OQ-12 - What is exact factory-complete frame count from start? -> `54 * 12 = 648` frames after `SetRate`'s start frame for no-headstart stock MTNK.` (evidence: `0x004C9F20..0x004C9F34`, `0x00426630`, `0x004C9B78..0x004C9C0C`)
-- `[RESOLVED] OQ-13 - Is final vehicle delivery included? -> No; factory-complete state is exact, but final spawn/delivery is handled by separate sidebar/Place_Production/exit logic.` (evidence: non-scope plus `STRIP_AI_FACTORY_DELIVERY_GLOBALS_AND_QUEUE_RESTART_GHIDRA_REPORT.md`)
+- `[RESOLVED] OQ-13 - Is final vehicle delivery included? -> No; factory-complete state is exact, but final spawn/delivery is handled by separate sidebar/Place_Production/exit logic.` (evidence: non-scope plus [STRIP_AI_FACTORY_DELIVERY_GLOBALS_AND_QUEUE_RESTART_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/STRIP_AI_FACTORY_DELIVERY_GLOBALS_AND_QUEUE_RESTART_GHIDRA_REPORT.md))
 - `[DEFERRED] OQ-14 - How many frames until the player sees the produced Grizzly exit the war factory?` (category: out-of-scope; reason: this requires delivery command and war-factory exit path, not factory step cadence; next-step-if-pursued: combine this report with blocked/unblocked exit delivery docs)
 - `[DEFERRED] OQ-15 - How does multiplayer/current-player headstart alter `Production_Value`?` (category: out-of-scope; reason: conditional branch after `SetRate`, excluded by no-modifier scenario; next-step-if-pursued: trace `HouseClass::Begin_Production` headstart arguments and game-mode gates)
 - `[DEFERRED] OQ-16 - Does sidebar cameo visual progress hit its full frame on the same tick as factory completion?` (category: out-of-scope; reason: sidebar visual timer is separate from factory sim timer; next-step-if-pursued: trace `StripClass::AI` and cameo timer setters)
@@ -239,6 +239,6 @@ None for the scoped factory timer start, progress-step boundary, and factory-com
 ## Sources
 
 - Ghidra decompile/disassembly: `0x004C9B20`, `0x004C9EA0`, `0x004C9FB0`, `0x00426630`, `0x004C9C70`, `0x004FA350`, `0x004CA130`, `0x004CA1A0`, `0x004CA5A0`, `0x0055AFB0`.
-- Prior reports: `docs/research/GRIZZLY_BUILDTIMEMULTIPLIER_CONSUMER_GHIDRA_REPORT.md`, `docs/research/FACTORY_CLASS_BUILD_SPEED_GHIDRA_REPORT.md`, `docs/research/FACTORYCLASS_AND_CAMEOENTRY_STRUCT_LAYOUT.md`, `docs/research/STRIP_AI_FACTORY_DELIVERY_GLOBALS_AND_QUEUE_RESTART_GHIDRA_REPORT.md`.
+- Prior reports: [docs/research/GRIZZLY_BUILDTIMEMULTIPLIER_CONSUMER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GRIZZLY_BUILDTIMEMULTIPLIER_CONSUMER_GHIDRA_REPORT.md), [docs/research/FACTORY_CLASS_BUILD_SPEED_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FACTORY_CLASS_BUILD_SPEED_GHIDRA_REPORT.md), [docs/research/FACTORYCLASS_AND_CAMEOENTRY_STRUCT_LAYOUT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FACTORYCLASS_AND_CAMEOENTRY_STRUCT_LAYOUT.md), [docs/research/STRIP_AI_FACTORY_DELIVERY_GLOBALS_AND_QUEUE_RESTART_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/STRIP_AI_FACTORY_DELIVERY_GLOBALS_AND_QUEUE_RESTART_GHIDRA_REPORT.md).
 - INI files: `ini/rulesmd.ini`, `ini/rules.ini`.
 - Rust scan: `src/sim/production/production_tech.rs`, `src/sim/production/production_queue.rs`, `src/sim/production/production_queue_tests.rs`.

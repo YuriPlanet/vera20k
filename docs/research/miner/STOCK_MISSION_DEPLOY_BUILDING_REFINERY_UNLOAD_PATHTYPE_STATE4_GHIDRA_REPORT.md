@@ -30,7 +30,7 @@ The key correction is the `RadioClass::In_Radio_Contact` guard polarity. At `0x0
 | Unit `+0x33C` | harvester `StorageClass` | `StorageClass__FindFirstNonEmptySlot` at `0x0073E3BF` | Yes |
 | BuildingType `+0x16B3` | `DockUnload=yes` | `BuildingClass::Receive_Radio @ 0x0043C2D0` case `0x15` | Yes for GAREFN/NAREFN |
 | BuildingType `+0x16BB` | `Refinery=yes` | state 4 guard `0x0073E1D5`; `rulesmd.ini` | Yes for GAREFN/NAREFN |
-| Building `+0x57C` | `Anims_0[8]` / live `ProductionAnim` pointer | `0x0073E1DF`; `BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_GHIDRA_REPORT.md` | Conditional; stock GAREFN/NAREFN normally keep it null |
+| Building `+0x57C` | `Anims_0[8]` / live `ProductionAnim` pointer | `0x0073E1DF`; [BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_GHIDRA_REPORT.md) | Conditional; stock GAREFN/NAREFN normally keep it null |
 | Building `+0x584` | slot 10 `SpecialAnim` pointer | reads `0x0073E384`, `0x0073E526` | Yes |
 | `g_refinery_unload_adjacent_lookup_dx/dy` | signed west-neighbor lookup `(-1,0)` | init `0x0049F2F0`, uses `0x0073E195`, `0x0073E2D5` | Yes |
 
@@ -256,7 +256,7 @@ No Rust files, INI files, or existing docs were modified.
 | Expected output existence | verified | `Test-Path` returned false before writing | none |
 | Entry split on `unit+0x2E4` | verified | `0x0073D63B`, `0x0073D641` | none |
 | Nonzero `unit+0x2E4` release branch | verified | `0x0073D647..0x0073D66D`; `0x004595C0` | exact non-stock runtime frequency out of scope |
-| Stock no-writer evidence for `+0x2E4` | verified via prior report | `STANDARD_REFINERY_0X2E4_WRITER_INVENTORY_GHIDRA_REPORT.md`; spot-check `0x0043C2D0`, `0x00739EC0` | none for stock path |
+| Stock no-writer evidence for `+0x2E4` | verified via prior report | [STANDARD_REFINERY_0X2E4_WRITER_INVENTORY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/STANDARD_REFINERY_0X2E4_WRITER_INVENTORY_GHIDRA_REPORT.md); spot-check `0x0043C2D0`, `0x00739EC0` | none for stock path |
 | `SizeLimit` branch correction | verified | `0x0073D6EC JLE 0x0073DCD3`; harvester gate `0x0073D678` | none |
 | `RadioClass::In_Radio_Contact` helper body | verified | decompile `0x0065AE30` | none |
 | PathType guard polarity in primary function | verified | `0x0073DEE2..0x0073DEE9` | none |
@@ -288,7 +288,7 @@ No Rust files, INI files, or existing docs were modified.
 - [RESOLVED] OQ-09 - How is the refinery found in states 3/4? -> Current cell plus hardcoded `(-1,0)`, then `Look_up_building_in_cell`. (evidence: `0x0073E181`, `0x0073E2C8`, `0x0049F2F0`, `0x0047C520`)
 - [RESOLVED] OQ-10 - What triggers state 3 -> state 4? -> Threshold crossing followed by no non-empty storage slot or no positive removal; slot 8 is requested, state becomes 4, slot 10 is cleared if occupied. (evidence: `0x0073E4DC..0x0073E534`)
 - [RESOLVED] OQ-11 - Does the state 3 empty transition use timer epilogue? -> No; it reaches direct `return 1`. (evidence: `0x0073E539..0x0073E5BD`)
-- [RESOLVED] OQ-12 - What is `building+0x57C`? -> Slot-8 `ProductionAnim` pointer, i.e. `Anims_0[8]`. (evidence: `BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_GHIDRA_REPORT.md`)
+- [RESOLVED] OQ-12 - What is `building+0x57C`? -> Slot-8 `ProductionAnim` pointer, i.e. `Anims_0[8]`. (evidence: [BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_GHIDRA_REPORT.md))
 - [RESOLVED] OQ-13 - Does state 4 clear `+0x6D1` before or after the slot-8 wait? -> After the slot-8 wait guard passes. (evidence: guard `0x0073E1CB..0x0073E1EA`; clear `0x0073E1F6`)
 - [RESOLVED] OQ-14 - What is the normal state-4 mission handoff? -> `SetMission(0x0A,0)`, optional radio `3`, `QueueMission`, timer epilogue. (evidence: `0x0073E24F..0x0073E2BE`)
 - [RESOLVED] OQ-15 - When is radio `3` sent in normal state 4? -> Only after `SetMission(0x0A,0)` and successful vtable `+0x200`, if `RadioClass::In_Radio_Contact` returns true. (evidence: `0x0073E25A..0x0073E279`)
@@ -329,13 +329,13 @@ No Rust files, INI files, or existing docs were modified.
 - Ghidra disassembled: `0x0073D630`.
 - Ghidra assembly context checked: `0x0073DEE0`, `0x0073E17F`, `0x0073E24D`, `0x0073DFB0`, `0x0073E5B1`, `0x0073E289`, `0x0073D63B`, `0x0073D6E6`, `0x0073E51C`.
 - Prior docs read/reconciled:
-  - `docs/research/AUDIT_LOG.md`
+  - [docs/research/AUDIT_LOG.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/AUDIT_LOG.md)
   - `docs/research/miner/MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_GHIDRA_REPORT.md`
-  - `docs/research/miner/MISSION_DEPLOY_BUILDING_DOCKED_VS_UNDOCKED_BRANCH_GHIDRA_REPORT.md`
-  - `docs/research/miner/MISSION_DEPLOY_BUILDING_DAT_0089F6A0_REFINERY_LOOKUP_GHIDRA_REPORT.md`
-  - `docs/research/miner/STANDARD_REFINERY_0X2E4_WRITER_INVENTORY_GHIDRA_REPORT.md`
+  - [docs/research/miner/MISSION_DEPLOY_BUILDING_DOCKED_VS_UNDOCKED_BRANCH_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MISSION_DEPLOY_BUILDING_DOCKED_VS_UNDOCKED_BRANCH_GHIDRA_REPORT.md)
+  - [docs/research/miner/MISSION_DEPLOY_BUILDING_DAT_0089F6A0_REFINERY_LOOKUP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/MISSION_DEPLOY_BUILDING_DAT_0089F6A0_REFINERY_LOOKUP_GHIDRA_REPORT.md)
+  - [docs/research/miner/STANDARD_REFINERY_0X2E4_WRITER_INVENTORY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/STANDARD_REFINERY_0X2E4_WRITER_INVENTORY_GHIDRA_REPORT.md)
   - `docs/research/miner/REFINERY_DOCK_ANIM_SLOTS_GHIDRA_REPORT.md`
-  - `docs/research/miner/BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_GHIDRA_REPORT.md`
+  - [docs/research/miner/BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/BUILDINGCLASS_0X57C_DOCK_DEPART_GUARD_GHIDRA_REPORT.md)
 - INI checked:
   - `ini/rulesmd.ini`
   - `ini/rules.ini`

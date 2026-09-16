@@ -22,7 +22,7 @@ No load-bearing `BLOCKED`, `UNKNOWN`, approximate, or residual behavior remains 
 
 - Active-retail authority is the live `gamemd.exe` program plus retail INI/map data.
 - `C:\Users\enok\Documents\OpenTS` was used only to navigate inherited scenario-start families. No OpenTS behavior is accepted without active-YR proof.
-- This report extends the bounded offline proof in `SCENARIO_PREFIX_PLAN_INELIGIBLE_FALLBACK_REINVESTIGATION_GHIDRA_REPORT.md`; it does not weaken or replace that report's exact stock-offline transaction.
+- This report extends the bounded offline proof in [SCENARIO_PREFIX_PLAN_INELIGIBLE_FALLBACK_REINVESTIGATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/00-system-models/SCENARIO_PREFIX_PLAN_INELIGIBLE_FALLBACK_REINVESTIGATION_GHIDRA_REPORT.md); it does not weaken or replace that report's exact stock-offline transaction.
 - The parent cold-checked the fresh seed copy, both common network picker draw sites, stream-load seed-zero reset, startup editor-flag clear, and first Start_Scenario call sites after the worker completed.
 
 ## Common fresh-start owner
@@ -160,6 +160,6 @@ No rename, type change, speculative comment, or concurrent metadata mutation was
 - retail `rulesmd.ini`, `MPModesMD.ini`, and inspected campaign/map payloads;
 - `LOW_OVERLAY_MARK_SCENARIO_LOAD_ACTIVATION_BOUNDARY_GHIDRA_REPORT.md`;
 - `LOW_OVERLAY_MARK_FIXED_MAP_STAMP_RNG_TRANSACTION_GHIDRA_REPORT.md`;
-- `SCENARIO_PREFIX_PLAN_INELIGIBLE_FALLBACK_REINVESTIGATION_GHIDRA_REPORT.md`;
+- [SCENARIO_PREFIX_PLAN_INELIGIBLE_FALLBACK_REINVESTIGATION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/bridges/00-system-models/SCENARIO_PREFIX_PLAN_INELIGIBLE_FALLBACK_REINVESTIGATION_GHIDRA_REPORT.md);
 - current Rust owners on `origin/main`;
 - `C:\Users\enok\Documents\OpenTS` as navigation leads only.

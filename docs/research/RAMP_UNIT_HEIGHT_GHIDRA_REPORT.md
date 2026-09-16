@@ -34,7 +34,7 @@ fixtures do **not** execute the whole movement loops, Mark callbacks, or renderi
 Unit/Infantry `+0x1B4` dispatches through `4DB810`, which wraps raw coordinate
 copy and optional Mark/cloak work. The actual copy `5F6940..5F695C` writes all
 three supplied values verbatim to `Object+9C/+A0/+A4`. Contrary to the old
-`FOOTCLASS_VTABLE_COMPLETE.md` description, this wrapper does not perform ground
+[FOOTCLASS_VTABLE_COMPLETE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/FOOTCLASS_VTABLE_COMPLETE.md) description, this wrapper does not perform ground
 or bridge height correction itself.
 
 `Object+0x1CC -> 5F5FA0` takes a signed **height above surface** argument:
@@ -87,7 +87,7 @@ Assembly: `47BA94..47BAB0` base; `47BAC7..47BB17` ramp arithmetic;
 `47BB1D..47BB41` clamp; `47BB47..47BB4D` final addition/chop.
 The oracle runs the native lazy table initializer and evaluator with ambient
 FPCW `0x0E7F`; it does not replace ramp records with guessed coefficients.
-See also [the 104-lepton ground-height census](PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md).
+See also [the 104-lepton ground-height census](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PHASE3_CELL_GROUND_HEIGHT_104_DOMAIN_CONSUMER_CENSUS_GHIDRA_REPORT.md).
 
 ## Drive and Ship cadence and bridge ordering
 

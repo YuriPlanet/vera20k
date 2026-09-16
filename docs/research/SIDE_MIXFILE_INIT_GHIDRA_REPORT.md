@@ -305,7 +305,7 @@ not as a separate theme.
 - `[RESOLVED]` Q10 — What happens inside PaletteLoad for Yuri vs Allied? → Yuri path swaps order of two palette loads; both call `LeftPanel__ComputeLayoutRects` (evidence: decompile `0x0072f350`)
 - `[DEFERRED]` Q11 — What does `DAT_00884e68` store? (category: `requires-different-system-context`; reason: released at function start but never assigned inside `InitSideMixFiles`; likely written by NTRLMD.MIX or global init system; next-step: search xrefs to `0x00884e68`)
 - `[DEFERRED]` Q12 — Full contents of `FUN_0067e730` save-load restore path (category: `out-of-scope`; reason: save/load restore is a separate system; the call to `InitSideMixFiles` was confirmed; full save-load logic is out of scope for this investigation)
-- `[DEFERRED]` Q13 — What filenames does `SidebarClass::LoadSHPs` load inside `FUN_006d02b0`? (category: `out-of-scope`; reason: downstream of InitSideMixFiles; covered partially by SIDEBAR_CONSTRUCTION_GHIDRA_REPORT.md §12)
+- `[DEFERRED]` Q13 — What filenames does `SidebarClass::LoadSHPs` load inside `FUN_006d02b0`? (category: `out-of-scope`; reason: downstream of InitSideMixFiles; covered partially by [SIDEBAR_CONSTRUCTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_CONSTRUCTION_GHIDRA_REPORT.md) §12)
 
 ---
 
@@ -323,5 +323,5 @@ not as a separate theme.
 - `search_strings "Preparing Mixfiles"` — confirms string at `0x00827e1c`
 - `search_strings "SIDEC"` — confirms `0x00827de4` and `0x00827e0c`
 - `get_function_callers 0x00534fa0` — two callers confirmed
-- Cross-reference: `SIDEBAR_CONSTRUCTION_GHIDRA_REPORT.md` §6 and §13
+- Cross-reference: [SIDEBAR_CONSTRUCTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_CONSTRUCTION_GHIDRA_REPORT.md) §6 and §13
 - Cross-reference: `src/assets/asset_manager.rs` lines 90–93, `src/render/sidebar_chrome.rs` lines 128–150

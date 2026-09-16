@@ -627,12 +627,12 @@ The highest-leverage next evidence work is:
 | Stable inventory and activity seed | `GAMEMD_SYSTEM_INVENTORY_COVERAGE_MAP_GHIDRA_REPORT.md`; current inventory row scopes |
 | Live mission spot check | live decompile of `Mission_Dispatch @ 0x005B3060`; caller check to `TechnoClass::AI_Update @ 0x006F9E50` |
 | Live replay spot check | live decompile of `Main_Game @ 0x0052D9A0`; replay flag/startup branches |
-| Runtime/RNG/timers | `LOGICCLASS_GLOBAL_SUBSYSTEM_ORDER_0055AFB0_GHIDRA_REPORT.md`; `ADVANCE_TICK_PHASE_PARTITION_NATIVE_SPINE_GHIDRA_REPORT.md`; `RANDOM_SCENARIO_ENGINE_SUBSTRATE_SERVICE_STUDY.md`; timer-family reports |
-| Assets/configuration | MIX/VFS frontier report; `CCINICLASS_GHIDRA_REPORT.md`; SHP/TMP/VXL/HVA/PAL/PCX reports |
+| Runtime/RNG/timers | [LOGICCLASS_GLOBAL_SUBSYSTEM_ORDER_0055AFB0_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOGICCLASS_GLOBAL_SUBSYSTEM_ORDER_0055AFB0_GHIDRA_REPORT.md); `ADVANCE_TICK_PHASE_PARTITION_NATIVE_SPINE_GHIDRA_REPORT.md`; [RANDOM_SCENARIO_ENGINE_SUBSTRATE_SERVICE_STUDY.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RANDOM_SCENARIO_ENGINE_SUBSTRATE_SERVICE_STUDY.md); timer-family reports |
+| Assets/configuration | MIX/VFS frontier report; [CCINICLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CCINICLASS_GHIDRA_REPORT.md); SHP/TMP/VXL/HVA/PAL/PCX reports |
 | Shell/modes/RMG | `docs/research/skirmish-ui/` reports; current `src/ui/`, `src/app.rs`, `src/app_init.rs`, and `src/map/rmg/` |
 | World/cells/bridges/smudges | CellClass, zone, tiberium, terrain, bridge/tube, shroud, and smudge reports; current map/sim/render owners |
 | Lifecycle/movement | active-object, deferred-delete, Bullet/Anim/Particle/VoxelAnim, A*, zone, reservation, and locomotor reports |
-| Missions/radio/transport | MissionClass verb/dispatcher/Rescue reports; `RADIO_SYSTEM_MODEL_SYNTHESIS.md`; IFV/open-topped report; current mission/passenger code |
+| Missions/radio/transport | MissionClass verb/dispatcher/Rescue reports; [RADIO_SYSTEM_MODEL_SYNTHESIS.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/RADIO_SYSTEM_MODEL_SYNTHESIS.md); IFV/open-topped report; current mission/passenger code |
 | Combat/economy | prism, gattling, sonic, EBolt, Magnetron, radiation, harvest, tiberium, power, factory, and MCV reports; current `src/sim/` owners |
 | Superweapons/visibility | missing-superweapon and per-superweapon reports; shroud, cloak, sensors, gap, radar, and visibility syntheses |
 | Rendering/input/UI | render coupling, GScreen/Tactical, draw-order/depth, VXL, transient-effect, selection, hotkey, action, autoscroll, sidebar, and minimap reports |

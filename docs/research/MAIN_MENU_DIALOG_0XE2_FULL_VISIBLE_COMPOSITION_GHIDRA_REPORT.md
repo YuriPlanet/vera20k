@@ -9,13 +9,13 @@ paths, and TS-legacy traps.
 
 Parent reports:
 
-- `MAIN_MENU_SIDEBAR_GHIDRA_REPORT.md`
-- `MAIN_MENU_VISUAL_ASSETS_GHIDRA_REPORT.md`
-- `MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md`
-- `MAIN_MENU_DIALOG_0XE2_OWNERDRAW_VISUAL_FOLLOWUP_GHIDRA_REPORT.md`
-- `BITFONT_SHELL_TEXT_GHIDRA_REPORT.md`
-- `SKIRMISH_OWNERDRAW_CALLBACKS_FOLLOWUP_GHIDRA_REPORT.md`
-- `SKIRMISH_SHELL_RIGHT_PANEL_BACKGROUND_PALETTE_FOLLOWUP_GHIDRA_REPORT.md`
+- [MAIN_MENU_SIDEBAR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_SIDEBAR_GHIDRA_REPORT.md)
+- [MAIN_MENU_VISUAL_ASSETS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_VISUAL_ASSETS_GHIDRA_REPORT.md)
+- [MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md)
+- [MAIN_MENU_DIALOG_0XE2_OWNERDRAW_VISUAL_FOLLOWUP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_DIALOG_0XE2_OWNERDRAW_VISUAL_FOLLOWUP_GHIDRA_REPORT.md)
+- [BITFONT_SHELL_TEXT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BITFONT_SHELL_TEXT_GHIDRA_REPORT.md)
+- [SKIRMISH_OWNERDRAW_CALLBACKS_FOLLOWUP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_OWNERDRAW_CALLBACKS_FOLLOWUP_GHIDRA_REPORT.md)
+- [SKIRMISH_SHELL_RIGHT_PANEL_BACKGROUND_PALETTE_FOLLOWUP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/skirmish-ui/SKIRMISH_SHELL_RIGHT_PANEL_BACKGROUND_PALETTE_FOLLOWUP_GHIDRA_REPORT.md)
 
 No Rust code was modified.
 
@@ -286,7 +286,7 @@ The deeper follow-up resolved this string construction:
   always formats the uint16 pair at `this+0x08` / `this+0x0A` (both default
   to `1`, producing `"1.001TUC"`); the VERSION.TXT bytes go into a separate
   buffer and are parsed by the companion `FUN_0074F760` but are not pasted
-  into the version label. See `VERSION_TXT_RESOLUTION_AND_FALLBACK_GHIDRA_REPORT.md`.
+  into the version label. See [VERSION_TXT_RESOLUTION_AND_FALLBACK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/VERSION_TXT_RESOLUTION_AND_FALLBACK_GHIDRA_REPORT.md).
 - `FUN_00735120` converts the ASCII version string into a temporary UTF-16
   buffer.
 - The format string at `0x00826960` is wide `"%s %s"`.
@@ -340,7 +340,7 @@ static xrefs alone, though the surrounding IDs make it a non-main-menu helper.
 > button `0x3EE` is special-cased (`FUN_00608CD0` false → not resized, raw ≈162×37 @
 > x=638). The `bue/bde` PCX pieces are preloaded but unused on this path. Evidence:
 > `decompile_function 0x00608CD0` / `0x0060B000` / `0x00612B70` / `0x0060F9A0`. Full
-> analysis: `MAIN_MENU_0XE2_BUTTON_PAINT_AND_REPOSITION_FORK_GHIDRA_REPORT.md`.
+> analysis: [MAIN_MENU_0XE2_BUTTON_PAINT_AND_REPOSITION_FORK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_0XE2_BUTTON_PAINT_AND_REPOSITION_FORK_GHIDRA_REPORT.md).
 
 All six right-side buttons have class `Button`, style `0x5000000B`. `FUN_0060F9A0`
 routes those to `OwnerDraw_Button_00612B70`.
@@ -537,7 +537,7 @@ For pixel-faithful standard YR initial menu rendering:
    buttons are 156×42 windows at x=644 (flush-right in the 168 panel), grid-snapped Y;
    Exit `0x3EE` keeps its raw template ≈162×37 @ x=638. Labels stay yellow `#FFFF00`
    GAME.FNT with mouse-down `GUIMainButtonSound`. See
-   `MAIN_MENU_0XE2_BUTTON_PAINT_AND_REPOSITION_FORK_GHIDRA_REPORT.md`.
+   [MAIN_MENU_0XE2_BUTTON_PAINT_AND_REPOSITION_FORK_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_0XE2_BUTTON_PAINT_AND_REPOSITION_FORK_GHIDRA_REPORT.md).
 4. Render `0x694`, `0x695`, and `0x71D` through the same owner-draw static text
    path. `0x695` is dynamic hover/status text; `0x71D` is initialized by the
    dialog proc.
@@ -617,11 +617,11 @@ Binary/memory evidence:
 
 Prior reports referenced:
 
-- `docs/research/MAIN_MENU_SIDEBAR_GHIDRA_REPORT.md`
-- `docs/research/MAIN_MENU_VISUAL_ASSETS_GHIDRA_REPORT.md`
-- `docs/research/MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md`
-- `docs/research/MAIN_MENU_DIALOG_0XE2_OWNERDRAW_VISUAL_FOLLOWUP_GHIDRA_REPORT.md`
-- `docs/research/BITFONT_SHELL_TEXT_GHIDRA_REPORT.md`
+- [docs/research/MAIN_MENU_SIDEBAR_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_SIDEBAR_GHIDRA_REPORT.md)
+- [docs/research/MAIN_MENU_VISUAL_ASSETS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_VISUAL_ASSETS_GHIDRA_REPORT.md)
+- [docs/research/MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_RA2TS_PLAYBACK_ARCHIVE_PRIORITY_GHIDRA_REPORT.md)
+- [docs/research/MAIN_MENU_DIALOG_0XE2_OWNERDRAW_VISUAL_FOLLOWUP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAIN_MENU_DIALOG_0XE2_OWNERDRAW_VISUAL_FOLLOWUP_GHIDRA_REPORT.md)
+- [docs/research/BITFONT_SHELL_TEXT_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BITFONT_SHELL_TEXT_GHIDRA_REPORT.md)
 - `docs/research/SKIRMISH_OWNERDRAW_CALLBACKS_FOLLOWUP_GHIDRA_REPORT.md`
 - `docs/research/SKIRMISH_SHELL_RIGHT_PANEL_BACKGROUND_PALETTE_FOLLOWUP_GHIDRA_REPORT.md`
 
@@ -630,25 +630,25 @@ Prior reports referenced:
 Five new reports from the 2026-05-18 main-menu swarm extend or partially
 resolve open questions in this doc:
 
-- `SDBTNANM_FRAME10_OVERLAY_CONDITION_GHIDRA_REPORT.md` — **partial resolve
+- [SDBTNANM_FRAME10_OVERLAY_CONDITION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SDBTNANM_FRAME10_OVERLAY_CONDITION_GHIDRA_REPORT.md) — **partial resolve
   of the SDBTNANM frame-10 deferred item.** Branch at `0x0072E5E6` is a
   binary highlight-vs-default selector (no pulse cadence). Predicate input
   is the byte at WindowExtra record `+0xD8`; reader at `0x00621FEC`,
   writer `FUN_00608440 @ 0x00608440` (4 callers in dialog-proc
   continuations). Clearer `FUN_006084A0` has zero xrefs — bit is
   sticky-on. UX semantic remains unresolved.
-- `QUIT_CONFIRM_DIALOG_MAIN_MENU_GHIDRA_REPORT.md` — Quit button (`0x3EE`)
+- [QUIT_CONFIRM_DIALOG_MAIN_MENU_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/QUIT_CONFIRM_DIALOG_MAIN_MENU_GHIDRA_REPORT.md) — Quit button (`0x3EE`)
   → `Main_Game` case-6 → RT_DIALOG `0x120` via `FUN_005D3490`, CSF
   `GUI:ExitAreYouSure / TXT_OK / GUI:Cancel`. Result codes 0/1/2 written
   through `SetWindowLong(hwnd, 8)`. Clean return-cascade shutdown — no
   `PostQuitMessage`/`ExitProcess`.
-- `EVA_WELCOME_BACK_MAIN_MENU_TRIGGER_GHIDRA_REPORT.md` — verified-negative:
+- [EVA_WELCOME_BACK_MAIN_MENU_TRIGGER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/EVA_WELCOME_BACK_MAIN_MENU_TRIGGER_GHIDRA_REPORT.md) — verified-negative:
   the only audio on entry through `FUN_00531CC0` is the INTRO music. No
   `VoxClass::PlayEVA` on the shell path.
 - `MAIN_MENU_MUSIC_TRACK_AND_LOOP_GHIDRA_REPORT.md` — `Main_Game @
   0x0052D9A0` pushes `"INTRO"` at `0x008263a8` to `Theme::From_Name` →
   `Theme::Play`. Per-theme `Repeat=yes` re-queues via `Theme::AI` poll.
-- `SHELL_BUTTON_SLIDE_SOUND_CALL_SITE_GHIDRA_REPORT.md` — initial menu
+- [SHELL_BUTTON_SLIDE_SOUND_CALL_SITE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SHELL_BUTTON_SLIDE_SOUND_CALL_SITE_GHIDRA_REPORT.md) — initial menu
   dialog `0xE2` does NOT play `ShellButtonSlideSound` (common shell proc
   `FUN_00622B50` invokes the slide animation with `DL=0` only). Resolves
   an attribution ambiguity adjacent to this doc's owner-draw analysis.

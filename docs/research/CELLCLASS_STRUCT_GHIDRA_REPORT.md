@@ -148,7 +148,7 @@ Buildings (RTTI 6) are appended at tail; other objects are prepended at head.
 | 0x123 | 1 | byte | (padding) | — | — | — |
 | 0x124 | 4 | uint | OccupationFlags | 0 | Ghidra struct + CheckCellPassability, PlaceInfantry. Bits 2-4=infantry subcells, bit 5=vehicle, bit 6=building | HIGH |
 | 0x128 | 4 | uint | AltOccupationFlags | 0 | Ghidra struct + CheckCellPassability. Bridge-layer mirror of OccupationFlags | HIGH |
-| 0x12C | 4 | uint | ShroudFlags | (low 5 bits cleared) | Only bits 3+4 used; bits 0,1,2,5..31 unobserved. Bit 3 (0x08)=explored, Bit 4 (0x10)=needs-redraw (dirty flag set by `Invalidate_Radius_For_Redraw`, cleared after repaint; was previously labeled "fully revealed"). See `MAPCLASS_COMPLETE_DECODE.md` §E for the complete bit-map evidence | HIGH |
+| 0x12C | 4 | uint | ShroudFlags | (low 5 bits cleared) | Only bits 3+4 used; bits 0,1,2,5..31 unobserved. Bit 3 (0x08)=explored, Bit 4 (0x10)=needs-redraw (dirty flag set by `Invalidate_Radius_For_Redraw`, cleared after repaint; was previously labeled "fully revealed"). See [MAPCLASS_COMPLETE_DECODE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/MAPCLASS_COMPLETE_DECODE.md) §E for the complete bit-map evidence | HIGH |
 | 0x130 | 4 | int | GapConcealmentCounter | 1 | SHROUD_SYSTEM_COMPLETE: gap gen reference count. RevealShroudFlags checks > 0 | HIGH |
 | 0x134 | 4 | int | GapConcealmentMax | 0 | SHROUD_SYSTEM_COMPLETE: gap counter cap | MED |
 | 0x138 | 4 | int | NeedsRedrawFlag | 0 | SHROUD_DISPARITIES: per-cell dirty flag | MED |
@@ -433,18 +433,18 @@ These existing reports contain verified CellClass field information:
 
 | Report | CellClass fields covered |
 |--------|------------------------|
-| TERRAIN_COST_FACTSHEET.md | LandType enum (0xEC), speed table, RecalcLandType |
+| [TERRAIN_COST_FACTSHEET.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/TERRAIN_COST_FACTSHEET.md) | LandType enum (0xEC), speed table, RecalcLandType |
 | BRIDGE_SYSTEM.md | Flags bits (0x80, 0x100, 0x200, 0x800, 0x40000), height +4 |
-| ZONE_PASSABILITY_VERIFIED.md | ZoneType (0x4C), passability matrix |
-| COORDINATE_ATOMS_AUDIT.md | Level (0x11B), height-to-pixel conversion |
+| [ZONE_PASSABILITY_VERIFIED.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/ZONE_PASSABILITY_VERIFIED.md) | ZoneType (0x4C), passability matrix |
+| [COORDINATE_ATOMS_AUDIT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/COORDINATE_ATOMS_AUDIT.md) | Level (0x11B), height-to-pixel conversion |
 | VOXEL_SLOPE_TILT_SYSTEM.md | SlopeIndex (0x11C), slope types 0-20 |
 | CLIFF_OBJECTS_GHIDRA_REPORT.md | CliffBackImpassability in RecalcAttributes, GetEffectiveHeight |
-| CELL_OCCUPATION_MARKING_GHIDRA_REPORT.md | OccupationFlags (0x124), AltOccupationFlags (0x128) |
-| SHROUD_SYSTEM_COMPLETE.md | Shroud-related fields, VisibleToHouses (0x78) |
-| INFANTRY_SUBCELL_POSITIONING.md | Sub-cell occupation bits in OccupationFlags |
-| ORE_OVERLAY_SYSTEM_GHIDRA_REPORT.md | OverlayData (0x11E), Reduce_Tiberium |
-| UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md | Height diff thresholds, bridge height checks |
-| PROCESS_DRIVE_TRACK_DECOMPILATION.md | Bridge height transitions |
+| [CELL_OCCUPATION_MARKING_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CELL_OCCUPATION_MARKING_GHIDRA_REPORT.md) | OccupationFlags (0x124), AltOccupationFlags (0x128) |
+| [SHROUD_SYSTEM_COMPLETE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SHROUD_SYSTEM_COMPLETE.md) | Shroud-related fields, VisibleToHouses (0x78) |
+| [INFANTRY_SUBCELL_POSITIONING.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/INFANTRY_SUBCELL_POSITIONING.md) | Sub-cell occupation bits in OccupationFlags |
+| [ORE_OVERLAY_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ORE_OVERLAY_SYSTEM_GHIDRA_REPORT.md) | OverlayData (0x11E), Reduce_Tiberium |
+| [UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/pathfinding/UNIT_CAN_ENTER_CELL_GHIDRA_REPORT.md) | Height diff thresholds, bridge height checks |
+| [PROCESS_DRIVE_TRACK_DECOMPILATION.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/PROCESS_DRIVE_TRACK_DECOMPILATION.md) | Bridge height transitions |
 
 ---
 

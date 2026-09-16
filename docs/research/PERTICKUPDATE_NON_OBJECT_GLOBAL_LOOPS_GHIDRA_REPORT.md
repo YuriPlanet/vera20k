@@ -77,7 +77,7 @@ Rust `Simulation::advance_tick` is a high-level phased pipeline (`movement -> vi
 | Area / function / branch | Status | Evidence | What remains |
 |---|---|---|---|
 | `TiberiumClass` growth/spread call order | verified | `0x0055B4D7`, `0x0055B4DC`; existing tiberium reports | none for order |
-| `BombClass::UpdateAll` placement | verified | `0x0055B4E1`; `BOMB_CLASS_GHIDRA_REPORT.md` | internals not in this slot |
+| `BombClass::UpdateAll` placement | verified | `0x0055B4E1`; [BOMB_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BOMB_CLASS_GHIDRA_REPORT.md) | internals not in this slot |
 | `FUN_0054E4D0` global timed helper | touched-not-exhausted | decompile `0x0054E4D0`; call `0x0055B4EB` | class/name and full purpose need separate trace |
 | Team scratch-list loop | verified | `0x0055B502..0x0055B59F`; Team constructor `0x006E8A90` | Team `0x006E9140` body was not decompiled because Ghidra has no function there |
 | DiskLaser reverse loop | verified | `0x0055B5A1..0x0055B5BC`; constructor `0x004A7A30`; vtable data `0x007E6014` | none for order |
@@ -137,12 +137,12 @@ Rust `Simulation::advance_tick` is a high-level phased pipeline (`movement -> vi
 
 ## 10. Stale Docs / Follow-up Wording
 
-- `docs/research/ANIMCLASS_SPAWN_PATHS_GHIDRA_REPORT.md` or any doc saying ordinary per-tick AnimClass AI is "for each AnimClass in `g_AnimClass_Array`" should use: "Ordinary revealed AnimClass objects tick through the live LogicClass object vector. `PerTickUpdate` also has a later conditional `DAT_00A83E04` loop populated by `FootClass::ClickedAction_Cell` for click-feedback anims in `g_GameMode != 0 && != 5`; that secondary loop is not ordinary `g_AnimClass_Array`."
+- [docs/research/ANIMCLASS_SPAWN_PATHS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ANIMCLASS_SPAWN_PATHS_GHIDRA_REPORT.md) or any doc saying ordinary per-tick AnimClass AI is "for each AnimClass in `g_AnimClass_Array`" should use: "Ordinary revealed AnimClass objects tick through the live LogicClass object vector. `PerTickUpdate` also has a later conditional `DAT_00A83E04` loop populated by `FootClass::ClickedAction_Cell` for click-feedback anims in `g_GameMode != 0 && != 5`; that secondary loop is not ordinary `g_AnimClass_Array`."
 - Any timing overview that says "ore/bombs/lasers/factories/houses" without order should use: "`LogicClass::PerTickUpdate` order in the verified slice is growth, spread, bombs, unknown timed helper, Team scratch-list AI, DiskLaser reverse loop, unknown effect aging, LaserDraw update, LightningStorm, RadSite reverse loop, terrain/cache helper, EMP, main LogicClass vector, conditional click-feedback anims, wave/splash helper, alpha purge, crate regen, Tactical, Factory AI, House update, then last-ref-object handling."
 
 ## Sources
 
 - Ghidra read-only decompile/disassembly: `LogicClass::PerTickUpdate @ 0x0055AFB0`; `0x0055B4D7..0x0055B6B1`.
 - Ghidra read-only supporting functions: `TeamClass::Constructor @ 0x006E8A90`; `DiskLaserClass::Constructor @ 0x004A7A30`; `DiskLaserClass::AI @ 0x004A7340`; `RadSiteClass::Constructor @ 0x0065B1E0`; `RadSiteClass::AI @ 0x0065B800`; `FootClass::ClickedAction_Cell @ 0x004D7D50`; `AnimClass::Destructor @ 0x004228E0`; `FactoryClass::Constructor @ 0x004C98B0`; `FactoryClass::AI @ 0x004C9B20`; `HouseClass::Constructor @ 0x004F54A0`; `HouseClass::Update @ 0x004F8440`; `FUN_0054E4D0`; `FUN_005FF390`; `FUN_00554D50`; `FUN_0053D310`.
-- Prior docs: `LOGICCLASS_PERTICKUPDATE_SCHEDULER_GHIDRA_REPORT.md`; `BOMB_CLASS_GHIDRA_REPORT.md`; `DISK_LASER_CLASS_GHIDRA_REPORT.md`; tiberium/radiation/WaveClass docs cited by research index.
+- Prior docs: [LOGICCLASS_PERTICKUPDATE_SCHEDULER_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/LOGICCLASS_PERTICKUPDATE_SCHEDULER_GHIDRA_REPORT.md); [BOMB_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/BOMB_CLASS_GHIDRA_REPORT.md); [DISK_LASER_CLASS_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/DISK_LASER_CLASS_GHIDRA_REPORT.md); tiberium/radiation/WaveClass docs cited by research index.
 - Rust read-only scan: `src/sim/world/mod.rs:1186..1835`; `src/sim/entity_store.rs:1..108`; `src/app_building_anim.rs:33`, `193`.

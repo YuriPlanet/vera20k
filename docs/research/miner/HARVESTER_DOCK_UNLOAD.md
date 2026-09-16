@@ -14,16 +14,16 @@ YR executable. Confidence levels noted per finding.
 > through `UnitClass::Mission_Deploy_Building` state 4 with `unit+0x2E4 == 0`,
 > not through `ReleaseDockedHarvester` / `Force_Track(0x47)`. Keep the function
 > body notes below as historical evidence, but prefer
-> `RADIO_LINK_REFINERY_DOCK_STATE_MACHINE_GHIDRA_REPORT.md` plus its 2026-05-21
-> correction note, `STANDARD_REFINERY_0X2E4_WRITER_INVENTORY_GHIDRA_REPORT.md`,
-> and `CHRONO_MINER_FORCE_TRACK_0X47_EXIT_NAVCOM_STEP_GHIDRA_REPORT.md` for the
+> [RADIO_LINK_REFINERY_DOCK_STATE_MACHINE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/RADIO_LINK_REFINERY_DOCK_STATE_MACHINE_GHIDRA_REPORT.md) plus its 2026-05-21
+> correction note, [STANDARD_REFINERY_0X2E4_WRITER_INVENTORY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/STANDARD_REFINERY_0X2E4_WRITER_INVENTORY_GHIDRA_REPORT.md),
+> and [CHRONO_MINER_FORCE_TRACK_0X47_EXIT_NAVCOM_STEP_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CHRONO_MINER_FORCE_TRACK_0X47_EXIT_NAVCOM_STEP_GHIDRA_REPORT.md) for the
 > current stock refinery verdict.
 >
 > **Correction 2026-05-22 - stock unload and queue follow-ups**
 >
-> Also prefer `STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md`,
-> `CHRONO_MINER_REFINERY_CONTACT_SATURATION_QUEUE_EVICTION_GHIDRA_REPORT.md`, and
-> `miner/traces/CHRONO_MINER_FULL_CARGO_CLOSE_RETURN_MISSION_DISPATCH_TIMING_TRACE.md`.
+> Also prefer [STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/STOCK_MISSION_DEPLOY_BUILDING_REFINERY_UNLOAD_REACHABILITY_GHIDRA_REPORT.md),
+> [CHRONO_MINER_REFINERY_CONTACT_SATURATION_QUEUE_EVICTION_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CHRONO_MINER_REFINERY_CONTACT_SATURATION_QUEUE_EVICTION_GHIDRA_REPORT.md), and
+> [miner/traces/CHRONO_MINER_FULL_CARGO_CLOSE_RETURN_MISSION_DISPATCH_TIMING_TRACE.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/miner/traces/CHRONO_MINER_FULL_CARGO_CLOSE_RETURN_MISSION_DISPATCH_TIMING_TRACE.md).
 > These close the remaining stock-path issues: `RadioClass::In_Radio_Contact (formerly mislabeled PathType__Has_Valid_Steps)()`
 > true continues to RateTimer/state dispatch; false performs cleanup and returns
 > `1`; stock refinery full `HELLO(0x02)` returns `10` without evicting receiver
@@ -405,7 +405,7 @@ The War Miner has:
 - Weapons assigned normally (20mm vulcan)
 
 **2026-05-21 correction:** The write below is real, but it is **not** a write
-to the normal `ROT=` facing-rate field. `CMIN_RUNTIME_ROT_PARSER_OVERRIDE_GHIDRA_REPORT.md`
+to the normal `ROT=` facing-rate field. [CMIN_RUNTIME_ROT_PARSER_OVERRIDE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/CMIN_RUNTIME_ROT_PARSER_OVERRIDE_GHIDRA_REPORT.md)
 verifies `ROT=` parses into `TechnoTypeClass+0x71C` and remains the stock value
 (`5` for HARV/CMIN). The harvester/weeder branch writes separate
 `UnitTypeClass+0x398 = 10`; the exact wider gameplay semantic of `+0x398` is

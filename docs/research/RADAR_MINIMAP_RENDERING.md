@@ -2037,7 +2037,7 @@ compressed). Debug message: "Created paletted preview of size %d bytes".
 *Generated 2025-03-20 via live Ghidra MCP decompilation of gamemd.exe.
 Updated 2026-03-21: theater brightness table, terrain dimming, object visibility layers,
 spacebar event cycling, map preview system, cloaking checks, IsValidCell rectangular proof.
-Cross-referenced against reports 050, 097, 098, 100, 101, ADDRESS_MAP.md, SIDEBAR_RADAR_POSITIONING.md.
+Cross-referenced against reports 050, 097, 098, 100, 101, [ADDRESS_MAP.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/ADDRESS_MAP.md), [SIDEBAR_RADAR_POSITIONING.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SIDEBAR_RADAR_POSITIONING.md).
 INI parser verified from Ghidra file 105 (RulesClass::ReadGeneral).
 All function addresses and data verified via live decompilation and memory dumps.
 Second verification pass corrected dash pattern interpretation and rect intersection usage.*

@@ -991,7 +991,7 @@ Expected: PASS with zero failing tests.
 ## Sources & References
 
 - **Design:** `docs/plans/2026-09-01-phase14-crate-authority-foundation-design.md`
-- **Caller/order correction:** `docs/research/SCENARIO_START_CRATE_POST_MAP_CALLER_GATE_GHIDRA_REPORT.md` — HIGH
+- **Caller/order correction:** [docs/research/SCENARIO_START_CRATE_POST_MAP_CALLER_GATE_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/SCENARIO_START_CRATE_POST_MAP_CALLER_GATE_GHIDRA_REPORT.md) — HIGH
 - **Primary placement/runtime:** `docs/research/PHASE3_ACTIVE_RETAIL_CRATE_RUNTIME_GHIDRA_REPORT.md` — HIGH, with caller wording overridden by the correction report
 - **Supporting system report:** `docs/research/CRATE_SYSTEM_GHIDRA_REPORT.md` — verified context; newer reports override conflicts
 - **Ghidra:** `ScenarioClass__Read_Scenario @ 0x00684620`,
