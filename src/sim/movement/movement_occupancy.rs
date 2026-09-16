@@ -1132,12 +1132,21 @@ pub(super) fn handle_deferred_occupancy(
             // Drive moving-friendly response: raise the latch, arm the wait
             // once, repath. **No scatter** - native's code-2 arm nudges nobody.
             //
-            // `get_xrefs_to CellClass::Scatter_Objects 0x00481670` gives exactly
-            // four sites inside `Process_Movement` (`0x004B2DC0`, `0x004B327D`,
-            // `0x004B393A`, `0x004B4437`) and the code-2 entry at `0x004B364D`
-            // reaches none of them - the one numerically inside this region,
-            // `0x004B393A`, ends `JMP 0x004B3607`, before the code-2 test, so it
-            // belongs to an earlier arm. What code 2 does is:
+            // `CellClass::Scatter_Objects 0x00481670` has exactly four call
+            // sites inside `Process_Movement` (`0x004B2DC0`, `0x004B327D`,
+            // `0x004B393A`, `0x004B4437`), and a forward walk of the control
+            // flow from the code-2 entry at `0x004B364D` reaches none of them:
+            // 301 instructions, no indirect branches, so the walk is complete.
+            //
+            // Note what that does NOT say. `0x004B393A` ends `JMP 0x004B3607`,
+            // and `0x004B3607` falls through into `0x004B364D` - so that scatter
+            // is a *predecessor* of the code-2 test, and a single native pass can
+            // scatter in the bridge/height arm and then run the code-2 arm. An
+            // earlier version of this comment argued from that jump target that
+            // the site "belongs to an earlier arm", which reasons from where a
+            // block jumps to about what it is entered from. The claim here is
+            // only the reachability one: nothing the code-2 arm itself runs
+            // scatters. What it does is:
             //
             //   0x004B3659  MOV CL,[EAX+0x6B7]      the blockage latch
             //   0x004B3661  JNZ 0x004B3690          already latched: skip
@@ -1153,16 +1162,11 @@ pub(super) fn handle_deferred_occupancy(
             // `Foot+0x64C = 0xA` at `0x004B3285`, a retry-counter reload consumed
             // by the decrement at `0x004B2DC8`, on a different arm entirely.
             let mut has_target = false;
-            let mut first_block = false;
             if let Some(entity) = entities.get_mut(entity_id) {
                 if mover_loco_kind != LocomotorKind::Walk {
                     snap_motion_to_cell_center(&mut entity.position, &mut entity.drive_track);
                 }
                 if entity.movement_target.is_some() {
-                    first_block = !entity.navigation.path_runtime.path_blocked;
-                    if mover_loco_kind != LocomotorKind::Walk {
-                        entity.navigation.path_runtime.path_blocked = true;
-                    }
                     has_target = true;
                 }
             }
@@ -1175,7 +1179,13 @@ pub(super) fn handle_deferred_occupancy(
                 // tick field are the FootClass constructor and
                 // Set_Destination_Internal, both of which store zero).
                 // `handle_blocked_tick` reads the timer itself, so nothing here
-                // needs to.
+                // needs to - and it also ARMS it, on the same `path_blocked`
+                // 0 -> 1 transition and from the same `blockage_path_delay_ticks`
+                // (`movement_blocked.rs`). That is native's shape: raise the
+                // `+0x6B7` latch once, arm `+0x668` from `Rules+0x1768` behind
+                // it. This arm used to pre-raise `path_blocked` to suppress that
+                // owner and then re-implement it identically, which also
+                // swallowed the `Blocked` debug event; now there is one owner.
                 //
                 // The peer-path re-snapshot that used to sit here went with the
                 // scatter: it existed because the nudge was "the sole mutation
@@ -1183,22 +1193,9 @@ pub(super) fn handle_deferred_occupancy(
                 // and with no mutation there is nothing to re-read.
                 //
                 // Walk ProcessMovement 0x75B8A0..0x75B9F9 (code 2) only waits and
-                // repaths, and so - now - does Drive. `first_block` is this
-                // port's spelling of the `+0x6B7` latch: it is true exactly on
-                // the pass that raises it, which is the pass native arms the
-                // timer on.
-                if mover_loco_kind != LocomotorKind::Walk && first_block {
-                    if let Some(entity) = entities.get_mut(entity_id) {
-                        entity.navigation.path_runtime.start_blocked(
-                            mcfg.binary_frame,
-                            mcfg.blockage_path_delay_ticks,
-                            false,
-                        );
-                    }
-                }
+                // repaths, and so - now - does Drive.
                 let effective_marker_context = marker_context;
-                // Re-borrow the mover since scatter_blocker and the live
-                // marker snapshot both released it.
+                // Re-borrow the mover: the classification above released it.
                 if let Some(entity) = entities.get_mut(entity_id) {
                     let cur_pos = (entity.position.rx, entity.position.ry);
                     let body_facing = entity.body_facing;

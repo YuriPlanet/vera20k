@@ -2541,38 +2541,44 @@ fn gsi_06_01_code_two_grace_window_still_repaths_at_urgency_one() {
     );
 }
 
-/// The 10-frame post-scatter wait is re-armed on EVERY pass through the code-2
-/// blocked dispatch, not only on the tick the block is first detected.
+/// Code 2 raises the latch, arms its wait ONCE from `BlockagePathDelay`, and
+/// scatters nobody.
 ///
-/// The original writes the wait straight-line after its cell-scatter call with
-/// no branch between the two, so a mover that stays blocked cycles
-/// 10 → 9 → … → 1 → 10 → … for as long as the block holds. Nothing else clears
-/// the expired value, so gating the write on first entry pinned the timer at
-/// zero once it had run out: the blocker scatter — which draws a direction from
-/// the scenario RNG — then fired on every tick instead of once per span, a
-/// deterministic-state divergence at ten times the original's cadence.
+/// `CellClass::Scatter_Objects 0x00481670` has exactly four call sites inside
+/// `Process_Movement`, and a forward control-flow walk from the code-2 entry at
+/// `0x004B364D` reaches none of them. What the arm does instead:
 ///
-/// Reaching the expiry path at all is what the fixture is for. On an open grid
-/// the mover repaths around the blocker within a couple of ticks and the wait
-/// never runs out. Here the map is a TWO-cell corridor holding a converging
-/// friendly pair (the ally faces south, so the pair is not the head-on exit's
-/// opposed-octant case): there is no route around, and each unit's only
-/// walkable neighbour is the other one, so every scatter attempt fails to find
-/// a destination and neither unit can vacate. Both stay classified as a moving
-/// ally (code 2) indefinitely.
+///   `0x004B3659` reads the latch `+0x6B7`, `0x004B3661 JNZ 0x004B3690` skips
+///   the arming when it is already raised, `0x004B3663` raises it, and
+///   `0x004B3678`/`0x004B367E`/`0x004B3684` arm the timer at `+0x668` from
+///   `Rules+0x1768` = `[AI] BlockagePathDelay` (60 in this harness).
 ///
-/// The observed span also pins the wait to the hardcoded 10 frames rather than
-/// `[AI] BlockagePathDelay` (60 in this harness) — a different timer with a
-/// different consumer, and the value `handle_blocked_tick` would have written
-/// had the code-2 dispatch not already raised `path_blocked` itself.
+/// So the series falls monotonically from 60. A re-arm would show as a rise, and
+/// the 10 this port used to write would show as a wrong first reading. The 10 was
+/// never a wait at all: it is `Foot+0x64C = 0xA` at `0x004B3285`, a retry-counter
+/// reload consumed by the decrement at `0x004B2DC8`, on a different arm.
+///
+/// An earlier version of this comment asserted the opposite of all of the above
+/// - a 10-frame wait re-armed every pass, and `BlockagePathDelay` as "a different
+/// timer with a different consumer". That was the belief this test now refutes.
+///
+/// Reaching the timer at all is what the fixture is for. On an open grid the
+/// mover repaths around the blocker within a couple of ticks and nothing is
+/// observable. Here the map is a TWO-cell corridor holding a converging friendly
+/// pair (the ally faces south, so the pair is not the head-on exit's opposed-
+/// octant case): there is no route around, and each unit's only walkable
+/// neighbour is the other one, so both stay classified as a moving ally
+/// indefinitely. That mutual stall is native-correct - code 2 has no escape
+/// hatch in gamemd either - and it is what keeps the mover in the arm long
+/// enough to watch the timer run down.
 #[test]
 fn code_two_arms_blockage_path_delay_once_and_never_scatters() {
     const WAIT: u16 = crate::sim::movement::bump_crush::POST_SCATTER_WAIT_FRAMES;
     // `[AI] BlockagePathDelay` as this harness supplies it. `handle_blocked_tick`
-    // writes this value on a `path_blocked` 0 -> 1 transition, but the code-2
-    // dispatch raises the flag itself before calling in, so a mover blocked by a
-    // moving ally runs the post-scatter constant instead. Watching which of the
-    // two shows up in the timer is the observable form of that claim.
+    // writes it on the `path_blocked` 0 -> 1 transition and is now its only
+    // writer: the code-2 arm used to pre-raise the flag and then re-implement the
+    // arming with its own constant. Watching which of the two shows up in the
+    // timer is the observable form of that claim.
     const HARNESS_BLOCKAGE_PATH_DELAY: u16 = 60;
     // Three full spans plus one sample, so a single re-arm cannot satisfy it.
     const REQUIRED_SAMPLES: usize = (WAIT as usize) * 3 + 1;
@@ -2665,8 +2671,9 @@ fn code_two_arms_blockage_path_delay_once_and_never_scatters() {
     let mut interner = test_interner();
     // Post-tick wait readings, collected from the first blocked tick onward.
     let mut waits: Vec<u16> = Vec::new();
+    let mut scatter_calls = 0u32;
     for native_frame in 0..TICKS {
-        tick_movement_with_grid(
+        let tick_stats = tick_movement_with_grid(
             &mut entities,
             Some(&grid),
             &Default::default(),
@@ -2677,6 +2684,7 @@ fn code_two_arms_blockage_path_delay_once_and_never_scatters() {
             &mut interner,
             &mut lifecycle_requests,
         );
+        scatter_calls = scatter_calls.saturating_add(tick_stats.scatter_successes);
         let blocked = entities
             .get(1)
             .filter(|e| e.movement_target.is_some())
@@ -2708,6 +2716,11 @@ fn code_two_arms_blockage_path_delay_once_and_never_scatters() {
         "the mover must stay blocked for at least three post-scatter spans; \
          got {} readings: {waits:?}",
         waits.len()
+    );
+    assert_eq!(
+        scatter_calls, 0,
+        "the code-2 arm must scatter nobody; a forward walk from 0x004B364D \
+         reaches none of the four Scatter_Objects sites"
     );
     assert_eq!(
         waits[0], HARNESS_BLOCKAGE_PATH_DELAY,
