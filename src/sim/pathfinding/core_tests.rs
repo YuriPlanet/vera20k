@@ -2914,10 +2914,12 @@ fn astar_hierarchy_progress_tracks_last_accepted_next_path_zone() {
         None,
         None,
         None,
-        0,
-        false,
-        false,
-        None,
+        MoverSearchFacts {
+            urgency: 0,
+            mover_is_crusher: false,
+            is_infantry: false,
+            wall_cost: None,
+        },
     )
     .expect("marked straight path should succeed");
 

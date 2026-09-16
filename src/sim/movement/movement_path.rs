@@ -515,12 +515,14 @@ pub(super) fn find_move_path_with_marker_detailed(
             entity_block_map,
             marker_overlay,
             ctx.blocker_neighbor_counts,
-            urgency,
-            mover_is_crusher,
-            is_infantry,
+            crate::sim::pathfinding::MoverSearchFacts {
+                urgency,
+                mover_is_crusher,
+                is_infantry,
+                wall_cost: ctx.wall_cost,
+            },
             allow_zone_hierarchy,
             ctx.playfield_bounds,
-            ctx.wall_cost,
         );
         let path = layered_result.map_err(MovePathFailure::Search)?;
 
@@ -592,12 +594,14 @@ pub(super) fn find_move_path_with_marker_detailed(
         entity_block_map,
         marker_overlay,
         ctx.blocker_neighbor_counts,
-        urgency,
-        mover_is_crusher,
-        is_infantry,
+        crate::sim::pathfinding::MoverSearchFacts {
+            urgency,
+            mover_is_crusher,
+            is_infantry,
+            wall_cost: ctx.wall_cost,
+        },
         allow_zone_hierarchy,
         ctx.playfield_bounds,
-        ctx.wall_cost,
     )
     .map_err(MovePathFailure::Search)?;
 
