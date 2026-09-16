@@ -748,6 +748,56 @@ fn deploy_crush_immune(entity: &GameEntity) -> bool {
 
 /// Collect entity IDs in a cell that the mover would crush on entry.
 ///
+/// Who is crushing, for the ally question native asks at admission.
+///
+/// `Is_Crushable_By 0x005F6CD0` tests `HouseClass::Is_Ally_ByObject 0x004F9A90`
+/// on the victim's owning house (`+0x21C`) at `0x005F6D1A` and again at
+/// `0x005F6D67`, and `Can_Enter_Cell` re-tests at `0x0073FB53`, so an allied or
+/// own crushable never reaches the crush latch at all.
+///
+/// Carried as a required parameter, not an `Option`: a missing-alliance default
+/// would fail open into the very case this exists to refuse.
+#[derive(Clone, Copy)]
+pub struct CrushAllyGate<'a> {
+    /// The crusher's owning house, already resolved by the caller.
+    crusher_owner: &'a str,
+    alliances: &'a crate::map::houses::HouseAllianceMap,
+    interner: &'a crate::sim::intern::StringInterner,
+}
+
+impl<'a> CrushAllyGate<'a> {
+    pub fn new(
+        crusher_owner: &'a str,
+        alliances: &'a crate::map::houses::HouseAllianceMap,
+        interner: &'a crate::sim::intern::StringInterner,
+    ) -> Self {
+        Self {
+            crusher_owner,
+            alliances,
+            interner,
+        }
+    }
+
+    /// True when native would spare this victim for being allied or own.
+    ///
+    /// The one predicate for the whole crush mechanism: admission asks it here
+    /// and so does the kill site, because the two disagreeing was the defect.
+    ///
+    /// No id fast path. An earlier version carried the crusher's `InternedId`
+    /// to settle own-house without allocating, which was wasted work:
+    /// `are_houses_friendly` already returns on a case-insensitive name compare
+    /// *before* it normalizes anything (`houses.rs`), so own-house never
+    /// allocated. The allocating case is a genuinely foreign house, which an id
+    /// compare cannot shortcut anyway.
+    pub fn spares(&self, victim: &GameEntity) -> bool {
+        crate::map::houses::are_houses_friendly(
+            self.alliances,
+            self.crusher_owner,
+            self.interner.resolve(victim.owner()),
+        )
+    }
+}
+
 /// Returns an empty vec if the mover can't crush anything there.
 pub fn collect_crush_victims(
     cell: (u16, u16),
@@ -755,7 +805,15 @@ pub fn collect_crush_victims(
     layer: MovementLayer,
     crush_capability: CrushCapability,
     entities: &EntityStore,
+    ally_gate: CrushAllyGate<'_>,
 ) -> Vec<u64> {
+    // A mover that crushes nothing has no victims, so it must not pay an
+    // alliance test per occupant. Without this, every occupant of every occupied
+    // cell evaluated by a NON-crusher started paying one - and this runs per
+    // mover per step at the 20k target.
+    if !crush_capability.can_crush_units() {
+        return Vec::new();
+    }
     let Some(occ) = occupancy.get(cell.0, cell.1) else {
         return Vec::new();
     };
@@ -763,6 +821,9 @@ pub fn collect_crush_victims(
 
     for occupant in occ.iter_layer(layer) {
         if let Some(e) = entities.get(occupant.entity_id) {
+            if ally_gate.spares(e) {
+                continue;
+            }
             if can_crush(crush_capability, CrushTarget::from_entity_without_frame(e)) {
                 victims.push(occupant.entity_id);
             }
@@ -825,6 +886,7 @@ pub fn cell_passable_after_crush(
     layer: MovementLayer,
     crush_capability: CrushCapability,
     entities: &EntityStore,
+    ally_gate: CrushAllyGate<'_>,
 ) -> bool {
     let Some(occ) = occupancy.get(cell.0, cell.1) else {
         return true; // empty cell
@@ -834,7 +896,11 @@ pub fn cell_passable_after_crush(
     // All blockers must be crushable.
     for eid in occ.blockers(layer) {
         if let Some(e) = entities.get(eid) {
-            if !can_crush(crush_capability, CrushTarget::from_entity_without_frame(e)) {
+            // An allied blocker is not crushable, so the cell is not passable
+            // by crushing it - native answers 6 or 2 here, not the crush latch.
+            if ally_gate.spares(e)
+                || !can_crush(crush_capability, CrushTarget::from_entity_without_frame(e))
+            {
                 return false;
             }
         }
@@ -842,7 +908,9 @@ pub fn cell_passable_after_crush(
     // All infantry must be crushable.
     for (eid, _) in occ.infantry(layer) {
         if let Some(e) = entities.get(eid) {
-            if !can_crush(crush_capability, CrushTarget::from_entity_without_frame(e)) {
+            if ally_gate.spares(e)
+                || !can_crush(crush_capability, CrushTarget::from_entity_without_frame(e))
+            {
                 return false;
             }
         }
@@ -991,8 +1059,9 @@ pub fn classify_drive_crush_phase(
                 }
             }
             DriveCrushPhase::FullyInCell => {
-                let victim_owner = interner.resolve(victim.owner());
-                if crate::map::houses::are_houses_friendly(alliances, crusher_owner, victim_owner) {
+                // The same gate admission uses. Two inline copies of one
+                // predicate is how admission and the kill came to disagree.
+                if CrushAllyGate::new(crusher_owner, alliances, interner).spares(victim) {
                     continue;
                 }
                 if !within_crush_distance_sq(crusher_coord, entity_crush_coord(victim)) {
@@ -1483,6 +1552,169 @@ mod tests {
             .flat_map(|ry| (0..width).map(move |rx| flat_resolved_cell(rx, ry)))
             .collect();
         ResolvedTerrainGrid::from_cells(width, height, cells)
+    }
+
+    /// Owns what a `CrushAllyGate` borrows, so a test can make one in a line.
+    ///
+    /// The crusher is "Soviets" and the fixtures' victims are "Allies", so
+    /// these tests keep exercising the crush path rather than the ally refusal;
+    /// the refusal has its own tests below.
+    struct GateFixture {
+        alliances: crate::map::houses::HouseAllianceMap,
+        interner: crate::sim::intern::StringInterner,
+    }
+
+    impl GateFixture {
+        fn new() -> Self {
+            Self {
+                alliances: crate::map::houses::HouseAllianceMap::new(),
+                interner: crate::sim::intern::test_interner(),
+            }
+        }
+
+        fn enemy(&self) -> CrushAllyGate<'_> {
+            CrushAllyGate::new("Soviets", &self.alliances, &self.interner)
+        }
+    }
+
+    /// A crusher never latches its own infantry, the way native never does.
+    ///
+    /// `Is_Crushable_By 0x005F6CD0` asks `HouseClass::Is_Ally_ByObject
+    /// 0x004F9A90` about the victim's house (`+0x21C`) at `0x005F6D1A` and
+    /// again at `0x005F6D67`, and `Can_Enter_Cell` re-tests at `0x0073FB53`, so
+    /// an own or allied crushable answers code 6 or 2 and never reaches the
+    /// crush latch. Before this gate, admission answered `Crushable` and only
+    /// the kill site refused - so a tank parked on its own GI and neither
+    /// crushed nor scattered it.
+    #[test]
+    fn ally_gate_spares_the_crushers_own_infantry() {
+        let mut store = EntityStore::new();
+        store.insert(infantry(1, 5, 5, 2)); // owned by "Allies"
+        let grid = make_occ(&[(5, 5, 1, MovementLayer::Ground, Some(2))]);
+
+        let alliances = crate::map::houses::HouseAllianceMap::new();
+        let interner = crate::sim::intern::test_interner();
+        let own = CrushAllyGate::new("Allies", &alliances, &interner);
+
+        assert!(
+            collect_crush_victims(
+                (5, 5),
+                &grid,
+                MovementLayer::Ground,
+                CrushCapability::new(true, false),
+                &store,
+                own,
+            )
+            .is_empty(),
+            "a crusher must not list its own infantry as a crush victim"
+        );
+        assert!(
+            !cell_passable_after_crush(
+                (5, 5),
+                &grid,
+                MovementLayer::Ground,
+                CrushCapability::new(true, false),
+                &store,
+                own,
+            ),
+            "and the cell is not passable by crushing what it may not crush"
+        );
+
+        // The same fixture with an enemy crusher still crushes, so the gate is
+        // refusing on alliance and not on something incidental.
+        let enemy = CrushAllyGate::new("Soviets", &alliances, &interner);
+        assert_eq!(
+            collect_crush_victims(
+                (5, 5),
+                &grid,
+                MovementLayer::Ground,
+                CrushCapability::new(true, false),
+                &store,
+                enemy,
+            ),
+            vec![1]
+        );
+    }
+
+    /// The same refusal for a declared ally, not just for the same house.
+    #[test]
+    fn ally_gate_spares_a_declared_allys_infantry() {
+        let mut store = EntityStore::new();
+        store.insert(infantry(1, 5, 5, 2)); // owned by "Allies"
+        let grid = make_occ(&[(5, 5, 1, MovementLayer::Ground, Some(2))]);
+
+        // `are_houses_friendly` normalizes to upper case and reads either
+        // direction, so one entry is enough to express the pact.
+        let mut alliances = crate::map::houses::HouseAllianceMap::new();
+        alliances
+            .entry("SOVIETS".to_string())
+            .or_default()
+            .insert("ALLIES".to_string());
+        let interner = crate::sim::intern::test_interner();
+        let allied = CrushAllyGate::new("Soviets", &alliances, &interner);
+
+        assert!(
+            collect_crush_victims(
+                (5, 5),
+                &grid,
+                MovementLayer::Ground,
+                CrushCapability::new(true, false),
+                &store,
+                allied,
+            )
+            .is_empty(),
+            "a declared ally's infantry is spared exactly as one's own is"
+        );
+    }
+
+    /// The gate answers exactly what the shared helper answers.
+    ///
+    /// Admission and the kill site both go through `spares`, so this is the one
+    /// place the predicate is pinned. Their disagreement was the A7 defect.
+    #[test]
+    fn ally_gate_answers_what_the_shared_helper_answers() {
+        let alliances = crate::map::houses::HouseAllianceMap::new();
+        let victim = infantry(1, 5, 5, 2); // "Allies"
+        let interner = crate::sim::intern::test_interner();
+
+        for crusher in ["Allies", "Soviets", "NoSuchHouse"] {
+            let gate = CrushAllyGate::new(crusher, &alliances, &interner);
+            assert_eq!(
+                gate.spares(&victim),
+                crate::map::houses::are_houses_friendly(
+                    &alliances,
+                    crusher,
+                    interner.resolve(victim.owner())
+                ),
+                "gate and helper disagree for crusher {crusher}"
+            );
+        }
+    }
+
+    /// A mover that cannot crush pays no alliance test at all.
+    ///
+    /// `collect_crush_victims` runs per mover per step, so an ungated gate would
+    /// charge every occupant of every occupied cell an alliance question for
+    /// movers that have no crush victims by definition.
+    #[test]
+    fn crush_admission_returns_before_asking_about_a_non_crusher() {
+        let mut store = EntityStore::new();
+        store.insert(infantry(1, 5, 5, 2));
+        let grid = make_occ(&[(5, 5, 1, MovementLayer::Ground, Some(2))]);
+        let fixture = GateFixture::new();
+
+        assert!(
+            collect_crush_victims(
+                (5, 5),
+                &grid,
+                MovementLayer::Ground,
+                CrushCapability::new(false, false),
+                &store,
+                fixture.enemy(),
+            )
+            .is_empty(),
+            "a non-crusher has no victims whoever occupies the cell"
+        );
     }
 
     fn infantry(id: u64, rx: u16, ry: u16, sub: u8) -> GameEntity {
@@ -2363,12 +2595,14 @@ mod tests {
 
         let grid = make_occ(&[(5, 5, 1, MovementLayer::Ground, Some(2))]);
 
+        let fixture = GateFixture::new();
         let victims = collect_crush_victims(
             (5, 5),
             &grid,
             MovementLayer::Ground,
             CrushCapability::new(true, false),
             &store,
+            fixture.enemy(),
         );
         assert_eq!(victims, vec![1]);
     }
@@ -2382,12 +2616,14 @@ mod tests {
 
         let grid = make_occ(&[(5, 5, 1, MovementLayer::Ground, Some(2))]);
 
+        let fixture = GateFixture::new();
         let victims = collect_crush_victims(
             (5, 5),
             &grid,
             MovementLayer::Ground,
             CrushCapability::new(true, false),
             &store,
+            fixture.enemy(),
         );
         assert!(victims.is_empty());
     }
@@ -2402,12 +2638,14 @@ mod tests {
 
         let grid = make_occ(&[(5, 5, 1, MovementLayer::Ground, Some(2))]);
 
+        let fixture = GateFixture::new();
         let victims = collect_crush_victims(
             (5, 5),
             &grid,
             MovementLayer::Ground,
             CrushCapability::new(true, false),
             &store,
+            fixture.enemy(),
         );
         assert!(victims.is_empty());
     }
@@ -2422,12 +2660,14 @@ mod tests {
 
         let grid = make_occ(&[(5, 5, 1, MovementLayer::Ground, Some(2))]);
 
+        let fixture = GateFixture::new();
         let victims = collect_crush_victims(
             (5, 5),
             &grid,
             MovementLayer::Ground,
             CrushCapability::new(true, false),
             &store,
+            fixture.enemy(),
         );
         assert_eq!(victims, vec![1]);
     }
@@ -2447,12 +2687,14 @@ mod tests {
 
         let grid = make_occ(&[(5, 5, 1, MovementLayer::Ground, Some(2))]);
 
+        let fixture = GateFixture::new();
         let victims = collect_crush_victims(
             (5, 5),
             &grid,
             MovementLayer::Ground,
             CrushCapability::new(true, false),
             &store,
+            fixture.enemy(),
         );
         assert_eq!(victims, vec![1]);
     }

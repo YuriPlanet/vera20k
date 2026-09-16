@@ -170,3 +170,98 @@ fn retail_inactive_high_record_restamp_inventory() {
     }
     std::fs::write(output, serde_json::to_vec_pretty(&results).unwrap()).unwrap();
 }
+
+/// Count the terrain shape A8's D1 fires on, so its frequency stops being a
+/// guess.
+///
+/// D1: native decides uphill from downhill with two `GetGroundHeight` samples -
+/// the destination cell's centre against the ground under the mover's exact XY
+/// (`0x004B3CEC`, `0x004B3D1A`, compared at `0x004B3D21`) - where
+/// `terrain_speed.rs` compares the two cells' integer `level` bytes. The two
+/// disagree exactly where a mover leaves a ramp onto a flat cell standing at the
+/// ramp's own level: the level bytes are equal, so VERA reads "flat" and applies
+/// x1.0, while native's sub-cell sample still sits on the slope and applies
+/// `Tracked/WheeledDownhill = 1.2`.
+///
+/// This is static terrain, so it is countable without playing anything - which
+/// is why the ledger row must not sit behind "needs a run". It reports the count
+/// rather than asserting a threshold: the number is the evidence, and pinning a
+/// map's terrain shape here would only break when the map list changes.
+///
+/// **Read the share carefully.** A ramp cell at level L rises to L+1, so its
+/// flat neighbours divide between L and L+1 more or less evenly, and a result
+/// near half is close to a description of what a ramp *is* rather than a
+/// property of these maps. The load-bearing claim is the structural one -
+/// `slope_factor_for` compares raw level bytes, so **every** exit of this shape
+/// diverges - and this census only says the shape is ordinary rather than rare.
+///
+/// It counts static adjacency **pairs**, not traversals: how often a mover
+/// actually drives one still depends on traffic.
+///
+/// UNCHECKED: that `ResolvedTerrainCell::level` is the ramp's **base** rather
+/// than its top. If it were the top this counts uphill exits instead, which is
+/// the opposite of the shape D1 is about.
+#[test]
+#[ignore = "requires active retail assets; reports a terrain census"]
+fn retail_ramp_exit_onto_equal_level_flat_census() {
+    let retail = super::retail_dir().expect("configured active retail install");
+    let maps = std::env::var("VERA20K_RAMP_CENSUS_MAPS")
+        .unwrap_or_else(|_| "BayOPigs.mmx;Hills.mmx;Deadman.mmx".into());
+    for map_name in maps.split(';') {
+        let scenario = crate::headless_scenario::load(&retail, map_name, super::SEED)
+            .unwrap_or_else(|error| panic!("load {map_name}: {error}"));
+        let sim = scenario.sim();
+        let terrain = sim
+            .resolved_terrain
+            .as_ref()
+            .expect("live resolved terrain");
+
+        let (mut ramp_cells, mut exits, mut flat_pairs) = (0u32, 0u32, 0u32);
+        for ry in 0..terrain.height() {
+            for rx in 0..terrain.width() {
+                let Some(cell) = terrain.cell(rx, ry) else {
+                    continue;
+                };
+                if cell.slope_type == 0 {
+                    continue;
+                }
+                ramp_cells += 1;
+                // The eight neighbours a Drive mover can leave a ramp through.
+                for (dx, dy) in [
+                    (-1i32, -1i32),
+                    (0, -1),
+                    (1, -1),
+                    (-1, 0),
+                    (1, 0),
+                    (-1, 1),
+                    (0, 1),
+                    (1, 1),
+                ] {
+                    let (nx, ny) = (i32::from(rx) + dx, i32::from(ry) + dy);
+                    let (Ok(nx), Ok(ny)) = (u16::try_from(nx), u16::try_from(ny)) else {
+                        continue;
+                    };
+                    let Some(neighbour) = terrain.cell(nx, ny) else {
+                        continue;
+                    };
+                    if neighbour.slope_type != 0 {
+                        continue;
+                    }
+                    flat_pairs += 1;
+                    if neighbour.level == cell.level {
+                        exits += 1;
+                    }
+                }
+            }
+        }
+        let share = if flat_pairs == 0 {
+            0.0
+        } else {
+            f64::from(exits) * 100.0 / f64::from(flat_pairs)
+        };
+        println!(
+            "A8 D1 census {map_name}: {ramp_cells} ramp cells, {exits} ramp->flat exits at equal \
+             level out of {flat_pairs} ramp-to-flat adjacency PAIRS ({share:.1}%); pairs, not              traversals, and see the note on why a half is unsurprising"
+        );
+    }
+}
