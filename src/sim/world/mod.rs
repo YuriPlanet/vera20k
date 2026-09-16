@@ -5245,19 +5245,20 @@ impl Simulation {
             // `0x0081BA88`, where index 12 is `CrusherAll`. This gate used to
             // test `LocomotorKind::Drive` while its own comment named `+0x5B4`.
             //
+            // Read from the entity's locomotor where native reads the type.
+            // Equivalent because `piggyback` captures and restores
+            // `movement_zone` across a temporary locomotor swap - which is
+            // what the comment this replaced meant by "the primary kind".
+            //
             // The difference is not academic: exactly **one** stock vehicle
             // carries `MovementZone=CrusherAll` - `BFRT`, the Battle Fortress -
             // where `Crusher=yes` covers 29. So every crusher tank was flattening
             // walls by driving over them, and retail lets only the Battle
             // Fortress do it. `Crushable=` overlays (sandbags, fences) are
             // unaffected: they fall to any crusher through the first clause.
-            let crusher_all = e
-                .locomotor
-                .as_ref()
-                .is_some_and(|l| {
-                    l.movement_zone
-                        == crate::rules::locomotor_type::MovementZone::CrusherAll
-                });
+            let crusher_all = e.locomotor.as_ref().is_some_and(|l| {
+                l.movement_zone == crate::rules::locomotor_type::MovementZone::CrusherAll
+            });
             if !(flags.crushable || (flags.wall && crusher_all)) {
                 continue;
             }
