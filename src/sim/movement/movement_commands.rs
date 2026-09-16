@@ -755,9 +755,17 @@ fn issue_move_command_with_destination_impl(
                     movement_zone,
                     too_big_to_fit_under_bridge,
                     entity_block_map,
-                    0, // urgency=0: initial move command
-                    mover_is_crusher,
-                    is_infantry,
+                    // urgency=0: initial move command. This site has no `MoverSnapshot`
+                    // and its `PathfindingContext` carries no wall tables, so the wall
+                    // arm stays off here and the search behaves exactly as before
+                    // I9b's search half. Ledger I9b records this as the remaining
+                    // producer: the player's own move order is the case that most
+                    // wants a wall priced rather than refused.
+                    super::movement_path::mover_path_facts_without_wall_arm(
+                        0,
+                        mover_is_crusher,
+                        is_infantry,
+                    ),
                     allow_zone_hierarchy,
                 ) else {
                     return false;
@@ -811,9 +819,17 @@ fn issue_move_command_with_destination_impl(
             movement_zone,
             too_big_to_fit_under_bridge,
             entity_block_map,
-            0, // urgency=0: initial move command
-            mover_is_crusher,
-            is_infantry,
+            // urgency=0: initial move command. This site has no `MoverSnapshot`
+            // and its `PathfindingContext` carries no wall tables, so the wall
+            // arm stays off here and the search behaves exactly as before
+            // I9b's search half. Ledger I9b records this as the remaining
+            // producer: the player's own move order is the case that most
+            // wants a wall priced rather than refused.
+            super::movement_path::mover_path_facts_without_wall_arm(
+                0,
+                mover_is_crusher,
+                is_infantry,
+            ),
             allow_zone_hierarchy,
         )
     };

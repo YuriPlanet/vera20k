@@ -510,9 +510,7 @@ fn diagnose_rejected_order(
                 movement_zone,
                 false,
                 use_blocks.then_some(&block_map),
-                0,
-                false,
-                false,
+                super::MoverPathFacts::without_wall_arm(0, false, false),
                 true,
             );
             println!(
@@ -543,9 +541,7 @@ fn diagnose_rejected_order(
             movement_zone,
             false,
             Some(&block_map),
-            0,
-            true,
-            false,
+            super::MoverPathFacts::without_wall_arm(0, true, false),
             true,
         );
         println!(
@@ -575,9 +571,7 @@ fn diagnose_rejected_order(
             movement_zone,
             false,
             Some(&block_map),
-            0,
-            true,
-            false,
+            super::MoverPathFacts::without_wall_arm(0, true, false),
             true,
         );
         println!(
@@ -605,9 +599,7 @@ fn diagnose_rejected_order(
             movement_zone,
             false,
             Some(&block_map),
-            0,
-            true,
-            false,
+            super::MoverPathFacts::without_wall_arm(0, true, false),
             true,
         );
         println!(
@@ -635,9 +627,7 @@ fn diagnose_rejected_order(
             movement_zone,
             false,
             None,
-            0,
-            true,
-            false,
+            super::MoverPathFacts::without_wall_arm(0, true, false),
             true,
         );
         println!(
@@ -692,9 +682,7 @@ fn diagnose_rejected_order(
                 movement_zone,
                 false,
                 Some(&block_map),
-                0,
-                true,
-                false,
+                super::MoverPathFacts::without_wall_arm(0, true, false),
                 true,
             );
             println!(

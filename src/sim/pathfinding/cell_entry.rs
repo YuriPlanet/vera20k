@@ -424,6 +424,12 @@ pub struct WallArmTables<'a> {
     pub overlay_grid: Option<&'a crate::sim::overlay_grid::OverlayGrid>,
     pub overlay_registry: Option<&'a crate::map::overlay_types::OverlayTypeRegistry>,
     pub alliances: Option<&'a crate::map::houses::HouseAllianceMap>,
+    /// Map-global like the other three: the ally test resolves the wall's owner
+    /// name through it before `HouseClass::Is_Ally_ByIndex @ 0x004F9A10`. It
+    /// used to be supplied separately at the one runtime site that built a
+    /// `WallArmContext`, which left the search site unable to build one at all
+    /// without threading a second value; it belongs with the tables.
+    pub interner: Option<&'a crate::sim::intern::StringInterner>,
 }
 
 /// Everything the wall arm of `Can_Enter_Cell` reads that terrain alone cannot

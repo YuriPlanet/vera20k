@@ -293,6 +293,70 @@ pub(super) struct PathfindingContext<'a> {
     pub wall_tables: Option<WallArmTables<'a>>,
 }
 
+/// The mover's own facts a path search needs, carried as one value.
+///
+/// Three of these — `urgency`, `mover_is_crusher`, `is_infantry` — used to
+/// travel as loose positional arguments through `find_move_path`,
+/// `find_move_path_with_marker` and `..._detailed`, eighteen parameters at the
+/// widest. Wiring the wall arm's search half (ledger I9b) needs four more: the
+/// mover's house for the ally test, `Is_Armed` (`0x0073F48F`), and the primary
+/// warhead's `Wall=` and `Wood=` (`0x0073F4A9`, `0x0073F4B3`). Adding those
+/// positionally is the exact shape ledger row I9c records as a landed
+/// regression — a mover fact derived independently per call site, where the
+/// callers without context quietly passed `false` and crushers detoured around
+/// sandbags they would have driven through.
+///
+/// So they travel together, and `from_snapshot` is the single place they are
+/// derived. A caller that has a `MoverSnapshot` cannot get them wrong, and a
+/// caller that does not have one has to say so explicitly.
+#[derive(Clone, Copy)]
+pub(super) struct MoverPathFacts {
+    pub urgency: u8,
+    pub mover_is_crusher: bool,
+    pub is_infantry: bool,
+    pub speed_type: Option<SpeedType>,
+    pub owner: Option<InternedId>,
+    pub is_armed: bool,
+    pub warhead_wall: bool,
+    pub warhead_wood: bool,
+}
+
+impl MoverPathFacts {
+    /// Derive every fact from the mover. `urgency` is the request's, not the
+    /// mover's — it is the code-2 escalation level of this particular search.
+    pub fn from_snapshot(snap: &MoverSnapshot, urgency: u8) -> Self {
+        Self {
+            urgency,
+            mover_is_crusher: snap.crush_capability().can_crush_units(),
+            is_infantry: snap.category == EntityCategory::Infantry,
+            speed_type: snap.speed_type,
+            owner: Some(snap.owner),
+            is_armed: snap.is_armed,
+            warhead_wall: snap.warhead_wall,
+            warhead_wood: snap.warhead_wood,
+        }
+    }
+
+    /// Facts for a search with no mover behind it.
+    ///
+    /// The wall arm cannot run without an owner to compare, so this leaves the
+    /// mover unarmed and unowned, which answers 7 at `0x0073F48F` and keeps the
+    /// pre-I9b search exactly. Use it only where there genuinely is no mover;
+    /// it is deliberately verbose at the call site for that reason.
+    pub fn without_wall_arm(urgency: u8, mover_is_crusher: bool, is_infantry: bool) -> Self {
+        Self {
+            urgency,
+            mover_is_crusher,
+            is_infantry,
+            speed_type: None,
+            owner: None,
+            is_armed: false,
+            warhead_wall: false,
+            warhead_wood: false,
+        }
+    }
+}
+
 /// Movement timing/threshold config derived from rules.ini [General] section.
 /// Separate from `PathfindingContext` because `find_move_path` doesn't need these.
 #[derive(Clone, Copy)]

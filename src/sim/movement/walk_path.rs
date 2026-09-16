@@ -249,6 +249,7 @@ impl Simulation {
                         overlay_grid: self.overlay_grid.as_ref(),
                         overlay_registry: registry,
                         alliances: Some(&self.house_alliances),
+                        interner: Some(&self.interner),
                     }),
                     path_grid: grid,
                     zone_grid: self.zone_grid.as_ref(),

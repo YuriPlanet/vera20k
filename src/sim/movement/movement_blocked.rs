@@ -16,7 +16,7 @@ use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 
 use super::movement_path::{supports_layered_bridge_pathing, try_repath_after_block};
 use super::path_markers::BridgeMarkerContext;
-use super::{MovementConfig, MovementTickStats, PathfindingContext};
+use super::{MovementConfig, MovementTickStats, MoverPathFacts, PathfindingContext};
 
 /// Shared logic for handling a blocked movement tick.
 ///
@@ -56,8 +56,7 @@ pub(super) fn handle_blocked_tick(
     rng: &mut SimRng,
     sim_tick: u64,
     path_stuck_init: u32,
-    mover_is_crusher: bool,
-    is_infantry: bool,
+    facts: MoverPathFacts,
     allow_zone_hierarchy: bool,
     skip_grace_period: bool,
     close_enough_abort: bool,
@@ -209,9 +208,12 @@ pub(super) fn handle_blocked_tick(
         too_big_to_fit_under_bridge,
         mcfg,
         entity_block_map,
-        urgency,
-        mover_is_crusher,
-        is_infantry,
+        // `urgency` is computed in this function, not carried by the mover, so
+        // it overrides the request-level value the caller supplied. Folding the
+        // three loose scalars into one value nearly lost this: a mechanical
+        // replace dropped the local and would have sent every blocked repath at
+        // the caller's urgency instead of the escalated one.
+        MoverPathFacts { urgency, ..facts },
         allow_zone_hierarchy,
         marker_search.as_ref(),
     );
@@ -244,7 +246,7 @@ pub(super) fn handle_blocked_tick(
             _ => {}
         }
         stats.repath_successes = stats.repath_successes.saturating_add(1);
-        if is_infantry
+        if facts.is_infantry
             && !locomotor
                 .as_ref()
                 .is_some_and(|l| l.kind == crate::rules::locomotor_type::LocomotorKind::Walk)
@@ -419,8 +421,7 @@ mod native_walk_timer_tests {
                 &mut SimRng::new(7),
                 frame as u64,
                 10,
-                false,
-                true,
+                super::MoverPathFacts::without_wall_arm(0, false, true),
                 true,
                 false,
                 false,
