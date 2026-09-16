@@ -279,10 +279,17 @@ pub struct ObjectType {
     /// vehicles) to 5 (Aircraft Carrier).
     pub weight: SimFixed,
     /// Fraction of max speed gained per tick during acceleration (AccelerationFactor=).
-    /// Default 0.03. At 15 fps, reaches max speed in ~2 seconds.
+    /// Default 0.03: `TechnoTypeClass` ctor `0x00710BD0`/`0x00710BDA` writes the
+    /// double `0x3F9EB851EB851EB8` to `+0x308`, and `ReadINI 0x007124C4` passes
+    /// that current value as the key's default. About 33 ticks from rest to full
+    /// speed; the wall-clock time follows `GameSpeed=` (criterion A12), so no
+    /// frame rate is quoted here.
     pub accel_factor: SimFixed,
     /// Fraction of max speed lost per tick during braking (DeaccelerationFactor=).
-    /// Default 0.02. Applied when within slowdown_distance of destination.
+    /// Default 0.002 — not 0.02, which this comment claimed until the constant was
+    /// read: ctor `0x00710BBC`/`0x00710BC6` writes `0x3F60624DD2F1A9FC` to `+0x300`
+    /// (`ReadINI 0x007124A3`, key string `0x008443F4`). The parse below was already
+    /// correct. Applied when within slowdown_distance of destination.
     pub decel_factor: SimFixed,
     /// Whether Drive/Ship locomotors ramp toward target speed (`Accelerates=`).
     /// Defaults to true; `Accelerates=false` is handled by locomotor speed
