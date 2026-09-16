@@ -268,10 +268,13 @@ fn update_vehicle_speed_fraction(
     distance_to_goal: SimFixed,
 ) {
     // The locomotor-owned target fraction is **not** clamped in gamemd.
-    // `Process_Movement` @ `0x004B2630` writes `drive+0x50` raw on its ordinary
-    // arm — `0x004B3DFA CMP [drive+0x58],0x40` / `JGE`, so the raw `FSTP` at
-    // `0x004B3E00` is the `< 0x40` side, i.e. everything that is not a
-    // `Force_Track` curve (the bunker family above). So a healthy tracked mover
+    // `Process_Movement` @ `0x004B2630` writes `drive+0x50` raw on the
+    // `0x004B3DFA CMP [drive+0x58],0x40` / `JGE` low side, the raw `FSTP` being
+    // at `0x004B3E00`. Reading that side as "everything that is not a
+    // `Force_Track` curve" matches the bunker family documented above and the
+    // `0x004B3C75 MOV [EBP+0x58],-1` reset, but the 0x40 boundary's own meaning
+    // is **not** demonstrated here and should not be cited as if it were. So a
+    // healthy tracked mover
     // going downhill on a 100% land row legitimately carries 1.2 — the terrain
     // chain's own tests assert the combined value exceeds 1.0. The only native
     // clamp is inside `TechnoClass::SetSpeedFraction` @ `0x004D3710`, on the
@@ -279,12 +282,17 @@ fn update_vehicle_speed_fraction(
     //
     // That clamp still governs the speed the player sees, because `+0x578` —
     // not this slot — is the accumulator: `Process_Drive_Track` @ `0x004B0F20`
-    // reads it at `0x004B11D1` and every arm that *writes* it goes through
-    // vtable `+0x544`. Corrected after review: it is **not** true that every
-    // arm calls it. `0x004B11DF JNZ 0x004B1218` skips the call outright when
-    // the owner's current fraction is already at or below the target, which
-    // leaves the previous — already clamped — value standing. Either way gamemd
-    // discards the above-1.0 portion and the mover does not go faster downhill.
+    // reads it at `0x004B1193` and `0x004B11D1`, and every arm that *writes* it
+    // goes through vtable `+0x544`. Corrected after review: it is **not** true
+    // that every arm calls it. `0x004B11DF JNZ 0x004B1218` skips the call, and
+    // the skip condition is exactly **equality**, not "at or below" as a first
+    // correction said: `0x004B119E TEST AH,1` / `0x004B11A1 JZ 0x004B11D1`
+    // routes *current < target* to the accelerate arm at `0x004B11A3`, which
+    // does call `+0x544`, so the decelerate compare is only reached with
+    // current >= target and its `TEST AH,0x41` leaves only the equal case.
+    // Skipping then leaves the previous — already clamped — value standing.
+    // Either way gamemd discards the above-1.0 portion and the mover does not
+    // go faster downhill.
     // Keeping this slot unclamped matches where the native clamp lives, and
     // matters only to anything that reads the *target* fraction rather than the
     // owner's; it is not a speed change.
