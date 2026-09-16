@@ -1721,6 +1721,7 @@ fn infantry_under_span_admission_reads_ground_speed_with_deck_cost_grid() {
                 for speed_type in [None, Some(SpeedType::Foot)] {
                     assert_eq!(
                         evaluate_can_enter_cell(CanEnterCellContext {
+                            wall: None,
                             target: (0, 0),
                             terrain_layer: MovementLayer::Ground,
                             movement_zone: Some(MovementZone::Infantry),
@@ -1810,6 +1811,7 @@ fn unit_under_span_admission_reads_ground_row_beneath_deck() {
             ] {
                 assert_eq!(
                     evaluate_can_enter_cell(CanEnterCellContext {
+                        wall: None,
                         target: (0, 0),
                         terrain_layer: MovementLayer::Ground,
                         movement_zone: Some(zone),
@@ -1831,6 +1833,7 @@ fn unit_under_span_admission_reads_ground_row_beneath_deck() {
             // row beneath it.
             assert!(
                 evaluate_can_enter_cell(CanEnterCellContext {
+                    wall: None,
                     target: (0, 0),
                     terrain_layer: MovementLayer::Bridge,
                     movement_zone: Some(zone),
@@ -1873,6 +1876,7 @@ fn infantry_under_span_admission_preserves_wall_and_grid_blocks() {
         ] {
             assert!(
                 !evaluate_can_enter_cell(CanEnterCellContext {
+                    wall: None,
                     target: (0, 0),
                     terrain_layer: MovementLayer::Ground,
                     movement_zone: Some(MovementZone::Infantry),
@@ -1906,6 +1910,7 @@ fn infantry_under_span_admission_preserves_missing_target_rejection() {
         ] {
             assert!(
                 !evaluate_can_enter_cell(CanEnterCellContext {
+                    wall: None,
                     target: (1, 0),
                     terrain_layer: MovementLayer::Ground,
                     movement_zone: Some(MovementZone::Infantry),

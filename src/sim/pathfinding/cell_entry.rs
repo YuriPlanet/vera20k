@@ -286,6 +286,17 @@ pub enum TerrainCheckResult {
 pub enum CanEnterCellResult {
     Clear,
     HardBlocked,
+    /// The wall arm answered 4 or 5: the mover cannot step here, but the search
+    /// may still expand through it at the class's cost multiplier.
+    ///
+    /// gamemd-derived: `UnitClass::Can_Enter_Cell @ 0x0073F0A0` accumulates
+    /// `max(code, 4)` for an allied wall (`0x0073F4EB`) and `max(code, 5)` for a
+    /// non-allied one (`0x0073F50E`), after `HouseClass::Is_Ally_ByIndex
+    /// @ 0x004F9A10` on the wall owner at `cell+0x50`. `InfantryClass::
+    /// Can_Enter_Cell @ 0x0051BF90` computes the same pair as `5 - is_ally`.
+    /// `AStar_compute_edge_cost @ 0x00429830` then prices them at 60x and 20x
+    /// from the class table at `0x0081870C`.
+    WallBlocked { cost_class: u8 },
 }
 
 /// Search-time interpretation of the YR `FootClass` cell predicate result.
@@ -375,6 +386,143 @@ pub struct CanEnterCellContext<'a> {
     /// the crusher route of the Unit wall arm (`0x0073F438`). Infantry never
     /// takes that route; pass `false` where the mover is unknown.
     pub mover_is_crusher: bool,
+    /// Wall-arm inputs. `None` keeps the coarse pre-I9b answer (a wall is a
+    /// hard block), which is what every caller without a resolved mover wants.
+    pub wall: Option<WallArmContext<'a>>,
+}
+
+/// Everything the wall arm of `Can_Enter_Cell` reads that terrain alone cannot
+/// supply: the overlay at the target cell, the house that owns it, and whether
+/// the mover can shoot a wall at all.
+///
+/// gamemd-derived: `UnitClass::Can_Enter_Cell @ 0x0073F0A0` wall arm
+/// (`0x0073F3D0..0x0073F51F`) and `InfantryClass::Can_Enter_Cell @ 0x0051BF90`.
+#[derive(Clone, Copy)]
+pub struct WallArmContext<'a> {
+    pub overlay_grid: Option<&'a crate::sim::overlay_grid::OverlayGrid>,
+    pub overlay_registry: Option<&'a crate::map::overlay_types::OverlayTypeRegistry>,
+    pub alliances: Option<&'a crate::map::houses::HouseAllianceMap>,
+    pub interner: Option<&'a crate::sim::intern::StringInterner>,
+    /// The mover's owning house, compared with the wall's owner through
+    /// `HouseClass::Is_Ally_ByIndex @ 0x004F9A10`.
+    pub mover_owner: Option<crate::sim::intern::InternedId>,
+    /// `TechnoClass::Is_Armed @ 0x00701120` (vtable `+0x2AC`, primary weapon
+    /// slot non-null). False answers 7 at `0x0073F48F`.
+    pub is_armed: bool,
+    /// Primary warhead `Wall=` (`WarheadTypeClass+0x144`, tested at
+    /// `0x0073F4A9`).
+    pub warhead_wall: bool,
+    /// Primary warhead `Wood=` (`+0x147`, tested at `0x0073F4B3`), which only
+    /// admits an overlay whose `Armor=` is wood (`0x0073F4BD` compares 6).
+    pub warhead_wood: bool,
+}
+
+// `OverlayTypeRegistry` carries no `Debug`, and adding one there would touch a
+// rules type for a pathfinding convenience. `CanEnterCellContext` derives
+// `Debug`, so this prints the mover-side facts and elides the borrowed tables.
+impl std::fmt::Debug for WallArmContext<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WallArmContext")
+            .field("mover_owner", &self.mover_owner)
+            .field("is_armed", &self.is_armed)
+            .field("warhead_wall", &self.warhead_wall)
+            .field("warhead_wood", &self.warhead_wood)
+            .field("overlay_grid", &self.overlay_grid.is_some())
+            .field("overlay_registry", &self.overlay_registry.is_some())
+            .field("alliances", &self.alliances.is_some())
+            .finish()
+    }
+}
+
+impl WallArmContext<'_> {
+    /// The wall overlay at `cell`, as `(is_wall, armor_is_wood, owner)`.
+    fn overlay_at(&self, cell: (u16, u16)) -> Option<(bool, bool, Option<crate::sim::intern::InternedId>)> {
+        let grid = self.overlay_grid?;
+        let registry = self.overlay_registry?;
+        let overlay = grid.cell(cell.0, cell.1);
+        let flags = overlay.overlay_id.and_then(|id| registry.flags(id))?;
+        Some((flags.wall, flags.armor_is_wood, overlay.wall_owner))
+    }
+
+    /// `HouseClass::Is_Ally_ByIndex @ 0x004F9A10`: true for the mover's own
+    /// house, false for an unowned wall (index -1), else the ally bitfield.
+    fn owner_is_ally(&self, wall_owner: Option<crate::sim::intern::InternedId>) -> bool {
+        let (Some(alliances), Some(interner), Some(mover), Some(wall)) =
+            (self.alliances, self.interner, self.mover_owner, wall_owner)
+        else {
+            return false;
+        };
+        crate::map::houses::is_allied_with(
+            alliances,
+            interner.resolve(mover),
+            interner.resolve(wall),
+        )
+    }
+
+    /// The accumulated wall code, or `None` when the arm answers 7.
+    ///
+    /// `0x0073F483..0x0073F51F`: an unarmed mover, or one whose primary warhead
+    /// is neither `Wall=` nor `Wood=`-against-wood, returns 7 at `0x0073F4C9`.
+    /// Otherwise the ally test picks `max(code, 4)` or `max(code, 5)`.
+    fn weapon_route_code(&self, armor_is_wood: bool, wall_owner: Option<crate::sim::intern::InternedId>) -> Option<u8> {
+        if !self.is_armed {
+            return None;
+        }
+        if !(self.warhead_wall || (self.warhead_wood && armor_is_wood)) {
+            return None;
+        }
+        Some(if self.owner_is_ally(wall_owner) { 4 } else { 5 })
+    }
+}
+
+/// Prices a candidate cell for A* expansion through the wall arm.
+///
+/// gamemd-derived: `AStar_main_loop @ 0x00429A90` calls the Foot `+0x1AC` slot
+/// for each neighbour and hands the returned code to
+/// `AStar_compute_edge_cost @ 0x00429830`, which indexes the class base table
+/// at `0x0081870C` — `[1.0, 1000.0, 1.0, 1.0, 60.0, 20.0, 8.0, 10000.0]`, so an
+/// allied wall (4) expands at 60x and an enemy one (5) at 20x. A code of 7 stops
+/// the expansion in `search_cell_cost_decision`.
+///
+/// This is the production producer for the `search_cost_classifier` seam: it
+/// carries the mover facts the pure pathfinding layer cannot resolve on its own.
+pub struct WallSearchCostClassifier<'a> {
+    pub wall: WallArmContext<'a>,
+    pub path_grid: Option<&'a PathGrid>,
+    pub resolved_terrain: Option<&'a ResolvedTerrainGrid>,
+    pub terrain_costs: Option<&'a TerrainCostGrid>,
+    pub movement_zone: Option<MovementZone>,
+    pub speed_type: Option<SpeedType>,
+    pub is_infantry: bool,
+    pub mover_is_crusher: bool,
+}
+
+impl crate::sim::pathfinding::SearchCellCostClassifier for WallSearchCostClassifier<'_> {
+    fn classify(&self, _from: (u16, u16), candidate: (u16, u16), bridge: bool) -> u8 {
+        let terrain_layer = if bridge {
+            MovementLayer::Bridge
+        } else {
+            MovementLayer::Ground
+        };
+        match evaluate_can_enter_cell(CanEnterCellContext {
+            wall: Some(self.wall),
+            target: candidate,
+            terrain_layer,
+            movement_zone: self.movement_zone,
+            speed_type: self.speed_type,
+            path_grid: self.path_grid,
+            resolved_terrain: self.resolved_terrain,
+            terrain_costs: self.terrain_costs,
+            bypass_grid: false,
+            mode: TerrainEntryMode::AStarNeighbor,
+            is_infantry: self.is_infantry,
+            mover_is_crusher: self.mover_is_crusher,
+        }) {
+            CanEnterCellResult::Clear => 0,
+            CanEnterCellResult::WallBlocked { cost_class } => cost_class,
+            CanEnterCellResult::HardBlocked => 7,
+        }
+    }
 }
 
 /// Evaluate the shared terrain/layer slice of Can_Enter_Cell.
@@ -556,11 +704,41 @@ fn evaluate_shared_cell_leaf(
             terrain_cell.is_some_and(|cell| cell.zone_type == zone_class::CRUSHABLE);
         let crushable_wall_admitted =
             !ctx.is_infantry && (ctx.mover_is_crusher || movement_zone == MovementZone::CrusherAll);
+
+        // The wall arm's weapon route (`0x0073F483..0x0073F51F`): an armed mover
+        // whose primary warhead is `Wall=`, or `Wood=` against an `Armor=wood`
+        // overlay, accumulates 4 against an allied wall and 5 against any other
+        // — an unowned wall is index -1, which `Is_Ally_ByIndex` rejects, so it
+        // takes 5. Everything else answers 7 at `0x0073F4C9`.
+        //
+        // With `ctx.wall` absent this stays `None` and the coarse pre-I9b hard
+        // block is returned unchanged, which is what every caller that has not
+        // resolved a mover wants.
+        //
+        // Residual: the crusher route's allied-wall `max(code, 4)` (`0x0073F481`
+        // jumps into the same accumulator at `0x0073F4EB`) is not modelled, so a
+        // crusher still enters a crushable wall freely whoever owns it. Changing
+        // that also moves I4's wall-crush admission, so it is recorded rather
+        // than folded in here.
+        let wall_attack_code: Option<u8> = ctx.wall.and_then(|wall_ctx| {
+            let (is_wall, armor_is_wood, owner) = wall_ctx.overlay_at(ctx.target)?;
+            if !is_wall {
+                return None;
+            }
+            wall_ctx.weapon_route_code(armor_is_wood, owner)
+        });
+
         if crushable_wall && !crushable_wall_admitted {
-            return CanEnterCellResult::HardBlocked;
+            return match wall_attack_code {
+                Some(cost_class) => CanEnterCellResult::WallBlocked { cost_class },
+                None => CanEnterCellResult::HardBlocked,
+            };
         }
         return if !wall_cleared && (wall || !land_passable) {
-            CanEnterCellResult::HardBlocked
+            match wall_attack_code.filter(|_| wall) {
+                Some(cost_class) => CanEnterCellResult::WallBlocked { cost_class },
+                None => CanEnterCellResult::HardBlocked,
+            }
         } else {
             CanEnterCellResult::Clear
         };
@@ -828,6 +1006,7 @@ pub fn check_terrain_with_layers(
 
     // --- Terrain walkability ---
     let terrain_walkable = evaluate_can_enter_cell(CanEnterCellContext {
+        wall: None,
         target,
         terrain_layer: layers.terrain_layer,
         movement_zone: None,
@@ -1500,6 +1679,7 @@ mod tests {
         mover_is_crusher: bool,
     ) -> CanEnterCellResult {
         evaluate_can_enter_cell(CanEnterCellContext {
+            wall: None,
             target: (1, 1),
             terrain_layer: MovementLayer::Ground,
             movement_zone: Some(movement_zone),
@@ -1583,6 +1763,7 @@ mod tests {
         }
         // The clear neighbour is untouched by the arm.
         let clear = evaluate_can_enter_cell(CanEnterCellContext {
+            wall: None,
             target: (0, 0),
             terrain_layer: MovementLayer::Ground,
             movement_zone: Some(MovementZone::Normal),

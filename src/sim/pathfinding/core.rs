@@ -1751,6 +1751,7 @@ pub fn is_cell_passable_for_category_on_layer(
     mover_is_crusher: bool,
 ) -> bool {
     evaluate_can_enter_cell(CanEnterCellContext {
+        wall: None,
         target: (x, y),
         terrain_layer,
         movement_zone,
@@ -1780,6 +1781,7 @@ pub fn is_cell_passable_for_mover_on_layer_with_speed(
     mode: TerrainEntryMode,
 ) -> bool {
     evaluate_can_enter_cell(CanEnterCellContext {
+        wall: None,
         target: (x, y),
         terrain_layer,
         movement_zone,

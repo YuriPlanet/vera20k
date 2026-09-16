@@ -384,6 +384,7 @@ fn what_action_on_cell(
             let admits = |layer| {
                 crate::sim::pathfinding::cell_entry::evaluate_can_enter_cell(
                     crate::sim::pathfinding::cell_entry::CanEnterCellContext {
+                        wall: None,
                         target: cell,
                         terrain_layer: layer,
                         movement_zone: entity.locomotor.as_ref().map(|l| l.movement_zone),

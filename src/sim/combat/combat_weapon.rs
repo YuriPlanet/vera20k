@@ -504,7 +504,7 @@ fn projectile_ag(rules: &RuleSet, weapon: &WeaponType) -> bool {
         .is_none_or(|projectile| projectile.ag)
 }
 
-fn warhead_of<'a>(rules: &'a RuleSet, weapon: &WeaponType) -> Option<&'a WarheadType> {
+pub(crate) fn warhead_of<'a>(rules: &'a RuleSet, weapon: &WeaponType) -> Option<&'a WarheadType> {
     weapon.warhead.as_ref().and_then(|id| rules.warhead(id))
 }
 
