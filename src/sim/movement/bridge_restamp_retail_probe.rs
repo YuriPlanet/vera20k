@@ -195,6 +195,23 @@ fn retail_inactive_high_record_restamp_inventory() {
 /// `slope_factor_for` compares raw level bytes, so **every** exit of this shape
 /// diverges - and this census only says the shape is ordinary rather than rare.
 ///
+/// **Two facts decide whether a player sees it, and they point opposite ways.**
+///
+/// - `TechnoClass::SetSpeedFraction 0x004D3710` clamps the owner's `+0x578` at
+///   1.0 (`FCOMP [0x007E1718]`, `TEST AH,1`). `drive+0x50` holds only the
+///   *target*; `+0x578` is the accumulator, and both the accelerate and
+///   decelerate arms of `Process_Drive_Track` write it through vtable `+0x544`.
+///   So for a healthy mover on a 100% row, target 1.2 and target 1.0 both
+///   saturate at 1.0 and the divergence is **invisible**.
+/// - The damaged-mover factor is applied *after* the slope and reaches no clamp
+///   of its own: `0x004B3DD4` calls the health ratio, `FCOMP [Rules+0x1700]`
+///   tests ConditionYellow, and `0x004B3DF0 FMUL [0x007E7FC0]` multiplies by
+///   0.75 (read from the binary as `0x3FE8000000000000`). On a 100% row native
+///   then holds `1.0 x 1.2 x 0.75 = 0.9` where pre-fix VERA held `0.75` - both
+///   under the clamp, so **every** qualifying exit is visible to any vehicle at
+///   or below ConditionYellow. Review caught this; the first version of this
+///   census reported such exits as invisible.
+///
 /// It counts static adjacency **pairs**, not traversals: how often a mover
 /// actually drives one still depends on traffic.
 ///
@@ -216,53 +233,148 @@ fn retail_ramp_exit_onto_equal_level_flat_census() {
             .as_ref()
             .expect("live resolved terrain");
 
-        let (mut ramp_cells, mut exits, mut flat_pairs) = (0u32, 0u32, 0u32);
-        for ry in 0..terrain.height() {
-            for rx in 0..terrain.width() {
-                let Some(cell) = terrain.cell(rx, ry) else {
-                    continue;
-                };
-                if cell.slope_type == 0 {
-                    continue;
-                }
-                ramp_cells += 1;
-                // The eight neighbours a Drive mover can leave a ramp through.
-                for (dx, dy) in [
-                    (-1i32, -1i32),
-                    (0, -1),
-                    (1, -1),
-                    (-1, 0),
-                    (1, 0),
-                    (-1, 1),
-                    (0, 1),
-                    (1, 1),
-                ] {
-                    let (nx, ny) = (i32::from(rx) + dx, i32::from(ry) + dy);
-                    let (Ok(nx), Ok(ny)) = (u16::try_from(nx), u16::try_from(ny)) else {
+        let rules = &scenario.runtime.resources.rules;
+        // Gate on the mover's own land row, NOT on `ground_walkable`. Review
+        // caught the latter: `pathfinding::core` deliberately reports water as
+        // ground-walkable ("SpeedType cost=0 blocks ground in A*"), and retail
+        // gives Water and Beach `Track=0%`, so the boolean admitted exactly the
+        // cells a tracked vehicle can never enter - and, being below full speed,
+        // scored them as divergences too. A 0% row also diverges by nothing: the
+        // exact-zero substitution at `0x004B3DB0` yields 0.5 either way, because
+        // `0 x 1.2` is still 0.
+        //
+        // **Both stock ground defaults are measured, not just Track.** A second
+        // review caught the claim that stock ground vehicles all default to
+        // Track. They do not: `UnitTypeClass::ReadINI` leaves `+0x67C` at -1
+        // when the INI omits `SpeedType=` and then derives it from `Crusher=` -
+        // `0x007476DE MOV DL,[type+0xD28]` / `NEG DL` / `SBB EDX,EDX` /
+        // `ADD EDX,2`, which is 1 (Track) when the byte is set and 2 (Wheel)
+        // when it is clear. `+0xD28` is `Crusher=`, stored at `0x00714CE3` from
+        // key string `0x0081BB58` inside `TechnoTypeClass::ReadINI 0x00712170`.
+        // In stock `rulesmd.ini` that makes the majority **Wheel**: of 80
+        // `[VehicleTypes]`, 56 omit `SpeedType=` and split 23 Track / 33 Wheel,
+        // with 13 explicit Float and 10 explicit Hover.
+        for speed_type in [
+            crate::rules::locomotor_type::SpeedType::Track,
+            crate::rules::locomotor_type::SpeedType::Wheel,
+        ] {
+            let track_row = |cell: &crate::map::resolved_terrain::ResolvedTerrainCell| {
+                cell.speed_costs.speed_multiplier_for(speed_type)
+            };
+            let passable = |cell: &crate::map::resolved_terrain::ResolvedTerrainCell| {
+                !cell.outside_playfield && track_row(cell) > crate::util::fixed_math::SIM_ZERO
+            };
+
+            let (mut ramp_cells, mut exits, mut flat_pairs, mut visible) = (0u32, 0u32, 0u32, 0u32);
+            // Measured, not asserted: which land rows the qualifying destinations
+            // actually carry. An earlier version of this census claimed "Clear,
+            // Road and Rough" from the ratio alone, which the ratio cannot show.
+            let mut dest_rows = [0u32; 12];
+            for ry in 0..terrain.height() {
+                for rx in 0..terrain.width() {
+                    let Some(cell) = terrain.cell(rx, ry) else {
                         continue;
                     };
-                    let Some(neighbour) = terrain.cell(nx, ny) else {
-                        continue;
-                    };
-                    if neighbour.slope_type != 0 {
+                    if cell.slope_type == 0 {
                         continue;
                     }
-                    flat_pairs += 1;
-                    if neighbour.level == cell.level {
-                        exits += 1;
+                    if !passable(cell) {
+                        continue;
+                    }
+                    ramp_cells += 1;
+                    // The eight neighbours a Drive mover can leave a ramp through.
+                    for (dx, dy) in [
+                        (-1i32, -1i32),
+                        (0, -1),
+                        (1, -1),
+                        (-1, 0),
+                        (1, 0),
+                        (-1, 1),
+                        (0, 1),
+                        (1, 1),
+                    ] {
+                        let (nx, ny) = (i32::from(rx) + dx, i32::from(ry) + dy);
+                        let (Ok(nx), Ok(ny)) = (u16::try_from(nx), u16::try_from(ny)) else {
+                            continue;
+                        };
+                        let Some(neighbour) = terrain.cell(nx, ny) else {
+                            continue;
+                        };
+                        if neighbour.slope_type != 0 {
+                            continue;
+                        }
+                        if !passable(neighbour) {
+                            continue;
+                        }
+                        flat_pairs += 1;
+                        if neighbour.level == cell.level {
+                            exits += 1;
+                            dest_rows[usize::from(neighbour.land_type.min(11))] += 1;
+                            // An UNDAMAGED mover only sees the coefficient when the
+                            // destination row leaves room under the clamp. A damaged
+                            // one sees every exit - see the print below.
+                            if track_row(neighbour) < crate::util::fixed_math::SIM_ONE {
+                                visible += 1;
+                            }
+                        }
                     }
                 }
             }
+            // Each share against its OWN denominator. Review caught both counts
+            // being divided by `flat_pairs` while the sentence said "of those",
+            // which understated the second by roughly a factor of two.
+            let share = |n: u32, of: u32| {
+                if of == 0 {
+                    0.0
+                } else {
+                    f64::from(n) * 100.0 / f64::from(of)
+                }
+            };
+            let rows: Vec<String> = dest_rows
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| **n > 0)
+                .map(|(land, n)| {
+                    let land = u8::try_from(land).ok();
+                    let name = land
+                        .and_then(crate::rules::terrain_rules::LandType::from_index)
+                        .map_or("?", |land_type| land_type.section_name());
+                    // Review: printing the land-type INDEX alone cannot tell a
+                    // real 100% row from a row that failed to parse, because
+                    // `cost_for_speed_type` answers `None` there and
+                    // `speed_multiplier_for` turns `None` into full speed - so a
+                    // wholly collapsed table would print an identical histogram
+                    // and an identical zero. Printing the resolved percentage,
+                    // and "UNPARSED" when the row is absent, closes that.
+                    let pct = land
+                        .and_then(|land| rules.terrain_rules.semantics_for_land_type(land))
+                        .map_or("UNPARSED".to_string(), |semantics| {
+                            semantics
+                                .cost_for_speed_type(speed_type)
+                                .map_or("UNPARSED".to_string(), |cost| format!("{cost}%"))
+                        });
+                    format!("{name}={n}@{pct}")
+                })
+                .collect();
+            println!(
+                "A8 D1 census {map_name} [{speed_type:?}]: {ramp_cells} passable ramp \
+             cells; of {flat_pairs} ramp-to-flat adjacency PAIRS (both cells inside \
+             the playfield and above {speed_type:?}=0%), {exits} sit at the ramp's own \
+             level ({:.1}% of pairs), of which {visible} ({:.1}% of exits) have a \
+             destination row below full speed. Destination rows: {}. \
+             READ THE SPLIT CAREFULLY: only the {visible} can diverge for an UNDAMAGED \
+             mover, the rest being clamped to 1.0 by SetSpeedFraction. A mover at or \
+             below ConditionYellow is NOT clamped (0x004B3DF0 applies 0.75 after the \
+             slope), so on those the other exits diverge too - but that is arithmetic, \
+             not a count this census took, and it holds only while the mover's sampled \
+             ground height still exceeds the destination's: at the ramp's low edge the \
+             two samples are equal and 0x004B3D21 takes no coefficient at all. Pairs, \
+             not traversals; vehicles only.",
+                share(exits, flat_pairs),
+                share(visible, exits),
+                rows.join(" ")
+            );
         }
-        let share = if flat_pairs == 0 {
-            0.0
-        } else {
-            f64::from(exits) * 100.0 / f64::from(flat_pairs)
-        };
-        println!(
-            "A8 D1 census {map_name}: {ramp_cells} ramp cells, {exits} ramp->flat exits at equal \
-             level out of {flat_pairs} ramp-to-flat adjacency PAIRS ({share:.1}%); pairs, not              traversals, and see the note on why a half is unsurprising"
-        );
     }
 }
 
@@ -316,79 +428,174 @@ fn retail_cliff_override_level_difference_census() {
             .as_ref()
             .expect("live resolved terrain");
 
-        let grid = sim.path_grid();
-        let walkable = |rx: u16, ry: u16| -> bool {
-            grid.and_then(|g| g.cell(rx, ry))
-                .is_some_and(|c| c.ground_walkable)
-        };
-        // Road is row 1, which the override forces. A destination already at
-        // full speed for this SpeedType diverges by nothing.
-        let full_speed = |cell: &crate::map::resolved_terrain::ResolvedTerrainCell| {
-            cell.speed_costs
-                .speed_multiplier_for(crate::rules::locomotor_type::SpeedType::Track)
-                >= crate::util::fixed_math::SIM_ONE
-        };
+        let rules = &scenario.runtime.resources.rules;
+        // Same correction as the D1 census: gate on the mover's own land row,
+        // not on `ground_walkable`, which is deliberately true for water and so
+        // admitted cells a tracked vehicle can never enter.
+        //
+        // **Track alone is the wrong measurement here, and review caught it.**
+        // The override forces land row 1 = Road and then indexes that row by
+        // the mover's SpeedType (`0x004B3C88 MOV ESI,1`, `LEA ECX,[ESI+ESI*8]`
+        // into the table at `0x0089EA40`), so what matters is Road[SpeedType]
+        // against the destination's own row for that same SpeedType. Retail
+        // Railroad is Foot 90 / Track 100 / **Wheel 50**: a wheeled mover
+        // crossing a two-level delta onto Railroad diverges 1.0 against 0.5,
+        // and a Track-only test scores exactly that pair as unable to diverge.
+        // With the diverging count resting on single-digit populations on two
+        // of three maps, one such pair moves the answer, so both stock ground
+        // defaults are measured.
+        // `Float` is here because the override is NOT unique to Drive:
+        // `ShipLocomotionClass::Process_Movement 0x006A1C80` carries a
+        // byte-identical copy at `0x006A2BDD` / `0x006A2BED` / `0x006A2BF0`.
+        // Review pointed out that the water census this needs is not a new
+        // harness at all - `passable` is `row > 0`, and with Float that admits
+        // exactly Water and deletes all eleven other land rows, because retail
+        // sets Float to 0% on every one of them. So the gate is not blind to
+        // the Ship site; only the Track/Wheel instantiations were.
+        for speed_type in [
+            crate::rules::locomotor_type::SpeedType::Track,
+            crate::rules::locomotor_type::SpeedType::Wheel,
+            crate::rules::locomotor_type::SpeedType::Float,
+        ] {
+            let track_row = |cell: &crate::map::resolved_terrain::ResolvedTerrainCell| {
+                cell.speed_costs.speed_multiplier_for(speed_type)
+            };
+            let passable = |cell: &crate::map::resolved_terrain::ResolvedTerrainCell| {
+                !cell.outside_playfield && track_row(cell) > crate::util::fixed_math::SIM_ZERO
+            };
+            // **Read the Road row; do not assume it is 100%.** This predicate
+            // used to be `dest_row >= 1.0`, which silently hard-codes
+            // Road = full speed. Retail Road is 100% for Foot, Track, Wheel and
+            // Amphibious but **Hover 75% and Float 0%**, so the old form is
+            // right for the two ground defaults and wrong for exactly the Ship
+            // run above: it would have reported 0 diverging on every map while
+            // every qualifying water pair in fact diverges. What the override
+            // does is force land row 1 and index it by the mover's own
+            // SpeedType (`0x004B3C88 MOV ESI,1`, `LEA ECX,[ESI+ESI*8]` into the
+            // table at `0x0089EA40`; the Ship copy at `0x006A32D7` is the same
+            // shape), so the comparison is Road[SpeedType] against the
+            // destination's own row for that SpeedType.
+            let road_row = rules
+                .terrain_rules
+                .semantics_by_name("Road")
+                .map_or(crate::util::fixed_math::SIM_ONE, |road| {
+                    road.speed_costs.speed_multiplier_for(speed_type)
+                });
+            let diverges = |cell: &crate::map::resolved_terrain::ResolvedTerrainCell| {
+                // The exact-zero substitution is applied to the COMBINED value
+                // (`0x004B3DB0`, Ship `0x006A3403`), so a 0% forced row and a
+                // 0% destination row both land on 0.5 and agree; any other
+                // inequality is a real divergence.
+                road_row != track_row(cell)
+            };
 
-        let (mut pairs, mut forced, mut diverging) = (0u32, 0u32, 0u32);
-        for ry in 0..terrain.height() {
-            for rx in 0..terrain.width() {
-                let Some(cell) = terrain.cell(rx, ry) else {
-                    continue;
-                };
-                if cell.outside_playfield || !walkable(rx, ry) {
-                    continue;
-                }
-                for (dx, dy) in [
-                    (-1i32, -1i32),
-                    (0, -1),
-                    (1, -1),
-                    (-1, 0),
-                    (1, 0),
-                    (-1, 1),
-                    (0, 1),
-                    (1, 1),
-                ] {
-                    let (nx, ny) = (i32::from(rx) + dx, i32::from(ry) + dy);
-                    let (Ok(nx), Ok(ny)) = (u16::try_from(nx), u16::try_from(ny)) else {
+            let (mut pairs, mut forced, mut diverging) = (0u32, 0u32, 0u32);
+            // Review flagged a silent-failure mode this closes: a land row that
+            // failed to parse comes back `None`, and `speed_multiplier_for` answers
+            // `SIM_ONE` for `None` - which reads as both passable and full speed,
+            // manufacturing exactly the zero this census reports. Printing the row
+            // distribution makes that visible instead of invisible.
+            let mut dest_rows = [0u32; 12];
+            for ry in 0..terrain.height() {
+                for rx in 0..terrain.width() {
+                    let Some(cell) = terrain.cell(rx, ry) else {
                         continue;
                     };
-                    let Some(neighbour) = terrain.cell(nx, ny) else {
-                        continue;
-                    };
-                    if neighbour.outside_playfield || !walkable(nx, ny) {
+                    if !passable(cell) {
                         continue;
                     }
-                    pairs += 1;
-                    // The same absolute difference the binary takes, on the same
-                    // signed Level byte.
-                    let delta =
-                        (i32::from(cell.level as i8) - i32::from(neighbour.level as i8)).abs();
-                    if delta >= 2 {
-                        forced += 1;
-                        if !full_speed(neighbour) {
-                            diverging += 1;
+                    for (dx, dy) in [
+                        (-1i32, -1i32),
+                        (0, -1),
+                        (1, -1),
+                        (-1, 0),
+                        (1, 0),
+                        (-1, 1),
+                        (0, 1),
+                        (1, 1),
+                    ] {
+                        let (nx, ny) = (i32::from(rx) + dx, i32::from(ry) + dy);
+                        let (Ok(nx), Ok(ny)) = (u16::try_from(nx), u16::try_from(ny)) else {
+                            continue;
+                        };
+                        let Some(neighbour) = terrain.cell(nx, ny) else {
+                            continue;
+                        };
+                        if !passable(neighbour) {
+                            continue;
+                        }
+                        pairs += 1;
+                        // The same absolute difference the binary takes, on the same
+                        // signed Level byte.
+                        let delta =
+                            (i32::from(cell.level as i8) - i32::from(neighbour.level as i8)).abs();
+                        if delta >= 2 {
+                            forced += 1;
+                            dest_rows[usize::from(neighbour.land_type.min(11))] += 1;
+                            if diverges(neighbour) {
+                                diverging += 1;
+                            }
                         }
                     }
                 }
             }
+            // Each share against its own denominator: review caught both counts
+            // being divided by `pairs` while the sentence read "of those".
+            let share = |n: u32, of: u32| {
+                if of == 0 {
+                    0.0
+                } else {
+                    f64::from(n) * 100.0 / f64::from(of)
+                }
+            };
+            let rows: Vec<String> = dest_rows
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| **n > 0)
+                .map(|(land, n)| {
+                    let land = u8::try_from(land).ok();
+                    let name = land
+                        .and_then(crate::rules::terrain_rules::LandType::from_index)
+                        .map_or("?", |land_type| land_type.section_name());
+                    // Review: printing the land-type INDEX alone cannot tell a
+                    // real 100% row from a row that failed to parse, because
+                    // `cost_for_speed_type` answers `None` there and
+                    // `speed_multiplier_for` turns `None` into full speed - so a
+                    // wholly collapsed table would print an identical histogram
+                    // and an identical zero. Printing the resolved percentage,
+                    // and "UNPARSED" when the row is absent, closes that.
+                    let pct = land
+                        .and_then(|land| rules.terrain_rules.semantics_for_land_type(land))
+                        .map_or("UNPARSED".to_string(), |semantics| {
+                            semantics
+                                .cost_for_speed_type(speed_type)
+                                .map_or("UNPARSED".to_string(), |cost| format!("{cost}%"))
+                        });
+                    format!("{name}={n}@{pct}")
+                })
+                .collect();
+            println!(
+                "A8 cliff-override census {map_name} [{speed_type:?}]: of {pairs} passable \
+             adjacency PAIRS (both cells inside the playfield and above \
+             {speed_type:?}=0%), {forced} differ by two or more levels ({:.2}% of \
+             pairs), and {diverging} of those have a destination row differing from the \
+             forced row ({:.2}% of those). Destination rows of the {forced}: {}. The \
+             test is Road[{speed_type:?}] against the destination's own row for the same \
+             SpeedType, NOT an assumption that Road is 100 percent - it is not for Hover \
+             (75) or Float (0). That count is an upper bound for an UNDAMAGED mover: the \
+             slope coefficient multiplies both sides, so a row at or above 1/1.2 still \
+             reaches the SetSpeedFraction clamp from both directions and shows nothing. \
+             The Float pass MEASURES the Ship copy of this override \
+             (ShipLocomotionClass::Process_Movement 0x006A1C80, test at \
+             0x006A2BDD/0x006A2BED/0x006A2BF0), because Float is 0 percent on every land \
+             row but Water, so this same gate reduces the Float pass to the water cells. \
+             STILL NOT MEASURED, and it would raise the figure: the bridge arm, which \
+             adds 4 to the mover's side on every step of a deck crossing. Pairs, not \
+             traversals.",
+                share(forced, pairs),
+                share(diverging, forced),
+                rows.join(" ")
+            );
         }
-        let pct = |n: u32| {
-            if pairs == 0 {
-                0.0
-            } else {
-                f64::from(n) * 100.0 / f64::from(pairs)
-            }
-        };
-        println!(
-            "A8 cliff-override census {map_name}: of {pairs} vehicle-passable adjacency \
-             PAIRS (both cells ground-walkable and in the playfield), {forced} differ by \
-             two or more levels ({:.2}%), and {diverging} of those have a destination row \
-             below full speed ({:.2}%) - only the latter diverge, because the override \
-             forces the Road row and Road, Clear and Rough are all 100% for Track. \
-             Pairs, not traversals; vehicles only; the bridge arm is not counted and \
-             would push the figure up.",
-            pct(forced),
-            pct(diverging)
-        );
     }
 }
