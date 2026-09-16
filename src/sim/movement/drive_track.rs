@@ -4168,8 +4168,10 @@ fn advance_drive_track_with_budget_mode(
     // and y both zero at a non-zero cursor); the sentinel read costs its 7 like
     // any other step and then credits part of it back. VERA's arrays stop before
     // the sentinel, so "read the sentinel" is "the next index is past the end".
-    let mut finished = false;
-    while budget > TRACK_STEP_COST {
+    // A track with no points has no end to reach and must not be charged for
+    // looking: the index guard this loop replaced never ran for one at all.
+    let mut finished = points.is_empty();
+    while budget > TRACK_STEP_COST && !points.is_empty() {
         budget -= TRACK_STEP_COST;
         let next = if state.before_first_point {
             0
@@ -4293,9 +4295,21 @@ fn advance_drive_track_with_budget_mode(
 ///
 /// The head is where the sentinel `(0, 0)` maps to, so an object standing on
 /// `last_point` is exactly the transformed point's own offset away from it.
-/// The arithmetic is done in `f64` in native's operation order: these are IEEE
-/// doubles either way, and gamemd runs with the x87 precision control at 53
-/// bits, so the sequence rounds the same.
+///
+/// What the term means: 7 is what a point *costs* (`SUB EDI,0x7`) and 11 is what
+/// a point *spans* - track 1's y runs 245, 234, 223 ... 3, exactly 11 leptons a
+/// step, and the diagonals step 8 and 8. So a full step was paid for but only
+/// `manhattan` leptons of it were really left, and the unused part comes back.
+/// A curve whose last point is further out than 11 therefore credits a negative
+/// number, which is a charge for ground the final snap still covers.
+///
+/// This is **not** native's operation order: native multiplies by the double
+/// stored at `0x007E7FB8` where this divides by `11.0`. That constant is the
+/// correctly-rounded double for 1/11 and the two forms agree after truncation
+/// across every manhattan a shipped track can produce, so the result is the
+/// same. Truncation itself is not an assumption about the ambient control word:
+/// `Math::ftol @ 0x007C5F00` does `FLDCW [0x00822D80]` (`0x0E7F`, round toward
+/// zero) before its `FISTP`, so it chops whatever the process CW happens to be.
 fn terminal_budget_credit(points: &[TrackPoint], last_point: u16, transform_flags: u8) -> i32 {
     let Some(point) = points.get(usize::from(last_point)) else {
         return 0;

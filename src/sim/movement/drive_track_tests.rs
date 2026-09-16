@@ -1627,3 +1627,107 @@ fn fresh_curve_occupies_point_zero_and_a_cell_costs_the_native_budget() {
     // 7 to take another - so the sentinel read waits for the next tick.
     assert_eq!(residual, 7, "168 buys the 23 points and stops one short");
 }
+
+/// The production fresh-install site really does mark the curve pre-start.
+///
+/// Without this, `track_head.rs`'s `before_first_point = true` could be deleted
+/// and the D1 budget test above would still pass, because that one builds the
+/// state by hand. The only other writer is `begin_selected_drive_track`, which
+/// nothing but a test calls.
+#[test]
+fn begin_fresh_marks_the_curve_as_not_yet_on_its_first_point() {
+    let DriveTrackDecision::Select(plan) = plan_drive_track_from_path(0, (0, -1), None, false)
+    else {
+        panic!("native straight-north selection");
+    };
+    let position = crate::sim::components::Position {
+        rx: 5,
+        ry: 5,
+        z: 0,
+        exact_z_leptons: None,
+        sub_x: crate::util::lepton::CELL_CENTER_LEPTON,
+        sub_y: crate::util::lepton::CELL_CENTER_LEPTON,
+    };
+    let (_head, curve) = crate::sim::movement::track_head::begin_fresh(&plan, &position)
+        .expect("fresh curve installs");
+    assert_eq!(curve.point_index, 0);
+    assert!(
+        curve.before_first_point,
+        "a fresh curve must still owe its first point, or it skips points[0] \
+         exactly as gamemd does not (0x004B4659 cursor 0, read at 0x004B1596)"
+    );
+}
+
+/// No shipped track holds an interior `(0, 0)`.
+///
+/// The step loop ends on an index (`next > last_index`) while native ends on a
+/// value - the `(0, 0)` sentinel at a non-zero cursor (`0x004B15C0..0x004B15C8`)
+/// - and the interp peek in the same file still uses the value test. The two
+/// agree only because no track has a `(0, 0)` anywhere but slot 0, which is a
+/// property of the shipped data and is therefore pinned here rather than
+/// assumed.
+#[test]
+fn no_shipped_track_holds_an_interior_sentinel_point() {
+    for index in 1..=15u8 {
+        for (slot, point) in raw_track_points(index).iter().enumerate().skip(1) {
+            assert!(
+                point.x != 0 || point.y != 0,
+                "track {index} slot {slot} is (0, 0); the index-based loop end \
+                 and the value-based interp peek would disagree about it"
+            );
+        }
+    }
+}
+
+/// Every shipped track's terminal credit, and the one that is nothing like the
+/// others.
+///
+/// The credit is unclamped by design - it is `ftol((1 - manhattan/11) * 7)` and
+/// native adds whatever that is (`0x004B1FF9 ADD EBX,EAX`). Fourteen tracks end
+/// between 1 and 21 manhattan from their head and land between +6 and -6.
+///
+/// **Track 11 does not.** It ends at `(96, 85)`, 181 manhattan out, for a credit
+/// of **-108** - about fifteen ticks during which a mover could not afford a
+/// step. UNCHECKED: whether any production path runs track 11 to its end. The
+/// only forced index wired in the tree is `0x47`, which selects track 15, so
+/// this is latent today; it is pinned so that wiring another forced index
+/// cannot make it a surprise. If a path is ever found that does reach it, the
+/// premise to re-examine is that the head is where the sentinel maps - a curve
+/// ending 181 leptons from its own head is the thing that looks wrong, not the
+/// arithmetic over it.
+#[test]
+fn terminal_credit_is_pinned_for_every_shipped_track() {
+    // (track, manhattan of the last point, credit)
+    const EXPECTED: [(u8, i32, i32); 15] = [
+        (1, 3, 5),
+        (2, 16, -3),
+        (3, 16, -3),
+        (4, 11, 0),
+        (5, 16, -3),
+        (6, 11, 0),
+        (7, 9, 1),
+        (8, 7, 2),
+        (9, 12, 0),
+        (10, 21, -6),
+        (11, 181, -108),
+        (12, 21, -6),
+        (13, 1, 6),
+        (14, 16, -3),
+        (15, 20, -5),
+    ];
+    for (index, manhattan, credit) in EXPECTED {
+        let points = raw_track_points(index);
+        let last = u16::try_from(points.len() - 1).expect("track fits u16");
+        let point = &points[usize::from(last)];
+        assert_eq!(
+            i32::from(point.x).abs() + i32::from(point.y).abs(),
+            manhattan,
+            "track {index} last point"
+        );
+        assert_eq!(
+            terminal_budget_credit(points, last, 0),
+            credit,
+            "track {index} terminal credit"
+        );
+    }
+}
