@@ -4231,6 +4231,13 @@ fn advance_drive_track_with_budget_mode(
 
         // Track chaining: at chain_index, signal the caller to attempt
         // chaining into a follow-on track curve.
+        // Against `point_index`, and deliberately NOT against `occupied_points`.
+        // The handoff gate compares native's STORED cursor because it is read
+        // from outside the loop (`0x004B49B6`), but this one is read INSIDE it,
+        // before the tail increment: `0x004B1B39 MOV EAX,[EBP+0x5C]` then
+        // `0x004B1B3C CMP [ECX + 0x7E7A2C],EAX` / `JNZ`, so the value it sees is
+        // the index of the point just occupied. Do not "correct" this to match
+        // the handoff gate - they read the same field at different moments.
         if meta.chain_index >= 0 && state.point_index == meta.chain_index as u16 {
             chain_ready = true;
             break;

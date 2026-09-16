@@ -89,7 +89,7 @@ fn tick_forced_drive_tracks(
             continue;
         }
 
-        let (advance, residual, point_index, paid_point) = {
+        let (advance, residual, occupied_points, paid_point) = {
             let (forced_track, drive_locomotion) =
                 (&mut entity.forced_drive_track, &mut entity.drive_locomotion);
             let forced = forced_track.as_mut().expect("checked forced_drive_track");
@@ -136,7 +136,7 @@ fn tick_forced_drive_tracks(
             }
         }
         if let Some(drive) = entity.drive_locomotion.as_mut() {
-            drive.track.cursor = point_index;
+            drive.track.cursor = occupied_points;
             drive.track_valid = true;
         }
         entity.facing = advance.facing;
