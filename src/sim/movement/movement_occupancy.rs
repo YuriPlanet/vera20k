@@ -974,10 +974,18 @@ pub(super) fn handle_deferred_occupancy(
             // -> `HouseClass__Is_Ally_ByObject` 0x00515BEF -> the Override at
             // 0x00515C2C, and the wall arm sits at 0x00515C9C. Walk's run the
             // same way: object at 0x0075BAEB, wall at 0x0075BB49 — both
-            // locomotors are object-first in address order. Drive and ship each
-            // own exactly one call site — the
-            // wall — and have no blocking-object arm at all, so a blocked tank
-            // still repaths rather than overriding.
+            // locomotors are object-first in address order. The claim that Drive
+            // and ship "have no blocking-object arm at all, so a blocked tank
+            // still repaths rather than overriding" was false and is corrected
+            // here (2026-09-16, from the binary): `0x004B3A97` splits codes 4/5
+            // out of the shared entry, and the arm at `0x004B3B03` runs
+            // `CellClass::Find_Blocking_Object 0x0047C5A0` ->
+            // `Is_Ally_ByObject 0x004F9A90` -> `+0x1F4(1, object)` exactly as
+            // Walk and Hover do, falling to the wall-cell `+0x1F4(1, cell)` at
+            // `0x004B3B94` only when no object is found. Drive therefore owns
+            // two Override sites, not one. VERA still routes a blocked vehicle
+            // to a repath — that is the unported half of ledger row I9b, a
+            // recorded gap rather than native behaviour.
             //
             // Hover is live stock, not dead data. `Locomotor={4A582742-…}` has
             // exactly four uncommented users in rulesmd.ini: [ROBO] the Robot

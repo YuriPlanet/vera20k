@@ -86,10 +86,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, BinaryHeap};
 
-use super::{
-    BlockerNeighborCounts, LayeredEntityBlockMap, MoverSearchFacts, SearchCellCostClassifier,
-    SearchMarkerOverlay,
-};
+use super::{BlockerNeighborCounts, LayeredEntityBlockMap, MoverSearchFacts, SearchMarkerOverlay};
 
 use super::terrain_cost::TerrainCostGrid;
 use super::zone_hierarchy::{ZonePrecheckExclusions, ZonePrecheckOutcome, zone_precheck_flat};

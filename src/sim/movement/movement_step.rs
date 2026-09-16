@@ -1258,10 +1258,20 @@ pub(super) struct DriveSelectionRefusal {
     /// Carried because the codes do NOT share one dispatch. `0x004B36F4
     /// CMP EDX,0x6 / JNZ 0x004B3944` gives code 6 its own arm, and that arm
     /// reaches `CellClass__Scatter_Objects @ 0x00481670` (call at 0x004B393A)
-    /// before falling into the shared entry at 0x004B3607. Codes 2 and 5 reach
-    /// that shared entry directly — 5 via `0x004B3944 CMP EDX,0x1 /
+    /// before falling into the shared entry at 0x004B3607. Codes 2, 4 and 5 all
+    /// arrive at that shared entry — 4 and 5 via `0x004B3944 CMP EDX,0x1 /
     /// JNZ 0x004B3607` — and no `Scatter_Objects` call sits anywhere between
     /// the entry and its `Find_Path` tail.
+    ///
+    /// They do not all *stay* there, and an earlier revision of this comment
+    /// implied they did (corrected 2026-09-16 from the binary). `0x004B364D
+    /// CMP EAX,0x2 / JNZ 0x004B3A97` keeps only code 2 in the shared arm and
+    /// sends 4 and 5 on to `0x004B3A97`, which splits them into the wall /
+    /// blocking-object Override arm (`Find_Blocking_Object 0x0047C5A0`,
+    /// `Is_Ally_ByObject 0x004F9A90`, `+0x1F4(1, object)`, and the wall-cell
+    /// `+0x1F4(1, cell)` at `0x004B3B94`). The `Scatter_Objects` statement above
+    /// still holds; only the "codes 2 and 5 reach that entry directly" reading
+    /// was wrong, and porting that arm is ledger row I9b's work.
     pub cost_code: Option<u8>,
 }
 

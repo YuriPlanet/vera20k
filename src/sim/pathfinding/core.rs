@@ -890,7 +890,12 @@ pub trait SearchCellCostClassifier {
 /// parameters: `mz` selects the zone map/hierarchy to consult, while
 /// `movement_zone` is the mover's own zone for passability, and
 /// `movement_zone.unwrap_or(mz)` is the documented fallback between them.
-#[derive(Clone, Copy, Default)]
+/// Deliberately **not** `Default`. A defaulted value would mean
+/// `mover_is_crusher: false`, and ledger row I9c records exactly that shape as a
+/// landed regression: five first searches passed a literal `false` and crushers
+/// detoured around sandbags their own crossing would drive through. Every
+/// construction site names every field, so the facts always come from a mover.
+#[derive(Clone, Copy)]
 pub struct MoverSearchFacts<'a> {
     pub urgency: u8,
     pub mover_is_crusher: bool,
