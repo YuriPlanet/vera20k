@@ -832,7 +832,10 @@ mod tests {
         assert_eq!(drive.track.residual, 1);
         let track = drive_track_state.as_ref().expect("new track installed");
         assert_eq!(track.residual, 1);
-        assert_eq!(drive.track.cursor, i32::from(track.point_index));
+        // The owner mirror is native's cursor - the COUNT of points occupied -
+        // not the index of the point being occupied. `TrackProgress::cursor`
+        // documents itself as next-to-consume, and that is what this pins.
+        assert_eq!(drive.track.cursor, track.occupied_points());
     }
 
     #[test]
@@ -1826,7 +1829,11 @@ fn advance_shared_track(
     let Some(track_state) = drive_track_state else {
         return AdvanceResult::ReadyForCrossings;
     };
-    let prior_point_index = track_state.point_index;
+    // The occupied COUNT, not the index: a fresh curve's first paid step
+    // occupies `points[0]` and leaves `point_index` at 0, so gating the
+    // paid-point block on the index changing would skip it for exactly that
+    // step. See `DriveTrackState::occupied_points`.
+    let prior_occupied = track_state.occupied_points();
     let advance = match kind {
         LocomotorKind::Drive => {
             let drive = drive_locomotion.get_or_insert_with(Default::default);
@@ -1835,7 +1842,7 @@ fn advance_shared_track(
                 fresh_budget,
                 &mut drive.track.residual,
             );
-            drive.track.cursor = i32::from(track_state.point_index);
+            drive.track.cursor = track_state.occupied_points();
             drive.track_valid = !advance.finished;
             advance
         }
@@ -1846,12 +1853,12 @@ fn advance_shared_track(
                 fresh_budget,
                 &mut ship.track.residual,
             );
-            ship.track.cursor = i32::from(track_state.point_index);
+            ship.track.cursor = track_state.occupied_points();
             advance
         }
         _ => return AdvanceResult::ReadyForCrossings,
     };
-    if track_state.point_index != prior_point_index {
+    if track_state.occupied_points() != prior_occupied {
         // Real forward progress clears the owner's impatience flag. gamemd does
         // this on the first paid track point of a segment, in the same block
         // that clears the raw occupation bit and the cell-occupation-enabled
@@ -1874,7 +1881,7 @@ fn advance_shared_track(
     *facing = advance.facing;
     *facing_target = None;
 
-    if track_state.point_index != prior_point_index || advance.finished {
+    if track_state.occupied_points() != prior_occupied || advance.finished {
         // Consume the old current cell before a paid point can leave it.
         consume_previously_reached_track_node(target, position);
     }
@@ -1888,7 +1895,7 @@ fn advance_shared_track(
         };
     }
 
-    if track_state.point_index != prior_point_index || advance.finished {
+    if track_state.occupied_points() != prior_occupied || advance.finished {
         commit_paid_track_height(
             position,
             &advance,

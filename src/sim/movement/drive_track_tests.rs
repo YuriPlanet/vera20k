@@ -1731,3 +1731,47 @@ fn terminal_credit_is_pinned_for_every_shipped_track() {
         );
     }
 }
+
+/// The occupation handoff is released on the count of points occupied, the way
+/// native releases it - not on the index of the point being occupied.
+///
+/// Native compares its stored cursor against `RawTrack+0x0C`: `0x004B49B6 MOV
+/// EDX,[ESI+0x58]` / `CMP EDX,ECX` / `JGE` out, where `ECX` is the handoff
+/// index. `ESI` is the locomotor biased by -4, which three offsets confirm -
+/// `ESI+0x54` indexes the TurnTrack table (the selector, `+0x58` on the
+/// locomotor) and `ESI+0x5C` is read as a byte (the normal/short variant,
+/// `+0x60`), so `ESI+0x58` is the cursor at `+0x5C`.
+///
+/// That cursor counts points already occupied, so it is one ahead of
+/// `point_index`. D1 made `point_index` mean the point actually occupied, and
+/// comparing it here would hold the forward claim one paid point too long on
+/// every curve that has a handoff.
+#[test]
+fn occupation_handoff_releases_on_the_native_cursor_not_the_point_index() {
+    // Track 3 hands off at point 22.
+    let handoff = raw_track_meta(3).unwrap().occupation_handoff_point_index;
+    assert_eq!(handoff, 22, "track 3 handoff index");
+    let handoff = u16::try_from(handoff).unwrap();
+
+    let claim_at = |occupied: i32| {
+        let mut state = begin_drive_track(3, 0, 0, -1, 0).expect("track 3");
+        // `occupied` points consumed means standing on index occupied - 1.
+        state.before_first_point = occupied == 0;
+        state.point_index = if occupied == 0 {
+            0
+        } else {
+            u16::try_from(occupied - 1).unwrap()
+        };
+        assert_eq!(state.occupied_points(), occupied);
+        is_at_coord_track_cells(&state, (10, 10), true).0
+    };
+
+    assert!(
+        claim_at(i32::from(handoff) - 1).is_some(),
+        "one point before the handoff, the forward cell is still claimed"
+    );
+    assert!(
+        claim_at(i32::from(handoff)).is_none(),
+        "on the handoff count the claim is released, as 0x004B49B6's JGE does"
+    );
+}

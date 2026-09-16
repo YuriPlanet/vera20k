@@ -160,7 +160,10 @@ pub struct DriveTrackState {
     /// A chained curve installs `entry_index - 1` and leaves this clear, because
     /// native's chain rejoins the loop at the tail increment and so renders
     /// `points[entry_index]` first.
-    #[serde(default)]
+    // Deliberately NOT `#[serde(default)]`. This field sits mid-record and the
+    // snapshot is bincode, which cannot default a missing mid-record field - see
+    // the v165 note in `snapshot.rs`. The attribute would only mislead the next
+    // reader into thinking a pre-v165 save decodes.
     pub before_first_point: bool,
     /// Movement budget remaining from the previous tick. The original engine
     /// carries leftover budget across ticks so
@@ -3594,9 +3597,10 @@ pub(super) fn is_at_coord_track_cells(
         return (None, head_cell);
     };
     let handoff_index = meta.occupation_handoff_point_index;
-    if !include_handoff
-        || handoff_index < 0
-        || usize::from(state.point_index) >= handoff_index as usize
+    // Against the occupied count, not the occupied index: native compares its
+    // stored cursor here (`0x004B49B6`), which is one ahead of the point being
+    // stood on. See `DriveTrackState::occupied_points`.
+    if !include_handoff || handoff_index < 0 || state.occupied_points() >= i32::from(handoff_index)
     {
         return (None, head_cell);
     }
@@ -3910,6 +3914,24 @@ pub fn begin_selected_drive_track(plan: &DriveTrackPlan) -> Option<DriveTrackSta
     state.point_index = 0;
     state.before_first_point = true;
     Some(state)
+}
+
+impl DriveTrackState {
+    /// Points occupied so far - native's stored cursor, `[EBP+0x5C]`.
+    ///
+    /// Native increments at the loop tail (`0x004B1F4F`), so its cursor counts
+    /// points already occupied while the object stands on `points[cursor - 1]`.
+    /// `point_index` is that `cursor - 1`. Anything comparing against native's
+    /// cursor - the occupation handoff gate at `0x004B49B6`, and the owner-side
+    /// `TrackProgress::cursor` mirror, which documents itself as
+    /// next-to-consume - must read this rather than `point_index`.
+    pub fn occupied_points(&self) -> i32 {
+        if self.before_first_point {
+            0
+        } else {
+            i32::from(self.point_index) + 1
+        }
+    }
 }
 
 /// Quantize a 0-255 facing to a direction index 0-7 (N, NE, E, SE, S, SW, W, NW).
@@ -4309,7 +4331,8 @@ fn advance_drive_track_with_budget_mode(
 /// across every manhattan a shipped track can produce, so the result is the
 /// same. Truncation itself is not an assumption about the ambient control word:
 /// `Math::ftol @ 0x007C5F00` does `FLDCW [0x00822D80]` (`0x0E7F`, round toward
-/// zero) before its `FISTP`, so it chops whatever the process CW happens to be.
+/// zero) before its `FISTP` when the ambient word differs (the load is behind a
+/// compare at `0x007C5F13`), so it chops regardless of the process CW.
 fn terminal_budget_credit(points: &[TrackPoint], last_point: u16, transform_flags: u8) -> i32 {
     let Some(point) = points.get(usize::from(last_point)) else {
         return 0;
@@ -4322,8 +4345,11 @@ fn terminal_budget_credit(points: &[TrackPoint], last_point: u16, transform_flag
 }
 
 /// Step cost denominator. The original engine consumes 7 budget units per
-/// track point; residual budget after the step loop is in `0..=7` and feeds
-/// fractional progress into the next-to-consume step.
+/// track point; residual budget after the step loop is in `0..=7` **on a curve
+/// that has not ended**, and feeds fractional progress into the next-to-consume
+/// step. The terminal step breaks that range: its credit is added after the
+/// step is paid for and is negative on most tracks, so a curve that just ended
+/// can carry a residual as low as -108. See `terminal_budget_credit`.
 const TRACK_STEP_DENOM: i32 = 7;
 
 /// Above-this residual triggers the L4 trust window — past the step midpoint,
@@ -4352,7 +4378,10 @@ pub(crate) struct InterpSubStepResult {
 /// the saved cell requires caller-owned cell/list/OnBridge updates while
 /// retaining raw Z; this helper only computes the coordinate.
 /// `next_delta_x/next_delta_y` are from `DriveTrackAdvance.next_step_delta_*`.
-/// `residual` is `state.residual` (range `0..=7` after a normal step-loop exit).
+/// `residual` is `state.residual` - `0..=7` after a normal step-loop exit, but
+/// possibly **negative** after a terminal one, which the `residual < 1` guard
+/// below absorbs along with zero. That is load-bearing: a negative residual must
+/// not interpolate backwards.
 pub(crate) fn interp_sub_step(
     saved_sub_x: SimFixed,
     saved_sub_y: SimFixed,

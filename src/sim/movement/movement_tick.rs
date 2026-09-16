@@ -93,7 +93,8 @@ fn tick_forced_drive_tracks(
             let (forced_track, drive_locomotion) =
                 (&mut entity.forced_drive_track, &mut entity.drive_locomotion);
             let forced = forced_track.as_mut().expect("checked forced_drive_track");
-            let prior_point_index = forced.track.point_index;
+            // Occupied count, not index - see `DriveTrackState::occupied_points`.
+            let prior_occupied = forced.track.occupied_points();
             let advance = if let Some(drive) = drive_locomotion.as_mut() {
                 super::drive_track::advance_forced_drive_track(
                     forced,
@@ -112,8 +113,8 @@ fn tick_forced_drive_tracks(
             (
                 advance,
                 residual,
-                forced.track.point_index,
-                forced.track.point_index != prior_point_index,
+                forced.track.occupied_points(),
+                forced.track.occupied_points() != prior_occupied,
             )
         };
 
@@ -135,7 +136,7 @@ fn tick_forced_drive_tracks(
             }
         }
         if let Some(drive) = entity.drive_locomotion.as_mut() {
-            drive.track.cursor = i32::from(point_index);
+            drive.track.cursor = point_index;
             drive.track_valid = true;
         }
         entity.facing = advance.facing;
