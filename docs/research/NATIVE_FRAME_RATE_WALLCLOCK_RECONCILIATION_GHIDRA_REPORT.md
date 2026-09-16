@@ -144,6 +144,43 @@ faster game speeds, exactly as retail does. There is no fixed 15 fps in the engi
 
 ## 5. Reconciliation with the current Rust model
 
+> **2026-09-16 correction (Rust-side only — every binary finding above stands):**
+> everything in this section below this block describes a Rust model that no
+> longer exists. `e163a3aa` (2026-07-30, "phase0: implement retail deterministic
+> authority spine") replaced it; the corpus citing it was first tracked wholesale
+> by `5aaa9c22` (2026-08-18) without revalidation. Current state, read from
+> source this date:
+>
+> - **One admitted frame is one native frame.** `advance_master_frame` commits
+>   exactly once per call (`world/mod.rs:5836`, `binary_frame.wrapping_add(1)` in
+>   `run_late_region`), and the exact-step receipt rejects any `frame_delta != 1`.
+>   The table's `binary_frame = (total_sim_ms · 15)/1000` at "~21 / s
+>   (= sim.tick / 3)" is dead, and with it the "one logic frame is modelled as
+>   3 sim-ticks" bullet below. There is no sub-stepping.
+> - **Admission is the native 16 ms bucket gate.** `LocalFramePacer::should_admit`
+>   (`app/match_runtime/frame_pacer.rs`) compares `timeGetTime() >> 4` buckets
+>   against `game_speed.clamp(1, 6)`, so stock `GameSpeed=1` admits one frame per
+>   16 ms bucket — ~62.5/s, mirroring the `Main_Tick` throttle §3 establishes from
+>   the binary. Byte 0 short-circuits to uncapped, as native does.
+> - **Movement integrates per native frame.** Locomotors advance `speed × dt` with
+>   `dt = native_movement_frame_fraction()` = 1/15 (`movement_tick.rs:3842,3997`),
+>   and `movement_frame_budget_from_current_speed` is `speed / 15` — one native
+>   frame's leptons per admitted frame. Nothing multiplies by the 22 ms tick, which
+>   is what the "~3× slower" arithmetic below rests on.
+> - **The combat clause is stale.** `GAME_FPS` no longer exists under
+>   `src/sim/combat/`; `rof_to_cooldown_frames` (`combat/mod.rs:3367`) consumes ROF
+>   frames directly. `advance_fixed_simulation` does not exist anywhere in `src/`,
+>   and `app_sim_tick.rs` / `app_types.rs` are now `app/match_runtime/sim_tick.rs`
+>   and `app/types.rs`.
+>
+> **Status of the pace claim: structurally matched, wall-clock unmeasured.** This
+> is a code-and-binary read; no measurement was taken on either side, so it is not
+> parity demonstrated. One residual is live and separate: `render/gpu.rs:184`
+> hardcodes `wgpu::PresentMode::Fifo` and admission is reachable only from the
+> render pass (`app/frame.rs:142`) with no catch-up loop, so the achieved logic
+> rate is `min(display refresh, 62.5/s)` — about 4% under native on a 60 Hz panel,
+> and never repaid.
+
 Verified from source:
 
 | Rust clock | Definition | Real rate at default (byte 1) |
@@ -200,6 +237,15 @@ Verified from source:
   smoothness is the open architecture decision below.
 
 ## 6. Design options (no code; user decision required)
+
+> **2026-09-16 correction:** this decision is closed in substance. `e163a3aa`
+> (2026-07-30) shipped Option A's shape — one logic pass per admitted native
+> frame, a single frame clock, durations used as frame counts, and the
+> speed-byte → 16 ms bucket admission both options required. What follows is
+> retained as the reasoning that led there, not as an open choice. What remains
+> open is narrower and was not contemplated here: the render loop is the only
+> caller of frame admission and vsync is pinned to `Fifo`, so the achieved rate
+> is capped by display refresh rather than by the game-speed byte.
 
 The faithful target is: the game-speed setting must produce the **same observable
 pace** as gamemd at that setting (parity bar — outputs, especially pace). That
