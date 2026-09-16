@@ -4088,13 +4088,24 @@ pub fn begin_forced_turn_track(
 ) -> Option<ForcedDriveTrackState> {
     let turn = turn_track_at(turn_track_index as usize)?;
     let raw_track_index = select_raw_track_index(turn, use_short);
-    let track = begin_drive_track_with_head_offset(
+    let mut track = begin_drive_track_with_head_offset(
         raw_track_index,
         turn.flags,
         head_offset_x,
         head_offset_y,
         turn.target_facing,
     )?;
+    // `Force_Track` zeroes the cursor outright - it does **not** start at the
+    // RawTrack entry point: `0x004B0C53 MOV [EBP+0x54],EAX` stores the selector
+    // and `0x004B0C56 MOV dword ptr [EBP+0x58],0x0` the cursor, with `EBP` the
+    // class biased by 4 (`0x004B0C88 LEA ESI,[EBP-0x4]`), so `+0x54`/`+0x58` are
+    // the selector at `+0x58` and the cursor at `+0x5C`.
+    //
+    // So a forced curve occupies `points[0]` on its first paid step, exactly as a
+    // fresh one does, and needs the same pre-start state. Without this it takes
+    // the terminal credit without the cursor fix and silently skips `points[0]`.
+    track.point_index = 0;
+    track.before_first_point = true;
     Some(ForcedDriveTrackState {
         turn_track_index,
         track,
@@ -4356,7 +4367,9 @@ fn terminal_budget_credit(points: &[TrackPoint], last_point: u16, transform_flag
 /// that has not ended**, and feeds fractional progress into the next-to-consume
 /// step. The terminal step breaks that range: its credit is added after the
 /// step is paid for and is negative on most tracks, so a curve that just ended
-/// can carry a residual as low as -108. See `terminal_budget_credit`.
+/// can carry a residual as low as -107: the loop only runs on `budget > 7` and
+/// subtracts 7 before crediting, so at least 1 remains when the most negative
+/// shipped credit (-108, track 11) is applied. See `terminal_budget_credit`.
 const TRACK_STEP_DENOM: i32 = 7;
 
 /// Above-this residual triggers the L4 trust window — past the step midpoint,

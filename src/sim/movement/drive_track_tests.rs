@@ -1766,6 +1766,12 @@ fn occupation_handoff_releases_on_the_native_cursor_not_the_point_index() {
         is_at_coord_track_cells(&state, (10, 10), true).0
     };
 
+    // Including the pre-start arm, which is the state D1 exists for and which
+    // the rest of this test would not reach.
+    assert!(
+        claim_at(0).is_some(),
+        "before the first paid point, the forward cell is claimed"
+    );
     assert!(
         claim_at(i32::from(handoff) - 1).is_some(),
         "one point before the handoff, the forward cell is still claimed"

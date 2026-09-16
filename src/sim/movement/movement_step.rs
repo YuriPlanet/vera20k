@@ -832,10 +832,12 @@ mod tests {
         assert_eq!(drive.track.residual, 1);
         let track = drive_track_state.as_ref().expect("new track installed");
         assert_eq!(track.residual, 1);
-        // The owner mirror is native's cursor - the COUNT of points occupied -
-        // not the index of the point being occupied. `TrackProgress::cursor`
-        // documents itself as next-to-consume, and that is what this pins.
-        assert_eq!(drive.track.cursor, track.occupied_points());
+        // A retry installs a fresh curve, so nothing is occupied yet: native's
+        // cursor is 0 and the mirror carries that, not the index of a point.
+        // Comparing the mirror against `occupied_points()` here would only
+        // restate the line that set it.
+        assert_eq!(drive.track.cursor, 0);
+        assert!(track.before_first_point);
     }
 
     #[test]

@@ -1372,20 +1372,20 @@ fn gsi_04_05_forced_refinery_exit_preserves_lists_until_terminal_relink() {
     assert!(!drive.track_valid);
     assert_eq!(drive.track.turn_index, -1);
     assert_eq!(drive.track.cursor, 0);
-    // This guarded against a path that zeroed the owner residual outright, and
-    // it can no longer be written as "not zero": the forced refinery exit runs
-    // TurnTrack 71 -> raw track 15, whose last point is (16, -4), so the
-    // terminal credit `ftol((1 - 20/11) * 7)` is -5 and the arithmetic itself
-    // lands on zero here. Pinning the value keeps the test honest about what it
-    // actually checks now.
-    //
-    // This is a WEAKER guard than it was, and nothing else currently covers the
-    // original hazard: a regression that assigned zero unconditionally would
-    // still pass this assertion. Recorded in the I14 ledger row rather than
-    // papered over; restoring it needs a fixture whose forced terminal ends with
-    // budget left over.
-    assert_eq!(
+    // This guards against a path that zeroed the owner residual outright, and it
+    // briefly could not be written as "not zero": while the forced install still
+    // skipped `points[0]`, the curve paid one point fewer and the terminal credit
+    // landed the arithmetic on exactly zero, so the guard stopped discriminating.
+    // Correcting the forced install to match `Force_Track`'s own cursor zeroing
+    // (`0x004B0C56`) restored the missing point, and with it this guard.
+    assert_ne!(
         drive.track.residual, 0,
+        "immediate forced terminal must not unconditionally zero the owner residual"
+    );
+    // And the computed value, so a future change that shifts the forced budget
+    // has to say so rather than drifting past the inequality above.
+    assert_eq!(
+        drive.track.residual, 1,
         "forced terminal residual is computed, not assigned"
     );
     assert_eq!(
