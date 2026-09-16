@@ -25,7 +25,17 @@ use crate::sim::pathfinding::{
 use crate::sim::rng::SimRng;
 use crate::util::fixed_math::facing_from_delta_int as facing_from_delta;
 
-use super::{MovementConfig, PathfindingContext};
+use super::{MovementConfig, MoverPathFacts, PathfindingContext};
+
+/// Re-export of `MoverPathFacts::without_wall_arm` for call sites outside this
+/// module, so they do not need the type in scope to say "no mover facts here".
+pub(super) fn mover_path_facts_without_wall_arm(
+    urgency: u8,
+    mover_is_crusher: bool,
+    is_infantry: bool,
+) -> MoverPathFacts {
+    MoverPathFacts::without_wall_arm(urgency, mover_is_crusher, is_infantry)
+}
 
 #[cfg(test)]
 pub(crate) fn reset_path_search_used_zone_grid_marker() {
@@ -384,9 +394,7 @@ pub(super) fn find_move_path(
     movement_zone: Option<MovementZone>,
     too_big_to_fit_under_bridge: bool,
     entity_block_map: Option<&LayeredEntityBlockMap>,
-    urgency: u8,
-    mover_is_crusher: bool,
-    is_infantry: bool,
+    facts: MoverPathFacts,
     allow_zone_hierarchy: bool,
 ) -> Option<(Vec<(u16, u16)>, Vec<MovementLayer>)> {
     find_move_path_with_marker(
@@ -404,9 +412,7 @@ pub(super) fn find_move_path(
         too_big_to_fit_under_bridge,
         entity_block_map,
         None,
-        urgency,
-        mover_is_crusher,
-        is_infantry,
+        facts,
         allow_zone_hierarchy,
     )
 }
@@ -427,9 +433,7 @@ pub(super) fn find_move_path_with_marker(
     too_big_to_fit_under_bridge: bool,
     entity_block_map: Option<&LayeredEntityBlockMap>,
     marker_overlay: Option<&SearchMarkerOverlay>,
-    urgency: u8,
-    mover_is_crusher: bool,
-    is_infantry: bool,
+    facts: MoverPathFacts,
     allow_zone_hierarchy: bool,
 ) -> Option<(Vec<(u16, u16)>, Vec<MovementLayer>)> {
     find_move_path_with_marker_detailed(
@@ -447,9 +451,7 @@ pub(super) fn find_move_path_with_marker(
         too_big_to_fit_under_bridge,
         entity_block_map,
         marker_overlay,
-        urgency,
-        mover_is_crusher,
-        is_infantry,
+        facts,
         allow_zone_hierarchy,
     )
     .ok()
@@ -480,9 +482,7 @@ pub(super) fn find_move_path_with_marker_detailed(
     too_big_to_fit_under_bridge: bool,
     entity_block_map: Option<&LayeredEntityBlockMap>,
     marker_overlay: Option<&SearchMarkerOverlay>,
-    urgency: u8,
-    mover_is_crusher: bool,
-    is_infantry: bool,
+    facts: MoverPathFacts,
     allow_zone_hierarchy: bool,
 ) -> Result<(Vec<(u16, u16)>, Vec<MovementLayer>), MovePathFailure> {
     let grid = ctx.path_grid.ok_or(MovePathFailure::MissingGrid)?;
@@ -499,6 +499,55 @@ pub(super) fn find_move_path_with_marker_detailed(
         too_big_to_fit_under_bridge,
     );
     let entity_blocks = (!merged_entity_blocks.is_empty()).then_some(&merged_entity_blocks);
+    // Build the Foot `+0x1AC` cost-class producer here, at the search boundary:
+    // the tables are per pass and on `ctx`, the rest is per mover and on
+    // `facts`. Before this the search passed `wall_cost: None` at every site,
+    // so `astar_search` answered 7 for a wall - "does not expand" - and a mover
+    // whose only route crossed a wall line got no path at all. Native prices it
+    // instead: `AStar_main_loop @ 0x00429A90` calls the slot, the wall arm
+    // answers 4 for an allied wall and 5 for any other (`0x0073F4EB`,
+    // `0x0073F50E`), and `AStar_compute_edge_cost @ 0x00429830` multiplies the
+    // step by 60 and 20 from the table at `0x0081870C`. So the route exists and
+    // is merely expensive, and the runtime arm already wired in
+    // `movement_step` attacks the wall when the mover reaches it.
+    //
+    // `None` where the mover has no owner keeps the old search exactly: the
+    // wall arm needs a house to compare, and an unowned mover answers 7.
+    // `interner.is_some()` is part of the gate, not an afterthought: the arm
+    // fails closed without it and would answer 7 for every refused neighbour,
+    // while still paying a full `evaluate_can_enter_cell` per call - two cost
+    // grid reads, bridge lookups, overlay and registry probes. A* refuses far
+    // more neighbours than it accepts, so at 20k movers that is pure waste.
+    // Review caught it: the two Drive contexts set the tables but leave the
+    // interner `None`, so every blocked repath was paying it for a guaranteed 7.
+    let wall_classifier = ctx
+        .wall_tables
+        .filter(|tables| tables.interner.is_some())
+        .zip(facts.owner)
+        .map(
+            |(tables, owner)| crate::sim::pathfinding::cell_entry::WallSearchCostClassifier {
+                wall: crate::sim::pathfinding::cell_entry::WallArmContext {
+                    overlay_grid: tables.overlay_grid,
+                    overlay_registry: tables.overlay_registry,
+                    alliances: tables.alliances,
+                    interner: tables.interner,
+                    mover_owner: Some(owner),
+                    is_armed: facts.is_armed,
+                    warhead_wall: facts.warhead_wall,
+                    warhead_wood: facts.warhead_wood,
+                },
+                path_grid: Some(grid),
+                resolved_terrain,
+                terrain_costs,
+                movement_zone,
+                speed_type: facts.speed_type,
+                is_infantry: facts.is_infantry,
+                mover_is_crusher: facts.mover_is_crusher,
+            },
+        );
+    let wall_cost = wall_classifier
+        .as_ref()
+        .map(|c| c as &dyn crate::sim::pathfinding::SearchCellCostClassifier);
     if layered_pathing {
         let layered_result = zone_search::find_layered_path_zoned_marker_detailed(
             grid,
@@ -516,10 +565,10 @@ pub(super) fn find_move_path_with_marker_detailed(
             marker_overlay,
             ctx.blocker_neighbor_counts,
             crate::sim::pathfinding::MoverSearchFacts {
-                urgency,
-                mover_is_crusher,
-                is_infantry,
-                wall_cost: None,
+                urgency: facts.urgency,
+                mover_is_crusher: facts.mover_is_crusher,
+                is_infantry: facts.is_infantry,
+                wall_cost,
             },
             allow_zone_hierarchy,
             ctx.playfield_bounds,
@@ -595,10 +644,10 @@ pub(super) fn find_move_path_with_marker_detailed(
         marker_overlay,
         ctx.blocker_neighbor_counts,
         crate::sim::pathfinding::MoverSearchFacts {
-            urgency,
-            mover_is_crusher,
-            is_infantry,
-            wall_cost: None,
+            urgency: facts.urgency,
+            mover_is_crusher: facts.mover_is_crusher,
+            is_infantry: facts.is_infantry,
+            wall_cost,
         },
         allow_zone_hierarchy,
         ctx.playfield_bounds,
@@ -690,9 +739,7 @@ pub(super) fn try_repath_after_block(
     too_big_to_fit_under_bridge: bool,
     mcfg: MovementConfig,
     entity_block_map: Option<&LayeredEntityBlockMap>,
-    urgency: u8,
-    mover_is_crusher: bool,
-    is_infantry: bool,
+    facts: MoverPathFacts,
     allow_zone_hierarchy: bool,
     marker_search: Option<&super::path_markers::BridgeMarkerSearch>,
 ) -> bool {
@@ -743,7 +790,7 @@ pub(super) fn try_repath_after_block(
     let marker_overlay = marker_search
         .map(|search| &search.overlay)
         .filter(|overlay| !overlay.is_empty());
-    let effective_urgency = marker_search.map_or(urgency, |search| search.effective_urgency);
+    let effective_urgency = marker_search.map_or(facts.urgency, |search| search.effective_urgency);
     let path_result = find_move_path_with_marker(
         ctx,
         layered_pathing,
@@ -759,9 +806,10 @@ pub(super) fn try_repath_after_block(
         too_big_to_fit_under_bridge,
         entity_block_map,
         marker_overlay,
-        effective_urgency,
-        mover_is_crusher,
-        is_infantry,
+        MoverPathFacts {
+            urgency: effective_urgency,
+            ..facts
+        },
         allow_zone_hierarchy,
     );
     let Some((new_path, new_layers)) = path_result else {
@@ -783,7 +831,7 @@ pub(super) fn try_repath_after_block(
     target.next_index = 1;
     // Infantry: clear blocking state on repath success (fresh grace period).
     // Walk's blocked caller restores its grace until actual paid progress.
-    if is_infantry {
+    if facts.is_infantry {
         path_runtime.start_blocked(mcfg.binary_frame, 0, walk);
         path_runtime.path_blocked = false;
     }
@@ -899,9 +947,7 @@ mod tests {
                 false,
                 None,
                 None,
-                0,
-                false,
-                true,
+                super::MoverPathFacts::without_wall_arm(0, false, true),
                 false,
             )
         }
@@ -1000,9 +1046,7 @@ mod tests {
             Some(MovementZone::Normal),
             false,
             None,
-            0,
-            false,
-            false,
+            super::MoverPathFacts::without_wall_arm(0, false, false),
             true,
         )
         .expect("movement path should use explicit tube despite disconnected zones");
@@ -1041,9 +1085,7 @@ mod tests {
             false,
             None,
             Some(&marker_overlay),
-            0,
-            false,
-            false,
+            super::MoverPathFacts::without_wall_arm(0, false, false),
             true,
         )
         .expect("marker overlay should still allow a path");
@@ -1133,9 +1175,7 @@ mod tests {
                 blockage_path_delay_ticks: 60,
             },
             None,
-            0,
-            false,
-            false,
+            super::MoverPathFacts::without_wall_arm(0, false, false),
             true,
             None,
         ));
@@ -1190,9 +1230,7 @@ mod tests {
                 blockage_path_delay_ticks: 60,
             },
             None,
-            1,
-            false,
-            false,
+            super::MoverPathFacts::without_wall_arm(1, false, false),
             true,
             Some(&marker_search),
         ));
@@ -1236,9 +1274,7 @@ mod tests {
             Some(MovementZone::Normal),
             false,
             None,
-            0,
-            false,
-            false,
+            super::MoverPathFacts::without_wall_arm(0, false, false),
             true,
         )
         .expect("fixture must prove the removed ground-only retry could succeed");
@@ -1265,15 +1301,244 @@ mod tests {
             Some(MovementZone::Normal),
             false,
             None,
-            0,
-            false,
-            false,
+            super::MoverPathFacts::without_wall_arm(0, false, false),
             true,
         );
 
         assert!(
             layered.is_none(),
             "a failed layered search must remain failed instead of launching a second flat A*"
+        );
+    }
+
+    /// A wall line the mover may shoot is **routed through at cost**, not
+    /// reported unreachable.
+    ///
+    /// This is the search half of ledger row I9b, and it is the test the first
+    /// version of that work did not have. `astar_search` consults the Foot
+    /// `+0x1AC` cost-class producer only after its own `neighbor_passable` has
+    /// refused a cell; a `Wall=yes` overlay is `overlay_blocks`, so every wall
+    /// cell takes that path. With no producer the search answers 7 - "does not
+    /// expand" - and a mover whose only route crosses the line gets **no path
+    /// at all**. Native prices it instead: `AStar_main_loop 0x00429A90` calls
+    /// the slot, the arm answers 5 for an enemy wall (`0x0073F50E`), and
+    /// `AStar_compute_edge_cost 0x00429830` multiplies the step by 20 from the
+    /// table at `0x0081870C`.
+    ///
+    /// The two halves of this test differ **only** in the mover's own facts, so
+    /// it fails if `find_move_path_with_marker_detailed` goes back to passing
+    /// `wall_cost: None`: both halves would then answer `None`.
+    #[test]
+    fn a_shootable_wall_line_is_routed_through_instead_of_refusing_the_order() {
+        use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zone_class};
+        use crate::rules::ini_parser::IniFile;
+
+        // Column x=2 is a solid, unowned `Wall=yes` line across a 5x3 board, so
+        // the only route from (0,1) to (4,1) crosses it.
+        let mut cells = Vec::with_capacity(15);
+        for ry in 0..3u16 {
+            for rx in 0..5u16 {
+                let mut cell = ResolvedTerrainCell::clear_for_test(rx, ry);
+                cell.speed_costs.track = Some(100);
+                if rx == 2 {
+                    cell.zone_type = zone_class::WALL;
+                    cell.overlay_zone_type = Some(zone_class::WALL);
+                    cell.overlay_blocks = true;
+                }
+                cells.push(cell);
+            }
+        }
+        let terrain = ResolvedTerrainGrid::from_cells(5, 3, cells);
+        let grid = PathGrid::from_resolved_terrain(&terrain);
+        // A REAL cost grid, because its absence is what hid the defect this
+        // test was written to prove. `Wall=yes` sets `overlay_blocks`, which
+        // `TerrainCostGrid` turns into `COST_BLOCKED` for every SpeedType, so
+        // the first version of this test - which passed `None` here - went green
+        // while production still refused every wall a few lines further on.
+        let costs = TerrainCostGrid::from_resolved_terrain(&terrain, SpeedType::Track);
+
+        let registry = crate::map::overlay_types::OverlayTypeRegistry::from_ini(
+            &IniFile::from_str("[OverlayTypes]\n0=GAWALL\n\n[GAWALL]\nWall=yes\n"),
+            None,
+        );
+        let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(5, 3);
+        for ry in 0..3u16 {
+            overlays.cell_mut(2, ry).overlay_id = Some(0);
+        }
+        // Intern before cloning the thread-local interner.
+        let mover = crate::sim::intern::test_intern("Americans");
+        let interner = crate::sim::intern::test_interner();
+        let alliances = crate::map::houses::HouseAllianceMap::new();
+
+        let search = |facts: MoverPathFacts| {
+            find_move_path(
+                PathfindingContext {
+                    wall_tables: Some(crate::sim::pathfinding::cell_entry::WallArmTables {
+                        overlay_grid: Some(&overlays),
+                        overlay_registry: Some(&registry),
+                        alliances: Some(&alliances),
+                        interner: Some(&interner),
+                    }),
+                    path_grid: Some(&grid),
+                    zone_grid: None,
+                    resolved_terrain: Some(&terrain),
+                    playfield_bounds: None,
+                    blocker_neighbor_counts: None,
+                },
+                false,
+                (0, 1),
+                MovementLayer::Ground,
+                (4, 1),
+                Some(&costs),
+                None,
+                None,
+                None,
+                MovementZone::Normal,
+                Some(MovementZone::Normal),
+                false,
+                None,
+                facts,
+                true,
+            )
+        };
+
+        // An armed mover whose primary warhead sets `Wall=` takes the wall arm:
+        // the line is priced, so the order is admitted and the route crosses it.
+        let armed = MoverPathFacts {
+            urgency: 0,
+            mover_is_crusher: false,
+            is_infantry: false,
+            speed_type: Some(SpeedType::Track),
+            owner: Some(mover),
+            is_armed: true,
+            warhead_wall: true,
+            warhead_wood: false,
+        };
+        let (path, _layers) = search(armed).expect(
+            "a mover that can shoot the wall must be given a route through it, not refused",
+        );
+        assert_eq!(path.first(), Some(&(0, 1)));
+        assert_eq!(path.last(), Some(&(4, 1)));
+        assert!(
+            path.iter().any(|&(rx, _)| rx == 2),
+            "the admitted route must cross the wall line, not detour around a 5x3 board: {path:?}"
+        );
+
+        // Same board, same search, mover facts that cannot take the arm: an
+        // unarmed mover answers 7 at `0x0073F48F` and the line stays solid.
+        let unarmed = MoverPathFacts {
+            is_armed: false,
+            warhead_wall: false,
+            ..armed
+        };
+        assert!(
+            search(unarmed).is_none(),
+            "an unarmed mover must still find the wall line impassable"
+        );
+    }
+
+    /// A wall line that **disconnects** the map is still refused, and that is
+    /// the production gate stack — not the A* arm the test above exercises.
+    ///
+    /// Review caught the headline this work was published under: "a mover whose
+    /// only route crossed a wall line got no path at all" is still true after
+    /// pricing the wall, because the search never reaches A*.
+    /// `zone_search` compares the start and goal base zone labels and returns
+    /// `Err` without calling `astar_search`; a non-crushable `Wall=yes` reduces
+    /// to `zone_class::WALL`, which the zone flood fill treats as impassable, so
+    /// a line across the only route puts the endpoints in different zones.
+    ///
+    /// Native rejects on the same comparison and under the same condition:
+    /// `0x0042CB2A CMP EAX,EDX` / `0x0042CB2C MOV AL,[ESP+0x4C]` /
+    /// `0x0042CB30 JZ` (labels equal, continue) / `0x0042CB34 JZ 0x0042CB8B`
+    /// (hierarchy unusable, fall through) / `0x0042CB39 XOR EAX,EAX; RET`. VERA
+    /// guards its own rejection on `hierarchy_counts_available` and a live
+    /// level-0 hierarchy, which is the same shape.
+    ///
+    /// So what the cost class actually buys is a wall the mover can shoot that
+    /// does **not** disconnect the map — where 20x still beats the detour. This
+    /// test pins the disconnecting case so that claim cannot drift again.
+    #[test]
+    fn a_wall_line_that_disconnects_the_map_is_refused_before_the_cost_class_runs() {
+        use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zone_class};
+        use crate::rules::ini_parser::IniFile;
+        use std::collections::BTreeMap;
+
+        let mut cells = Vec::with_capacity(15);
+        for ry in 0..3u16 {
+            for rx in 0..5u16 {
+                let mut cell = ResolvedTerrainCell::clear_for_test(rx, ry);
+                cell.speed_costs.track = Some(100);
+                if rx == 2 {
+                    cell.zone_type = zone_class::WALL;
+                    cell.overlay_zone_type = Some(zone_class::WALL);
+                    cell.overlay_blocks = true;
+                }
+                cells.push(cell);
+            }
+        }
+        let terrain = ResolvedTerrainGrid::from_cells(5, 3, cells);
+        let grid = PathGrid::from_resolved_terrain(&terrain);
+        let costs = TerrainCostGrid::from_resolved_terrain(&terrain, SpeedType::Track);
+        let zone_grid = ZoneGrid::build(&grid, &BTreeMap::new(), 5, 3);
+        let counts = crate::sim::pathfinding::BlockerNeighborCounts::new(5, 3);
+
+        let registry = crate::map::overlay_types::OverlayTypeRegistry::from_ini(
+            &IniFile::from_str("[OverlayTypes]\n0=GAWALL\n\n[GAWALL]\nWall=yes\n"),
+            None,
+        );
+        let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(5, 3);
+        for ry in 0..3u16 {
+            overlays.cell_mut(2, ry).overlay_id = Some(0);
+        }
+        let mover = crate::sim::intern::test_intern("Americans");
+        let interner = crate::sim::intern::test_interner();
+        let alliances = crate::map::houses::HouseAllianceMap::new();
+
+        let armed = MoverPathFacts {
+            urgency: 0,
+            mover_is_crusher: false,
+            is_infantry: true,
+            speed_type: Some(SpeedType::Track),
+            owner: Some(mover),
+            is_armed: true,
+            warhead_wall: true,
+            warhead_wood: false,
+        };
+        let path = find_move_path(
+            PathfindingContext {
+                wall_tables: Some(crate::sim::pathfinding::cell_entry::WallArmTables {
+                    overlay_grid: Some(&overlays),
+                    overlay_registry: Some(&registry),
+                    alliances: Some(&alliances),
+                    interner: Some(&interner),
+                }),
+                path_grid: Some(&grid),
+                zone_grid: Some(&zone_grid),
+                resolved_terrain: Some(&terrain),
+                playfield_bounds: None,
+                blocker_neighbor_counts: Some(&counts),
+            },
+            false,
+            (0, 1),
+            MovementLayer::Ground,
+            (4, 1),
+            Some(&costs),
+            None,
+            None,
+            None,
+            MovementZone::Normal,
+            Some(MovementZone::Normal),
+            false,
+            None,
+            armed,
+            true,
+        );
+        assert!(
+            path.is_none(),
+            "a wall line that splits the map is refused by the zone comparison \
+             before the cost class is consulted; pricing the wall does not change \
+             that, and the published claim that it did was wrong: {path:?}"
         );
     }
 }

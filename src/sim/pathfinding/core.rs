@@ -1361,35 +1361,62 @@ pub fn astar_search(
                         options.mover_is_crusher,
                     )
                 };
+                // Set when the neighbour is impassable but the Foot `+0x1AC`
+                // cost class says this mover may still enter it at a price -
+                // today, a wall it can shoot. `None` means "passable", which is
+                // class 0.
+                let mut refused_cost_class: Option<u8> = None;
                 trace_step.walkable = Some(neighbor_passable);
                 if !neighbor_passable {
-                    // Impassable-destination abort. When the goal cell itself is
-                    // impassable and the search has reached a cell adjacent to
-                    // it, gamemd leaves the main loop immediately and drops into
-                    // the success tail — "walk as close to the blocked target as
-                    // you can". The search does NOT continue past this point.
-                    // The tail additionally requires the aborting node to be at
-                    // least one real step from the start, so a start-adjacent
-                    // blocked goal fails the search outright.
-                    if (nx, ny) == goal && start_height.abs_diff(goal_height) <= 1 {
-                        if c_idx == start_idx && on_bridge == start_on_bridge {
-                            return None;
+                    // Ask the cost-class producer FIRST, and let its answer
+                    // decide both admission and the blocked-goal abort. That
+                    // order is the binary's, and a first version of this got it
+                    // backwards: `0x00429FEA CMP EBX,0x7` / `0x00429FED JGE
+                    // 0x0042A17D` guards the abort with the class returned by
+                    // the `FootClass +0x1AC` slot called at `0x00429F54`, and
+                    // `get_xrefs_to 0x0042A17D` finds that `JGE` as its only
+                    // entry. So native reaches "walk as close as you can" only
+                    // when the class refuses; a goal cell answering 4 or 5 - a
+                    // shootable wall under the player's cursor - is expanded and
+                    // entered like any other. That is the case this feature
+                    // exists for, so aborting ahead of the class defeated it.
+                    //
+                    // The class is also the only passability verdict native
+                    // takes here: between the null check at `0x00429E1F` and the
+                    // slot call there is no terrain pre-filter, only the layer
+                    // flag, the zone precheck and the closed-list compare.
+                    let refused_class = options.search_cost_classifier.map_or(7, |classifier| {
+                        classifier.classify((cx, cy), (nx, ny), neighbor_use_bridge)
+                    });
+                    if refused_class >= 7 {
+                        // Impassable-destination abort. When the goal cell is
+                        // refused and the search has reached a cell adjacent to
+                        // it, gamemd leaves the main loop immediately and drops
+                        // into the success tail — "walk as close to the blocked
+                        // target as you can". The tail additionally requires the
+                        // aborting node to be at least one real step from the
+                        // start, so a start-adjacent blocked goal fails outright.
+                        if (nx, ny) == goal && start_height.abs_diff(goal_height) <= 1 {
+                            if c_idx == start_idx && on_bridge == start_on_bridge {
+                                return None;
+                            }
+                            // Use the current node's push-time layer flag (same
+                            // value came_from was keyed on when pushed).
+                            return Some(reconstruct_path_dual(
+                                &ground_from,
+                                &bridge_from,
+                                start_idx,
+                                start_on_bridge,
+                                c_idx,
+                                on_bridge,
+                                w,
+                            ));
                         }
-                        // Use the current node's push-time layer flag (same value
-                        // came_from was keyed on when the node was pushed).
-                        return Some(reconstruct_path_dual(
-                            &ground_from,
-                            &bridge_from,
-                            start_idx,
-                            start_on_bridge,
-                            c_idx,
-                            on_bridge,
-                            w,
-                        ));
+                        trace_step.rejected_reason = Some("walkability_blocked");
+                        emit_astar_trace(options, trace_step);
+                        continue;
                     }
-                    trace_step.rejected_reason = Some("walkability_blocked");
-                    emit_astar_trace(options, trace_step);
-                    continue;
+                    refused_cost_class = Some(refused_class);
                 }
 
                 // Entity blocks (layer-separated). Goal exempt.
@@ -1521,7 +1548,23 @@ pub fn astar_search(
                     100 // no cost grid: uniform cost
                 };
                 trace_step.terrain_cost = Some(terrain_cost);
-                if terrain_cost == 0 {
+                // A neighbour the cost class already admitted is NOT re-judged
+                // here. Review caught this making the whole wall route inert in
+                // production: a non-crushable `Wall=yes` overlay reduces to zone
+                // `WALL`, which sets `overlay_blocks`, which `terrain_cost.rs`
+                // turns into `COST_BLOCKED` (0) for **every** SpeedType. So the
+                // gate below dropped exactly the cells the class had just priced
+                // at 60x/20x, a few lines after admitting them, and the only
+                // reason the first test passed was that it supplied no cost grid.
+                //
+                // Native takes one verdict from one slot: `AStar_main_loop`
+                // has no second terrain gate at this position, and the land-row
+                // check that belongs to this decision is already inside the
+                // class - `0x0073FAB5` reads the stored LandType and returns 7
+                // for a zero row, which `evaluate_can_enter_cell` models and
+                // `the_wall_arm_answers_seven_where_the_land_row_refuses` pins.
+                // Applying it twice is what refused the wall.
+                if terrain_cost == 0 && refused_cost_class.is_none() {
                     trace_step.rejected_reason = Some("terrain_cost_blocked");
                     emit_astar_trace(options, trace_step);
                     continue;
@@ -1552,13 +1595,9 @@ pub fn astar_search(
                 // VERA's other cost-class source is the `entity_block_map` below,
                 // whose 2/5/6 codes reproduce the `0x0081870C` entries
                 // 1.0/20.0/8.0 and the code-2 prediction override.
-                let raw_cost_class = if neighbor_passable {
-                    0
-                } else {
-                    options.search_cost_classifier.map_or(7, |classifier| {
-                        classifier.classify((cx, cy), (nx, ny), neighbor_use_bridge)
-                    })
-                };
+                // `None` is the passable case, which native reaches with the
+                // class the slot returned for an enterable cell: 0.
+                let raw_cost_class = refused_cost_class.unwrap_or(0);
                 let search_cost = search_cell_cost_decision(
                     raw_cost_class,
                     options.search_cost_class_coerce_to_zero,

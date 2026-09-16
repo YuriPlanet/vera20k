@@ -532,10 +532,9 @@ fn handle_path_exhaustion(
                 Some(snap.movement_zone),
                 snap.too_big_to_fit_under_bridge,
                 mover_entity_block_map,
-                0, // urgency=0: proactive segment repath, no block escalation
+                // urgency=0: proactive segment repath, no block escalation.
                 // One crush authority for every search; see `CrushCapability::of`.
-                snap.crush_capability().can_crush_units(),
-                snap.category == EntityCategory::Infantry,
+                super::MoverPathFacts::from_snapshot(snap, 0),
                 snap.allow_zone_hierarchy,
             ) {
                 if new_path.len() >= 2 {
@@ -799,10 +798,14 @@ fn process_pending_drive_arrivals(
             movement_zone,
             entity.too_big_to_fit_under_bridge,
             entity_block_map,
-            0,
+            // No `MoverSnapshot` on this path, so the wall arm stays off and
+            // this search behaves exactly as it did before I9b's search half.
             // One crush authority for every search; see `CrushCapability::of`.
-            bump_crush::CrushCapability::of(entity).can_crush_units(),
-            entity.category == EntityCategory::Infantry,
+            super::MoverPathFacts::without_wall_arm(
+                0,
+                bump_crush::CrushCapability::of(entity).can_crush_units(),
+                entity.category == EntityCategory::Infantry,
+            ),
             ctx.playfield_bounds.is_none() || entity.in_playfield,
         ) else {
             // VERA-internal retry policy: pathfinding failed, so re-arm the
@@ -1108,8 +1111,7 @@ fn handle_deferred_drive_selection_block(
         rng,
         sim_tick,
         PATH_STUCK_INIT,
-        snap.crush_capability().can_crush_units(),
-        snap.category == EntityCategory::Infantry,
+        super::MoverPathFacts::from_snapshot(snap, 0),
         snap.allow_zone_hierarchy,
         // Code 2 keeps its grace span; the escalation timer is what selects the
         // repath urgency (0x004B36BC-0x004B36EF).
@@ -1620,10 +1622,8 @@ impl WalkPathRequest {
             snap.too_big_to_fit_under_bridge,
             Some(&block_map),
             None,
-            0,
             // One crush authority for every search; see `CrushCapability::of`.
-            snap.crush_capability().can_crush_units(),
-            snap.category == EntityCategory::Infantry,
+            super::MoverPathFacts::from_snapshot(snap, 0),
             snap.allow_zone_hierarchy,
         )
     }
@@ -3916,6 +3916,13 @@ impl PendingMovementPass {
                 overlay_grid,
                 overlay_registry,
                 alliances: Some(alliances),
+                // NOT `Some(interner)`: these two sites hold it `&mut` for
+                // `advance_ordinary_mover`, and storing a shared borrow on the
+                // `Copy` context outlives the call. The wall arm therefore stays
+                // off on this route until that borrow is untangled - the search
+                // behaves exactly as it did before, and `walk_path` (which holds
+                // the interner shared) already gets the live classifier.
+                interner: None,
             }),
             path_grid,
             zone_grid,
@@ -4092,6 +4099,13 @@ pub(crate) fn begin_movement_with_grids_scoped(
             overlay_grid,
             overlay_registry,
             alliances: Some(alliances),
+            // NOT `Some(interner)`: these two sites hold it `&mut` for
+            // `advance_ordinary_mover`, and storing a shared borrow on the
+            // `Copy` context outlives the call. The wall arm therefore stays
+            // off on this route until that borrow is untangled - the search
+            // behaves exactly as it did before, and `walk_path` (which holds
+            // the interner shared) already gets the live classifier.
+            interner: None,
         }),
         path_grid,
         zone_grid,

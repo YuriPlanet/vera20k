@@ -40,8 +40,8 @@ use crate::util::fixed_math::{
 use crate::util::lepton::CELL_CENTER_LEPTON;
 
 use super::{
-    CLIFF_HEIGHT_THRESHOLD, MovementConfig, MovementTickStats, MoverSnapshot, PATH_STUCK_INIT,
-    PathfindingContext,
+    CLIFF_HEIGHT_THRESHOLD, MovementConfig, MovementTickStats, MoverPathFacts, MoverSnapshot,
+    PATH_STUCK_INIT, PathfindingContext,
 };
 
 fn shared_track_kind(locomotor: &Option<LocomotorState>) -> Option<LocomotorKind> {
@@ -2555,8 +2555,7 @@ pub(super) fn process_cell_crossings(
                     rng,
                     sim_tick,
                     PATH_STUCK_INIT,
-                    mover_is_crusher,
-                    category == EntityCategory::Infantry,
+                    super::MoverPathFacts::from_snapshot(snap, 0),
                     snap.allow_zone_hierarchy,
                     true,
                     true,
@@ -2747,8 +2746,7 @@ pub(super) fn process_cell_crossings(
                     rng,
                     sim_tick,
                     PATH_STUCK_INIT,
-                    mover_is_crusher,
-                    category == EntityCategory::Infantry,
+                    super::MoverPathFacts::from_snapshot(snap, 0),
                     snap.allow_zone_hierarchy,
                     true, // terrain block: skip code-2 grace period
                     true,
@@ -2829,8 +2827,7 @@ pub(super) fn process_cell_crossings(
                             rng,
                             sim_tick,
                             PATH_STUCK_INIT,
-                            mover_is_crusher,
-                            category == EntityCategory::Infantry,
+                            super::MoverPathFacts::from_snapshot(snap, 0),
                             snap.allow_zone_hierarchy,
                             true, // cliff block: skip code-2 grace period
                             true,

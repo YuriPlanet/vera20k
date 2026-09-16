@@ -732,8 +732,7 @@ pub(super) fn handle_deferred_occupancy(
                         rng,
                         sim_tick,
                         PATH_STUCK_INIT,
-                        mover_is_crusher,
-                        is_infantry,
+                        super::MoverPathFacts::from_snapshot(snap, 0),
                         snap.allow_zone_hierarchy,
                         false,
                         true,
@@ -937,8 +936,7 @@ pub(super) fn handle_deferred_occupancy(
                             rng,
                             sim_tick,
                             PATH_STUCK_INIT,
-                            mover_is_crusher,
-                            is_infantry,
+                            super::MoverPathFacts::from_snapshot(snap, 0),
                             snap.allow_zone_hierarchy,
                             // Allied building occupant is native code 7 (no
                             // grace); any other stationary friendly keeps the
@@ -1116,8 +1114,7 @@ pub(super) fn handle_deferred_occupancy(
                         rng,
                         sim_tick,
                         PATH_STUCK_INIT,
-                        mover_is_crusher,
-                        is_infantry,
+                        super::MoverPathFacts::from_snapshot(snap, 0),
                         snap.allow_zone_hierarchy,
                         false, // enemy blocker (code-5): keep code-2-style grace
                         true,
@@ -1226,8 +1223,7 @@ pub(super) fn handle_deferred_occupancy(
                             rng,
                             sim_tick,
                             PATH_STUCK_INIT,
-                            mover_is_crusher,
-                            is_infantry,
+                            super::MoverPathFacts::from_snapshot(snap, 0),
                             snap.allow_zone_hierarchy,
                             false, // temp block (moving friendly): keep grace
                             // Native code 2 has no CloseEnough give-up.
@@ -1275,8 +1271,7 @@ pub(super) fn handle_deferred_occupancy(
                         rng,
                         sim_tick,
                         PATH_STUCK_INIT,
-                        mover_is_crusher,
-                        is_infantry,
+                        super::MoverPathFacts::from_snapshot(snap, 0),
                         snap.allow_zone_hierarchy,
                         true, // wall/impassable (code-7): skip grace
                         true,
