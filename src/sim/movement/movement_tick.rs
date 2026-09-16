@@ -941,10 +941,15 @@ const CODE_FRIENDLY_STATIONARY: u8 = 6;
 /// no second predicate exists to disagree with it.
 ///
 /// Code 5 is routed here **as a VERA choice**, not because gamemd lacks a Drive
-/// blocking-object arm. An earlier revision of this comment claimed it did —
-/// "every code that is not 1, 3 or 6 falls through `0x004B3944` into this same
-/// entry", "a blocked vehicle repaths; it does not stop and shoot" — and that is
-/// false, corrected 2026-09-16 against the binary. `0x004B3A97 CMP EAX,0x5 / JZ
+/// blocking-object arm. An earlier revision of this comment claimed it did:
+/// "a blocked vehicle repaths; it does not stop and shoot" is false, corrected
+/// 2026-09-16 against the binary. Its companion sentence — "every code that is
+/// not 1, 3 or 6 falls through `0x004B3944` into this same entry" — is **true**
+/// (`0x004B3944 CMP EDX,0x1 / 0x004B3947 JNZ 0x004B3607`, and `0x004B3607`
+/// opens `MOV EAX,[0x008A0790]`, the null triple this comment describes below);
+/// only the inference drawn from it was wrong. A 2026-09-16 review caught this
+/// file calling that true sentence false while restating it approvingly at its
+/// own foot. `0x004B3A97 CMP EAX,0x5 / JZ
 /// 0x004B3AD3` and `CMP EAX,0x4 / JZ 0x004B3AD3` split codes 4 and 5 out of the
 /// shared entry into their own arm, which runs `Get_CellClass` ->
 /// `CellClass::Find_Blocking_Object 0x0047C5A0` -> `Is_Ally_ByObject
@@ -954,12 +959,19 @@ const CODE_FRIENDLY_STATIONARY: u8 = 6;
 /// the wall cell, with a null destination (`EDI` is zeroed at `0x004B3B03`).
 /// The old comment even cited `JNZ 0x004B3A97` while denying what sits there.
 ///
-/// The arm is same-tick, not a later pass: `[ESP+0x64]` is argument 2, the
-/// literal `1` on the first evaluation (see
+/// Whether the arm is same-tick is **UNCHECKED**. `[ESP+0x64]` is argument 2,
+/// the literal `1` on the first evaluation (see
 /// `docs/research/traces/AMCV_MIDROUTE_REPATH_BLOCKED_CELL_RETRACE_20260729.md`),
-/// so `0x004B3AD3 TEST AL,AL / JZ 0x004B3B03` takes the drop-path-and-arm-timer
-/// branch first and reaches the Override only on the `arg2 = 0` recursion that
-/// `0x004B4552` issues within the same call.
+/// so `0x004B3AD3 TEST AL,AL / JZ 0x004B3B03` provably takes the
+/// drop-path-and-arm-timer branch first: the Override is unreachable on that
+/// first evaluation. What is **not** established is that the `arg2 = 0`
+/// recursion at `0x004B4552` re-reaches this dispatch — the recursing branch
+/// first writes `Foot+0x5E0 = -1`, the shared entry has already nulled the
+/// head-to triple, and, unlike Hover (which calls `Find_Path` before its own
+/// recursion), Drive executes no CALL at all between `0x004B3ADB` and the
+/// recursive call. An earlier revision asserted the same-tick reach outright;
+/// a 2026-09-16 review demoted it. Closing it needs a breakpoint or an
+/// emulated trace, and it is ledger row I9b's justification, so it matters.
 ///
 /// So porting it is ledger row I9b's work, and until that lands a blocked
 /// vehicle repaths here where retail would stop and shoot. Recorded as a gap,

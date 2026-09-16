@@ -1269,7 +1269,8 @@ pub(super) struct DriveSelectionRefusal {
     /// sends 4 and 5 on to `0x004B3A97`, which splits them into the wall /
     /// blocking-object Override arm (`Find_Blocking_Object 0x0047C5A0`,
     /// `Is_Ally_ByObject 0x004F9A90`, `+0x1F4(1, object)`, and the wall-cell
-    /// `+0x1F4(1, cell)` at `0x004B3B94`). The `Scatter_Objects` statement above
+    /// path opening at `0x004B3B94`; both arms converge on the single call
+    /// instruction `0x004B3BE9 CALL [ESI+0x1F4]`). The `Scatter_Objects` statement above
     /// still holds; only the "codes 2 and 5 reach that entry directly" reading
     /// was wrong, and porting that arm is ledger row I9b's work.
     pub cost_code: Option<u8>,

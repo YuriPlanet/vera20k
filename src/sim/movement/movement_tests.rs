@@ -2729,7 +2729,8 @@ fn code_two_post_scatter_wait_rearms_on_every_pass_while_the_block_holds() {
 /// tick two would overwrite its archived Move with Attack and every later
 /// Restore would hand it back Attack instead of its order — a unit losing its
 /// move order every time an enemy blocks it.
-/// Both locomotors that own the arm are covered: Walk and HOVER. Hover's
+/// Four locomotors own the arm in gamemd — Walk, Hover, Drive and Ship — and
+/// this test covers the two VERA currently routes here: Walk and HOVER. Hover's
 /// movement processor `FUN_00514F70` carries its own `case 4: case 5:` pair
 /// (object arm Override at 0x00515C2C, wall arm at 0x00515C9C) — the Override
 /// itself is the same, though the stop route around it is not; see the residual

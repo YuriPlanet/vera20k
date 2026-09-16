@@ -964,9 +964,13 @@ pub(super) fn handle_deferred_occupancy(
             // the body arm. A future wall-overlay producer must NOT route into
             // this arm without a Restore path for cell targets.
             //
-            // TWO LOCOMOTORS TAKE THIS ARM IN THE ORIGINAL: Walk and HOVER. An
-            // exhaustive search of the Override vtable slot returns ten call
-            // sites. Walk owns two of them (a blocking *object* and a wall).
+            // FOUR LOCOMOTORS TAKE THIS ARM IN THE ORIGINAL: Walk, Hover, Drive
+            // and Ship. An exhaustive search of the Override vtable slot returns
+            // ten `CALL [reg+0x1F4]` instructions program-wide (re-run
+            // 2026-09-16): Walk two (0x0075BAEB object, 0x0075BB49 wall), Hover
+            // two (0x00515C2C, 0x00515C9C), Drive one (0x004B3BE9), Ship one
+            // (0x006A3238), plus SpyPlane 0x00417499, ReceiveDamage 0x00702B41
+            // and two inside FUN_005B01C0 — 2+2+1+1+1+1+2 = 10.
             // Hover's movement processor `FUN_00514F70` — reached from
             // `HoverLocomotionClass__Move` 0x00514499/0x00514636 and
             // `__SpeedUpdate` 0x00516309 — has its own `case 4: case 5:` pair:
@@ -982,8 +986,16 @@ pub(super) fn handle_deferred_occupancy(
             // `CellClass::Find_Blocking_Object 0x0047C5A0` ->
             // `Is_Ally_ByObject 0x004F9A90` -> `+0x1F4(1, object)` exactly as
             // Walk and Hover do, falling to the wall-cell `+0x1F4(1, cell)` at
-            // `0x004B3B94` only when no object is found. Drive therefore owns
-            // two Override sites, not one. VERA still routes a blocked vehicle
+            // `0x004B3B94` only when no object is found. Drive has *one* call
+            // instruction serving both arms, not two: the object arm ends
+            // `0x004B3B92 JMP 0x004B3BE3`, landing on the same
+            // `MOV ECX,[EBP+0xc] / PUSH EAX / PUSH 0x1 / 0x004B3BE9
+            // CALL [ESI+0x1F4]` the wall path falls through to. Two logical
+            // arms, one call site — which is what keeps the ten-site count
+            // above exact. A 2026-09-16 review caught an earlier revision of
+            // this paragraph claiming two sites and breaking that arithmetic.
+            // Ship is the same shape (0x006A319B -> 0x006A31AA -> 0x006A3238).
+            // VERA still routes a blocked vehicle
             // to a repath — that is the unported half of ledger row I9b, a
             // recorded gap rather than native behaviour.
             //
