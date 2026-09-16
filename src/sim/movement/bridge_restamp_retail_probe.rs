@@ -216,13 +216,29 @@ fn retail_ramp_exit_onto_equal_level_flat_census() {
             .as_ref()
             .expect("live resolved terrain");
 
-        let (mut ramp_cells, mut exits, mut flat_pairs) = (0u32, 0u32, 0u32);
+        let grid = sim.path_grid();
+        let walkable = |rx: u16, ry: u16| -> bool {
+            grid.and_then(|g| g.cell(rx, ry))
+                .is_some_and(|c| c.ground_walkable)
+        };
+        // The downhill coefficient is clamped away on a full-speed row, so a
+        // destination already at 100% for this SpeedType shows no difference.
+        let full_speed = |cell: &crate::map::resolved_terrain::ResolvedTerrainCell| {
+            cell.speed_costs
+                .speed_multiplier_for(crate::rules::locomotor_type::SpeedType::Track)
+                >= crate::util::fixed_math::SIM_ONE
+        };
+
+        let (mut ramp_cells, mut exits, mut flat_pairs, mut visible) = (0u32, 0u32, 0u32, 0u32);
         for ry in 0..terrain.height() {
             for rx in 0..terrain.width() {
                 let Some(cell) = terrain.cell(rx, ry) else {
                     continue;
                 };
                 if cell.slope_type == 0 {
+                    continue;
+                }
+                if cell.outside_playfield || !walkable(rx, ry) {
                     continue;
                 }
                 ramp_cells += 1;
@@ -247,21 +263,35 @@ fn retail_ramp_exit_onto_equal_level_flat_census() {
                     if neighbour.slope_type != 0 {
                         continue;
                     }
+                    if neighbour.outside_playfield || !walkable(nx, ny) {
+                        continue;
+                    }
                     flat_pairs += 1;
                     if neighbour.level == cell.level {
                         exits += 1;
+                        if !full_speed(neighbour) {
+                            visible += 1;
+                        }
                     }
                 }
             }
         }
-        let share = if flat_pairs == 0 {
-            0.0
-        } else {
-            f64::from(exits) * 100.0 / f64::from(flat_pairs)
+        let pct = |n: u32| {
+            if flat_pairs == 0 {
+                0.0
+            } else {
+                f64::from(n) * 100.0 / f64::from(flat_pairs)
+            }
         };
         println!(
-            "A8 D1 census {map_name}: {ramp_cells} ramp cells, {exits} ramp->flat exits at equal \
-             level out of {flat_pairs} ramp-to-flat adjacency PAIRS ({share:.1}%); pairs, not              traversals, and see the note on why a half is unsurprising"
+            "A8 D1 census {map_name}: {ramp_cells} vehicle-passable ramp cells; \
+             of {flat_pairs} ramp-to-flat adjacency PAIRS (both cells ground-walkable \
+             and in the playfield), {exits} sit at the ramp's own level ({:.1}%), and \
+             {visible} of those have a destination row below full speed ({:.1}%) - \
+             only the latter show the coefficient, because SetSpeedFraction clamps it \
+             away at 100%. Pairs, not traversals; vehicles only.",
+            pct(exits),
+            pct(visible)
         );
     }
 }
