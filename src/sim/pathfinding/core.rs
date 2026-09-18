@@ -1983,10 +1983,6 @@ impl PathCell {
         self.bridge_structural
     }
 
-    pub fn has_bridge_marker_0x80(&self) -> bool {
-        self.bridge_marker_0x80
-    }
-
     pub fn has_bridgehead_transition(&self) -> bool {
         self.transition
     }
@@ -2324,12 +2320,6 @@ impl PathGrid {
         true
     }
 
-    /// Whether this cell is a bridge transition point (units can switch layers here).
-    pub fn is_transition(&self, x: u16, y: u16) -> bool {
-        self.cell(x, y)
-            .is_some_and(|c| c.is_bridge_transition_cell())
-    }
-
     pub fn bridge_deck_level(&self, x: u16, y: u16) -> Option<u8> {
         self.cell(x, y).and_then(PathCell::bridge_deck_level_if_any)
     }
@@ -2337,10 +2327,6 @@ impl PathGrid {
     pub fn can_enter_bridge_layer_from_ground(&self, x: u16, y: u16) -> bool {
         self.cell(x, y)
             .is_some_and(PathCell::can_enter_bridge_layer_from_ground)
-    }
-
-    pub fn tube_index_at(&self, x: u16, y: u16) -> Option<TubeId> {
-        self.cell(x, y).and_then(|cell| cell.tube_index)
     }
 
     pub fn is_low_bridge_tube_cell(&self, x: u16, y: u16) -> bool {

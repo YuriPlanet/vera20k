@@ -218,14 +218,6 @@ impl NativeReplayPresentation {
         *live_cursor = [0; 2];
         Self::new(scenario_hash, selected_objects, cursor)
     }
-
-    /// Whether the live selection matches the recorded additive identity sum.
-    ///
-    /// Retail clears selection on a mismatch, then consumes the recorded
-    /// identities to restore the frame's selection.
-    pub fn selection_matches(&self, live_selected_objects: &[u32]) -> bool {
-        selection_checksum(live_selected_objects) == self.selection_checksum
-    }
 }
 
 /// One complete native recording frame.
@@ -328,16 +320,6 @@ impl NativeReplay {
         let bytes = self.encode().context("Failed to encode native replay")?;
         std::fs::write(path, bytes)
             .with_context(|| format!("Failed to write native replay: {}", path.display()))
-    }
-
-    pub fn load_with_command_schedule(
-        path: &Path,
-        has_command_batch: impl FnMut(usize, &NativeReplayPresentation) -> bool,
-    ) -> Result<Self> {
-        let bytes = std::fs::read(path)
-            .with_context(|| format!("Failed to read native replay: {}", path.display()))?;
-        Self::decode_with_command_schedule(&bytes, has_command_batch)
-            .context("Failed to decode native replay")
     }
 
     /// Initialize playback through the normal scenario-loading owner.

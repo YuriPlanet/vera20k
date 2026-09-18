@@ -61,27 +61,6 @@ pub fn render_palette_grid(palette: &Palette) -> egui::ColorImage {
     egui::ColorImage::from_rgba_unmultiplied([PAL_GRID_SIZE, PAL_GRID_SIZE], &rgba)
 }
 
-/// Given a pixel position within the palette grid image, return the palette
-/// index (0-255) and the RGB color at that index, for tooltip display.
-#[allow(dead_code)]
-pub fn palette_index_at_pixel(
-    palette: &Palette,
-    x: f32,
-    y: f32,
-    zoom: f32,
-) -> Option<(u8, u8, u8, u8)> {
-    let px = (x / zoom) as usize;
-    let py = (y / zoom) as usize;
-    if px >= PAL_GRID_SIZE || py >= PAL_GRID_SIZE {
-        return None;
-    }
-    let col = px / PAL_CELL_SIZE;
-    let row = py / PAL_CELL_SIZE;
-    let index = (row * 16 + col) as u8;
-    let color = palette.colors[index as usize];
-    Some((index, color.r, color.g, color.b))
-}
-
 /// Render a TMP terrain template as a composite image.
 ///
 /// Arranges tiles in their grid positions (template_width × template_height).

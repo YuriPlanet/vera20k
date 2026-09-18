@@ -74,12 +74,6 @@ pub fn sim_from_i32(val: i32) -> SimFixed {
     SimFixed::from_num(val)
 }
 
-/// Convert a `u32` to `SimFixed`.
-#[inline]
-pub fn sim_from_u32(val: u32) -> SimFixed {
-    SimFixed::from_num(val)
-}
-
 /// Truncate `SimFixed` to `i32` (rounds toward zero).
 #[inline]
 pub fn sim_to_i32(val: SimFixed) -> i32 {

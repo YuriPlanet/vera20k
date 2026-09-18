@@ -670,14 +670,6 @@ pub fn house_state_for_owner_id<'a>(
     houses.get(&owner_id)
 }
 
-/// Mutable version of `house_state_for_owner_id`.
-pub fn house_state_for_owner_id_mut<'a>(
-    houses: &'a mut std::collections::BTreeMap<InternedId, HouseState>,
-    owner_id: InternedId,
-) -> Option<&'a mut HouseState> {
-    houses.get_mut(&owner_id)
-}
-
 /// Look up a HouseState by owner name string (case-insensitive).
 /// Requires the interner to convert the name to an InternedId first.
 /// Returns None if the name is not interned or no house matches.

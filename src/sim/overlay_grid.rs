@@ -847,25 +847,6 @@ impl OverlayGrid {
         }
     }
 
-    /// Count ore/gem neighbors (8-dir) on demand.
-    pub fn count_ore_neighbors(&self, rx: u16, ry: u16, registry: &OverlayTypeRegistry) -> u8 {
-        let mut count: u8 = 0;
-        for (dx, dy) in ADJACENT_8 {
-            let nx = rx as i32 + dx;
-            let ny = ry as i32 + dy;
-            if nx < 0 || ny < 0 {
-                continue;
-            }
-            let cell = self.cell(nx as u16, ny as u16);
-            if let Some(id) = cell.overlay_id {
-                if registry.flags(id).is_some_and(|f| f.tiberium) {
-                    count += 1;
-                }
-            }
-        }
-        count
-    }
-
     /// Iterate all cells that have an overlay (for hashing).
     pub fn iter_occupied(&self) -> impl Iterator<Item = (u16, u16, &OverlayCell)> {
         self.cells
@@ -1991,6 +1972,7 @@ fn cleanup_wall_neighbors_into(
 }
 
 /// 8-direction offsets: N, NE, E, SE, S, SW, W, NW.
+#[cfg(test)]
 const ADJACENT_8: [(i32, i32); 8] = [
     (0, -1),
     (1, -1),

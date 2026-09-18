@@ -3678,20 +3678,6 @@ pub fn select_drive_track(
     })
 }
 
-/// Select an ordinary shared Drive/Ship curve. ShipLocomotion consumes only
-/// TurnTrack 0..63 backed by the byte-identical ordinary RawTrack 0..13 set.
-pub fn select_shared_ordinary_track(
-    current_facing: u8,
-    next_facing: u8,
-    is_ship: bool,
-) -> Option<DriveTrackSelection> {
-    let selection = select_drive_track(current_facing, next_facing, false)?;
-    if selection.turn_track_index >= 64 || (is_ship && selection.raw_track_index > 13) {
-        return None;
-    }
-    Some(selection)
-}
-
 /// Synthesize the substitute selection used when pathfinding produces a turn
 /// too sharp for any precomputed curve (`select_drive_track` returned `None`).
 /// Returns the `cur_dir * 9` TurnTrack entry — RawTrack 1 (cardinals) or 2
@@ -3723,19 +3709,6 @@ pub fn build_sharp_turn_fallback(current_facing: u8) -> Option<DriveTrackSelecti
         target_facing: turn_track.target_facing,
         flags: turn_track.flags,
     })
-}
-
-/// Ship-safe ordinary sharp-turn substitute. The synthesized selector remains
-/// in 0..63 and its raw curve must remain in Ship's shared 0..13 range.
-pub fn build_shared_sharp_turn_fallback(
-    current_facing: u8,
-    is_ship: bool,
-) -> Option<DriveTrackSelection> {
-    let selection = build_sharp_turn_fallback(current_facing)?;
-    if selection.turn_track_index >= 64 || (is_ship && selection.raw_track_index > 13) {
-        return None;
-    }
-    Some(selection)
 }
 
 // ---------------------------------------------------------------------------

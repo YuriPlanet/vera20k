@@ -3815,15 +3815,6 @@ impl Simulation {
         self.house_update_append_after_test = Some((after_owner, appended_owner));
     }
 
-    /// Returns true if the given house name is human-controlled.
-    /// Equivalent to the original engine's IsHumanPlayer (0x50b6f0).
-    pub fn is_human_player(&self, owner: &str) -> bool {
-        self.interner
-            .get(owner)
-            .and_then(|id| self.houses.get(&id))
-            .is_some_and(|h| h.is_human)
-    }
-
     /// Shared identity source for every modeled runtime `AbstractClass` analogue.
     ///
     /// `AbstractClass::AssignUniqueID @ 0x00410230` delegates to

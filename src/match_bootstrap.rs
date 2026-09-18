@@ -121,10 +121,6 @@ impl LoadingStartup {
             Self::Generic { .. } => unverified_fallback(),
         }
     }
-
-    pub fn is_accepted(&self) -> bool {
-        matches!(self, Self::Accepted(_))
-    }
 }
 
 /// Classify without reading entropy or mutating the supplied UI/session value.

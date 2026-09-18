@@ -83,11 +83,6 @@ impl Contacts {
         Some(slot)
     }
 
-    /// `bool` wrapper over [`Contacts::insert`] (true when inserted or already present).
-    pub fn insert_first_free(&mut self, id: u64) -> bool {
-        self.insert(id).is_some()
-    }
-
     /// Sender-side insert with slot-0 self-eviction when full. Returns the slot
     /// used and the id evicted from slot 0, if any.
     pub fn insert_evicting(&mut self, id: u64) -> (usize, Option<u64>) {
@@ -108,11 +103,6 @@ impl Contacts {
         let slot = self.find_slot(id)?;
         self.slots[slot] = None;
         Some(slot)
-    }
-
-    /// `bool` wrapper over [`Contacts::remove`].
-    pub fn break_with(&mut self, id: u64) -> bool {
-        self.remove(id).is_some()
     }
 
     /// Null every slot, preserving capacity (teardown / limbo).

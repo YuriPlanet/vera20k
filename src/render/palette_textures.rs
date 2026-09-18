@@ -222,37 +222,6 @@ impl PaletteSet {
             sampler,
         }
     }
-
-    /// Re-upload the per-house RGB ramps (e.g., on theater swap or house-list change).
-    /// `palette` is needed because row 0 mirrors the theater palette's [16, 32) range.
-    pub fn rebuild_house_ramps(
-        &self,
-        queue: &wgpu::Queue,
-        palette: &Palette,
-        ramps: &HouseColorRamps,
-        houses: &[HouseColorIndex],
-    ) {
-        let bytes: Vec<u8> = build_house_ramp_bytes(palette, ramps, houses);
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.house_ramp_tex,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &bytes,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(RAMP_SIZE * 4),
-                rows_per_image: Some(MAX_HOUSES),
-            },
-            wgpu::Extent3d {
-                width: RAMP_SIZE,
-                height: MAX_HOUSES,
-                depth_or_array_layers: 1,
-            },
-        );
-    }
 }
 
 /// Convert a 256-entry RGB palette to row-major Rgba8UnormSrgb bytes (alpha = 255).

@@ -8,7 +8,7 @@
 //! `HouseColorMap`. The roster keeps the original map order and the most useful
 //! ownership metadata for later simulation/UI work.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::rules::color_scheme::{ColorSchemeEntry, scheme_entry_by_name};
 use crate::rules::house_colors::{DEFAULT_SCHEME_ENTRY, HouseColorIndex};
@@ -89,17 +89,6 @@ impl HouseRoster {
         self.houses
             .iter()
             .map(|house| (house.name.clone(), house.color))
-            .collect()
-    }
-
-    /// Collect uppercase names of all human-controlled houses (PlayerControl=yes).
-    /// Used during init to set `HouseState.is_human` for the sim-layer equivalent
-    /// of the original engine's IsHumanPlayer.
-    pub fn human_house_names(&self) -> HashSet<String> {
-        self.houses
-            .iter()
-            .filter(|h| h.player_control == Some(true))
-            .map(|h| h.name.to_ascii_uppercase())
             .collect()
     }
 

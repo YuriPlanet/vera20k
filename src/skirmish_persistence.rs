@@ -6,7 +6,6 @@
 //! `AppState` dependency.
 
 use crate::rules::error::RulesError;
-use crate::rules::ini_parser::{IniFile, IniSection};
 
 pub const SKIRMISH_INI_SECTION: &str = "Skirmish";
 pub const SKIRMISH_PERSISTED_SLOT_COUNT: usize = 7;
@@ -172,52 +171,8 @@ pub fn read_skirmish_snapshot(
     Ok(snapshot)
 }
 
-/// Read from an already parsed INI. This is useful when app initialization has
-/// already parsed `RA2MD.INI` for adjacent settings.
-pub fn read_skirmish_snapshot_from_ini(
-    ini: &IniFile,
-    defaults: SkirmishGlobalDefaults,
-) -> SkirmishPersistedSnapshot {
-    let mut snapshot = SkirmishPersistedSnapshot::from_global_defaults(defaults);
-    let Some(section) = ini.section(SKIRMISH_INI_SECTION) else {
-        return snapshot;
-    };
-
-    snapshot.game_mode = read_native_int(section, "GameMode", snapshot.game_mode);
-    snapshot.scenario_index = read_native_int(section, "ScenIndex", snapshot.scenario_index);
-    snapshot.game_speed = read_native_int(section, "GameSpeed", snapshot.game_speed);
-    snapshot.credits = read_native_int(section, "Credits", snapshot.credits);
-    snapshot.unit_count = read_native_int(section, "UnitCount", snapshot.unit_count);
-    snapshot.short_game = read_native_bool(section, "ShortGame", snapshot.short_game);
-    snapshot.super_weapons_allowed = read_native_bool(
-        section,
-        "SuperWeaponsAllowed",
-        snapshot.super_weapons_allowed,
-    );
-    snapshot.build_off_ally = read_native_bool(section, "BuildOffAlly", snapshot.build_off_ally);
-    snapshot.mcv_repacks = read_native_bool(section, "MCVRepacks", snapshot.mcv_repacks);
-    snapshot.crates_appear = read_native_bool(section, "CratesAppear", snapshot.crates_appear);
-
-    for (slot_index, slot) in snapshot.slots.iter_mut().enumerate() {
-        let key = format!("Slot{:02}", slot_index + 1);
-        if let Some(value) = section.get(&key) {
-            read_native_slot_triple(value, slot);
-        }
-    }
-
-    snapshot
-}
-
 fn yes_no(value: bool) -> &'static str {
     if value { "yes" } else { "no" }
-}
-
-fn read_native_int(section: &IniSection, key: &str, default: i32) -> i32 {
-    section.get(key).map(native_atoi_or_hex).unwrap_or(default)
-}
-
-fn read_native_bool(section: &IniSection, key: &str, default: bool) -> bool {
-    native_bool_value(section.get(key), default)
 }
 
 fn raw_native_int(entries: &[(&str, &str)], key: &str, default: i32) -> i32 {

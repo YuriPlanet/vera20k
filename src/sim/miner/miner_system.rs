@@ -3002,17 +3002,6 @@ fn is_within_close_enough(pos: (u16, u16), target: (u16, u16), close_enough: Sim
     SimFixed::from_num(crate::util::fixed_math::isqrt_i64(dx * dx + dy * dy)) < close_enough
 }
 
-/// Check whether the player owns at least one Ore Purifier building.
-///
-/// Retained for callers that only need a boolean signal (e.g., UI hints).
-/// For deposit-time credit math use [`count_purifiers_for_owner`] — gamemd
-/// multiplies the bonus by the live count, so a 2-purifier player should
-/// receive +50%, not +25%.
-#[allow(dead_code)]
-pub(crate) fn player_has_purifier(sim: &Simulation, rules: &RuleSet, owner: &str) -> bool {
-    count_purifiers_for_owner(sim, rules, owner) > 0
-}
-
 /// Count completed, alive Ore Purifier buildings owned by `owner`
 /// (case-insensitive) — the native `House+0x538C` counter.
 ///

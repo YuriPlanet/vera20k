@@ -130,14 +130,6 @@ impl AircraftMission {
         matches!(self, AircraftMission::Attack { .. })
     }
 
-    /// Whether this mission involves docking or returning to base.
-    pub fn is_rtb_or_docking(&self) -> bool {
-        matches!(
-            self,
-            AircraftMission::ReturnToBase { .. } | AircraftMission::Docking { .. }
-        )
-    }
-
     /// Whether this aircraft is parked on a helipad waiting for orders.
     pub fn is_docked_idle(&self) -> bool {
         matches!(self, AircraftMission::DockedIdle { .. })

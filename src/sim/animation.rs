@@ -137,16 +137,6 @@ pub fn sequence_is_prone(sequence: SequenceKind) -> bool {
     )
 }
 
-/// Whether the current animation represents a prone stance.
-///
-/// TODO(RE): The sim does not yet enter these sequences during live infantry
-/// combat because prone-entry behavior has not been reverse engineered yet.
-/// This helper only recognizes prone once some other system explicitly switches
-/// the animation into one of the prone-related sequences.
-pub fn animation_is_prone(animation: Option<&Animation>) -> bool {
-    animation.is_some_and(|anim| sequence_is_prone(anim.sequence))
-}
-
 /// Whether a sequence is a one-shot infantry fire action.
 pub fn sequence_is_fire_action(sequence: SequenceKind) -> bool {
     matches!(

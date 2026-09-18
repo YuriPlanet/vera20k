@@ -462,21 +462,6 @@ pub(crate) fn tick_terrain_object_ai(
     );
 }
 
-/// Compatibility shim for current world integration.
-///
-/// The verified state machine requires mutable `TerrainSpawnerState`; `World`
-/// must switch to `tick_terrain_spawners_stateful` to enable TIBTRE spawning
-/// again.
-pub fn tick_terrain_spawners(
-    _spawners: &BTreeMap<(u16, u16), TerrainSpawnerState>,
-    _resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
-    _overlay_grid: Option<&mut OverlayGrid>,
-    _default_ore_overlay_id: Option<u8>,
-    _path_grid: Option<&PathGrid>,
-    _rng: &mut SimRng,
-) {
-}
-
 /// Try to place ore in a random adjacent cell. Mirrors the 8-direction
 /// random-start iteration from `ore_growth::try_spread_ore`, but accepts only
 /// empty targets and creates a density-3 cell.

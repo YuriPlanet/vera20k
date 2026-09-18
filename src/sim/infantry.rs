@@ -491,14 +491,6 @@ pub fn apply_prone_speed(speed: SimFixed, crawls: bool) -> SimFixed {
     SimFixed::from_num(adjusted)
 }
 
-pub fn prone_adjusted_speed(entity: &GameEntity, obj: &ObjectType, speed: SimFixed) -> SimFixed {
-    if is_prone_for_damage(entity) {
-        apply_prone_speed(speed, obj.crawls)
-    } else {
-        speed
-    }
-}
-
 pub fn is_deploy_locked(entity: &GameEntity) -> bool {
     matches!(
         entity.deploy_state,

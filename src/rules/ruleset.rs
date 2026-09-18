@@ -3975,12 +3975,6 @@ impl RuleSet {
             .is_some_and(|obj| obj.refinery)
     }
 
-    /// Whether a structure type is a repair depot (UnitRepair=yes in rules.ini).
-    pub fn is_repair_depot(&self, structure_id: &str) -> bool {
-        self.object_case_insensitive(structure_id)
-            .is_some_and(|obj| obj.unit_repair)
-    }
-
     /// Resolve a refinery's free starter unit if both the refinery and the unit exist.
     pub fn refinery_free_unit(&self, structure_id: &str) -> Option<&str> {
         let obj = self.object_case_insensitive(structure_id)?;

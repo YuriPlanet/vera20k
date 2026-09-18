@@ -163,14 +163,6 @@ impl UnitAtlas {
         self.page(page).map(|atlas_page| &atlas_page.texture)
     }
 
-    /// Get the HVA frame count for a (type_id, layer) pair. Returns 1 if unknown.
-    pub fn frame_count_for(&self, type_id: &str, layer: VxlLayer) -> u32 {
-        self.frame_counts
-            .get(&(type_id.to_string(), layer))
-            .copied()
-            .unwrap_or(1)
-    }
-
     /// Check whether the atlas already contains all sprite keys needed by the
     /// current ECS world. Returns true if no rebuild is necessary.
     pub fn has_all_keys(&self, needed: &HashSet<UnitSpriteKey>) -> bool {
