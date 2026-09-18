@@ -44,14 +44,6 @@ impl BinkVersion {
             }),
         }
     }
-
-    #[inline]
-    pub fn revision_byte(self) -> u8 {
-        match self {
-            Self::BikI => b'i',
-            Self::BikK => b'k',
-        }
-    }
 }
 
 /// Flags bits stored in the `video_flags` field (bytes 0x24..0x28).

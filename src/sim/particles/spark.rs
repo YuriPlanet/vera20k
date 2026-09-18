@@ -107,15 +107,6 @@ pub fn gravity_as_stored_f32(value: i32) -> Result<NativeF32Bits, SparkKernelErr
     integer_as_stored_f32(value).map_err(Into::into)
 }
 
-pub fn integrate_motion(
-    coords: IVec3,
-    spark: SparkRuntimeState,
-    gravity: NativeF32Bits,
-) -> Result<SparkMotionStep, SparkKernelError> {
-    let persistent_z = persistent_velocity_z(spark.velocity_z, gravity)?;
-    integrate_motion_after_persistent_z(coords, spark, gravity, persistent_z)
-}
-
 fn persistent_velocity_z(
     old_velocity_z: NativeF32Bits,
     gravity: NativeF32Bits,

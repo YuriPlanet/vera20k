@@ -160,12 +160,6 @@ impl Default for SkirmishSettings {
 const BUTTON_WIDTH: f32 = 400.0;
 const BUTTON_HEIGHT: f32 = 54.0;
 
-/// Draw the basic main menu without any map metadata.
-pub fn draw_main_menu(ctx: &egui::Context) -> MenuAction {
-    let mut settings = SkirmishSettings::default();
-    draw_main_menu_with_maps(ctx, &[], &mut settings)
-}
-
 /// Draw the main menu with map selector and credits.
 pub fn draw_main_menu_with_maps(
     ctx: &egui::Context,

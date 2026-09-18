@@ -1657,28 +1657,6 @@ impl BatchRenderer {
         Some((buffer, instances.len() as u32))
     }
 
-    /// Draw instances from an external buffer with the given texture.
-    ///
-    /// Unlike draw_batch(), this doesn't use the internally stored instance buffer.
-    /// Use with create_instance_buffer() when drawing multiple texture groups
-    /// in a single render pass (e.g., terrain tiles + unit sprites).
-    pub fn draw_with_buffer<'a>(
-        &'a self,
-        render_pass: &mut wgpu::RenderPass<'a>,
-        texture: &'a BatchTexture,
-        buffer: &'a wgpu::Buffer,
-        count: u32,
-    ) {
-        if count == 0 {
-            return;
-        }
-        render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        render_pass.set_bind_group(1, &texture.bind_group, &[]);
-        render_pass.set_vertex_buffer(0, buffer.slice(..));
-        render_pass.draw(0..6, 0..count);
-    }
-
     /// Draw voxel sprite instances using the voxel sprite pipeline.
     ///
     /// Bind groups: 0 = camera, 1 = unit atlas (R8Uint), 2 = PaletteSet (palette
@@ -1910,25 +1888,6 @@ impl BatchRenderer {
         render_pass.set_bind_group(1, &texture.bind_group, &[]);
         render_pass.set_vertex_buffer(0, buffer.slice(..));
         render_pass.draw(0..6, 0..count);
-    }
-
-    /// Draw a sub-range of sprites with LessEqual depth test and depth write ON.
-    pub fn draw_depth_range<'a>(
-        &'a self,
-        render_pass: &mut wgpu::RenderPass<'a>,
-        texture: &'a BatchTexture,
-        buffer: &'a wgpu::Buffer,
-        start: u32,
-        count: u32,
-    ) {
-        if count == 0 {
-            return;
-        }
-        render_pass.set_pipeline(&self.overlay_pipeline);
-        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        render_pass.set_bind_group(1, &texture.bind_group, &[]);
-        render_pass.set_vertex_buffer(0, buffer.slice(..));
-        render_pass.draw(0..6, start..start + count);
     }
 
     /// Create a bind group for the Z-depth pipeline (color + sampler + R8 depth).

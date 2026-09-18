@@ -418,16 +418,6 @@ impl BinkDecoder {
         self.bundles[Src::Run as usize].len_bits = log2_run_plus_511;
     }
 
-    /// Reset all bundle cursors to the start of their allocated region.
-    #[allow(dead_code)]
-    fn reset_bundle_cursors(&mut self) {
-        for b in &mut self.bundles {
-            b.cur_dec = b.buf_start;
-            b.cur_ptr = b.buf_start;
-            b.skip_fills = false;
-        }
-    }
-
     /// Prepare one bundle for decoding: reads its Huffman tree (or 16
     /// col_high trees for COLORS) and resets the bundle's cursors.
     /// Port of `read_bundle` at libavcodec/bink.c:285-313.

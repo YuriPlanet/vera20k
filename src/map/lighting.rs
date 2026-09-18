@@ -15,7 +15,6 @@
 use std::collections::HashMap;
 
 use crate::map::entities::{EntityCategory, MapEntity};
-use crate::map::map_file::MapCell;
 use crate::rules::art_data::AnimTypeRuntimeConfig;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
@@ -655,28 +654,12 @@ pub fn cell_tint(config: &LightingConfig, z: u8) -> [f32; 3] {
     grid.tint_or_default((1, 1))
 }
 
-/// Compute the shared ambient scalar for a terrain elevation level.
-pub fn cell_light_scalar(config: &LightingConfig, z: u8) -> f32 {
-    let units = scenario_units(config);
-    let scalar = units.ambient + units.level * i32::from(z) - units.ground;
-    clamp_light_scalar(scalar) as f32 / LIGHT_UNIT as f32
-}
-
 /// Compute the uniform terrain tint for the map.
 ///
 /// Terrain uses the ground-level lighting value across all cells so repeating
 /// tile textures do not expose the map grid through per-cell tint boundaries.
 pub fn terrain_tint(config: &LightingConfig) -> [f32; 3] {
     cell_tint(config, 0)
-}
-
-/// Build the profile-backed base cell light grid from map INI and cell data.
-pub fn build_cell_light_grid(ini: &IniFile, cells: &[MapCell]) -> CellLightGrid {
-    let config = parse_lighting(ini);
-    build_cell_light_grid_from_heights(
-        cells.iter().map(|cell| ((cell.rx, cell.ry), cell.z)),
-        &config,
-    )
 }
 
 /// Build the profile-backed base cell light grid from known cell heights.
@@ -1174,10 +1157,6 @@ struct NormalizedLight {
     scale16: i32,
     common_scalar: i32,
     rgb_key: LightRgbKey,
-}
-
-fn scenario_units(config: &LightingConfig) -> ScenarioLightUnits {
-    scenario_units_from_profile(scenario_profile_units(config))
 }
 
 fn scenario_profile_units(config: &LightingConfig) -> LightingProfileUnits {

@@ -309,25 +309,6 @@ fn unmark_terrain_raw_occupation(
     raw_occupation.clear_ground(cell.0, cell.1, terrain_raw_occupation_mask(source_mask));
 }
 
-pub fn sync_spawner_indices_from_live_terrain(production: &mut ProductionState) {
-    let live_spawning_cells: BTreeSet<(u16, u16)> = production
-        .terrain_objects
-        .values()
-        .filter(|terrain| terrain.is_live())
-        .filter_map(|terrain| {
-            let cell = terrain.cell();
-            production
-                .tiberium_spawning_terrain_cells
-                .contains(&cell)
-                .then_some(cell)
-        })
-        .collect();
-    production
-        .terrain_spawners
-        .retain(|cell, _| live_spawning_cells.contains(cell));
-    production.tiberium_spawning_terrain_cells = live_spawning_cells;
-}
-
 pub fn mark_terrain_occupation(
     production: &mut ProductionState,
     terrain: &TerrainObjectState,

@@ -100,25 +100,6 @@ impl BuildingPlacementError {
     }
 }
 
-pub fn disabled_reason_text(reason: &BuildDisabledReason) -> String {
-    match reason {
-        BuildDisabledReason::UnbuildableTechLevel => "Unbuildable (TechLevel)".to_string(),
-        BuildDisabledReason::WrongOwner => "Wrong owner".to_string(),
-        BuildDisabledReason::WrongHouse => "Wrong house".to_string(),
-        BuildDisabledReason::ForbiddenHouse => "Forbidden for this house".to_string(),
-        BuildDisabledReason::RequiresStolenTech => {
-            "Requires stolen tech (spy infiltration)".to_string()
-        }
-        BuildDisabledReason::MissingPrerequisite(p) => format!("Missing prerequisite: {}", p),
-        BuildDisabledReason::NoFactory => "No production building".to_string(),
-        BuildDisabledReason::AtBuildLimit => "Build limit reached".to_string(),
-        BuildDisabledReason::InsufficientCredits => "Insufficient credits".to_string(),
-        BuildDisabledReason::PlacementModeUnavailable => {
-            "Building placement not implemented yet".to_string()
-        }
-    }
-}
-
 /// Sidebar queue/category for build options.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,

@@ -245,58 +245,6 @@ impl GpuContext {
         });
         texture.create_view(&Default::default())
     }
-
-    /// Render a single frame with the given clear color (RGB, 0.0–1.0 range).
-    ///
-    /// This is the simplest possible render pass — just fills the screen with one color.
-    /// Used during early development to verify the GPU pipeline works.
-    /// Later replaced by actual terrain/sprite/UI rendering.
-    pub fn render_clear(&self, r: f64, g: f64, b: f64) -> Result<()> {
-        // Get the next framebuffer texture from the surface.
-        let output: wgpu::SurfaceTexture = self
-            .surface
-            .get_current_texture()
-            .context("Failed to get surface texture — surface may be lost")?;
-
-        // Create a view into the texture for the render pass.
-        let view: wgpu::TextureView = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        // Encode a render pass that clears the screen to our color.
-        let mut encoder: wgpu::CommandEncoder =
-            self.device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Clear Encoder"),
-                });
-
-        {
-            // The render pass is scoped — it ends when _pass is dropped.
-            let _pass: wgpu::RenderPass<'_> =
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Clear Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a: 1.0 }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                        // depth_slice is for 3D texture array layers — None for normal 2D rendering.
-                        depth_slice: None,
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-        }
-
-        // Submit the encoded commands to the GPU and present the frame.
-        self.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
-
-        Ok(())
-    }
 }
 
 #[cfg(test)]

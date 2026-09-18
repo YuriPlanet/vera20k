@@ -272,38 +272,6 @@ impl PreviewPalette {
     }
 }
 
-/// Collect the playfield cells of a map using a pre-built palette.
-///
-/// Same result as [`preview_cells_from_map`], but needs no assets — this is the
-/// form a worker thread can run.
-pub fn preview_cells_from_palette(
-    map: &crate::map::map_file::MapFile,
-    palette: &PreviewPalette,
-) -> Vec<PreviewCell> {
-    let playfield = Playfield::from_header(&map.header);
-    let overlays = overlay_densities(map);
-    let mut cells = Vec::with_capacity(map.cells.len());
-    for cell in &map.cells {
-        if !playfield.contains(cell.rx, cell.ry) {
-            continue;
-        }
-        let overlay = overlays
-            .get(&(cell.rx, cell.ry))
-            .and_then(|(id, density)| palette.overlay_colour(*id, *density));
-        let (left, right) = match overlay {
-            Some(rgb) => (rgb, rgb),
-            None => palette.tile_colours(cell.tile_index, cell.sub_tile),
-        };
-        cells.push(PreviewCell {
-            x: cell.rx,
-            y: cell.ry,
-            left,
-            right,
-        });
-    }
-    cells
-}
-
 /// `overlay_radar` resolves an ore/gem overlay's colour from its id and growth
 /// stage. An overlay that resolves to a colour paints BOTH pixels with it —
 /// unlike terrain, whose two halves differ — so ore reads as a solid patch

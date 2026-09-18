@@ -196,15 +196,6 @@ impl GameConfig {
         }
     }
 
-    /// Load configuration from a specific file path.
-    ///
-    /// Useful for testing or when config is stored in a non-default location.
-    pub fn load_from(path: &Path) -> Result<Self> {
-        let contents: String = std::fs::read_to_string(path)
-            .with_context(|| format!("Failed to read config file: {}", path.display()))?;
-        Self::parse_from(&contents, path)
-    }
-
     fn parse_from(contents: &str, path: &Path) -> Result<Self> {
         let config: GameConfig = toml::from_str(&contents)
             .with_context(|| format!("Failed to parse config file: {}", path.display()))?;
