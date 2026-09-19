@@ -61,7 +61,28 @@ active-object order are distinct.
 
 `sim/` never depends on `render/`, `ui/`, `sidebar/`, `audio/` or `net/`.
 App code orchestrates without owning duplicate gameplay. Current module contracts
-and `advance_tick` phases describe the architecture. Name coordinate frames/units.
+and `SimRuntime::advance_frame`'s production call chain describe the architecture;
+`Simulation::advance_tick` is a test adapter. Name coordinate frames/units.
+
+Parts of the engine retain overlapping helpers, older test adapters and partially
+migrated call chains. Before replacing a mechanism, trace its production entry,
+callers, state readers/writers, save/restore and tests. A familiar function name or
+passing leaf test does not establish that the game uses that path.
+
+Within the authorized mechanism, choose the canonical owner and migrate all affected
+producers, consumers and tests. Remove superseded behavior and state when their uses
+are gone; keep necessary adapters delegating to the canonical implementation.
+Do not silently disable new behavior with `None`, default flags or a parallel
+fallback to satisfy a signature or borrow. If migration must be staged, identify
+the remaining callers, behavioral gap and condition for retiring the old path;
+the mechanism remains incomplete. Preserve genuinely distinct native variants and
+derived caches with explicit authority and update rules; similarity alone does not
+make them duplicates.
+
+Validate a replacement through the production entry and affected caller variants,
+with a discriminating case that would fail if the new behavior were bypassed.
+Check for remaining old references and contradictory comments before claiming the
+replacement is complete. Leaf comparisons remain useful but do not prove wiring.
 
 Use relevant rows in the [dependency map](docs/module-map.md); verify against source.
 Refresh with `python tools/module_map.py` after dependency, layout, visibility or
