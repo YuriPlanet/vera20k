@@ -68,6 +68,12 @@ including remnants of incomplete migrations. Before implementing a change, caref
 examine the affected code for these overlaps and establish which state and call
 paths are actually used.
 
+As part of the implementation, untangle overlapping responsibilities and consolidate
+duplicate behavior in the affected mechanism. Complete migrations the change depends
+on, and remove code or state it makes obsolete instead of leaving another parallel
+implementation. Preserve intentional behavioral differences and validate the affected
+call paths. Keep this cleanup connected to the task.
+
 Use relevant rows in the [dependency map](docs/module-map.md); verify against source.
 Refresh with `python tools/module_map.py` after dependency, layout, visibility or
 build configuration changes.
