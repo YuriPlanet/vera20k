@@ -4,6 +4,9 @@ A Rust replacement for Yuri's Revenge `gamemd.exe`: **gamemd-native semantics,
 Rust-native architecture**. The intentional scale exception is **20,000 units,
 30 players**; replace native storage limits while preserving deterministic behavior.
 
+VERA20k must build and run on Linux, macOS and Windows. Architecture and dependency
+choices must preserve support for all three platforms.
+
 This contract governs Codex and Claude. Use engineering judgment; skills are optional
 specialized help. Specific user instructions override workflow defaults.
 
@@ -59,11 +62,19 @@ timers, same-tick effects, persistence and exact numeric semantics. Document and
 validate floating-point use where native behavior requires it. Storage order and
 active-object order are distinct.
 
+All VERA20k math must be determinism-safe. Identical initial state, inputs and RNG
+state must produce identical authoritative simulation results across supported
+operating systems and CPU architectures. Preserve native numeric semantics using
+deterministic implementations, including where floating-point behavior is required;
+make precision, rounding, overflow and evaluation order explicit where they affect
+the results. Presentation calculations must not introduce platform-dependent
+differences into simulation state or decisions.
+
 `sim/` never depends on `render/`, `ui/`, `sidebar/`, `audio/` or `net/`.
 App code orchestrates without owning duplicate gameplay. Current module contracts
 and `advance_tick` phases describe the architecture. Name coordinate frames/units.
 
-The engine contains duplicate and overlapping state, functions and call chains,
+The VERA20k engine contains duplicate and overlapping state, functions and call chains,
 including remnants of incomplete migrations. Before implementing a change, carefully
 examine the affected code for these overlaps and establish which state and call
 paths are actually used.
