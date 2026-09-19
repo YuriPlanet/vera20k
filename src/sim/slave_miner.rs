@@ -1040,7 +1040,7 @@ mod tests {
         handle_slave_deposit(&mut sim, &rules, &config, &mut snap);
 
         assert_eq!(
-            sim.houses[&yuri].credits, 150,
+            sim.houses[&yuri].economy.credits, 150,
             "100 base + 50 bonus, one call"
         );
         assert!(
@@ -1054,7 +1054,7 @@ mod tests {
         );
         // A second visit with nothing aboard pays nothing and re-scans.
         handle_slave_deposit(&mut sim, &rules, &config, &mut snap);
-        assert_eq!(sim.houses[&yuri].credits, 150);
+        assert_eq!(sim.houses[&yuri].economy.credits, 150);
         assert_eq!(snap.harvester.state, SlaveHarvestState::SearchOre);
     }
 

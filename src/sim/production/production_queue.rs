@@ -45,7 +45,7 @@ pub fn credits_for_owner(sim: &Simulation, owner: &str) -> i32 {
     sim.interner
         .get(owner)
         .and_then(|id| sim.houses.get(&id))
-        .map(|h| h.credits)
+        .map(|h| h.economy.credits)
         .unwrap_or(STARTING_CREDITS)
 }
 
@@ -90,7 +90,7 @@ pub(in crate::sim) fn credits_entry_for_owner<'a>(
             crate::sim::house_state::HouseState::new(key, 0, None, true, STARTING_CREDITS, 10),
         );
     }
-    &mut sim.houses.get_mut(&key).unwrap().credits
+    &mut sim.houses.get_mut(&key).unwrap().economy.credits
 }
 
 /// Legacy fixture adapter for tests that do not construct `OverlayGrid` and

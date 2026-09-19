@@ -83,14 +83,9 @@ fn arm(
         .test_enqueue_kernel(owner, cat, ty, order, total, cost);
 }
 
-// ===== P1 — Economy shadow =====
-
-/// The authority-flip inversion of the old credits-mirror test: `economy.credits` is
-/// NO LONGER mirrored from `house.credits` (the mirror line is retired). `house.credits`
-/// is the one authoritative wallet; `economy.credits` is a per-sweep shim left at its
-/// default 0 by `refresh_economy_shadow`, which still recomputes `purifier_count`.
+/// Purifier refresh preserves the house's initialized cash balance.
 #[test]
-fn economy_shadow_does_not_mirror_credits() {
+fn purifier_refresh_preserves_house_wallet() {
     let mut sim = Simulation::new();
     let rules = empty_rules();
     let a = sim.interner.intern("Americans");
@@ -100,17 +95,8 @@ fn economy_shadow_does_not_mirror_credits() {
     sim.houses
         .insert(b, HouseState::new(b, 1, None, true, 1234, 10));
     sim.refresh_economy_shadow(Some(&rules));
-    // The authoritative wallet is untouched; the economy shim is NOT mirrored.
-    assert_eq!(sim.houses[&a].credits, 5000);
-    assert_eq!(sim.houses[&b].credits, 1234);
-    assert_eq!(
-        sim.houses[&a].economy.credits, 0,
-        "economy.credits is not mirrored (retired)"
-    );
-    assert_eq!(
-        sim.houses[&b].economy.credits, 0,
-        "economy.credits is not mirrored (retired)"
-    );
+    assert_eq!(sim.houses[&a].economy.credits, 5000);
+    assert_eq!(sim.houses[&b].economy.credits, 1234);
     // The purifier-count statistic is still recomputed each refresh.
     assert_eq!(sim.houses[&a].economy.purifier_count, 0);
 }
@@ -582,7 +568,7 @@ fn factory_advance_step_does_not_change_state_hash() {
         "P3 oracle stepping must not perturb the state hash (serde-skip + clone)"
     );
     assert_eq!(
-        sim.houses[&owner].credits, 1_000_000,
+        sim.houses[&owner].economy.credits, 1_000_000,
         "the legacy wallet is untouched by oracle stepping"
     );
 }
@@ -700,7 +686,7 @@ fn factory_cancel_one_does_not_change_state_hash() {
         1,
     ); // cost-based shadow built
     let before = sim.state_hash();
-    let legacy_credits = sim.houses[&owner].credits;
+    let legacy_credits = sim.houses[&owner].economy.credits;
 
     // Cancel (active abandon, mid-build) against a CLONE of the registry + a CLONE of
     // the wallet; the active GRIZZLY has no queued copy, so the active-abandon branch
@@ -719,7 +705,7 @@ fn factory_cancel_one_does_not_change_state_hash() {
         "P4 cancel on a clone must not perturb the state hash (serde-skip + clone)"
     );
     assert_eq!(
-        sim.houses[&owner].credits, legacy_credits,
+        sim.houses[&owner].economy.credits, legacy_credits,
         "the legacy wallet is untouched by the oracle cancel"
     );
 }
@@ -893,7 +879,7 @@ fn factory_flip_prep_does_not_change_state_hash() {
         1,
     );
     let before = sim.state_hash();
-    let legacy_credits = sim.houses[&owner].credits;
+    let legacy_credits = sim.houses[&owner].economy.credits;
 
     // Run every P5a piece against CLONES / pure values.
     let total = build_step_time(&BuildStepTimeInputs {
@@ -924,7 +910,7 @@ fn factory_flip_prep_does_not_change_state_hash() {
         "P5a flip-prep on clones/pure values must not perturb the state hash"
     );
     assert_eq!(
-        sim.houses[&owner].credits, legacy_credits,
+        sim.houses[&owner].economy.credits, legacy_credits,
         "the legacy wallet is untouched by the flip-prep"
     );
 }
@@ -1164,7 +1150,7 @@ fn production_flip_prep_is_deterministic() {
 // ===== P5b — the authority flip: real-wallet charge guards (end-to-end via advance_tick) =====
 
 /// §3.3/C15: over a full build the per-step charge (`step_all`, wired at the Phase-7
-/// head) debits EXACTLY the full cost ONCE from the one wallet (`house.credits`), and
+/// head) debits EXACTLY the full cost ONCE from the one wallet (`house.economy.credits`), and
 /// `economy.spent_credits` accumulates the same. The end-to-end proof of the charge flip
 /// (no upfront debit, no double-charge) — drives `advance_tick`, not a clone.
 #[test]
@@ -1193,7 +1179,7 @@ fn single_wallet_charged_once_no_double_debit() {
         full_cost > 0,
         "GRIZZLY needs a positive cost for this guard"
     );
-    let start = sim.houses[&owner].credits;
+    let start = sim.houses[&owner].economy.credits;
     let heights: BTreeMap<(u16, u16), u8> = BTreeMap::new();
     // A war factory exists but no path_grid is supplied, so the completed vehicle has no exit
     // cell and is held (delivery never fires) — the build charges to completion exactly once
@@ -1205,10 +1191,10 @@ fn single_wallet_charged_once_no_double_debit() {
             break;
         }
     }
-    let debited = start - sim.houses[&owner].credits;
+    let debited = start - sim.houses[&owner].economy.credits;
     assert_eq!(
         debited, full_cost,
-        "exactly one full-cost debit to house.credits over the build"
+        "exactly one full-cost debit to house.economy.credits over the build"
     );
     assert_eq!(
         sim.houses[&owner].economy.spent_credits, full_cost,
@@ -1241,7 +1227,7 @@ fn stall_on_no_funds_holds() {
         sim.advance_tick(&[], Some(&rules), &heights, None, None, 67);
     }
     assert_eq!(
-        sim.houses[&owner].credits, 0,
+        sim.houses[&owner].economy.credits, 0,
         "a stalled build spends nothing"
     );
     assert_eq!(
@@ -1251,7 +1237,7 @@ fn stall_on_no_funds_holds() {
 }
 
 /// C8: cancelling a mid-build active object refunds EXACTLY the spent portion
-/// (`original_balance - balance`) into the one wallet (`house.credits`), NOT the full
+/// (`original_balance - balance`) into the one wallet (`house.economy.credits`), NOT the full
 /// cost (the legacy `.rev()` full refund is the retired DRIFT). Drives a real charge.
 #[test]
 fn cancel_one_partial_refund_to_house_credits() {
@@ -1285,11 +1271,11 @@ fn cancel_one_partial_refund_to_house_credits() {
         spent > 0 && spent < full_cost,
         "mid-build: some but not all of the cost is spent"
     );
-    let credits_before = sim.houses[&owner].credits;
+    let credits_before = sim.houses[&owner].economy.credits;
     let ok =
         crate::sim::production::cancel_by_type_for_owner(&mut sim, &rules, "Americans", "GRIZZLY");
     assert!(ok, "the active build is cancellable");
-    let refunded = sim.houses[&owner].credits - credits_before;
+    let refunded = sim.houses[&owner].economy.credits - credits_before;
     assert_eq!(
         refunded, spent,
         "C8: refund exactly the spent portion (original_balance - balance)"

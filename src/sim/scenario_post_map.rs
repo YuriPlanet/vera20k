@@ -795,10 +795,10 @@ mod tests {
         assert_eq!(native.classes[0].spread_bitmap, BTreeSet::from([(5, 5)]));
         assert!(output.navigation_published);
         assert!(sim.path_grid().is_some());
-        assert_eq!(sim.houses[&player].credits, 5_000);
+        assert_eq!(sim.houses[&player].economy.credits, 5_000);
         // The fixture AI is Easy and the fixture rules carry no MultiplayerAICM
         // entry for it, so Post_Map_Init adds ftol(0 * 0.01 * 5000) = 0.
-        assert_eq!(sim.houses[&computer].credits, 5_000);
+        assert_eq!(sim.houses[&computer].economy.credits, 5_000);
         assert_eq!(
             output.crates,
             Some(CratePlacement {
@@ -1043,7 +1043,7 @@ mod tests {
         assert_eq!(output.crates, None);
         assert_eq!(output.skirmish_order, [None; 3]);
         assert_eq!(sim.scenario_rng.state(), rng_before);
-        assert_eq!(sim.houses[&owner].credits, 7_500);
+        assert_eq!(sim.houses[&owner].economy.credits, 7_500);
         assert!(
             sim.production
                 .ore_growth_state

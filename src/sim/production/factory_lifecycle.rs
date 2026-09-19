@@ -48,7 +48,7 @@ pub fn enqueue_by_type(sim: &mut Simulation, rules: &RuleSet, owner: &str, type_
     let total_base_frames: u32 = build_time_base_frames(rules, obj);
     // The upfront debit is RETIRED at the authority flip: the per-step `advance_one_step`
     // (driven by `step_all` at the Phase-7 head) charges the cost down over the build
-    // against the one wallet (`house.credits`). Enqueue only checks affordability (the
+    // against the one wallet (`house.economy.credits`). Enqueue only checks affordability (the
     // can-afford-to-START gate above) and appends the queue item.
     let owner_id = sim.interner.intern(owner);
     let type_interned = sim.interner.intern(type_id);
@@ -116,7 +116,7 @@ fn construct_and_link_active_factory_object(
 /// Post-flip refund rule: a queued (tail) item was never charged, so removing it
 /// refunds NOTHING; only the active build (a single-item queue, where the most-recent
 /// item IS the front) is abandoned with the C8 PARTIAL refund (`original_balance -
-/// balance`) routed through the registry against the one wallet (`house.credits`).
+/// balance`) routed through the registry against the one wallet (`house.economy.credits`).
 pub fn cancel_last_for_owner(sim: &mut Simulation, _rules: &RuleSet, owner: &str) -> bool {
     let owner_id = sim.interner.intern(owner);
     // P5d: the registry owns the queue-of-record. `cancel_last` finds the global-max stamp
@@ -125,12 +125,7 @@ pub fn cancel_last_for_owner(sim: &mut Simulation, _rules: &RuleSet, owner: &str
     // abandon arm only fires for an empty tail, so no StartNextQueued advance is needed.
     let mut registry = std::mem::take(&mut sim.production.factory_shadow);
     let outcome = if let Some(house) = sim.houses.get_mut(&owner_id) {
-        let mut wallet = std::mem::take(&mut house.economy);
-        wallet.credits = house.credits;
-        let outcome = registry.cancel_last(owner_id, &mut wallet);
-        house.credits = wallet.credits;
-        house.economy = wallet;
-        outcome
+        registry.cancel_last(owner_id, &mut house.economy)
     } else {
         let mut throwaway = crate::sim::economy::Economy::default();
         registry.cancel_last(owner_id, &mut throwaway)
@@ -157,7 +152,7 @@ pub fn cancel_last_for_owner(sim: &mut Simulation, _rules: &RuleSet, owner: &str
 /// Route a cancel of `type_id` for (owner, category) through the registry `cancel_one`
 /// (the single precedence source: queued-tail FIRST, else active-abandon), charging the
 /// C8 partial refund (or none, for a queued copy) against the ONE wallet
-/// (`house.credits`) via a per-sweep `Economy` shim. The private caller completes held-object disposal and promotion before returning.
+/// (`house.economy.credits`). The private caller completes held-object disposal and promotion before returning.
 fn registry_cancel_active(
     sim: &mut Simulation,
     owner_id: InternedId,
@@ -166,12 +161,7 @@ fn registry_cancel_active(
 ) -> CancelOutcome {
     let mut registry = std::mem::take(&mut sim.production.factory_shadow);
     let outcome = if let Some(house) = sim.houses.get_mut(&owner_id) {
-        let mut wallet = std::mem::take(&mut house.economy);
-        wallet.credits = house.credits; // load the authoritative balance into the shim
-        let outcome = registry.cancel_one(owner_id, category, type_id, &mut wallet);
-        house.credits = wallet.credits; // store the (possibly refunded) balance back
-        house.economy = wallet;
-        outcome
+        registry.cancel_one(owner_id, category, type_id, &mut house.economy)
     } else {
         // No house to refund into; the cancel still resolves the registry deterministically.
         let mut throwaway = crate::sim::economy::Economy::default();
@@ -186,7 +176,7 @@ fn registry_cancel_active(
 /// Routed through the registry `cancel_one` (the single precedence source): a QUEUED
 /// tail copy is removed FIRST (FIRST front-to-back match, NO refund — a queued item was
 /// never charged), else the ACTIVE build is abandoned with the C8 PARTIAL refund
-/// (`original_balance - balance`) into the one wallet (`house.credits`). This replaces
+/// (`original_balance - balance`) into the one wallet (`house.economy.credits`). This replaces
 /// the legacy `.rev()` last-match + full-cost refund (a DRIFT under the per-step charge).
 /// When neither matches (or the build is complete-but-held), falls back to the
 /// completed-building ready queue.

@@ -2,7 +2,7 @@
 //! oil-derrick `ProduceCash` and the Floating Disc money drain (GSI-09.01).
 //!
 //! Both mechanisms move credits through the one authoritative wallet
-//! (`HouseState.credits`) with the native primitives' semantics:
+//! (`HouseState.economy.credits`) with the native primitives' semantics:
 //! `HouseClass::Add_Credits @ 0x004F9950` (`credits += amount`, no clamp) and
 //! `HouseClass::Spend_Money @ 0x004F9790` (cash first, then the silo-drain
 //! fallback that stock skirmish never reaches because house storage stays 0.0
@@ -91,7 +91,7 @@ impl ProduceCashTimer {
 /// `HouseClass::Add_Credits @ 0x004F9950`: `credits += amount`, unclamped.
 pub(crate) fn add_credits(sim: &mut Simulation, owner: InternedId, amount: i32) {
     if let Some(house) = sim.houses.get_mut(&owner) {
-        house.credits = house.credits.wrapping_add(amount);
+        house.economy.credits = house.economy.credits.wrapping_add(amount);
     }
 }
 
@@ -103,12 +103,12 @@ pub(crate) fn spend_money(sim: &mut Simulation, owner: InternedId, amount: i32) 
     let Some(house) = sim.houses.get_mut(&owner) else {
         return 0;
     };
-    if house.credits >= amount {
-        house.credits -= amount;
+    if house.economy.credits >= amount {
+        house.economy.credits -= amount;
         amount
     } else {
-        let spent = house.credits.max(0);
-        house.credits = 0;
+        let spent = house.economy.credits.max(0);
+        house.economy.credits = 0;
         spent
     }
 }
@@ -117,7 +117,7 @@ pub(crate) fn spend_money(sim: &mut Simulation, owner: InternedId, amount: i32) 
 /// `ftol(storage_total × IncomeMult) + credits`; storage is 0 in stock
 /// skirmish (scan §1.1/§2.1) so this is the cash balance.
 pub(crate) fn available_money(sim: &Simulation, owner: InternedId) -> i32 {
-    sim.houses.get(&owner).map_or(0, |house| house.credits)
+    sim.houses.get(&owner).map_or(0, |house| house.economy.credits)
 }
 
 // ---------------------------------------------------------------------------
@@ -563,7 +563,7 @@ mod tests {
     }
 
     fn credits(sim: &Simulation, owner: InternedId) -> i32 {
-        sim.houses[&owner].credits
+        sim.houses[&owner].economy.credits
     }
 
     /// §2.13: capture from a `MultiplayPassive` house grants

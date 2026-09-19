@@ -2,24 +2,28 @@ use super::*;
 use crate::sim::intern::InternedId;
 use crate::sim::production::{Factory, PRODUCTION_STEPS, ProductionCategory};
 
-fn factory_fixture(
-    type_name: &str,
-    category: ProductionCategory,
-) -> (Simulation, RuleSet, InternedId, u64) {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
+fn factory_rules() -> RuleSet {
+    RuleSet::from_ini(&IniFile::from_str(
         "[InfantryTypes]\n0=SLAV\n1=E1\n\
          [VehicleTypes]\n0=MTNK\n[AircraftTypes]\n0=HORN\n\
          [BuildingTypes]\n0=PARENT\n1=OTHER\n2=DEFENSE\n\
          [PARENT]\nCost=1000\nStrength=2000\nFoundation=1x1\nTechLevel=1\n\
          Enslaves=SLAV\nSlavesNumber=2\nSlaveRegenRate=500\nSlaveReloadRate=25\n\
-         [OTHER]\nCost=500\nStrength=1000\nFoundation=1x1\nTechLevel=1\n\
+         [OTHER]\nCost=500\nStrength=1000\nFoundation=1x1\nTechLevel=1\nFactory=BuildingType\n\
          [DEFENSE]\nCost=500\nStrength=1000\nFoundation=1x1\nBuildCat=Combat\nTechLevel=1\n\
          [SLAV]\nStrength=125\nSpeed=4\nStorage=4\n\
          [E1]\nCost=200\nStrength=125\nSpeed=4\nTechLevel=1\n\
          [MTNK]\nCost=700\nStrength=300\nSpeed=6\nTechLevel=1\nSpawns=HORN\nSpawnsNumber=2\n\
          [HORN]\nStrength=75\nSpeed=14\n",
     ))
-    .expect("factory restore fixture rules");
+    .expect("factory restore fixture rules")
+}
+
+fn factory_fixture(
+    type_name: &str,
+    category: ProductionCategory,
+) -> (Simulation, RuleSet, InternedId, u64) {
+    let rules = factory_rules();
     let mut saved = load_fixture_simulation(true);
     saved.intern_rule_type_ids(&rules);
     saved.resolve_type_handles(&rules);
@@ -83,6 +87,121 @@ fn prepare_saved(
     std::fs::remove_file(&path).unwrap();
     std::fs::remove_dir(&directory).unwrap();
     result
+}
+
+#[test]
+fn wallet_survives_prepared_load_and_active_cancellation() {
+    let (mut saved, rules, owner, _) = factory_fixture("PARENT", ProductionCategory::Building);
+    // An on-map factory keeps the held build eligible after restore. Its
+    // placement uses the same raw fixture boundary as production replay tests.
+    let producer_id = saved.allocate_stable_id();
+    let producer_type = saved.interner.get("OTHER").unwrap();
+    let mut producer = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
+        producer_id,
+        0,
+        0,
+        0,
+        0,
+        owner,
+        crate::sim::components::Health {
+            current: 1000,
+            max: 1000,
+        },
+        producer_type,
+        crate::map::entities::EntityCategory::Structure,
+        0,
+        5,
+        false,
+    );
+    producer.lifecycle.in_limbo = false;
+    producer.in_playfield = true;
+    saved.substrate.entities.insert(producer);
+    saved.add_entity_occupancy(producer_id);
+    saved.houses.get_mut(&owner).unwrap().owned_building_count = 1;
+    // Seed a partially paid held object, then exercise a different live credit
+    // writer before saving. The old factory balance could be stale at this edge.
+    for _ in 0..5 {
+        let house = saved.houses.get_mut(&owner).unwrap();
+        saved
+            .production
+            .factory_shadow
+            .test_factory_mut(owner, ProductionCategory::Building)
+            .unwrap()
+            .advance_one_step(&mut house.economy);
+    }
+    crate::sim::credit_income::add_credits(&mut saved, owner, 123);
+    saved
+        .houses
+        .get_mut(&owner)
+        .unwrap()
+        .economy
+        .harvested_credits = 35;
+    let expected = saved.houses[&owner].economy.clone();
+    assert!(expected.spent_credits > 0);
+    assert_eq!(expected.credits + expected.spent_credits, 50_123);
+
+    let prepared = prepare_saved(&saved, rules, "wallet-authority").expect("prepare current save");
+    let mut resources = crate::sim::runtime::SimResources::empty();
+    resources.rules = factory_rules();
+    let mut runtime = crate::sim::runtime::SimRuntime {
+        simulation: Simulation::new(),
+        resources,
+    };
+    prepared.commit_into(&mut runtime);
+    assert_eq!(runtime.simulation.houses[&owner].economy, expected);
+    let mut reference_resources = crate::sim::runtime::SimResources::empty();
+    reference_resources.rules = factory_rules();
+    let mut reference = crate::sim::runtime::SimRuntime {
+        simulation: saved,
+        resources: reference_resources,
+    };
+    for frame in 0..30 {
+        runtime
+            .advance_frame(&[], 67, crate::sim::world::TickLane::Ordinary)
+            .expect("restored active frame");
+        reference
+            .advance_frame(&[], 67, crate::sim::world::TickLane::Ordinary)
+            .expect("uninterrupted active frame");
+        assert_eq!(
+            runtime.simulation.houses[&owner].economy, reference.simulation.houses[&owner].economy,
+            "wallet at resumed frame {frame}"
+        );
+        assert_eq!(
+            runtime.simulation.production.factory_shadow,
+            reference.simulation.production.factory_shadow,
+            "factory at resumed frame {frame}"
+        );
+    }
+    let resumed = runtime.simulation.houses[&owner].economy.clone();
+    assert!(
+        resumed.spent_credits > expected.spent_credits,
+        "restored production must charge again"
+    );
+    assert_eq!(resumed.credits + resumed.spent_credits, 50_123);
+    let factory = runtime
+        .simulation
+        .production
+        .factory_shadow
+        .view(owner, ProductionCategory::Building)
+        .expect("active factory retained");
+    assert!(factory.progress > 5 && factory.progress < PRODUCTION_STEPS);
+    assert!(crate::sim::production::cancel_by_type_for_owner(
+        &mut runtime.simulation,
+        &runtime.resources.rules,
+        "Americans",
+        "PARENT"
+    ));
+    assert_eq!(
+        crate::sim::production::credits_for_owner(&runtime.simulation, "Americans"),
+        50_123
+    );
+    runtime
+        .advance_frame(&[], 67, crate::sim::world::TickLane::Ordinary)
+        .expect("restored frame");
+    let economy = &runtime.simulation.houses[&owner].economy;
+    assert_eq!(economy.credits, 50_123);
+    assert_eq!(economy.spent_credits, resumed.spent_credits);
+    assert_eq!(economy.harvested_credits, 35);
 }
 
 #[test]
@@ -195,7 +314,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
             (
                 house.owned_building_count,
                 house.owned_unit_count,
-                house.credits,
+                house.economy.credits,
             )
         });
         let identities: Vec<_> = saved
@@ -243,7 +362,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
             restored.houses.get(&owner).map(|house| (
                 house.owned_building_count,
                 house.owned_unit_count,
-                house.credits,
+                house.economy.credits,
             )),
             counts,
             "{label}"

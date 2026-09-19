@@ -1662,8 +1662,8 @@ pub(crate) fn apply_skirmish_ai_opening_credits(sim: &mut Simulation, rules: &Ru
             .get(house.difficulty.table_index())
             .copied()
             .unwrap_or(0);
-        let grant = native_ai_opening_grant(coefficient, house.credits);
-        house.credits = house.credits.wrapping_add(grant);
+        let grant = native_ai_opening_grant(coefficient, house.economy.credits);
+        house.economy.credits = house.economy.credits.wrapping_add(grant);
     }
 }
 
@@ -2016,7 +2016,7 @@ fn seed_starting_extra_units_with_overlay_registry(
             )
             && !house.multiplay_passive
         {
-            house.credits = house.credits.wrapping_add(remaining);
+            house.economy.credits = house.economy.credits.wrapping_add(remaining);
         }
     }
 

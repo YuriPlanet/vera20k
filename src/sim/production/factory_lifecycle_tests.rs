@@ -150,7 +150,7 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
         assert!(cancel_last_for_owner(&mut sim, &rules, "Americans"));
         assert_eq!(held_id(&sim, owner, ProductionCategory::Vehicle), parent);
         assert_eq!(children(&sim, parent), child_ids);
-        assert_eq!(sim.houses[&owner].credits, 50_000);
+        assert_eq!(sim.houses[&owner].economy.credits, 50_000);
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
 
         assert!(cancel_last_for_owner(&mut sim, &rules, "Americans"));
@@ -225,7 +225,7 @@ fn ready_manager_cancel_refunds_disposes_and_constructs_one_successor() {
     assert_eq!(sim.production.ready_by_owner[&owner].len(), 1);
     assert!(enqueue_by_type(&mut sim, &rules, "Americans", "YAREFN"));
     let mut expected = sim.scenario_rng.clone();
-    let credits = sim.houses[&owner].credits;
+    let credits = sim.houses[&owner].economy.credits;
     assert!(cancel_by_type_for_owner(
         &mut sim,
         &rules,
@@ -234,7 +234,7 @@ fn ready_manager_cancel_refunds_disposes_and_constructs_one_successor() {
     ));
     // Queue-first cancellation consumes the uncharged tail before ready fallback.
     assert_eq!(held_id(&sim, owner, ProductionCategory::Building), parent);
-    assert_eq!(sim.houses[&owner].credits, credits);
+    assert_eq!(sim.houses[&owner].economy.credits, credits);
     // A different queued type does not intercept cancellation of the ready head.
     assert!(enqueue_by_type(&mut sim, &rules, "Americans", "GAPOWR"));
     assert!(cancel_by_type_for_owner(
@@ -244,7 +244,7 @@ fn ready_manager_cancel_refunds_disposes_and_constructs_one_successor() {
         "YAREFN"
     ));
     assert_gone(&sim, parent, &child_ids);
-    assert_eq!(sim.houses[&owner].credits, credits + 1000);
+    assert_eq!(sim.houses[&owner].economy.credits, credits + 1000);
     assert_eq!(counts(&sim, owner), (before.0 + 1, before.1));
     assert!(
         sim.production
@@ -289,13 +289,13 @@ fn prerequisite_revalidation_disposes_manager_and_delays_promoted_first_charge()
         assert!(factory.progress > 0 && factory.progress < 54);
         factory.original_balance - factory.balance
     };
-    let before = sim.houses[&owner].credits;
+    let before = sim.houses[&owner].economy.credits;
     let mut expected = sim.scenario_rng.clone();
     // The producing factory remains; only the active type loses its prerequisite.
     sim.substrate.entities.remove(4);
     sim.advance_tick(&[], Some(&rules), &BTreeMap::new(), None, None, 67);
     assert_gone(&sim, parent, &child_ids);
-    assert_eq!(sim.houses[&owner].credits, before + spent);
+    assert_eq!(sim.houses[&owner].economy.credits, before + spent);
     let successor = held_id(&sim, owner, ProductionCategory::Vehicle);
     assert_eq!(
         sim.interner
@@ -320,7 +320,7 @@ fn prerequisite_revalidation_disposes_manager_and_delays_promoted_first_charge()
             .progress,
         1
     );
-    assert!(sim.houses[&owner].credits < before + spent);
+    assert!(sim.houses[&owner].economy.credits < before + spent);
 }
 
 #[test]
@@ -340,11 +340,11 @@ fn terminal_infantry_delivery_failure_refunds_and_promotes() {
         sim.substrate.entities.remove(structure);
     }
     sim.houses.get_mut(&owner).unwrap().owned_building_count = 0;
-    let before = sim.houses[&owner].credits;
+    let before = sim.houses[&owner].economy.credits;
     let mut expected = sim.scenario_rng.clone();
     assert!(!tick_production(&mut sim, &rules, &BTreeMap::new(), None));
     assert!(!sim.substrate.entities.contains(held));
-    assert_eq!(sim.houses[&owner].credits, before + 200);
+    assert_eq!(sim.houses[&owner].economy.credits, before + 200);
     let successor = held_id(&sim, owner, ProductionCategory::Infantry);
     assert!(successor > held);
     assert_constructor_words(&sim, successor, &mut expected);
@@ -388,7 +388,7 @@ fn missing_type_ready_without_held_object_is_removed_without_refund() {
         .entry(owner)
         .or_default()
         .push_back(missing);
-    let before = sim.houses[&owner].credits;
+    let before = sim.houses[&owner].economy.credits;
     let rng = sim.scenario_rng.logical_state();
     assert!(cancel_by_type_for_owner(
         &mut sim,
@@ -396,7 +396,7 @@ fn missing_type_ready_without_held_object_is_removed_without_refund() {
         "Americans",
         "REMOVED_TYPE"
     ));
-    assert_eq!(sim.houses[&owner].credits, before);
+    assert_eq!(sim.houses[&owner].economy.credits, before);
     assert_eq!(sim.scenario_rng.logical_state(), rng);
     assert!(
         sim.production
@@ -433,12 +433,12 @@ fn factory_loss_revalidation_disposes_parent_and_children_before_returning() {
             factory.original_balance - factory.balance
         };
         sim.substrate.entities.remove(1);
-        let before = sim.houses[&owner].credits;
+        let before = sim.houses[&owner].economy.credits;
         let allocated = sim.substrate.next_stable_object_id;
         let rng = sim.scenario_rng.logical_state();
         sim.advance_tick(&[], Some(&rules), &BTreeMap::new(), None, None, 67);
         assert_gone(&sim, parent, &child_ids);
-        assert_eq!(sim.houses[&owner].credits, before + spent);
+        assert_eq!(sim.houses[&owner].economy.credits, before + spent);
         assert_eq!(sim.houses[&owner].owned_unit_count, 0);
         assert_eq!(sim.substrate.next_stable_object_id, allocated);
         assert_eq!(sim.scenario_rng.logical_state(), rng);
@@ -479,11 +479,11 @@ fn missing_helipad_delivery_refunds_disposes_and_promotes_aircraft() {
             .test_arm_ready(owner, ProductionCategory::Aircraft)
     );
     sim.substrate.entities.remove(5);
-    let before = sim.houses[&owner].credits;
+    let before = sim.houses[&owner].economy.credits;
     let mut expected = sim.scenario_rng.clone();
     assert!(!tick_production(&mut sim, &rules, &BTreeMap::new(), None));
     assert!(!sim.substrate.entities.contains(parent));
-    assert_eq!(sim.houses[&owner].credits, before + 1000);
+    assert_eq!(sim.houses[&owner].economy.credits, before + 1000);
     let successor = held_id(&sim, owner, ProductionCategory::Aircraft);
     assert!(successor > parent);
     assert_constructor_words(&sim, successor, &mut expected);

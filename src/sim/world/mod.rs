@@ -4048,11 +4048,9 @@ impl Simulation {
         Ok(())
     }
 
-    /// P1 SHADOW BUILD: mirror each existing house's authoritative `credits` into
-    /// the non-hashed `economy` shadow and recompute its OrePurifier building
-    /// count. Derive direction is legacy -> shadow; READ-ONLY w.r.t. all hashed
-    /// state. It iterates the existing `houses` map only and NEVER inserts a house
-    /// (the auto-create hazard guard). A single pass over the entity store
+    /// Recompute the serialized/hash-covered OrePurifier count without changing
+    /// cash or accumulated spending/harvesting statistics. Iterate only existing
+    /// houses; never insert a missing house. A single pass over the entity store
     /// accumulates purifier counts per owner, so the cost is O(entities), not
     /// O(houses x entities). `rules` is the advance_tick tail's `Option`; with
     /// `None` the purifier count is 0 (no type data to classify structures by).
@@ -4072,10 +4070,6 @@ impl Simulation {
             }
         }
         for (id, house) in self.houses.iter_mut() {
-            // The credits mirror is RETIRED at the flip: `economy.credits` is a
-            // per-sweep shim that `step_all` loads from / stores to the one
-            // authoritative wallet `house.credits`; it is not hashed, so it is not
-            // maintained here.
             // Purifier-bonus base = real OrePurifier building COUNT (NOT silo
             // storage capacity, NOT the AI-virtual-inclusive effective count). Hashed.
             house.economy.purifier_count = purifiers.get(id).copied().unwrap_or(0);
@@ -4096,13 +4090,11 @@ impl Simulation {
         self.refresh_economy_shadow(rules);
     }
 
-    /// Debug-only P2 asserts: (a) economy tracks credits; (b) the factory shell
+    /// Debug-only production asserts: the factory shell
     /// trace is well-formed (live Structures, strictly-increasing visit order).
     /// Divergence is surfaced, never equalized.
     #[cfg(debug_assertions)]
     pub(crate) fn debug_assert_production_shadow(&self) {
-        // (P1 `debug_assert_economy_shadow` retired: `economy.credits` no longer tracks
-        //  `house.credits` — it is a per-sweep shim, demoted at the authority flip.)
         self.debug_assert_factory_shell_trace();
         self.debug_assert_factory_conservation(); // P3
         self.debug_assert_factory_invariants(); // P5b (repurposed from the P5a inversion assert)
@@ -6532,7 +6524,7 @@ impl Simulation {
             // Phase 7, FIRST production step — the authoritative factory sweep (C1:
             // factories step BEFORE the house tail `run_late_region`). The previous
             // tick's tail reconcile prepared the registry; `step_all` charges each armed
-            // factory's per-step cost against the REAL wallet (house.credits) in
+            // factory's per-step cost against the REAL wallet (house.economy.credits) in
             // insertion_seq (temporal) order; the spawn/placement pass below then
             // delivers completed builds and advances the queue-of-record.
             //
@@ -6612,11 +6604,8 @@ impl Simulation {
         self.debug_assert_logic_membership_consistent();
         #[cfg(debug_assertions)]
         self.debug_assert_lifecycle_consistent();
-        // P1+P2 production+economy shadow: mirror credits + purifier_count and
-        // rebuild the factory registry from the legacy queues, after all
-        // authoritative systems and before the hash. Writes only non-hashed shadow
-        // fields, so state_hash stays bit-identical (proven by the *_no_hash_change
-        // tests). `rules` is the advance_tick `Option<&RuleSet>` tail param.
+        // Refresh the retained purifier-count projection before hashing.
+        // Cash and factory state remain owned by their direct mutation paths.
         self.refresh_production_shadow(rules);
         #[cfg(debug_assertions)]
         self.debug_assert_production_shadow();

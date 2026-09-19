@@ -319,8 +319,6 @@ pub struct HouseState {
     /// mutable `HouseClass` bytes — gamemd keeps this one on the house type.
     #[serde(default)]
     pub multiplay_passive: bool,
-    /// Current credit balance.
-    pub credits: i32,
     /// Rally point for newly produced units (isometric cell coords).
     pub rally_point: Option<(u16, u16)>,
     /// Whether this player has been eliminated.
@@ -420,11 +418,7 @@ pub struct HouseState {
     /// a post-load score can differ (recorded DRIFT).
     #[serde(skip)]
     pub stats: MatchStatistics,
-    /// Per-house wallet/storage/statistics (the authority flip). The wallet stays
-    /// the authoritative `HouseState.credits`; `economy.credits` is a per-sweep shim
-    /// loaded from / stored to it and is NOT hashed. The statistics
-    /// (`spent_credits`/`harvested_credits`/`purifier_count`) ARE serialized + hashed
-    /// as of the flip.
+    /// Sole credit balance and economy statistics; serialized and hashed.
     pub economy: Economy,
     /// Snapshot/hash authority for the Strategy emergency-state block.
     #[serde(default)]
@@ -581,7 +575,6 @@ impl HouseState {
             player_control: is_human,
             difficulty: HouseDifficulty::Normal,
             multiplay_passive: false,
-            credits,
             rally_point: None,
             is_defeated: false,
             has_won: false,
@@ -604,7 +597,10 @@ impl HouseState {
             enemy_house: None,
             waypoint_edge: 0,
             stats: MatchStatistics::default(),
-            economy: Economy::default(),
+            economy: Economy {
+                credits,
+                ..Economy::default()
+            },
             strategy_emergency: HouseStrategyEmergencyState::default(),
             ai_activation: HouseAiActivationLatches::default(),
             harvester_no_ore: false,
@@ -975,7 +971,7 @@ mod ai_activation_latch_tests {
             house.is_defeated = true;
             house.multiplay_passive = true;
             house.difficulty = difficulty;
-            house.credits = 4321;
+            house.economy.credits = 4321;
             house.owned_building_count = 7;
             house.owned_unit_count = 11;
 
@@ -994,7 +990,7 @@ mod ai_activation_latch_tests {
                 }
             );
             assert_eq!(house.current_iq, 5);
-            assert_eq!(house.credits, 4321);
+            assert_eq!(house.economy.credits, 4321);
             assert_eq!(house.owned_building_count, 7);
             assert_eq!(house.owned_unit_count, 11);
             assert!(house.is_defeated);
