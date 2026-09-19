@@ -4,8 +4,8 @@ A Rust replacement for Yuri's Revenge `gamemd.exe`: **gamemd-native semantics,
 Rust-native architecture**. The intentional scale exception is **20,000 units,
 30 players**; replace native storage limits while preserving deterministic behavior.
 
-VERA20k must build and run on Linux, macOS and Windows. Architecture and dependency
-choices must preserve support for all three platforms.
+VERA20k must build and run on Linux, macOS and Windows; keep architecture and
+dependencies compatible.
 
 This contract governs Codex and Claude. Use engineering judgment; skills are optional
 specialized help. Specific user instructions override workflow defaults.
@@ -62,28 +62,19 @@ timers, same-tick effects, persistence and exact numeric semantics. Document and
 validate floating-point use where native behavior requires it. Storage order and
 active-object order are distinct.
 
-All VERA20k math must be determinism-safe. Identical initial state, inputs and RNG
-state must produce identical authoritative simulation results across supported
-operating systems and CPU architectures. Preserve native numeric semantics using
-deterministic implementations, including where floating-point behavior is required;
-make precision, rounding, overflow and evaluation order explicit where they affect
-the results. Presentation calculations must not introduce platform-dependent
-differences into simulation state or decisions.
+All math must preserve simulation determinism across supported platforms and CPU
+architectures for identical state, inputs and RNG. Preserve native precision, rounding,
+overflow and evaluation order, including floating-point behavior. Presentation must
+not affect simulation determinism.
 
 `sim/` never depends on `render/`, `ui/`, `sidebar/`, `audio/` or `net/`.
 App code orchestrates without owning duplicate gameplay. Current module contracts
 and `advance_tick` phases describe the architecture. Name coordinate frames/units.
 
-The VERA20k engine contains duplicate and overlapping state, functions and call chains,
-including remnants of incomplete migrations. Before implementing a change, carefully
-examine the affected code for these overlaps and establish which state and call
-paths are actually used.
-
-As part of the implementation, untangle overlapping responsibilities and consolidate
-duplicate behavior in the affected mechanism. Complete migrations the change depends
-on, and remove code or state it makes obsolete instead of leaving another parallel
-implementation. Preserve intentional behavioral differences and validate the affected
-call paths. Keep this cleanup connected to the task.
+VERA20k contains duplicate state, functions and call chains from incomplete migrations.
+Trace their use before changes. Untangle affected ownership, consolidate duplicates,
+finish required migrations and remove obsolete code/state. Preserve intentional
+differences, validate affected paths and keep cleanup within task scope.
 
 Use relevant rows in the [dependency map](docs/module-map.md); verify against source.
 Refresh with `python tools/module_map.py` after dependency, layout, visibility or
