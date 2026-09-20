@@ -479,8 +479,9 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
             sfx.update_looping_sound(owner, None);
             continue;
         };
-        let (rx, ry, sub_x, sub_y, z) = world.to_cell_sub_z();
-        let (screen_x, screen_y) = crate::util::lepton::lepton_to_screen(rx, ry, sub_x, sub_y, z);
+        let (rx, ry, sub_x, sub_y, _) = world.to_cell_sub_z();
+        let (screen_x, screen_y) =
+            crate::util::lepton::lepton_to_screen_exact_z(rx, ry, sub_x, sub_y, world.z);
         let facts = registry_facts_for_owner(registry, sfx, owner);
         let gain = facts
             .and_then(|facts| spatial_gain(facts, screen_x, screen_y, &listener, shrouded(rx, ry)));

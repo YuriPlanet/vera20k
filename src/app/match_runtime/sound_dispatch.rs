@@ -867,8 +867,8 @@ fn outcome_eva_event(kind: crate::sim::house_state::HouseOutcomeKind) -> &'stati
 }
 
 fn anim_world_sound_source(world: crate::sim::anim_class::AnimWorldCoord) -> SoundSource {
-    let (rx, ry, sub_x, sub_y, z) = world.to_cell_sub_z();
-    let screen = crate::util::lepton::lepton_to_screen(rx, ry, sub_x, sub_y, z);
+    let (rx, ry, sub_x, sub_y, _) = world.to_cell_sub_z();
+    let screen = crate::util::lepton::lepton_to_screen_exact_z(rx, ry, sub_x, sub_y, world.z);
     SoundSource::new(screen, (rx, ry))
 }
 

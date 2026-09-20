@@ -546,8 +546,11 @@ fn presentation_anim_frame_count(
 fn anim_world_render_coords(
     world: crate::sim::anim_class::AnimWorldCoord,
 ) -> (f32, f32, u16, u16, u8) {
+    // The sprite sits at the anim's exact Z (a muzzle or an airburst is not on
+    // a level boundary); the level byte keys the depth row only.
     let (rx, ry, sub_x, sub_y, z) = world.to_cell_sub_z();
-    let (screen_x, screen_y) = crate::util::lepton::lepton_to_screen(rx, ry, sub_x, sub_y, z);
+    let (screen_x, screen_y) =
+        crate::util::lepton::lepton_to_screen_exact_z(rx, ry, sub_x, sub_y, world.z);
     (screen_x, screen_y, rx, ry, z)
 }
 
@@ -1456,6 +1459,38 @@ pub(crate) fn build_parachute_instances(
 
 #[cfg(test)]
 mod tests {
+    /// The sprite is projected from the anim's exact Z. Half a level up lands
+    /// between the two level rows; the old level-byte projection drew it on the
+    /// lower row, and drew a 104-frame level-1 coordinate on row 0.
+    #[test]
+    fn anim_sprite_is_projected_at_its_exact_height() {
+        let at = |z: i32| {
+            super::anim_world_render_coords(crate::sim::anim_class::AnimWorldCoord {
+                x: 10 * 256 + 128,
+                y: 12 * 256 + 128,
+                z,
+            })
+        };
+        let (ground, half, level_one) = (at(0), at(52), at(104));
+        assert_eq!((ground.0, ground.4), (level_one.0, 0));
+        assert_eq!(level_one.4, 1, "104 leptons is height level 1");
+        assert!(
+            level_one.1 < half.1 && half.1 < ground.1,
+            "screen Y rises with exact Z: {} < {} < {}",
+            level_one.1,
+            half.1,
+            ground.1
+        );
+        let on_level = crate::util::lepton::lepton_to_screen(
+            10,
+            12,
+            crate::util::fixed_math::SimFixed::from_num(128),
+            crate::util::fixed_math::SimFixed::from_num(128),
+            1,
+        );
+        assert_eq!((level_one.0, level_one.1), on_level);
+    }
+
     #[test]
     fn static_terrain_body_and_shadow_use_native_shared_point_and_piece_z() {
         use crate::render::overlay_atlas::OverlaySpriteEntry;
@@ -2055,5 +2090,4 @@ mod tests {
         );
         assert_eq!(anim_instance_alpha(None, 4, 8), 1.0);
     }
-
 }
