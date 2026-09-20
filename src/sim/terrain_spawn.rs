@@ -9,8 +9,8 @@
 //! `AnimationRate` ticks -> reset to idle at midpoint -> forced tiberium spread.
 //!
 //! ## Dependency rules
-//! - Part of sim/ - depends on rules data, sim/overlay_grid, sim/pathfinding,
-//!   and sim/rng.
+//! - Part of sim/ - depends on rules data, sim/overlay_grid, sim/tiberium and
+//!   sim/rng.
 //! - Per-spawner animation config is baked into TerrainSpawnerState at seed time
 //!   (mirrors OreGrowthConfig pattern); live placement gates still read entity
 //!   and rules state for building exceptions.

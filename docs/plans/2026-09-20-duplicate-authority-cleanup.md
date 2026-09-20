@@ -73,6 +73,15 @@ building anim phase scan. Remaining (movement territory):
 `path_markers::snapshot_bridge_marker_peers`,
 `sync_formation_speeds_after_live_pass`.
 
+## Adjacent findings (not this goal's backlog)
+
+- Slave Miner scan correction has no implementation: `SlaveMinerKickFrameDelay=`
+  and `SlaveMinerScanCorrection=` are parsed and unread, so a deployed YAREFN
+  never repositions toward closer ore. Visible in Yuri games once nearby ore runs
+  out. The caller-less Rust sketch was removed; the native owner is unidentified.
+- `[General] GrowthRate=` is parsed and unread; VERA's growth runs on the
+  per-Tiberium `Growth=` timers. Whether gamemd reads it is UNCHECKED.
+
 ## Next safe action
 
 Land the `resource_nodes` PR after its critic re-review. Then the bridge

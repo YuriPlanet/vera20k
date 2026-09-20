@@ -1,4 +1,4 @@
-//! Slave Miner system — deploy/undeploy, slave spawn, slave harvest AI, scan correction.
+//! Slave Miner system — deploy/undeploy, slave spawn, slave harvest AI.
 //!
 //! The Slave Miner (SMIN) is Yuri's harvester. Unlike War/Chrono Miners it does NOT
 //! harvest directly. Instead it deploys into a refinery building (YAREFN) and spawns
@@ -10,8 +10,11 @@
 //! - **Undeploy**: YAREFN building → SMIN vehicle, slaves recalled/killed
 //! - **Slave harvest loop**: SearchOre → MoveToOre → Harvest → ReturnToMaster → Deposit
 //! - **Slave regen**: Dead slaves respawn after `SlaveRegenRate` (500) frames
-//! - **Scan correction**: Deployed YAREFN periodically checks if a closer ore patch exists
-//!   (SlaveMinerKickFrameDelay=150 frames, SlaveMinerScanCorrection=3 cells improvement)
+//!
+//! RESIDUAL: scan correction is not implemented. `SlaveMinerKickFrameDelay=` and
+//! `SlaveMinerScanCorrection=` are parsed and nothing reads them, so a deployed
+//! YAREFN never repositions toward a closer ore patch. Visible in any Yuri game
+//! once the nearby ore runs out. The native owner is not yet identified.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on sim/miner, sim/miner_system, rules/.

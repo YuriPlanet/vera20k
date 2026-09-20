@@ -10,8 +10,8 @@
 //!   from the map `[SpecialFlags]` only in GameMode 0.
 //!
 //! ## Dependency rules
-//! - Part of sim/ — depends on sim/miner (ResourceType),
-//!   sim/pathfinding (PathGrid), sim/rng (SimRng), rules/.
+//! - Part of sim/ — depends on sim/overlay_grid, sim/tiberium, sim/rng
+//!   (SimRng), rules/.
 //! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
 
 use std::collections::BTreeSet;
@@ -1457,11 +1457,11 @@ impl OreGrowthState {
     }
 
     /// Hash persistent ore-growth scheduler state for replay/desync checks.
-    /// `retired_scanner_fold` reproduces the pre-174 stream for a sim that
-    /// never ran the node-era scan (every sim with the overlay and tiberium
-    /// registries): the scanner's cursor, two candidate lists and two sample
-    /// counters sat here as zero/empty, and its three queue folds were unframed
-    /// loops over empty stores.
+    /// `retired_scanner_fold` reproduces the pre-174 stream for a sim whose
+    /// node-era scan never advanced and whose node-era queues were never
+    /// written, which is what the pinned fixtures held: the scanner's cursor,
+    /// two candidate lists and two sample counters sat here as zero/empty, and
+    /// its three queue folds were unframed loops over empty stores.
     pub fn hash_state(&self, hasher: &mut impl Hasher, retired_scanner_fold: bool) {
         if retired_scanner_fold {
             0usize.hash(hasher);

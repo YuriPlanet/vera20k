@@ -196,11 +196,11 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 398787009
 // Schema174 removes folds instead of adding them: OreGrowthState's node-era
 // scanner cursor, candidate lists and sample counters, and ProductionState's
 // fallback ore overlay id. The pre-174 projection folds the values those fields
-// held IN THIS FIXTURE (zero, empty, None): it never ran the node-era scan, and
-// it seeds no terrain spawners, the one path that set the fallback id. It is not
-// a general reconstruction; a scenario finalized by the map loader held
-// Some(first TIB* id). The projection must still equal the previous current
-// pin, asserted below. Rust hash-composition ratchet, not a native golden.
+// held IN THIS FIXTURE (zero, empty, None): its node-era scan never advanced,
+// and it never calls the spawner seeding, the one path that set the fallback
+// id. It is not a general reconstruction; a scenario finalized by the map
+// loader held Some(first TIB* id). The projection must still equal the previous
+// current pin, asserted below. Rust hash-composition ratchet, not a native golden.
 const BRIDGE_HARNESS_FINAL_HASH: u64 = 6311521725375046682;
 
 fn bridge_ini() -> IniFile {
