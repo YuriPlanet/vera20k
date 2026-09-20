@@ -778,7 +778,7 @@ impl Simulation {
         if schema.includes(HashFeature::TerminalScore) {
             self.hash_terminal_score_snapshot(&mut hasher);
         }
-        self.hash_production(&mut hasher);
+        self.hash_production(&mut hasher, schema);
         if schema.includes(HashFeature::AircraftDockState) {
             self.production.airfield_docks.hash_state(&mut hasher);
         }
@@ -1134,7 +1134,8 @@ impl Simulation {
     }
 
     /// Hash all production-related state: queues, ready items, resources.
-    fn hash_production(&self, hasher: &mut impl Hasher) {
+    fn hash_production(&self, hasher: &mut impl Hasher, schema: HashSchema) {
+        let retired_tiberium_fold = !schema.includes(HashFeature::RetiredTiberiumNodeState);
         // P5d: the per-`BuildQueueItem` `queues_by_owner` fold is RETIRED — the
         // queue-of-record now lives in the factory registry (active build = `Factory`
         // head fields; tail = `Factory.queue` of `QueueEntry`) and folds in
@@ -1158,21 +1159,10 @@ impl Simulation {
         self.production.next_enqueue_order.hash(hasher);
         self.hash_factory_registry(hasher); // P5b: the authoritative factory registry
 
-        // Live ore/gem identity and quantity are already folded by
-        // `hash_overlay_grid`. The compatibility map remains serialized and
-        // still has compiled legacy growth/spawner consumers, so it must also
-        // remain lockstep-visible until those consumers and the field retire
-        // together. BTreeMap supplies canonical cell order.
-        for (&(rx, ry), node) in &self.production.resource_nodes {
-            rx.hash(hasher);
-            ry.hash(hasher);
-            match node.resource_type {
-                crate::sim::miner::ResourceType::Ore => 0u8.hash(hasher),
-                crate::sim::miner::ResourceType::Gem => 1u8.hash(hasher),
-            }
-            node.remaining.hash(hasher);
-        }
-        self.production.ore_growth_state.hash_state(hasher);
+        // Live ore/gem identity and quantity are folded by `hash_overlay_grid`.
+        self.production
+            .ore_growth_state
+            .hash_state(hasher, retired_tiberium_fold);
         // Hash terrain spawners (TIBTRE-style ore generators).
         for (&(rx, ry), spawner) in &self.production.terrain_spawners {
             rx.hash(hasher);
@@ -1197,7 +1187,11 @@ impl Simulation {
             rx.hash(hasher);
             ry.hash(hasher);
         }
-        self.production.default_ore_overlay_id.hash(hasher);
+        if retired_tiberium_fold {
+            // The fallback ore overlay id: `None` unless terrain spawners were
+            // seeded from a registry, which the pinned fixtures never did.
+            None::<u8>.hash(hasher);
+        }
     }
 
     /// Hash the authoritative factory registry in the deterministic temporal sweep
@@ -2602,7 +2596,7 @@ mod overlay_grid_hash_tests {
     use super::Simulation;
     use crate::map::authored_overlay::FinalizedOverlayPayload;
     use crate::map::overlay::OverlayDataPack;
-    use crate::sim::miner::{ResourceNode, ResourceType};
+    use crate::sim::miner::ResourceType;
     use crate::sim::overlay_grid::OverlayGrid;
 
     #[test]
@@ -2692,63 +2686,25 @@ mod overlay_grid_hash_tests {
     }
 
     #[test]
-    fn gsi_04_09_serialized_compatibility_nodes_are_deterministically_hashed() {
+    fn tiberium_cells_are_hashed_by_cell_not_placement_order() {
+        use crate::sim::tiberium::test_support::place_tiberium;
+
         let mut forward = Simulation::new();
-        forward.production.resource_nodes.insert(
-            (8, 3),
-            ResourceNode {
-                resource_type: ResourceType::Gem,
-                remaining: 540,
-            },
-        );
-        forward.production.resource_nodes.insert(
-            (2, 7),
-            ResourceNode {
-                resource_type: ResourceType::Ore,
-                remaining: 360,
-            },
-        );
+        place_tiberium(&mut forward, 8, 3, ResourceType::Gem, 3);
+        place_tiberium(&mut forward, 2, 7, ResourceType::Ore, 3);
 
         let mut reverse = Simulation::new();
-        reverse.production.resource_nodes.insert(
-            (2, 7),
-            ResourceNode {
-                resource_type: ResourceType::Ore,
-                remaining: 360,
-            },
-        );
-        reverse.production.resource_nodes.insert(
-            (8, 3),
-            ResourceNode {
-                resource_type: ResourceType::Gem,
-                remaining: 540,
-            },
-        );
+        place_tiberium(&mut reverse, 2, 7, ResourceType::Ore, 3);
+        place_tiberium(&mut reverse, 8, 3, ResourceType::Gem, 3);
         assert_eq!(
             forward.state_hash(),
             reverse.state_hash(),
-            "BTreeMap cell order, not insertion order, owns the compatibility fold"
+            "the overlay grid is folded in cell order, not placement order"
         );
 
-        reverse
-            .production
-            .resource_nodes
-            .get_mut(&(8, 3))
-            .unwrap()
-            .remaining = 541;
+        place_tiberium(&mut reverse, 8, 3, ResourceType::Gem, 4);
         assert_ne!(forward.state_hash(), reverse.state_hash());
-        reverse
-            .production
-            .resource_nodes
-            .get_mut(&(8, 3))
-            .unwrap()
-            .remaining = 540;
-        reverse
-            .production
-            .resource_nodes
-            .get_mut(&(8, 3))
-            .unwrap()
-            .resource_type = ResourceType::Ore;
+        place_tiberium(&mut reverse, 8, 3, ResourceType::Ore, 3);
         assert_ne!(forward.state_hash(), reverse.state_hash());
     }
 }

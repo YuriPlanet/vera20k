@@ -66,8 +66,7 @@ use crate::sim::pathfinding::PathGrid;
 use crate::sim::world::Simulation;
 
 use super::miner_system::{
-    MinerSnapshot, ResourceQueryAuthority, build_miner_snapshot, commit_miner_snapshot,
-    process_miner_with_resource_authority,
+    MinerSnapshot, build_miner_snapshot, commit_miner_snapshot, process_miner,
 };
 use super::{MinerKind, MinerState};
 
@@ -83,47 +82,6 @@ pub(crate) fn dispatch_harvest_for_object(
     path_grid: Option<&PathGrid>,
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
-) {
-    dispatch_harvest_for_object_with_resource_authority(
-        sim,
-        rules,
-        config,
-        path_grid,
-        overlay_registry,
-        id,
-        ResourceQueryAuthority::OverlayGrid,
-    );
-}
-
-#[cfg(test)]
-pub(crate) fn dispatch_harvest_for_object_with_resource_authority_for_tests(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    config: &super::MinerConfig,
-    path_grid: Option<&PathGrid>,
-    overlay_registry: Option<&OverlayTypeRegistry>,
-    id: u64,
-    resource_authority: ResourceQueryAuthority,
-) {
-    dispatch_harvest_for_object_with_resource_authority(
-        sim,
-        rules,
-        config,
-        path_grid,
-        overlay_registry,
-        id,
-        resource_authority,
-    );
-}
-
-fn dispatch_harvest_for_object_with_resource_authority(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    config: &super::MinerConfig,
-    path_grid: Option<&PathGrid>,
-    overlay_registry: Option<&OverlayTypeRegistry>,
-    id: u64,
-    resource_authority: ResourceQueryAuthority,
 ) {
     let now = sim.session.binary_frame;
     {
@@ -187,26 +145,17 @@ fn dispatch_harvest_for_object_with_resource_authority(
     let Some(mut snap) = build_miner_snapshot(sim, rules, id) else {
         return;
     };
-    harvest_mission_step_with_resource_authority(
-        sim,
-        rules,
-        config,
-        path_grid,
-        overlay_registry,
-        &mut snap,
-        resource_authority,
-    );
+    harvest_mission_step(sim, rules, config, path_grid, overlay_registry, &mut snap);
     commit_miner_snapshot(sim, &snap, now);
 }
 
-fn harvest_mission_step_with_resource_authority(
+fn harvest_mission_step(
     sim: &mut Simulation,
     rules: &RuleSet,
     config: &super::MinerConfig,
     path_grid: Option<&PathGrid>,
     overlay_registry: Option<&OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
-    resource_authority: ResourceQueryAuthority,
 ) {
     // Cursor sanity (debug-only, never hashed): the working cursor must have
     // decoded from the entity's handler state — pins the cursor round-trip the
@@ -223,13 +172,5 @@ fn harvest_mission_step_with_resource_authority(
         );
     }
 
-    process_miner_with_resource_authority(
-        sim,
-        rules,
-        config,
-        path_grid,
-        overlay_registry,
-        snap,
-        resource_authority,
-    );
+    process_miner(sim, rules, config, path_grid, overlay_registry, snap);
 }

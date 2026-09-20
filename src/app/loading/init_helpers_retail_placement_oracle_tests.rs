@@ -14,14 +14,12 @@ use crate::map::overlay_types::OverlayTypeRegistry;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::theater;
 use crate::sim::command::{Command, CommandEnvelope};
-use crate::sim::miner::ResourceNode;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::power_system::tick_power_states;
 use crate::sim::production::{
     foundation_dimensions, placement_preview_for_owner_without_overlays, ready_buildings_for_owner,
-    seed_resource_nodes_from_overlays,
 };
 use crate::sim::world::Simulation;
 
@@ -309,16 +307,9 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
     )
     .expect("Dustbowl must provide clear GACNST/valid GAPOWR cells beside nonblocking ore");
 
-    let overlay_names: BTreeMap<u8, String> = (0..overlay_registry.len())
-        .filter_map(|index| {
-            let id = u8::try_from(index).ok()?;
-            Some((id, overlay_registry.name(id)?.to_string()))
-        })
-        .collect();
     let mut sim = Simulation::new();
     sim.resolved_terrain = Some(resolved);
     sim.overlay_grid = Some(overlay_grid);
-    seed_resource_nodes_from_overlays(&mut sim, &map.overlays, &overlay_names);
     let provider_id = sim
         .spawn_object(
             CONYARD,
@@ -388,20 +379,6 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
     assert!(held.lifecycle.in_limbo && !held.lifecycle.cell_marked);
 
     let blocked_cells = rect_cells(fixture.blocked, 2, 2);
-    let resource_before: BTreeMap<(u16, u16), ResourceNode> = blocked_cells
-        .iter()
-        .filter_map(|cell| {
-            sim.production
-                .resource_nodes
-                .get(cell)
-                .copied()
-                .map(|node| (*cell, node))
-        })
-        .collect();
-    assert!(
-        !resource_before.is_empty(),
-        "blocked retail footprint must contain a seeded ore resource"
-    );
     let overlay_before: BTreeMap<(u16, u16), (Option<u8>, u8)> = blocked_cells
         .iter()
         .map(|cell| {
@@ -413,6 +390,14 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
             (*cell, (overlay.overlay_id, overlay.overlay_data))
         })
         .collect();
+    assert!(
+        overlay_before.values().any(|(overlay_id, _)| {
+            overlay_id
+                .and_then(|id| overlay_registry.flags(id))
+                .is_some_and(|flags| flags.tiberium)
+        }),
+        "blocked retail footprint must contain a map ore overlay"
+    );
     let preview = placement_preview_for_owner_without_overlays(
         &sim,
         &rules,
@@ -470,19 +455,6 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
             .entity_id,
         Some(held_id),
         "rejected placement keeps the original factory identity"
-    );
-    assert_eq!(
-        blocked_cells
-            .iter()
-            .filter_map(|cell| {
-                sim.production
-                    .resource_nodes
-                    .get(cell)
-                    .copied()
-                    .map(|node| (*cell, node))
-            })
-            .collect::<BTreeMap<_, _>>(),
-        resource_before
     );
     assert_eq!(
         blocked_cells

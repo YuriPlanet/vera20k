@@ -60,7 +60,7 @@ Behavior is plain functions.
 - `tick_production()` — advances build queues, spawns finished units
 - `tick_power_states()` — recalculates per-player power from buildings
 - `tick_superweapons()` — counts down timers, fires effects
-- `tick_ore_growth()` — spreads ore across the map
+- `tick_ore_growth_rungs()` — grows and spreads ore in the overlay grid
 
 These functions all read and write to the same `Simulation` struct. 45 times a second at 45 FPS(standard multiplayer FPS) There is no message buses, no event systems.
 

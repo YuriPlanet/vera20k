@@ -353,7 +353,6 @@ mod tests {
                     name: "TREE".into(),
                 }],
                 &rules,
-                &OverlayTypeRegistry::empty(),
                 false,
             );
             let id = sim.production.terrain_object_cells[&(4, 4)];

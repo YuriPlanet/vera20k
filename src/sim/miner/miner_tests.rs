@@ -1,7 +1,7 @@
 //! Acceptance tests for the miner (harvester) state machine system.
 //!
 //! Tests exercise the miner_system::tick_miners() pipeline with a minimal
-//! EntityStore: miner entity + refinery structure + resource nodes. Verifies
+//! EntityStore: miner entity + refinery structure + tiberium overlays. Verifies
 //! payout math, dock queuing, Chrono teleport rules, incremental unloading,
 //! local continuation, pip display, and refinery rebinding.
 
@@ -14,8 +14,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::components::{HarvestOverlay, Health, VoxelAnimation};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::miner::{
-    CargoBale, Miner, MinerConfig, MinerKind, MinerState, RefineryDockPhase, ResourceNode,
-    ResourceType,
+    CargoBale, Miner, MinerConfig, MinerKind, MinerState, RefineryDockPhase, ResourceType,
 };
 use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
 use crate::sim::occupancy::{CellListInsertion, OccupancyGrid};
@@ -39,7 +38,8 @@ fn has_bunker_release_track(entity: &GameEntity) -> bool {
 
 /// Minimal rules that know about HARV, CMIN, and GAREFN.
 fn miner_rules() -> RuleSet {
-    let ini = IniFile::from_str(
+    let ini = IniFile::from_str(&format!(
+        "{}{}",
         "[InfantryTypes]\n\
          [VehicleTypes]\n\
          0=HARV\n\
@@ -83,7 +83,8 @@ fn miner_rules() -> RuleSet {
          Foundation=4x3\n\
          Refinery=yes\n\
          FreeUnit=CMIN\n",
-    );
+        crate::sim::tiberium::test_support::tiberium_rules_text(),
+    ));
     RuleSet::from_ini(&ini).expect("miner rules")
 }
 
@@ -272,26 +273,15 @@ fn occupy_structure_cells(
     }
 }
 
-/// Place ore resource nodes at a cell with a given amount.
+/// Place ore on a cell. `amount` is in the 120-per-bale units the fixtures
+/// were written in; the cell receives the matching bale count (1..=11), which
+/// is all a native overlay cell can yield.
 fn place_ore(sim: &mut Simulation, rx: u16, ry: u16, amount: u16) {
-    sim.production.resource_nodes.insert(
+    crate::sim::tiberium::test_support::place_stock_amount(
+        sim,
         (rx, ry),
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: amount,
-        },
-    );
-}
-
-/// Place gem resource nodes at a cell with a given amount.
-#[allow(dead_code)]
-fn place_gems(sim: &mut Simulation, rx: u16, ry: u16, amount: u16) {
-    sim.production.resource_nodes.insert(
-        (rx, ry),
-        ResourceNode {
-            resource_type: ResourceType::Gem,
-            remaining: amount,
-        },
+        ResourceType::Ore,
+        amount,
     );
 }
 
@@ -2712,74 +2702,6 @@ fn dock_cell_for_4x3_refinery() {
 }
 
 // ==========================================================================
-// Test 16: pick_best_resource_node prefers gems over ore
-// ==========================================================================
-#[test]
-fn pick_best_resource_node_prefers_gems_over_ore() {
-    use crate::sim::production::pick_best_resource_node;
-    use std::collections::BTreeMap;
-
-    let mut nodes: BTreeMap<(u16, u16), ResourceNode> = BTreeMap::new();
-    // Ore node equidistant from miner (at 5,5).
-    nodes.insert(
-        (5, 3),
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: 500,
-        },
-    );
-    // Gem node at same distance.
-    nodes.insert(
-        (5, 7),
-        ResourceNode {
-            resource_type: ResourceType::Gem,
-            remaining: 500,
-        },
-    );
-
-    let chosen = pick_best_resource_node(&nodes, (5, 5), None);
-    assert_eq!(
-        chosen,
-        Some((5, 7)),
-        "Miner should prefer gems over equidistant ore"
-    );
-}
-
-// ==========================================================================
-// Test 17: pick_best_resource_node prefers denser ore when same type
-// ==========================================================================
-#[test]
-fn pick_best_resource_node_prefers_higher_density() {
-    use crate::sim::production::pick_best_resource_node;
-    use std::collections::BTreeMap;
-
-    let mut nodes: BTreeMap<(u16, u16), ResourceNode> = BTreeMap::new();
-    // Sparse ore node equidistant from miner (at 5,5).
-    nodes.insert(
-        (5, 3),
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: 100,
-        },
-    );
-    // Dense ore node at same distance.
-    nodes.insert(
-        (5, 7),
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: 900,
-        },
-    );
-
-    let chosen = pick_best_resource_node(&nodes, (5, 5), None);
-    assert_eq!(
-        chosen,
-        Some((5, 7)),
-        "Miner should prefer the denser (remaining=900) ore node"
-    );
-}
-
-// ==========================================================================
 // Dock sequence tests
 // ==========================================================================
 
@@ -3210,12 +3132,11 @@ fn chrono_miner_archive_cleared_after_undock_picks_new_target() {
     // Place ONE ore patch at (13, 13): within local_continuation_radius
     // (default 6) of exit cell (14, 11). This is what the fresh local scan
     // from current position should pick.
-    sim.production.resource_nodes.insert(
+    crate::sim::tiberium::test_support::place_stock_amount(
+        &mut sim,
         (13, 13),
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: 1200,
-        },
+        ResourceType::Ore,
+        1200,
     );
 
     // Spawn miner at exit cell (14, 11), mid-Departing. Stale archive points
@@ -5322,7 +5243,7 @@ fn full_dock_cycle_war_miner() {
 }
 
 // ==========================================================================
-// extract_bales_max — test-only bulk-drain primitive over the legacy node
+// extract_bales_max — test-only bulk-drain primitive over Reduce_Tiberium
 // model. It exercises Reduce_Tiberium's clamp for an arbitrary request; the
 // harvester itself requests ONE level per gate (see the per-bite block below).
 // ==========================================================================
@@ -5331,7 +5252,8 @@ fn full_dock_cycle_war_miner() {
 fn extract_max_empty_cell() {
     let mut sim = Simulation::new();
     let config = MinerConfig::default();
-    let bales = super::miner_system::extract_bales_max(&mut sim, (5, 5), &config, 40);
+    let bales =
+        super::miner_system::extract_bales_max(&mut sim, &miner_rules(), (5, 5), &config, 40);
     assert!(bales.is_empty(), "no node at cell → no bales");
 }
 
@@ -5340,14 +5262,14 @@ fn extract_max_full_drain_ore() {
     let mut sim = Simulation::new();
     let config = MinerConfig::default();
     // 11 density levels of ore at base 120: remaining = 11 * 120 = 1320.
-    sim.production.resource_nodes.insert(
+    crate::sim::tiberium::test_support::place_stock_amount(
+        &mut sim,
         (5, 5),
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: 11 * 120,
-        },
+        ResourceType::Ore,
+        11 * 120,
     );
-    let bales = super::miner_system::extract_bales_max(&mut sim, (5, 5), &config, 40);
+    let bales =
+        super::miner_system::extract_bales_max(&mut sim, &miner_rules(), (5, 5), &config, 40);
     assert_eq!(bales.len(), 11, "full drain extracts 11 bales");
     assert!(
         bales
@@ -5356,7 +5278,7 @@ fn extract_max_full_drain_ore() {
         "all bales are ore-type with configured value"
     );
     assert!(
-        sim.production.resource_nodes.get(&(5, 5)).is_none(),
+        !crate::sim::tiberium::test_support::has_tiberium(&sim, (5, 5)),
         "node removed after full drain"
     );
 }
@@ -5365,22 +5287,18 @@ fn extract_max_full_drain_ore() {
 fn extract_max_partial_capacity() {
     let mut sim = Simulation::new();
     let config = MinerConfig::default();
-    sim.production.resource_nodes.insert(
+    crate::sim::tiberium::test_support::place_stock_amount(
+        &mut sim,
         (5, 5),
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: 11 * 120,
-        },
+        ResourceType::Ore,
+        11 * 120,
     );
-    let bales = super::miner_system::extract_bales_max(&mut sim, (5, 5), &config, 3);
+    let bales =
+        super::miner_system::extract_bales_max(&mut sim, &miner_rules(), (5, 5), &config, 3);
     assert_eq!(bales.len(), 3, "capacity-limited to 3 bales");
-    let after = sim
-        .production
-        .resource_nodes
-        .get(&(5, 5))
-        .expect("still present");
+    let after_remaining = crate::sim::tiberium::test_support::stock_amount_at(&sim, (5, 5));
     assert_eq!(
-        after.remaining,
+        after_remaining,
         (11 - 3) * 120,
         "remaining decremented by 3 density levels"
     );
@@ -5392,17 +5310,17 @@ fn extract_max_partial_density_exact_match() {
     let config = MinerConfig::default();
     // 5 density levels of ore: remaining = 600. Empty capacity higher than
     // available density → drain exactly 5, node removed.
-    sim.production.resource_nodes.insert(
+    crate::sim::tiberium::test_support::place_stock_amount(
+        &mut sim,
         (5, 5),
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: 5 * 120,
-        },
+        ResourceType::Ore,
+        5 * 120,
     );
-    let bales = super::miner_system::extract_bales_max(&mut sim, (5, 5), &config, 40);
+    let bales =
+        super::miner_system::extract_bales_max(&mut sim, &miner_rules(), (5, 5), &config, 40);
     assert_eq!(bales.len(), 5, "extracts all 5 available density levels");
     assert!(
-        sim.production.resource_nodes.get(&(5, 5)).is_none(),
+        !crate::sim::tiberium::test_support::has_tiberium(&sim, (5, 5)),
         "exact match drains the cell"
     );
 }
@@ -5412,14 +5330,14 @@ fn extract_max_gem_cell() {
     let mut sim = Simulation::new();
     let config = MinerConfig::default();
     // 4 density levels of gems at base 180.
-    sim.production.resource_nodes.insert(
+    crate::sim::tiberium::test_support::place_stock_amount(
+        &mut sim,
         (5, 5),
-        ResourceNode {
-            resource_type: ResourceType::Gem,
-            remaining: 4 * 180,
-        },
+        ResourceType::Gem,
+        4 * 180,
     );
-    let bales = super::miner_system::extract_bales_max(&mut sim, (5, 5), &config, 40);
+    let bales =
+        super::miner_system::extract_bales_max(&mut sim, &miner_rules(), (5, 5), &config, 40);
     assert_eq!(bales.len(), 4, "gem cell yields 4 bales");
     assert!(
         bales
@@ -5433,38 +5351,37 @@ fn extract_max_gem_cell() {
 fn extract_max_zero_capacity() {
     let mut sim = Simulation::new();
     let config = MinerConfig::default();
-    sim.production.resource_nodes.insert(
+    crate::sim::tiberium::test_support::place_stock_amount(
+        &mut sim,
         (5, 5),
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: 11 * 120,
-        },
+        ResourceType::Ore,
+        11 * 120,
     );
-    let bales = super::miner_system::extract_bales_max(&mut sim, (5, 5), &config, 0);
+    let bales =
+        super::miner_system::extract_bales_max(&mut sim, &miner_rules(), (5, 5), &config, 0);
     assert!(bales.is_empty(), "zero capacity → no bales");
-    let after = sim
-        .production
-        .resource_nodes
-        .get(&(5, 5))
-        .expect("untouched");
-    assert_eq!(after.remaining, 11 * 120, "node remaining untouched");
+    let after_remaining = crate::sim::tiberium::test_support::stock_amount_at(&sim, (5, 5));
+    assert_eq!(after_remaining, 11 * 120, "node remaining untouched");
 }
 
 #[test]
 fn extract_max_node_remaining_zero() {
     let mut sim = Simulation::new();
     let config = MinerConfig::default();
-    // Edge case: node present but remaining == 0 (matches gamemd's
-    // Reduce_Tiberium returning 0 for an empty cell).
-    sim.production.resource_nodes.insert(
-        (5, 5),
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: 0,
-        },
-    );
-    let bales = super::miner_system::extract_bales_max(&mut sim, (5, 5), &config, 40);
-    assert!(bales.is_empty(), "remaining==0 → no bales");
+    // A density-0 overlay: `CellClass::ReduceTiberium @ 0x00480A80` takes the
+    // full-removal path and returns the density byte, 0.
+    crate::sim::tiberium::test_support::place_tiberium(&mut sim, 5, 5, ResourceType::Ore, 1);
+    sim.overlay_grid
+        .as_mut()
+        .expect("overlay grid")
+        .set_overlay_data(5, 5, 0);
+    let bales =
+        super::miner_system::extract_bales_max(&mut sim, &miner_rules(), (5, 5), &config, 40);
+    assert!(bales.is_empty(), "density 0 → no bales");
+    assert!(!crate::sim::tiberium::test_support::has_tiberium(
+        &sim,
+        (5, 5)
+    ));
 }
 
 // ==========================================================================
@@ -5477,7 +5394,7 @@ fn extract_max_node_remaining_zero() {
 // ==========================================================================
 
 /// Minimal stock-shaped tiberium rules plus an overlay registry so a miner
-/// test can run the production `ResourceQueryAuthority::OverlayGrid` path
+/// test can run the production overlay-grid resource path
 /// (real `CellClass::Reduce_Tiberium` shape, including the density-0 overlay).
 fn miner_rules_with_tiberium() -> (RuleSet, crate::map::overlay_types::OverlayTypeRegistry) {
     let mut text = String::from(
@@ -5543,7 +5460,6 @@ fn tick_miners_overlay_n(
             &config,
             Some(&grid),
             Some(registry),
-            super::miner_system::ResourceQueryAuthority::OverlayGrid,
         );
         crate::sim::movement::tick_movement(
             &mut sim.substrate.entities,
@@ -5594,12 +5510,8 @@ fn harvester_takes_one_bale_per_gate_over_eleven_gates() {
             u32::from(config.harvest_tick_interval) + 1,
             "success re-arms the native F+19 gate"
         );
-        let after = sim
-            .production
-            .resource_nodes
-            .get(&(20, 20))
-            .expect("cell still has ore");
-        assert_eq!(after.remaining, 10 * 120, "cell drops by one level");
+        let after_remaining = crate::sim::tiberium::test_support::stock_amount_at(&sim, (20, 20));
+        assert_eq!(after_remaining, 10 * 120, "cell drops by one level");
     }
 
     // The frames strictly inside a gate extract nothing.
@@ -5621,11 +5533,7 @@ fn harvester_takes_one_bale_per_gate_over_eleven_gates() {
         );
         if bale < 11 {
             assert_eq!(
-                sim.production
-                    .resource_nodes
-                    .get(&(20, 20))
-                    .expect("cell still has ore")
-                    .remaining,
+                crate::sim::tiberium::test_support::stock_amount_at(&sim, (20, 20)),
                 (11 - bale as u16) * 120,
                 "cell density tracks bales taken"
             );
@@ -5636,12 +5544,15 @@ fn harvester_takes_one_bale_per_gate_over_eleven_gates() {
     let miner = get_miner(&sim, miner_id);
     assert_eq!(miner.cargo.len(), 11, "11 bales after 11 gates");
     assert_eq!(miner.state, MinerState::Harvest, "still cutting ore");
-    // The legacy node model removes the node on the last level; the production
-    // overlay path keeps a density-0 overlay instead (covered by
-    // `harvester_clears_density_zero_overlay_without_bale_and_moves_on`).
-    assert!(
-        sim.production.resource_nodes.get(&(20, 20)).is_none(),
-        "legacy node removed when its last level is taken"
+    // The last level leaves a density-0 overlay behind (its clearing bite is
+    // covered by `harvester_clears_density_zero_overlay_without_bale_and_moves_on`).
+    assert!(crate::sim::tiberium::test_support::has_tiberium(
+        &sim,
+        (20, 20)
+    ));
+    assert_eq!(
+        crate::sim::tiberium::test_support::bales_at(&sim, 20, 20),
+        0
     );
     assert_eq!(
         sim.session.binary_frame,
@@ -5818,12 +5729,8 @@ fn harvester_caps_extraction_at_remaining_capacity() {
         u32::from(config.harvest_tick_interval) + 1,
         "success-reset gate remains due at the native F+19 observation"
     );
-    let after = sim
-        .production
-        .resource_nodes
-        .get(&(20, 20))
-        .expect("cell still has ore");
-    assert_eq!(after.remaining, 10 * 120, "cell drops to density 10");
+    let after_remaining = crate::sim::tiberium::test_support::stock_amount_at(&sim, (20, 20));
+    assert_eq!(after_remaining, 10 * 120, "cell drops to density 10");
 
     // The next gate takes the fortieth bale: filling is still a success.
     tick_miners_n(
@@ -5852,12 +5759,8 @@ fn harvester_caps_extraction_at_remaining_capacity() {
     assert!(entity.movement_target.is_none());
     assert!(entity.teleport_state.is_none());
 
-    let after = sim
-        .production
-        .resource_nodes
-        .get(&(20, 20))
-        .expect("cell still has ore");
-    assert_eq!(after.remaining, 9 * 120, "cell drops to density 9");
+    let after_remaining = crate::sim::tiberium::test_support::stock_amount_at(&sim, (20, 20));
+    assert_eq!(after_remaining, 9 * 120, "cell drops to density 9");
 }
 
 #[test]
@@ -5957,7 +5860,7 @@ fn filling_extraction_waits_for_full_gate_before_war_return() {
         );
     }
 
-    sim.production.resource_nodes.remove(&(30, 30));
+    crate::sim::tiberium::test_support::clear_tiberium(&mut sim, (30, 30));
     tick_miners_n(&mut sim, &rules, 1);
     let full_gate_frame = sim.session.binary_frame;
     {
@@ -6048,11 +5951,7 @@ fn chrono_filling_extraction_does_not_warp_before_state2_tick() {
         )));
     }
     assert_eq!(
-        sim.production
-            .resource_nodes
-            .get(&(63, 63))
-            .expect("productive source cell after fill")
-            .remaining,
+        crate::sim::tiberium::test_support::stock_amount_at(&sim, (63, 63)),
         10 * 120,
         "one level per gate: the filling bite drops 11 -> 10"
     );
@@ -6107,11 +6006,7 @@ fn chrono_filling_extraction_does_not_warp_before_state2_tick() {
         )));
     }
     assert_eq!(
-        sim.production
-            .resource_nodes
-            .get(&(63, 63))
-            .expect("full gate must not reduce the productive cell")
-            .remaining,
+        crate::sim::tiberium::test_support::stock_amount_at(&sim, (63, 63)),
         10 * 120
     );
 
@@ -6179,8 +6074,9 @@ fn harvester_continues_to_short_scan_when_partial_then_empty() {
             MinerState::Harvest,
             "stays in Harvest, timer reset"
         );
-        assert!(
-            sim.production.resource_nodes.get(&(20, 20)).is_none(),
+        assert_eq!(
+            crate::sim::tiberium::test_support::bales_at(&sim, 20, 20),
+            0,
             "cell drained"
         );
     }
@@ -8595,12 +8491,6 @@ fn coordinate_runtime_trace_miner_arrival_and_extraction_four_directions() {
         let rules = miner_rules();
         place_ore(&mut sim, target.0, target.1, 120);
         place_ore(&mut sim, behind.0, behind.1, 120);
-        sim.overlay_grid = Some(OverlayGrid::new(64, 64));
-        {
-            let overlay = sim.overlay_grid.as_mut().expect("overlay grid");
-            overlay.place_overlay(target.0, target.1, 1, 1);
-            overlay.place_overlay(behind.0, behind.1, 1, 1);
-        }
 
         let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, start.0, start.1);
         {
@@ -8621,7 +8511,7 @@ fn coordinate_runtime_trace_miner_arrival_and_extraction_four_directions() {
         let mut extraction_tick = None;
 
         for trace_tick in 0..512_u32 {
-            let target_before = sim.production.resource_nodes.contains_key(&target);
+            let target_before = crate::sim::tiberium::test_support::has_tiberium(&sim, target);
             tick_miners_n(&mut sim, &rules, 1);
 
             let entity = sim
@@ -8660,7 +8550,7 @@ fn coordinate_runtime_trace_miner_arrival_and_extraction_four_directions() {
                 first_harvest_tick = Some(trace_tick);
             }
 
-            let target_after = sim.production.resource_nodes.contains_key(&target);
+            let target_after = crate::sim::tiberium::test_support::has_tiberium(&sim, target);
             if target_before && !target_after {
                 let overlay = sim.overlay_grid.as_ref().expect("overlay grid");
                 let target_overlay_cleared = overlay.cell(target.0, target.1).overlay_id.is_none();
@@ -8675,7 +8565,7 @@ fn coordinate_runtime_trace_miner_arrival_and_extraction_four_directions() {
                     sim.session.tick,
                     entity.position.rx,
                     entity.position.ry,
-                    sim.production.resource_nodes.contains_key(&behind),
+                    crate::sim::tiberium::test_support::has_tiberium(&sim, behind),
                     entity.miner.as_ref().expect("miner component").cargo.len(),
                 );
                 assert_eq!(
@@ -8689,7 +8579,7 @@ fn coordinate_runtime_trace_miner_arrival_and_extraction_four_directions() {
                     "{label}: extraction must occur at cell center"
                 );
                 assert!(
-                    sim.production.resource_nodes.contains_key(&behind),
+                    crate::sim::tiberium::test_support::has_tiberium(&sim, behind),
                     "{label}: ore behind the target must remain untouched"
                 );
                 assert!(
@@ -9736,6 +9626,7 @@ fn player_move_arrival_returns_a_war_miner_to_harvest_on_ore() {
     let rules = miner_rules();
     let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 20, 20);
     place_ore(&mut sim, 20, 20, 5);
+    install_land_types_for_placed_ore(&mut sim);
     // Mid-harvest cursor, then the player Move takes over (Command::Move's
     // `queue_megamission_with_teardown(Move)` promoted).
     let now = sim.session.binary_frame;
@@ -9819,8 +9710,7 @@ fn player_move_arrival_off_ore_parks_a_human_miner_on_guard_and_an_ai_miner_on_h
 /// A 64x64 sim carrying the production `CellClass+0xEC` authority: a flat
 /// clear `ResolvedTerrainGrid` plus an `OverlayGrid` with one TIB01 patch on
 /// `cell`, folded into `land_type` by the same `recalc_overlay_passability`
-/// the map loader and every overlay mutation run. No `resource_nodes` exist,
-/// so the legacy fallback in `cell_land_type_is` cannot answer.
+/// the map loader and every overlay mutation run.
 fn sim_with_resolved_tiberium_cell(
     registry: &crate::map::overlay_types::OverlayTypeRegistry,
     cell: (u16, u16),
@@ -9857,8 +9747,39 @@ fn sim_with_resolved_tiberium_cell(
     );
     sim.resolved_terrain = Some(terrain);
     sim.overlay_grid = Some(overlay);
-    assert!(sim.production.resource_nodes.is_empty());
     sim
+}
+
+/// Give a fixture that seeded ore through [`place_ore`] the `CellClass+0xEC`
+/// authority the idle-mode harvester arm reads: a flat clear
+/// `ResolvedTerrainGrid` with every tiberium overlay folded into `land_type`
+/// by `recalc_overlay_passability`, as the map loader does.
+fn install_land_types_for_placed_ore(sim: &mut Simulation) {
+    use crate::map::resolved_terrain::ResolvedTerrainGrid;
+
+    let size = crate::sim::tiberium::test_support::TEST_GRID_SIZE;
+    let mut cells = Vec::with_capacity(usize::from(size) * usize::from(size));
+    for ry in 0..size {
+        for rx in 0..size {
+            cells.push(crate::sim::deploy_tests::clear_terrain_cell(rx, ry));
+        }
+    }
+    let mut terrain = ResolvedTerrainGrid::from_cells(size, size, cells);
+    let overlay = sim.overlay_grid.as_mut().expect("place_ore ran first");
+    let ore_cells: Vec<(u16, u16)> = overlay
+        .iter_occupied()
+        .map(|(rx, ry, _)| (rx, ry))
+        .collect();
+    for (rx, ry) in ore_cells {
+        crate::sim::overlay_grid::recalc_overlay_passability(
+            overlay,
+            &mut terrain,
+            crate::sim::tiberium::test_support::overlay_registry(),
+            rx,
+            ry,
+        );
+    }
+    sim.resolved_terrain = Some(terrain);
 }
 
 /// Assign Move (no destination) and run one arrival dispatch; returns the
@@ -9883,8 +9804,7 @@ fn move_arrival_selector(
         .known()
 }
 
-/// The production land-type path: with `resolved_terrain` present the arm
-/// reads `land_type` (not the resource-node fallback), and a human war miner
+/// The arm reads `land_type` from the resolved terrain, and a human war miner
 /// arriving on a TIB01 overlay cell resumes Harvest.
 #[test]
 fn player_move_arrival_reads_tiberium_land_type_from_resolved_terrain() {
@@ -9919,7 +9839,6 @@ fn player_move_arrival_after_full_harvest_parks_a_human_miner_on_guard() {
         .reset_native_tiberium_classes(rules.tiberium_types.len(), 0);
     let outcome = {
         let mut ctx = ReduceTiberiumContext {
-            resource_nodes: &mut sim.production.resource_nodes,
             overlay_grid: sim.overlay_grid.as_mut(),
             ore_growth_state: &mut sim.production.ore_growth_state,
             overlay_registry: Some(&registry),
@@ -9978,6 +9897,7 @@ fn player_move_arrival_in_radio_contact_assigns_nothing() {
     let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 20, 20);
     spawn_refinery(&mut sim, 2, 10, 10);
     place_ore(&mut sim, 20, 20, 5);
+    install_land_types_for_placed_ore(&mut sim);
     sim.substrate
         .entities
         .get_mut(miner_id)
@@ -10030,6 +9950,7 @@ fn captured_harvesting_miner_requeues_harvest_for_the_new_owner() {
     let captor = register_capture_houses(&mut sim, true, true);
     let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 10, 10);
     place_ore(&mut sim, 10, 10, 100);
+    install_land_types_for_placed_ore(&mut sim);
     sim.mission_assign_exact(miner_id, MissionId::from_known(MissionType::Harvest), 0)
         .expect("miner exists");
     assert_eq!(
@@ -10129,6 +10050,7 @@ fn captured_miner_in_radio_contact_gets_only_the_forced_guard() {
     let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 10, 10);
     spawn_refinery(&mut sim, 2, 12, 12);
     place_ore(&mut sim, 10, 10, 100);
+    install_land_types_for_placed_ore(&mut sim);
     sim.mission_assign_exact(miner_id, MissionId::from_known(MissionType::Harvest), 0)
         .expect("miner exists");
     sim.substrate

@@ -1,4 +1,4 @@
-//! Slave Miner system — deploy/undeploy, slave spawn, slave harvest AI, scan correction.
+//! Slave Miner system — deploy/undeploy, slave spawn, slave harvest AI.
 //!
 //! The Slave Miner (SMIN) is Yuri's harvester. Unlike War/Chrono Miners it does NOT
 //! harvest directly. Instead it deploys into a refinery building (YAREFN) and spawns
@@ -10,8 +10,11 @@
 //! - **Undeploy**: YAREFN building → SMIN vehicle, slaves recalled/killed
 //! - **Slave harvest loop**: SearchOre → MoveToOre → Harvest → ReturnToMaster → Deposit
 //! - **Slave regen**: Dead slaves respawn after `SlaveRegenRate` (500) frames
-//! - **Scan correction**: Deployed YAREFN periodically checks if a closer ore patch exists
-//!   (SlaveMinerKickFrameDelay=150 frames, SlaveMinerScanCorrection=3 cells improvement)
+//!
+//! RESIDUAL: scan correction is not implemented. `SlaveMinerKickFrameDelay=` and
+//! `SlaveMinerScanCorrection=` are parsed and nothing reads them, so a deployed
+//! YAREFN never repositions toward a closer ore patch. Visible in any Yuri game
+//! once the nearby ore runs out. The native owner is not yet identified.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on sim/miner, sim/miner_system, rules/.
@@ -21,12 +24,12 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::economy::apply_income_mult;
 use crate::sim::house_state::{house_state_for_owner_mut, income_ppm_for_owner};
 use crate::sim::intern::InternedId;
+use crate::sim::miner::extract_bale;
 use crate::sim::miner::miner_system::{
     effective_purifier_count, is_cell_path_clear_for_scan, resource_cell_present,
     search_local_resource,
 };
 use crate::sim::miner::{CargoBale, MinerConfig};
-use crate::sim::miner::{extract_bale, search_local_ore};
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::production::credits_entry_for_owner;
 use crate::sim::world::{PlacementEvidence, Simulation};
@@ -197,7 +200,7 @@ fn process_slave(
 
     match snap.harvester.state {
         SlaveHarvestState::SearchOre => {
-            handle_slave_search(sim, rules, config, path_grid, overlay_registry, snap)
+            handle_slave_search(sim, rules, path_grid, overlay_registry, snap)
         }
         SlaveHarvestState::MoveToOre => handle_slave_move_to_ore(snap),
         SlaveHarvestState::Harvest => {
@@ -205,9 +208,7 @@ fn process_slave(
         }
         SlaveHarvestState::ReturnToMaster => handle_slave_return(sim, snap),
         SlaveHarvestState::Deposit => handle_slave_deposit(sim, rules, config, snap),
-        SlaveHarvestState::Idle => {
-            handle_slave_idle(sim, rules, config, path_grid, overlay_registry, snap)
-        }
+        SlaveHarvestState::Idle => handle_slave_idle(sim, rules, path_grid, overlay_registry, snap),
     }
 }
 
@@ -215,7 +216,6 @@ fn process_slave(
 fn handle_slave_search(
     sim: &Simulation,
     rules: &RuleSet,
-    config: &MinerConfig,
     path_grid: Option<&PathGrid>,
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     snap: &mut SlaveSnapshot,
@@ -239,7 +239,6 @@ fn handle_slave_search(
         master_pos,
         scan_radius,
         filter_ref,
-        config,
     ) {
         snap.harvester.target_cell = Some(cell);
         snap.harvester.state = SlaveHarvestState::MoveToOre;
@@ -438,7 +437,6 @@ fn handle_slave_deposit(
 fn handle_slave_idle(
     sim: &Simulation,
     rules: &RuleSet,
-    config: &MinerConfig,
     path_grid: Option<&PathGrid>,
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     snap: &mut SlaveSnapshot,
@@ -461,7 +459,6 @@ fn handle_slave_idle(
         master_pos,
         scan_radius,
         filter_ref,
-        config,
     ) {
         snap.harvester.target_cell = Some(cell);
         snap.harvester.state = SlaveHarvestState::MoveToOre;
@@ -866,72 +863,6 @@ pub(super) fn tick_slave_regen(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Scan correction (Phase 7)
-// ---------------------------------------------------------------------------
-
-/// Check if a deployed Slave Miner should reposition to a closer ore patch.
-///
-/// Called periodically (every SlaveMinerKickFrameDelay ticks). If the nearest
-/// ore from the master's position is `SlaveMinerScanCorrection` cells closer
-/// than the current nearest ore to the slaves, trigger an undeploy + move.
-///
-/// Returns Some((rx, ry)) = cell to reposition to, None = stay put.
-pub fn check_scan_correction(
-    sim: &Simulation,
-    rules: &RuleSet,
-    path_grid: Option<&PathGrid>,
-    master_id: u64,
-) -> Option<(u16, u16)> {
-    let master = sim.substrate.entities.get(master_id)?;
-    let mrx: u16 = master.position.rx;
-    let mry: u16 = master.position.ry;
-
-    let short_scan: u16 = rules.general.slave_miner_short_scan.max(1) as u16;
-    let correction: u16 = rules.general.slave_miner_scan_correction.max(0) as u16;
-    let cfg = MinerConfig::from_rules(rules);
-
-    let scan_filter = build_slave_scan_filter(sim, path_grid, master_id);
-    let filter_ref: Option<&dyn Fn((u16, u16)) -> bool> = Some(&*scan_filter);
-
-    // Find nearest ore from current position.
-    let current_nearest = search_local_ore(
-        &sim.production.resource_nodes,
-        (mrx, mry),
-        short_scan,
-        filter_ref,
-        cfg.ore_bale_value,
-        cfg.gem_bale_value,
-    )?;
-
-    let current_dist: u16 = manhattan_distance(mrx, mry, current_nearest.0, current_nearest.1);
-
-    // Search the broader area (SlaveMinerLongScan) for a better patch.
-    let long_scan: u16 = rules.general.slave_miner_long_scan.max(1) as u16;
-    let better_ore = search_local_ore(
-        &sim.production.resource_nodes,
-        (mrx, mry),
-        long_scan,
-        filter_ref,
-        cfg.ore_bale_value,
-        cfg.gem_bale_value,
-    )?;
-
-    let better_dist: u16 = manhattan_distance(mrx, mry, better_ore.0, better_ore.1);
-
-    // If the improvement exceeds SlaveMinerScanCorrection, recommend repositioning.
-    if current_dist > better_dist && (current_dist - better_dist) >= correction {
-        Some(better_ore)
-    } else {
-        None
-    }
-}
-
-/// Manhattan distance between two cells.
-fn manhattan_distance(ax: u16, ay: u16, bx: u16, by: u16) -> u16 {
-    ax.abs_diff(bx) + ay.abs_diff(by)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1080,21 +1011,6 @@ mod tests {
         handle_slave_deposit(&mut sim, &rules, &config, &mut snap);
         assert_eq!(sim.houses[&yuri].economy.credits, 150);
         assert_eq!(snap.harvester.state, SlaveHarvestState::SearchOre);
-    }
-
-    #[test]
-    fn manhattan_distance_basic() {
-        assert_eq!(manhattan_distance(10, 10, 13, 14), 7);
-        assert_eq!(manhattan_distance(5, 5, 5, 5), 0);
-        assert_eq!(manhattan_distance(0, 0, 100, 50), 150);
-    }
-
-    #[test]
-    fn scan_correction_returns_none_without_entities() {
-        // With no entities, check_scan_correction returns None (master not found).
-        let sim = Simulation::new();
-        let rules = make_test_rules();
-        assert!(check_scan_correction(&sim, &rules, None, 999).is_none());
     }
 
     /// Minimal rules for slave miner tests.

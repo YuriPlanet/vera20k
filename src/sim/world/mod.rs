@@ -125,7 +125,6 @@ use crate::sim::movement::teleport_movement;
 use crate::sim::movement::tunnel_movement::{self, TunnelProcessContext};
 use crate::sim::movement::turret;
 use crate::sim::occupancy::OccupancyGrid;
-use crate::sim::ore_growth;
 use crate::sim::overlay_grid::{
     WallDamageEvent, WallDamageTransactionHost, WallDirtyStep, WallPointerTarget,
     WallZoneRepairKind, damage_wall_overlay_with_runtime_host, recalc_overlay_passability,
@@ -1168,7 +1167,6 @@ fn dispatch_tiberium_reduction_inline(
     rules: &RuleSet,
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     scenario_rng: &mut SimRng,
-    resource_nodes: &mut BTreeMap<(u16, u16), crate::sim::miner::ResourceNode>,
     overlay_grid: Option<&mut crate::sim::overlay_grid::OverlayGrid>,
     terrain: Option<&mut ResolvedTerrainGrid>,
     ore_growth_state: &mut crate::sim::ore_growth::OreGrowthState,
@@ -1181,7 +1179,6 @@ fn dispatch_tiberium_reduction_inline(
     tactical_dirty_cells: &mut Vec<(u16, u16)>,
 ) {
     let mut context = crate::sim::tiberium::ReduceTiberiumContext {
-        resource_nodes,
         overlay_grid,
         ore_growth_state,
         overlay_registry,
@@ -1210,7 +1207,6 @@ fn dispatch_tiberium_reduction_inline(
 pub(crate) struct SimulationAreaDamageCellPrelude<'a> {
     rules: &'a RuleSet,
     tiberium_amount: Option<i32>,
-    resource_nodes: &'a mut BTreeMap<(u16, u16), crate::sim::miner::ResourceNode>,
     ore_growth_state: &'a mut crate::sim::ore_growth::OreGrowthState,
     source_object_cells: &'a BTreeSet<(u16, u16)>,
     /// Live terrain-object cell index: the terrain half of the native
@@ -1258,7 +1254,6 @@ impl crate::sim::combat::combat_aoe::AoECellPrelude for SimulationAreaDamageCell
             self.rules,
             overlay_registry,
             scenario_rng,
-            self.resource_nodes,
             overlay_grid,
             terrain,
             self.ore_growth_state,
@@ -1316,7 +1311,6 @@ pub(crate) fn simulation_area_damage_cell_prelude<'a>(
     base_damage: i32,
     affect_resource: bool,
     scenario_no_damage: bool,
-    resource_nodes: &'a mut BTreeMap<(u16, u16), crate::sim::miner::ResourceNode>,
     ore_growth_state: &'a mut crate::sim::ore_growth::OreGrowthState,
     source_object_cells: &'a BTreeSet<(u16, u16)>,
     terrain_object_cells: &'a BTreeMap<(u16, u16), u64>,
@@ -1338,7 +1332,6 @@ pub(crate) fn simulation_area_damage_cell_prelude<'a>(
     SimulationAreaDamageCellPrelude {
         rules,
         tiberium_amount,
-        resource_nodes,
         ore_growth_state,
         source_object_cells,
         terrain_object_cells,
@@ -1497,7 +1490,6 @@ fn dispatch_smudge_inline(
     occupancy: &OccupancyGrid,
     raw_occupation: &crate::sim::occupancy::RawCellOccupationGrid,
     scenario_rng: &mut SimRng,
-    resource_nodes: &mut BTreeMap<(u16, u16), crate::sim::miner::ResourceNode>,
     overlay_grid: Option<&mut crate::sim::overlay_grid::OverlayGrid>,
     terrain: Option<&mut ResolvedTerrainGrid>,
     smudge_grid: Option<&mut crate::sim::smudge_grid::SmudgeGrid>,
@@ -1516,7 +1508,6 @@ fn dispatch_smudge_inline(
         return;
     };
     let mut tiberium = crate::sim::combat::smudge_dispatch::SmudgeTiberiumContext {
-        resource_nodes,
         overlay_grid,
         ore_growth_state,
         overlay_registry,
@@ -3095,7 +3086,6 @@ impl Simulation {
             &self.substrate.occupancy,
             &self.substrate.raw_cell_occupation,
             &mut self.scenario_rng,
-            &mut self.production.resource_nodes,
             self.overlay_grid.as_mut(),
             self.resolved_terrain.as_mut(),
             self.smudge_grid.as_mut(),
@@ -3111,35 +3101,6 @@ impl Simulation {
         self.flush_smudge_dirty();
     }
 
-    #[cfg(test)]
-    pub(crate) fn reduce_legacy_tiberium_at_for_tests(
-        &mut self,
-        cell: (u16, u16),
-        amount: u16,
-    ) -> crate::sim::tiberium::ReduceTiberiumOutcome {
-        let mut ctx = crate::sim::tiberium::ReduceTiberiumContext {
-            resource_nodes: &mut self.production.resource_nodes,
-            overlay_grid: self.overlay_grid.as_mut(),
-            ore_growth_state: &mut self.production.ore_growth_state,
-            overlay_registry: None,
-            tiberium_types: None,
-            resolved_terrain: self.resolved_terrain.as_mut(),
-            source_object_cells: Some(&self.production.tiberium_spawning_terrain_cells),
-            live_objects: None,
-            rng: Some(&mut self.scenario_rng),
-            binary_frame: self.session.binary_frame,
-            spread_enabled: self.production.ore_growth_config.spreads,
-            radar_dirty_cells: Some(&mut self.radar_terrain_dirty_cells),
-            radar_dirty_generation: Some(&mut self.radar_terrain_dirty_generation),
-            tactical_dirty_cells: Some(&mut self.tactical_dirty_cells),
-        };
-        crate::sim::tiberium::reduce_legacy_resource_node_for_tests(
-            &mut ctx,
-            cell,
-            i32::from(amount),
-        )
-    }
-
     pub(crate) fn reduce_tiberium_at_with_native_context<A: Into<i32>>(
         &mut self,
         cell: (u16, u16),
@@ -3148,7 +3109,6 @@ impl Simulation {
         overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     ) -> crate::sim::tiberium::ReduceTiberiumOutcome {
         let mut ctx = crate::sim::tiberium::ReduceTiberiumContext {
-            resource_nodes: &mut self.production.resource_nodes,
             overlay_grid: self.overlay_grid.as_mut(),
             ore_growth_state: &mut self.production.ore_growth_state,
             overlay_registry,
@@ -3376,7 +3336,6 @@ impl Simulation {
     fn tick_ore_growth_rungs(
         &mut self,
         rules: &RuleSet,
-        path_grid: Option<&PathGrid>,
         overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     ) {
         // Native TiberiumClass drivers run before the main live-object vector,
@@ -3407,7 +3366,6 @@ impl Simulation {
                     self.resolved_terrain.as_ref(),
                     &self.production.tiberium_spawning_terrain_cells,
                     Some(live_objects),
-                    &mut self.production.resource_nodes,
                     &mut self.scenario_rng,
                     self.session.binary_frame,
                     self.production.ore_growth_config.grows,
@@ -3421,8 +3379,6 @@ impl Simulation {
                     grid,
                     registry,
                     &rules.tiberium_types,
-                    &mut self.production.resource_nodes,
-                    path_grid,
                     self.resolved_terrain.as_ref(),
                     &self.production.tiberium_spawning_terrain_cells,
                     Some(live_objects),
@@ -3435,15 +3391,6 @@ impl Simulation {
                     Some(&mut self.tactical_dirty_cells),
                 );
             }
-        } else {
-            ore_growth::tick_ore_growth(
-                &self.production.ore_growth_config,
-                &mut self.production.ore_growth_state,
-                &mut self.production.resource_nodes,
-                path_grid,
-                self.overlay_grid.as_mut(),
-                &mut self.scenario_rng,
-            );
         }
     }
 
@@ -6121,7 +6068,7 @@ impl Simulation {
         // Harvest dispatches run.
         if let Some(rules) = rules {
             self.tick_scenario_lighting_transition(rules);
-            self.tick_ore_growth_rungs(rules, path_grid, overlay_registry);
+            self.tick_ore_growth_rungs(rules, overlay_registry);
             if self.session.game_options.super_weapons {
                 crate::sim::superweapon::tick_active_superweapon_effects(
                     self,

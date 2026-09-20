@@ -509,7 +509,11 @@ use crate::sim::world::Simulation;
 // animations are AnimStore members. The layout is unchanged, but those objects
 // are now saved, hashed and take ids from the shared stable-id counter, so a
 // 172 save taken after a teleport or storm resumes with different ids.
-const SNAPSHOT_VERSION: u32 = 173;
+// 173 -> 174: remove the per-cell resource node map and the fallback ore
+// overlay id from ProductionState, the node-era scanner and queue fields from
+// OreGrowthState and the scan rate from OreGrowthConfig; the overlay grid is the
+// only tiberium store.
+const SNAPSHOT_VERSION: u32 = 174;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -2245,7 +2249,6 @@ mod tests {
                 grows: true,
                 spreads: true,
                 tiberium_grows_flag: false,
-                growth_rate_seconds: 1,
             };
             sim.production.ore_growth_state = OreGrowthState::new(size, size);
             let mut overlays = OverlayGrid::new_with_retained_wall_plane(size, size);
@@ -3405,7 +3408,8 @@ mod tests {
         // 164 -> 165: DriveTrackState::before_first_point, inserted mid-record.
         // 165 -> 166: Economy owns the sole house credit balance.
         // 170 -> 171: shared animation bounds and retained HasEngineer.
-        assert_eq!(super::SNAPSHOT_VERSION, 173);
+        // 173 -> 174: ProductionState drops the resource node map.
+        assert_eq!(super::SNAPSHOT_VERSION, 174);
     }
 
     #[test]
@@ -3530,7 +3534,7 @@ mod tests {
 
     #[test]
     fn combined_bridge_membership_history_schema_rejects_separate_layouts() {
-        for version in 153..=172 {
+        for version in 153..=173 {
             let preamble = GameSnapshotPreamble {
                 product_magic: SNAPSHOT_PRODUCT_MAGIC,
                 envelope_version: SNAPSHOT_ENVELOPE_VERSION,

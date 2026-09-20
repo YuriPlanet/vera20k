@@ -15,7 +15,6 @@ use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::{InternedId, test_intern, test_interner};
-use crate::sim::miner::{ResourceNode, ResourceType};
 use crate::sim::mission::state::MissionTestFixture;
 use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
 use crate::sim::occupancy::OccupancyGrid;
@@ -87,7 +86,6 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
         None,
         None,
     );
-    let mut resources = BTreeMap::new();
     let mut rng = SimRng::new(0x50_4e_49_43);
     let rng_before = rng.logical_state();
     let mut hooks: Option<&mut FixtureTrace> = None;
@@ -99,7 +97,6 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
         &rules,
         &mut interner,
         None,
-        &mut resources,
         None,
         &OccupancyGrid::new(),
         None,
@@ -548,7 +545,6 @@ fn gsi_04_05_building_attack_frame_precedes_immune_receiver_exit() {
     let mut main_rng = SimRng::new(5);
     let mut scenario_rng = SimRng::new(7);
     let mut handled_deaths = Vec::new();
-    let mut resources = BTreeMap::new();
     let mut trace_hook = FixtureTrace::default();
     let mut fatal_lifecycle: Option<&mut FixtureTrace> = Some(&mut trace_hook);
     let mut sound_sink = None;
@@ -565,7 +561,6 @@ fn gsi_04_05_building_attack_frame_precedes_immune_receiver_exit() {
         &mut main_rng,
         &mut scenario_rng,
         &mut handled_deaths,
-        &mut resources,
         None,
         None,
         None,
@@ -623,7 +618,6 @@ fn gsi_04_05_protected_techno_response_runs_after_object_health_commit() {
     let mut main_rng = SimRng::new(5);
     let mut scenario_rng = SimRng::new(7);
     let mut handled_deaths = Vec::new();
-    let mut resources = BTreeMap::new();
     let mut trace_hook = FixtureTrace::default();
     let mut inline_hooks: Option<&mut FixtureTrace> = Some(&mut trace_hook);
     let mut sound_sink = None;
@@ -644,7 +638,6 @@ fn gsi_04_05_protected_techno_response_runs_after_object_health_commit() {
         &mut main_rng,
         &mut scenario_rng,
         &mut handled_deaths,
-        &mut resources,
         None,
         None,
         None,
@@ -700,7 +693,6 @@ fn gsi_04_05_building_self_damage_return_zero_stops_receiver_commit() {
     let mut main_rng = SimRng::new(5);
     let mut scenario_rng = SimRng::new(7);
     let mut handled_deaths = Vec::new();
-    let mut resources = BTreeMap::new();
     let mut fatal_lifecycle = None;
     let mut sound_sink = None;
 
@@ -727,7 +719,6 @@ fn gsi_04_05_building_self_damage_return_zero_stops_receiver_commit() {
         &mut main_rng,
         &mut scenario_rng,
         &mut handled_deaths,
-        &mut resources,
         None,
         None,
         None,
@@ -830,7 +821,6 @@ fn run_combat_death_handoff(
     dead_entities: &[u64],
 ) -> DeathEffects {
     let mut occupancy = OccupancyGrid::new();
-    let mut resource_nodes = BTreeMap::new();
     let mut houses = BTreeMap::new();
     let mut main_rng = SimRng::new(0);
     let mut scenario_rng = SimRng::new(0);
@@ -850,7 +840,6 @@ fn run_combat_death_handoff(
         &mut handled_deaths,
         dead_entities,
         &[],
-        &mut resource_nodes,
         None,
         None,
         None,
@@ -895,7 +884,6 @@ fn gsi_04_10_projectile_inert_suppresses_bridge_ore_and_collector_rng() {
     let mut scenario_rng = SimRng::new(77);
     let before_rng = scenario_rng.state();
     let mut emit = CombatEmit::default();
-    let mut resource_nodes = BTreeMap::new();
     let mut inline_hooks = None;
 
     let handles =
@@ -907,7 +895,6 @@ fn gsi_04_10_projectile_inert_suppresses_bridge_ore_and_collector_rng() {
         &rules,
         &mut interner,
         Some(handles),
-        &mut resource_nodes,
         None,
         None,
         None,
@@ -1224,7 +1211,6 @@ fn considered_aircraft_infantry_is_air_only_while_high_flying() {
             &mut sim.substrate.occupancy,
             &rules,
             &mut sim.interner,
-            &mut BTreeMap::new(),
             0,
             100,
             0,
@@ -1289,7 +1275,6 @@ fn ordinary_infantry_remains_ground_for_projectile_legality() {
         &mut sim.substrate.occupancy,
         &rules,
         &mut sim.interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -1354,7 +1339,6 @@ fn test_tick_combat_applies_damage() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0u64,
         100,
         0u32,
@@ -1385,7 +1369,6 @@ fn combat_damage_crosses_live_type_condition_yellow() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -1420,7 +1403,6 @@ fn combat_damage_above_live_type_condition_yellow() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -1456,7 +1438,6 @@ fn aoe_damage_crosses_live_type_condition_yellow() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -1492,7 +1473,6 @@ fn combat_damage_landed_applies_infantry_fear() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -1529,7 +1509,6 @@ fn ic_target_takes_zero_damage() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         10u64,
         100,
         0u32,
@@ -1569,7 +1548,6 @@ fn test_tick_combat_only_emits_bridge_damage_for_wall_warheads() {
         None,
         &BTreeMap::<InternedId, PowerState>::new(),
         None,
-        &mut BTreeMap::new(),
         None,
         None,
         None,
@@ -1620,7 +1598,6 @@ fn test_tick_combat_only_emits_bridge_damage_for_wall_warheads() {
         None,
         &BTreeMap::<InternedId, PowerState>::new(),
         None,
-        &mut BTreeMap::new(),
         None,
         None,
         None,
@@ -1686,7 +1663,6 @@ fn gsi_04_07_damage_wad_precedes_wall_and_wood_armor_routing() {
             None,
             &BTreeMap::new(),
             None,
-            &mut BTreeMap::new(),
             Some(&mut overlays),
             Some(&registry),
             None,
@@ -1802,7 +1778,6 @@ fn gsi_04_07_damage_live_order_second_attacker_reads_restored_target() {
         None,
         &BTreeMap::new(),
         None,
-        &mut BTreeMap::new(),
         Some(&mut overlays),
         Some(&registry),
         None,
@@ -1941,7 +1916,6 @@ fn gsi_04_07_damage_prior_projectile_fatal_death_weapon_is_inline() {
             &[],
             &HouseAllianceMap::new(),
             None,
-            &mut BTreeMap::new(),
             Some(&mut overlays),
             Some(&registry),
             None,
@@ -2190,7 +2164,6 @@ fn gsi_04_07_damage_retaliation_is_receiver_synchronous_and_uses_mission_overrid
             &[],
             &alliances,
             None,
-            &mut BTreeMap::new(),
             None,
             None,
             None,
@@ -2326,7 +2299,6 @@ fn gsi_04_07_damage_retaliation_peek_rejects_limbo_attacker() {
         let mut main_rng = SimRng::new(5);
         let mut scenario_rng = SimRng::new(7);
         let mut handled_deaths = Vec::new();
-        let mut resources = BTreeMap::new();
         let mut houses = BTreeMap::new();
         let mut fatal_lifecycle = None;
         let mut sound_sink = None;
@@ -2342,7 +2314,6 @@ fn gsi_04_07_damage_retaliation_peek_rejects_limbo_attacker() {
             &mut main_rng,
             &mut scenario_rng,
             &mut handled_deaths,
-            &mut resources,
             None,
             None,
             None,
@@ -2810,7 +2781,6 @@ fn gsi_04_07_damage_ai_retaliation_keeps_higher_scored_current_target() {
         let mut main_rng = SimRng::new(5);
         let mut scenario_rng = SimRng::new(7);
         let mut handled_deaths = Vec::new();
-        let mut resources = BTreeMap::new();
         let mut fatal_lifecycle = None;
         let mut sound_sink = None;
         let _ = commit_damage_events(
@@ -2825,7 +2795,6 @@ fn gsi_04_07_damage_ai_retaliation_keeps_higher_scored_current_target() {
             &mut main_rng,
             &mut scenario_rng,
             &mut handled_deaths,
-            &mut resources,
             None,
             None,
             None,
@@ -2975,7 +2944,6 @@ fn gsi_04_07_damage_spawn_and_slave_managers_block_retaliation() {
         let mut main_rng = SimRng::new(5);
         let mut scenario_rng = SimRng::new(7);
         let mut handled_deaths = Vec::new();
-        let mut resources = BTreeMap::new();
         let mut houses = BTreeMap::new();
         let mut fatal_lifecycle = None;
         let mut sound_sink = None;
@@ -2991,7 +2959,6 @@ fn gsi_04_07_damage_spawn_and_slave_managers_block_retaliation() {
             &mut main_rng,
             &mut scenario_rng,
             &mut handled_deaths,
-            &mut resources,
             None,
             None,
             None,
@@ -3108,7 +3075,6 @@ fn gsi_04_07_damage_full_capture_manager_blocks_retaliation() {
         let mut main_rng = SimRng::new(5);
         let mut scenario_rng = SimRng::new(7);
         let mut handled_deaths = Vec::new();
-        let mut resources = BTreeMap::new();
         let mut houses = BTreeMap::new();
         let mut fatal_lifecycle = None;
         let mut sound_sink = None;
@@ -3124,7 +3090,6 @@ fn gsi_04_07_damage_full_capture_manager_blocks_retaliation() {
             &mut main_rng,
             &mut scenario_rng,
             &mut handled_deaths,
-            &mut resources,
             None,
             None,
             None,
@@ -3210,7 +3175,6 @@ fn gsi_04_07_damage_repair_bullet_cellspread_zero_keeps_signed_area_record() {
     };
     let mut scenario_rng = SimRng::new(9);
     let mut emitted = CombatEmit::default();
-    let mut resources = BTreeMap::new();
     let mut inline_hooks = None;
     let handles =
         crate::sim::type_handle_table::ResolvedRuleHandles::resolve(&rules, &mut interner);
@@ -3221,7 +3185,6 @@ fn gsi_04_07_damage_repair_bullet_cellspread_zero_keeps_signed_area_record() {
         &rules,
         &mut interner,
         Some(handles),
-        &mut resources,
         None,
         None,
         None,
@@ -3260,7 +3223,6 @@ fn gsi_04_07_damage_repair_bullet_cellspread_zero_keeps_signed_area_record() {
         &mut main_rng,
         &mut scenario_rng,
         &mut handled_deaths,
-        &mut resources,
         None,
         None,
         None,
@@ -3338,7 +3300,6 @@ fn gsi_04_07_damage_receiver_updates_grudge_before_retaliation() {
     let mut main_rng = SimRng::new(5);
     let mut scenario_rng = SimRng::new(7);
     let mut handled_deaths = Vec::new();
-    let mut resources = BTreeMap::new();
     let mut fatal_lifecycle = None;
     let mut sound_sink = None;
     let threat_before_zero = threat_persistence(&houses);
@@ -3361,7 +3322,6 @@ fn gsi_04_07_damage_receiver_updates_grudge_before_retaliation() {
         &mut main_rng,
         &mut scenario_rng,
         &mut handled_deaths,
-        &mut resources,
         None,
         None,
         None,
@@ -3405,7 +3365,6 @@ fn gsi_04_07_damage_receiver_updates_grudge_before_retaliation() {
         &mut main_rng,
         &mut scenario_rng,
         &mut handled_deaths,
-        &mut resources,
         None,
         None,
         None,
@@ -3997,7 +3956,6 @@ fn gsi_08_05_tick_combat_respects_the_jittered_cooldown() {
                 &mut OccupancyGrid::new(),
                 &rules,
                 interner,
-                &mut BTreeMap::new(),
                 0u64,
                 100,
                 0u32,
@@ -4084,7 +4042,6 @@ fn selected_death_sounds_for(
         &mut handled_deaths,
         &[2],
         &[],
-        &mut BTreeMap::new(),
         None,
         None,
         None,
@@ -4263,7 +4220,6 @@ fn a_struck_building_sounds_the_global_damage_cue_only_on_a_state_crossing() {
         let mut main_rng = SimRng::new(11);
         let mut scenario_rng = SimRng::new(13);
         let mut handled_deaths = Vec::new();
-        let mut resources = BTreeMap::new();
         let mut hooks = None;
         let mut collected: Vec<SimSoundEvent> = Vec::new();
         let mut sound_sink: Option<&mut Vec<SimSoundEvent>> = Some(&mut collected);
@@ -4288,7 +4244,6 @@ fn a_struck_building_sounds_the_global_damage_cue_only_on_a_state_crossing() {
             &mut main_rng,
             &mut scenario_rng,
             &mut handled_deaths,
-            &mut resources,
             None,
             None,
             None,
@@ -4394,7 +4349,6 @@ fn a_techno_speaks_its_voice_feedback_only_on_the_half_strength_crossing() {
         let mut main_rng = SimRng::new(11);
         let mut scenario_rng = SimRng::new(13);
         let mut handled_deaths = Vec::new();
-        let mut resources = BTreeMap::new();
         let mut hooks = None;
         let mut collected: Vec<SimSoundEvent> = Vec::new();
         let mut sound_sink: Option<&mut Vec<SimSoundEvent>> = Some(&mut collected);
@@ -4421,7 +4375,6 @@ fn a_techno_speaks_its_voice_feedback_only_on_the_half_strength_crossing() {
             &mut main_rng,
             &mut scenario_rng,
             &mut handled_deaths,
-            &mut resources,
             None,
             None,
             None,
@@ -4555,7 +4508,6 @@ fn fatal_sound_selection_uses_human_voice_then_die_sound_main_draws() {
         &[owner],
         &HouseAllianceMap::new(),
         Some(&mut sounds),
-        &mut BTreeMap::new(),
         None,
         None,
         None,
@@ -4655,7 +4607,6 @@ fn test_tick_combat_out_of_range() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0u64,
         100,
         0u32,
@@ -4690,7 +4641,6 @@ fn undeployed_guardian_gi_vs_infantry_uses_m60() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -4722,7 +4672,6 @@ fn deployed_guardian_gi_vs_rhino_at_six_cells_uses_missilelauncher() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -4755,7 +4704,6 @@ fn deployed_guardian_gi_vs_rocketeer_uses_missilelauncher() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -4787,7 +4735,6 @@ fn test_infantry_vs_heavy_armor() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0u64,
         100,
         0u32,
@@ -4817,7 +4764,6 @@ fn infantry_standing_fire_waits_for_fire_frame() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -4845,7 +4791,6 @@ fn infantry_standing_fire_waits_for_fire_frame() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         1,
         100,
         0,
@@ -4860,7 +4805,6 @@ fn infantry_standing_fire_waits_for_fire_frame() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         2,
         100,
         0,
@@ -4907,7 +4851,6 @@ fn prone_infantry_uses_prone_fire_sequence_and_frame() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -4930,7 +4873,6 @@ fn prone_infantry_uses_prone_fire_sequence_and_frame() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         1,
         100,
         0,
@@ -4945,7 +4887,6 @@ fn prone_infantry_uses_prone_fire_sequence_and_frame() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         2,
         100,
         0,
@@ -4980,7 +4921,6 @@ fn deployed_gi_uses_deployed_fire_visual_with_deploy_fire_weapon() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -5003,7 +4943,6 @@ fn deployed_gi_uses_deployed_fire_visual_with_deploy_fire_weapon() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         1,
         100,
         0,
@@ -5063,7 +5002,6 @@ fn garrison_fire_keeps_occupant_anim_and_sound_path() {
         None,
         &BTreeMap::<InternedId, PowerState>::new(),
         Some(&mut sounds),
-        &mut BTreeMap::new(),
         None,
         None,
         None,
@@ -5104,7 +5042,6 @@ fn delayed_infantry_fire_cancels_when_target_dies_before_fire_frame() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -5118,7 +5055,6 @@ fn delayed_infantry_fire_cancels_when_target_dies_before_fire_frame() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         1,
         100,
         0,
@@ -5166,7 +5102,6 @@ fn test_prone_infantry_takes_scaled_direct_damage() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0u64,
         100,
         0u32,
@@ -5213,7 +5148,6 @@ fn test_prone_infantry_takes_scaled_aoe_damage() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0u64,
         100,
         0u32,
@@ -5254,7 +5188,6 @@ fn test_tick_combat_visibility_blocks_fire() {
         Some(&fog),
         &BTreeMap::<InternedId, PowerState>::new(),
         None,
-        &mut BTreeMap::new(),
         None,
         None,
         None,
@@ -5344,7 +5277,6 @@ fn run_playfield_retarget_branch(
     }
 
     let mut occupancy = mark_fixture_entities(&mut store);
-    let mut resources = BTreeMap::new();
     let mut scenario_rng = SimRng::new(1);
     if require_playfield_membership {
         let handles = Some(crate::sim::type_handle_table::ResolvedRuleHandles::resolve(
@@ -5364,7 +5296,6 @@ fn run_playfield_retarget_branch(
             &[],
             &HouseAllianceMap::new(),
             None,
-            &mut resources,
             None,
             None,
             None,
@@ -5396,7 +5327,6 @@ fn run_playfield_retarget_branch(
             Some(&fog),
             &BTreeMap::new(),
             None,
-            &mut resources,
             None,
             None,
             None,
@@ -5489,7 +5419,6 @@ fn gsi_08_01_a_shared_cell_offers_only_its_list_head() {
         Some(&fog),
         &BTreeMap::<InternedId, PowerState>::new(),
         None,
-        &mut BTreeMap::new(),
         None,
         None,
         None,
@@ -5538,7 +5467,6 @@ fn gsi_08_01_unarmed_building_loses_to_a_tank_at_equal_distance() {
         Some(&fog),
         &BTreeMap::<InternedId, PowerState>::new(),
         None,
-        &mut BTreeMap::new(),
         None,
         None,
         None,
@@ -5592,23 +5520,8 @@ fn test_weapon_fire_destroys_ore_in_spread() {
     issue_attack_command(&mut store, 1, 2, None, &interner);
 
     // Place ore at the target cell and a neighbor within CellSpread=2.
-    let mut resource_nodes = BTreeMap::new();
     // 6 density levels of ore at target (8,5): remaining = 6 * 120 = 720.
-    resource_nodes.insert(
-        (8, 5),
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: 720,
-        },
-    );
     // 3 density levels at (9,5): remaining = 3 * 120 = 360.
-    resource_nodes.insert(
-        (9, 5),
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: 360,
-        },
-    );
 
     let ore_ini =
         IniFile::from_str("[OverlayTypes]\n0=ORE\n[ORE]\nTiberium=yes\nChainReaction=yes\n");
@@ -5627,7 +5540,6 @@ fn test_weapon_fire_destroys_ore_in_spread() {
         None,
         &BTreeMap::<InternedId, PowerState>::new(),
         None,
-        &mut resource_nodes,
         Some(&mut overlays),
         Some(&ore_registry),
         None,
@@ -5640,7 +5552,7 @@ fn test_weapon_fire_destroys_ore_in_spread() {
     );
 
     // Combat emits TiberiumReductionRequests (applied later by World via the
-    // shared cell reducer); it no longer mutates resource_nodes directly.
+    // shared cell reducer).
     // Damage=120 → ore_damage = 120/10 = 12 density levels at each cell within
     // CellSpread=2. Both ore cells (8,5) and (9,5) get a reduction request.
     let req_amount = |rx: u16, ry: u16| {
@@ -5673,22 +5585,7 @@ fn test_direct_hit_weapon_destroys_center_ore() {
     let mut interner = test_interner();
     issue_attack_command(&mut store, 1, 2, None, &interner);
 
-    let mut resource_nodes = BTreeMap::new();
-    resource_nodes.insert(
-        (8, 5),
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: 720,
-        },
-    );
     // Ore at adjacent cell (9,5) should NOT be affected (CellSpread=0 = center only).
-    resource_nodes.insert(
-        (9, 5),
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: 720,
-        },
-    );
 
     let ore_ini =
         IniFile::from_str("[OverlayTypes]\n0=ORE\n[ORE]\nTiberium=yes\nChainReaction=yes\n");
@@ -5707,7 +5604,6 @@ fn test_direct_hit_weapon_destroys_center_ore() {
         None,
         &BTreeMap::<InternedId, PowerState>::new(),
         None,
-        &mut resource_nodes,
         Some(&mut overlays),
         Some(&ore_registry),
         None,
@@ -5754,15 +5650,7 @@ fn test_weak_weapon_partial_ore_reduction() {
     let mut interner = test_interner();
     issue_attack_command(&mut store, 1, 2, None, &interner);
 
-    let mut resource_nodes = BTreeMap::new();
     // 10 density levels of ore: remaining = 10 * 120 = 1200.
-    resource_nodes.insert(
-        (8, 5),
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: 1200,
-        },
-    );
 
     let ore_ini =
         IniFile::from_str("[OverlayTypes]\n0=ORE\n[ORE]\nTiberium=yes\nChainReaction=yes\n");
@@ -5780,7 +5668,6 @@ fn test_weak_weapon_partial_ore_reduction() {
         None,
         &BTreeMap::<InternedId, PowerState>::new(),
         None,
-        &mut resource_nodes,
         Some(&mut overlays),
         Some(&ore_registry),
         None,
@@ -6369,7 +6256,6 @@ fn v3_non_killing_aoe_emits_one_smudge_request() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0u64,
         100,
         0u32,
@@ -6436,7 +6322,6 @@ fn v3_killing_aoe_emits_exactly_one_smudge_request() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0u64,
         100,
         0u32,
@@ -6496,7 +6381,6 @@ fn gsi_04_11_death_weapon_anim_precedes_outer_detonation_anim() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0u64,
         100,
         0u32,
@@ -6600,7 +6484,6 @@ fn gsi_04_11_persistent_projectile_keeps_exact_lepton_z() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -6632,7 +6515,6 @@ fn persistent_projectile_delays_damage_across_save_load_continuation() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -6705,7 +6587,6 @@ fn persistent_projectile_delays_damage_across_save_load_continuation() {
         &[],
         &HouseAllianceMap::new(),
         None,
-        &mut BTreeMap::new(),
         None,
         None,
         None,
@@ -6762,7 +6643,6 @@ fn inviso_scatter_uses_scenario_rng_only_for_effect_and_paired_smudge() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -6817,7 +6697,6 @@ fn inviso_empty_animlist_still_consumes_one_draw() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -6862,7 +6741,6 @@ fn gsi_08_05_non_inviso_projectile_advances_scenario_rng_by_the_reload_jitter() 
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -6931,7 +6809,6 @@ fn two_inviso_attackers_consume_consecutive_draws_in_live_order() {
         None,
         &BTreeMap::<InternedId, PowerState>::new(),
         None,
-        &mut BTreeMap::new(),
         None,
         None,
         None,
@@ -7145,7 +7022,6 @@ fn combat_resolves_in_live_object_order_not_stable_id() {
             None,
             &BTreeMap::<InternedId, PowerState>::new(),
             None,
-            &mut BTreeMap::new(),
             None,
             None,
             None,
@@ -7181,7 +7057,6 @@ fn combat_resolves_in_live_object_order_not_stable_id() {
             None,
             &BTreeMap::<InternedId, PowerState>::new(),
             None,
-            &mut BTreeMap::new(),
             None,
             None,
             None,
@@ -7345,7 +7220,6 @@ fn rad_combat_tick(
         None,
         &BTreeMap::new(),
         None,
-        &mut BTreeMap::new(),
         None,
         None,
         None,
@@ -7532,7 +7406,6 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
         .insert("ALLY".to_string());
     let mut main_rng = SimRng::new(3);
     let mut handled_deaths = Vec::new();
-    let mut resources = BTreeMap::new();
     let mut fatal_lifecycle = None;
     let mut sound_sink = None;
     let _ = commit_damage_events(
@@ -7547,7 +7420,6 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
         &mut main_rng,
         &mut sim.scenario_rng,
         &mut handled_deaths,
-        &mut resources,
         None,
         None,
         None,
@@ -7794,7 +7666,6 @@ fn under_attack_events_fire_for_sourced_structures_and_harvester_types() {
             &mut OccupancyGrid::new(),
             &rules,
             &mut interner,
-            &mut BTreeMap::new(),
             0,
             100,
             0,
@@ -7905,7 +7776,6 @@ fn unit_lost_events_come_from_damage_kills_of_unspawned_non_buildings() {
             &mut OccupancyGrid::new(),
             &rules,
             &mut interner,
-            &mut BTreeMap::new(),
             0,
             100,
             0,
@@ -7982,7 +7852,6 @@ fn harvester_killing_blow_announces_unit_lost_without_the_miner_ping() {
             &mut OccupancyGrid::new(),
             &rules,
             &mut interner,
-            &mut BTreeMap::new(),
             0,
             100,
             0,
@@ -8131,7 +8000,6 @@ fn projectile_shrapnel_targets_hostile_head_before_random_cell_child() {
         &[],
         &crate::map::houses::HouseAllianceMap::default(),
         None,
-        &mut BTreeMap::new(),
         None,
         None,
         None,
@@ -8526,7 +8394,6 @@ fn gsi_08_12_a_grizzly_promotes_through_the_damage_path() {
             &mut OccupancyGrid::new(),
             &rules,
             &mut interner,
-            &mut BTreeMap::new(),
             0,
             100,
             0,
@@ -8580,7 +8447,6 @@ fn gsi_08_05_elite_rof_and_firepower_abilities_reach_the_fire_path() {
             &mut OccupancyGrid::new(),
             &rules,
             &mut interner,
-            &mut BTreeMap::new(),
             0,
             100,
             0,
@@ -8630,7 +8496,6 @@ fn gsi_08_11_unit_death_plays_type_explosion_then_destroy_anim() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -8691,7 +8556,6 @@ fn gsi_08_12_a_dont_score_victim_pays_no_experience() {
             &mut OccupancyGrid::new(),
             &rules,
             &mut interner,
-            &mut BTreeMap::new(),
             0,
             100,
             0,
@@ -8740,7 +8604,6 @@ fn gsi_08_04_projectile_spawns_at_the_muzzle_not_the_hull_centre() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -8796,7 +8659,6 @@ fn gsi_08_06_homing_launch_uses_one_lepton_and_stores_speed_as_the_ceiling() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -8855,7 +8717,6 @@ fn gsi_08_06_point_blank_shot_clamps_the_launch_speed_to_half_the_distance() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -9037,7 +8898,6 @@ fn gsi_08_08_kirov_vertical_bomb_falls_and_detonates() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -9151,7 +9011,6 @@ fn gsi_05_14_a_dying_vehicle_scatters_metallic_debris() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -9211,7 +9070,6 @@ fn gsi_05_14_a_dying_building_uses_its_own_debris_anims() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -9275,7 +9133,6 @@ fn gsi_05_14_a_dying_harvester_throws_voxel_tires_and_no_shp_debris() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -9333,7 +9190,6 @@ fn gsi_05_14_a_type_without_maxdebris_takes_no_draw() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
         0,
         100,
         0,
@@ -9406,7 +9262,6 @@ fn gsi_08_08_special_arm_suppresses_damage_but_keeps_the_detonation_tail() {
         };
         let mut scenario_rng = SimRng::new(9);
         let mut emitted = CombatEmit::default();
-        let mut resources = BTreeMap::new();
         let mut inline_hooks = None;
         let handles =
             crate::sim::type_handle_table::ResolvedRuleHandles::resolve(rules, &mut interner);
@@ -9417,7 +9272,6 @@ fn gsi_08_08_special_arm_suppresses_damage_but_keeps_the_detonation_tail() {
             rules,
             &mut interner,
             Some(handles),
-            &mut resources,
             None,
             None,
             None,
@@ -9526,7 +9380,6 @@ fn gsi_08_33_direct_rocker_only_claims_a_vehicle_target() {
         };
         let mut scenario_rng = SimRng::new(9);
         let mut emitted = CombatEmit::default();
-        let mut resources = BTreeMap::new();
         let mut inline_hooks = None;
         let handles =
             crate::sim::type_handle_table::ResolvedRuleHandles::resolve(rules, &mut interner);
@@ -9537,7 +9390,6 @@ fn gsi_08_33_direct_rocker_only_claims_a_vehicle_target() {
             rules,
             &mut interner,
             Some(handles),
-            &mut resources,
             None,
             None,
             None,
@@ -9608,7 +9460,6 @@ fn shroud_current_sight_concealed_transient_rejects_combat_fire() {
             Some(&fog),
             &BTreeMap::<InternedId, PowerState>::new(),
             None,
-            &mut BTreeMap::new(),
             None,
             None,
             None,

@@ -1,7 +1,5 @@
 //! Production DecloakToFire gate acceptance for stock Boomer-shaped units.
 
-use std::collections::BTreeMap;
-
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::cloak_disguise::CloakRuntime;
@@ -38,7 +36,13 @@ fn entities(target_type: &str) -> EntityStore {
     cloak.establish_unlimbo_fully_cloaked();
     bsub.cloak = Some(cloak);
     store.insert(bsub);
-    store.insert(GameEntity::test_default(2, target_type, "Americans", 11, 10));
+    store.insert(GameEntity::test_default(
+        2,
+        target_type,
+        "Americans",
+        11,
+        10,
+    ));
     store
 }
 
@@ -61,7 +65,6 @@ fn resolve_once(
         None,
         None,
     );
-    let mut resources = BTreeMap::new();
     let mut rng = SimRng::new(0xC10A_F1AE);
     let mut hooks: Option<&mut FixtureTrace> = None;
     resolve_attacker_fire(
@@ -70,7 +73,6 @@ fn resolve_once(
         rules,
         interner,
         None,
-        &mut resources,
         None,
         &OccupancyGrid::new(),
         None,
@@ -98,18 +100,30 @@ fn bsub_cruise_launcher_uncloaks_without_same_tick_fire_then_retry_fires() {
     let mut sounds = Vec::new();
     let mut blocked = CombatEmit::default();
 
-    resolve_once(&mut entities, &rules, &mut interner, &mut sounds, &mut blocked);
+    resolve_once(
+        &mut entities,
+        &rules,
+        &mut interner,
+        &mut sounds,
+        &mut blocked,
+    );
 
     assert_eq!(
         entities.get(1).unwrap().cloak.as_ref().unwrap().state,
         3,
         "0x736DF0 case 9 calls StartUncloaking"
     );
-    assert!(entities.get(1).unwrap().attack_target.is_some(), "target is retained for retry");
+    assert!(
+        entities.get(1).unwrap().attack_target.is_some(),
+        "target is retained for retry"
+    );
     assert!(blocked.fire_events.is_empty());
     assert!(blocked.damage_events.is_empty());
     assert!(blocked.projectile_spawns.is_empty());
-    assert!(blocked.burst_updates.is_empty(), "no ROF/burst write on the surfacing visit");
+    assert!(
+        blocked.burst_updates.is_empty(),
+        "no ROF/burst write on the surfacing visit"
+    );
     assert!(matches!(
         sounds.as_slice(),
         [SimSoundEvent::CloakSound {
@@ -137,20 +151,43 @@ fn bsub_cruise_launcher_uncloaks_without_same_tick_fire_then_retry_fires() {
         &mut sounds,
         &mut repeated,
     );
-    assert_eq!(sounds.len(), 1, "state 3 rejects repeated StartUncloaking sound");
-    assert!(repeated.fire_events.is_empty(), "the deferred visit remains shot-free");
+    assert_eq!(
+        sounds.len(),
+        1,
+        "state 3 rejects repeated StartUncloaking sound"
+    );
+    assert!(
+        repeated.fire_events.is_empty(),
+        "the deferred visit remains shot-free"
+    );
 
     // Represent completion of StartUncloaking's ordinary state-3 progression.
     let cloak = entities.get_mut(1).unwrap().cloak.as_mut().unwrap();
     cloak.state = 0;
     cloak.visual_phase = None;
     let mut retry = CombatEmit::default();
-    resolve_once(&mut entities, &rules, &mut interner, &mut sounds, &mut retry);
+    resolve_once(
+        &mut entities,
+        &rules,
+        &mut interner,
+        &mut sounds,
+        &mut retry,
+    );
     assert_eq!(retry.fire_events.len(), 1);
-    assert_eq!(interner.resolve(retry.fire_events[0].weapon_id), "CruiseLauncher");
+    assert_eq!(
+        interner.resolve(retry.fire_events[0].weapon_id),
+        "CruiseLauncher"
+    );
     assert_eq!(retry.fire_events[0].weapon_slot, WeaponSlot::Secondary);
-    assert!(!retry.burst_updates.is_empty(), "normal retry owns rearm state");
-    assert_eq!(sounds.len(), 1, "retry fire does not replay the transition cue");
+    assert!(
+        !retry.burst_updates.is_empty(),
+        "normal retry owns rearm state"
+    );
+    assert_eq!(
+        sounds.len(),
+        1,
+        "retry fire does not replay the transition cue"
+    );
 }
 
 #[test]
@@ -165,7 +202,13 @@ fn bsub_boomer_torpedo_explicit_no_fires_while_fully_cloaked() {
 
     assert_eq!(entities.get(1).unwrap().cloak.as_ref().unwrap().state, 2);
     assert_eq!(out.fire_events.len(), 1);
-    assert_eq!(interner.resolve(out.fire_events[0].weapon_id), "BoomerTorpedo");
+    assert_eq!(
+        interner.resolve(out.fire_events[0].weapon_id),
+        "BoomerTorpedo"
+    );
     assert_eq!(out.fire_events[0].weapon_slot, WeaponSlot::Primary);
-    assert!(sounds.is_empty(), "DecloakToFire=no never enters StartUncloaking");
+    assert!(
+        sounds.is_empty(),
+        "DecloakToFire=no never enters StartUncloaking"
+    );
 }

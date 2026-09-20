@@ -881,12 +881,8 @@ pub(crate) fn initialize_native_tiberium_queues(
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
     native_rect: (u16, u16),
 ) -> Option<crate::sim::ore_growth::NativeTiberiumRebuildStats> {
-    sim.production.ore_growth_config = crate::sim::ore_growth::OreGrowthConfig::resolve(
-        &rules.general,
-        basic,
-        special_flags,
-        &sim.session,
-    );
+    sim.production.ore_growth_config =
+        crate::sim::ore_growth::OreGrowthConfig::resolve(basic, special_flags, &sim.session);
     let (width, height) = overlay_grid
         .map(|grid| (grid.width(), grid.height()))
         .or_else(|| {
@@ -1232,8 +1228,7 @@ pub(crate) fn finalize_constructed_scenario(
     // Attach the TIBTRE ore-spawner animation index to the terrain objects
     // constructed ahead of the map entities. Its authoritative raw SHP count
     // is rules-owned; presentation atlases retain only body-frame ranges.
-    let seeded_terrain =
-        crate::sim::terrain_spawn::seed_terrain_spawner_animation(sim, rules, overlay_registry);
+    let seeded_terrain = crate::sim::terrain_spawn::seed_terrain_spawner_animation(sim, rules);
     if seeded_terrain > 0 {
         log::info!(
             "Seeded {} ore-spawning terrain objects (TIBTRE)",

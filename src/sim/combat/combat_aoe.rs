@@ -1679,7 +1679,6 @@ mod tests {
         let mut main_rng = SimRng::new(1);
         let mut scenario_rng = SimRng::new(2);
         let mut handled_deaths = Vec::new();
-        let mut resources = BTreeMap::new();
         let mut houses = BTreeMap::new();
         let mut fatal_lifecycle = None;
         let mut sound_sink = None;
@@ -1695,7 +1694,6 @@ mod tests {
             &mut main_rng,
             &mut scenario_rng,
             &mut handled_deaths,
-            &mut resources,
             None,
             None,
             Some(&mut terrain),
@@ -1888,7 +1886,6 @@ mod tests {
             let mut main_rng = SimRng::new(1);
             let mut scenario_rng = SimRng::new(2);
             let mut handled_deaths = Vec::new();
-            let mut resources = BTreeMap::new();
             let mut houses = BTreeMap::new();
             let mut fatal_lifecycle = None;
             let mut sound_sink = None;
@@ -1904,7 +1901,6 @@ mod tests {
                 &mut main_rng,
                 &mut scenario_rng,
                 &mut handled_deaths,
-                &mut resources,
                 None,
                 None,
                 Some(&mut terrain),
@@ -2073,7 +2069,6 @@ mod tests {
             let damage_events = aoe.hits;
             let mut main_rng = SimRng::new(9);
             let mut handled_deaths = Vec::new();
-            let mut resources = BTreeMap::new();
             let mut houses = BTreeMap::new();
             let mut fatal_lifecycle = None;
             let mut sound_sink = None;
@@ -2089,7 +2084,6 @@ mod tests {
                 &mut main_rng,
                 &mut scenario_rng,
                 &mut handled_deaths,
-                &mut resources,
                 Some(&mut overlays),
                 Some(&registry),
                 Some(&mut terrain),
@@ -2271,7 +2265,6 @@ mod tests {
         let mut main_rng = SimRng::new(7);
         let mut scenario_rng = SimRng::new(9);
         let mut handled_deaths = Vec::new();
-        let mut resources = BTreeMap::new();
         let mut houses = BTreeMap::new();
         let mut fatal_lifecycle = None;
         let mut sound_sink = None;
@@ -2287,7 +2280,6 @@ mod tests {
             &mut main_rng,
             &mut scenario_rng,
             &mut handled_deaths,
-            &mut resources,
             None,
             None,
             Some(&mut terrain),
@@ -2719,7 +2711,6 @@ mod tests {
             let mut main_rng = SimRng::new(1);
             let mut scenario_rng = SimRng::new(2);
             let mut handled_deaths = Vec::new();
-            let mut resources = BTreeMap::new();
             let mut houses = BTreeMap::new();
             let mut fatal_lifecycle = None;
             let mut sound_sink = None;
@@ -2735,7 +2726,6 @@ mod tests {
                 &mut main_rng,
                 &mut scenario_rng,
                 &mut handled_deaths,
-                &mut resources,
                 None,
                 None,
                 Some(&mut terrain),
@@ -2851,7 +2841,6 @@ mod tests {
             let mut main_rng = SimRng::new(1);
             let mut scenario_rng = SimRng::new(2);
             let mut handled_deaths = Vec::new();
-            let mut resources = BTreeMap::new();
             let mut houses = BTreeMap::new();
             let mut fatal_lifecycle = None;
             let mut sound_sink = None;
@@ -2867,7 +2856,6 @@ mod tests {
                 &mut main_rng,
                 &mut scenario_rng,
                 &mut handled_deaths,
-                &mut resources,
                 None,
                 None,
                 Some(&mut terrain),
@@ -2984,7 +2972,6 @@ mod tests {
         let mut main_rng = SimRng::new(1);
         let mut scenario_rng = SimRng::new(2);
         let mut handled_deaths = Vec::new();
-        let mut resources = BTreeMap::new();
         let mut fatal_lifecycle = None;
         let mut sound_sink = None;
         let (death, pings) = crate::sim::combat::commit_damage_events(
@@ -2999,7 +2986,6 @@ mod tests {
             &mut main_rng,
             &mut scenario_rng,
             &mut handled_deaths,
-            &mut resources,
             None,
             None,
             Some(&mut terrain),
@@ -3142,7 +3128,6 @@ mod tests {
         let mut main_rng = SimRng::new(1);
         let mut scenario_rng = SimRng::new(2);
         let mut handled_deaths = Vec::new();
-        let mut resources = BTreeMap::new();
         let mut houses = BTreeMap::new();
         let mut fatal_lifecycle = None;
         let mut sound_sink = None;
@@ -3158,7 +3143,6 @@ mod tests {
             &mut main_rng,
             &mut scenario_rng,
             &mut handled_deaths,
-            &mut resources,
             None,
             None,
             Some(&mut terrain),
@@ -3220,7 +3204,6 @@ mod tests {
             &mut main_rng,
             &mut scenario_rng,
             &mut handled_deaths,
-            &mut resources,
             None,
             None,
             Some(&mut terrain),
@@ -3349,7 +3332,6 @@ mod tests {
         let mut main_rng = SimRng::new(1);
         let mut scenario_rng = SimRng::new(2);
         let mut handled_deaths = Vec::new();
-        let mut resources = BTreeMap::new();
         let mut fatal_lifecycle = None;
         let mut sound_sink = None;
         let (death, _) = crate::sim::combat::commit_damage_events(
@@ -3364,7 +3346,6 @@ mod tests {
             &mut main_rng,
             &mut scenario_rng,
             &mut handled_deaths,
-            &mut resources,
             None,
             None,
             Some(&mut terrain),
@@ -3485,7 +3466,6 @@ mod tests {
             let before_rng = scenario_rng.state();
             let mut main_rng = SimRng::new(7);
             let mut handled_deaths = Vec::new();
-            let mut resources = BTreeMap::new();
             let mut houses = BTreeMap::new();
             let mut fatal_lifecycle = None;
             let mut sound_sink = None;
@@ -3501,7 +3481,6 @@ mod tests {
                 &mut main_rng,
                 &mut scenario_rng,
                 &mut handled_deaths,
-                &mut resources,
                 None,
                 None,
                 Some(&mut terrain),

@@ -427,7 +427,16 @@ const SLICE6_PRE_SUSTAINED_SIGHT_V142_HASH: u64 = 0x3378_724A_9514_52B4;
 // Schema171: live type acceleration preserves retasked track progression;
 // fresh turning defers admission. Old receipts above remain historical only.
 // See docs/research/TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md, PR415 attribution.
-const SLICE6_BASELINE_HASH: u64 = 2458534358217456420;
+const SLICE6_BASELINE_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 2458534358217456420;
+// Schema174 removes folds instead of adding them: OreGrowthState's node-era
+// scanner cursor, candidate lists and sample counters, and ProductionState's
+// fallback ore overlay id. The pre-174 projection folds the values those fields
+// held IN THIS FIXTURE (zero, empty, None): its node-era scan never advanced,
+// and it never calls the spawner seeding, the one path that set the fallback
+// id. It is not a general reconstruction; a scenario finalized by the map
+// loader held Some(first TIB* id). The projection must still equal the previous
+// current pin, asserted below. Rust hash-composition ratchet, not a native golden.
+const SLICE6_BASELINE_HASH: u64 = 10437701875960042979;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -632,6 +641,11 @@ fn replay_hash_stable_through_slice6() {
             entity.foot_speed,
         );
     }
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(174)),
+        SLICE6_BASELINE_HASH_PRE_RETIRED_TIBERIUM_STATE_V174,
+        "the pre-174 composition must reproduce the previous current pin"
+    );
     assert_eq!(
         hash, SLICE6_BASELINE_HASH,
         "Slice 6 scripted-retask state hash drifted. Treat this as behavior drift \

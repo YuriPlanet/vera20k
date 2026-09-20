@@ -126,8 +126,8 @@ const STREAM_CHECKPOINT_TICKS: &[u64] = &[149, 299, 449, 599];
 /// from, moved -- and the intra-run determinism assertion still passes, so this
 /// is a changed schedule, not an RNG misroute. No draw site was added or
 /// removed.
-/// Re-baselined 2026-08-11 after this fixture stopped using the legacy
-/// `ResourceNode` stand-in and installed the production `OverlayGrid` plus
+/// Re-baselined 2026-08-11 after this fixture stopped using the since-removed
+/// per-cell resource node stand-in and installed the production `OverlayGrid` plus
 /// Tiberium rules on both record and replay. The harvester now reaches the
 /// native overlay authority and consumes the Scenario draws owned by that
 /// path. Main and MapGen remain byte-identical, and record/replay equality
@@ -660,7 +660,16 @@ const GLOBAL_PRE_SUSTAINED_SIGHT_V142_HASH: u64 = 0x4E6E_0CFE_23A8_03A7;
 
 // Schema171: fresh-turn admission/residual clearing and retained-owner hashes.
 // See TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md, PR415 causal attribution.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 11150992376934496020;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 11150992376934496020;
+// Schema174 removes folds instead of adding them: OreGrowthState's node-era
+// scanner cursor, candidate lists and sample counters, and ProductionState's
+// fallback ore overlay id. The pre-174 projection folds the values those fields
+// held IN THIS FIXTURE (zero, empty, None): its node-era scan never advanced,
+// and it never calls the spawner seeding, the one path that set the fallback
+// id. It is not a general reconstruction; a scenario finalized by the map
+// loader held Some(first TIB* id). The projection must still equal the previous
+// current pin, asserted below. Rust hash-composition ratchet, not a native golden.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 17631878483843703671;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -764,9 +773,7 @@ fn seed_scenario(
         Some(rules),
         heights,
     );
-    // Seed the native CellClass overlay authority near the harvester. The
-    // serialized ResourceNode map is only a compatibility seam for isolated
-    // tests and production SearchOre deliberately ignores it.
+    // Seed the native CellClass overlay authority near the harvester.
     let tib01 = overlays.id_for_name("TIB01").expect("harness TIB01");
     let mut overlay_grid = OverlayGrid::new(64, 64);
     for (rx, ry) in [(12, 13), (13, 13), (12, 14), (13, 14)] {
@@ -1025,6 +1032,11 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         "full08 projection moved: investigate behavior or another hash owner; do not rebaseline"
     );
 
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(174)),
+        GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174,
+        "the pre-174 composition must reproduce the previous current pin"
+    );
     println!(
         "[schema168 global] pre168={:016X}",
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(168))

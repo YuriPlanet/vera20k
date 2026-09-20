@@ -807,7 +807,7 @@ mod tests {
     use crate::rules::art_data::ArtRegistry;
     use crate::rules::ini_parser::IniFile;
     use crate::sim::components::Health;
-    use crate::sim::miner::{MinerState, RefineryDockPhase, ResourceNode, ResourceType};
+    use crate::sim::miner::{MinerState, RefineryDockPhase, ResourceType};
     use crate::sim::overlay_grid::OverlayGrid;
     use crate::sim::pathfinding::PathGrid;
 
@@ -1553,12 +1553,11 @@ mod tests {
         // Whole-multiple of the ore base (120) so the cell drains cleanly.
         // The production overlay seeder stores `(frame+1) * base`, so a
         // sub-density-level leftover never occurs on real maps.
-        sim.production.resource_nodes.insert(
+        crate::sim::tiberium::test_support::place_stock_amount(
+            &mut sim,
             (19, 12),
-            ResourceNode {
-                resource_type: ResourceType::Ore,
-                remaining: 120,
-            },
+            ResourceType::Ore,
+            120,
         );
 
         let mut saw_harvest = false;
@@ -1633,12 +1632,8 @@ mod tests {
             "unloading should increase owner credits"
         );
         assert!(
-            sim.production
-                .resource_nodes
-                .get(&(19, 12))
-                .map(|node| node.remaining < 20)
-                .unwrap_or(true),
-            "ore node should be consumed during harvesting"
+            crate::sim::tiberium::test_support::bales_at(&sim, 19, 12) == 0,
+            "the single ore bale should be consumed during harvesting"
         );
         assert_eq!(miner.home_refinery, Some(refinery_sid));
         assert_eq!(count_refineries(&sim, "Americans", &rules), 1);

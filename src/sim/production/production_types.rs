@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::rules::object_type::ObjectCategory;
 use crate::sim::intern::InternedId;
-use crate::sim::miner::ResourceNode;
 use crate::sim::ore_growth::{OreGrowthConfig, OreGrowthState};
 use crate::sim::production::factory::FactoryRegistry;
 
@@ -193,13 +192,9 @@ pub struct ProductionState {
     pub ready_by_owner: BTreeMap<InternedId, VecDeque<InternedId>>,
     pub active_producer_by_owner: BTreeMap<InternedId, BTreeMap<ProductionCategory, u64>>,
     pub next_enqueue_order: u64,
-    /// Legacy test/save compatibility only. Live YR maps derive resource type
-    /// and raw quantity from `Simulation::overlay_grid`; this map is neither
-    /// seeded nor read/hashed when the production registries are available.
-    pub resource_nodes: BTreeMap<(u16, u16), ResourceNode>,
     /// Ore growth/spread configuration resolved from merged INI sources.
     pub ore_growth_config: OreGrowthConfig,
-    /// Incremental scan state for ore growth/spread system.
+    /// Per-TiberiumClass growth and spread queues, bitmaps and timers.
     pub ore_growth_state: OreGrowthState,
     /// Slave Miner bindings: master entity stable_id → vec of slave entity stable_ids.
     /// Used to track which SLAV infantry belong to which deployed SMIN/YAREFN.
@@ -218,10 +213,6 @@ pub struct ProductionState {
     /// This is broader than `terrain_spawners`: non-animated legacy spawners do
     /// not tick, but still reject new Tiberium placement in the native gate.
     pub tiberium_spawning_terrain_cells: BTreeSet<(u16, u16)>,
-    /// Fallback overlay_id used for new ore cells when no overlay registry is
-    /// available. Runtime placement prefers the data-driven `TIB01..TIB12`
-    /// registry set and uses this only for headless/fallback contexts.
-    pub default_ore_overlay_id: Option<u8>,
     /// Airfield dock reservations — multi-slot (NumberOfDocks per airfield).
     pub airfield_docks: crate::sim::docking::aircraft_dock::AirfieldDocks,
     /// Per-(house, category) factory registry — the authoritative production state
@@ -239,7 +230,6 @@ impl Default for ProductionState {
             ready_by_owner: BTreeMap::new(),
             active_producer_by_owner: BTreeMap::new(),
             next_enqueue_order: 1,
-            resource_nodes: BTreeMap::new(),
             ore_growth_config: OreGrowthConfig::disabled(),
             ore_growth_state: OreGrowthState::new(0, 0),
             slave_bindings: BTreeMap::new(),
@@ -248,7 +238,6 @@ impl Default for ProductionState {
             terrain_object_cells: BTreeMap::new(),
             terrain_occupation_bits: BTreeMap::new(),
             tiberium_spawning_terrain_cells: BTreeSet::new(),
-            default_ore_overlay_id: None,
             airfield_docks: crate::sim::docking::aircraft_dock::AirfieldDocks::default(),
             factory_shadow: FactoryRegistry::default(),
         }

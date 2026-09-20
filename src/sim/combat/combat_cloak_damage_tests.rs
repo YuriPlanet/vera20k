@@ -118,7 +118,6 @@ fn hit_records(
     let mut main_rng = SimRng::new(11);
     let mut scenario_rng = SimRng::new(13);
     let mut handled_deaths = Vec::new();
-    let mut resources = BTreeMap::new();
     let mut hooks = None;
     let mut collected: Vec<SimSoundEvent> = Vec::new();
     let mut sound_sink: Option<&mut Vec<SimSoundEvent>> = Some(&mut collected);
@@ -140,7 +139,6 @@ fn hit_records(
         &mut main_rng,
         &mut scenario_rng,
         &mut handled_deaths,
-        &mut resources,
         None,
         None,
         None,

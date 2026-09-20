@@ -1,45 +1,33 @@
 //! Ore growth and spread system — data-driven from rules.ini and map INI.
 //!
-//! The active YR per-type queues read and write `OverlayGrid` directly. The
-//! older scan/reservoir path remains only for tests without native registries.
+//! The YR per-type queues read and write `OverlayGrid` directly; it is the
+//! only tiberium store.
 //! Native gates (see [`OreGrowthConfig::resolve`]):
 //! - map INI [Basic] `TiberiumGrowthEnabled` (`ScenarioClass+0x34A6`) gates
 //!   both per-type drivers;
 //! - `ScenarioClass` flags bits `0x40`/`0x80` (`TiberiumGrows`/
 //!   `TiberiumSpreads`): forced on at every skirmish/multiplayer start, read
-//!   from the map `[SpecialFlags]` only in GameMode 0;
-//! - rules.ini [General] `GrowthRate` drives only the legacy scan fallback.
-//!
-//! ## Algorithm (matching RA1 MapClass::Logic)
-//! 1. Incremental scan: each tick processes a fraction of the map
-//! 2. Collect growth/spread candidates via reservoir sampling
-//! 3. When full scan completes: execute growth, then spread
-//! 4. Growth = increase ore remaining by one richness level (ore only, not gems)
-//! 5. Spread = spawn new ore in a random adjacent empty+walkable cell
+//!   from the map `[SpecialFlags]` only in GameMode 0.
 //!
 //! ## Dependency rules
-//! - Part of sim/ — depends on sim/miner (ResourceNode, ResourceType),
-//!   sim/pathfinding (PathGrid), sim/rng (SimRng), rules/.
+//! - Part of sim/ — depends on sim/overlay_grid, sim/tiberium, sim/rng
+//!   (SimRng), rules/.
 //! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 
 use crate::map::authored_overlay::NativeOverlayMapShape;
 use crate::map::basic::{BasicSection, SpecialFlagsSection};
 use crate::map::overlay_types::OverlayTypeRegistry;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::rules::ruleset::GeneralRules;
 use crate::rules::tiberium_type::{TiberiumTypeId, TiberiumTypeRegistry};
-use crate::sim::miner::{ResourceNode, ResourceType};
 use crate::sim::overlay_grid::OverlayGrid;
-use crate::sim::pathfinding::PathGrid;
 use crate::sim::rng::SimRng;
 use crate::sim::tiberium::{
     NativeCellObjectView, NewTiberiumAdmission, PlaceTiberiumContext,
     TiberiumPlacementObjectContext, can_place_new_tiberium, place_tiberium,
 };
-use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::{NativeF64Bits, X87Chop53, X87Ordering};
 
 /// The `1e-05` double at `0x007E3810` every tiberium percentage gate compares
@@ -54,16 +42,6 @@ const GROWTH_PROCESSOR_REBUILD_BATCH_FACTOR: i64 = 2;
 /// `SpreadProcessor`: rebuild when `heap count > capacity - 0x14`.
 const SPREAD_PROCESSOR_REBUILD_SLACK: i64 = 0x14;
 
-/// Base ore stock per richness level — matches seed_resource_nodes_from_overlays().
-const ORE_BASE_PER_LEVEL: u16 = 120;
-/// Maximum ore richness = 12 levels (OverlayData 0-11 in RA1).
-const MAX_ORE_LEVELS: u16 = 12;
-/// Maximum ore `remaining` value (12 levels * 120 per level).
-const MAX_ORE_REMAINING: u16 = ORE_BASE_PER_LEVEL * MAX_ORE_LEVELS;
-/// Ore must be above this threshold to spread (>6 levels, matching RA1 OverlayData > 6).
-const SPREAD_THRESHOLD: u16 = ORE_BASE_PER_LEVEL * 6;
-/// Max candidates collected per scan cycle (bounded like RA1's fixed-size arrays).
-const MAX_CANDIDATES: usize = 50;
 /// Native AddToGrowthQueue priority jitter span.
 const GROWTH_QUEUE_PRIORITY_WINDOW: u32 = 50;
 const GROWTH_BATCH_MIN: u32 = 5;
@@ -106,9 +84,6 @@ pub struct OreGrowthConfig {
     /// `Growth * 0.3` growth-timer reload (`0x00722CA4`).
     #[serde(default)]
     pub tiberium_grows_flag: bool,
-    /// Seconds per full map growth scan cycle (from GrowthRate= in minutes, converted
-    /// to integer seconds at config construction to avoid f32 in the tick path).
-    pub growth_rate_seconds: u32,
 }
 
 impl OreGrowthConfig {
@@ -124,9 +99,7 @@ impl OreGrowthConfig {
     /// TiberiumGrows/TiberiumSpreads` have no gamemd reader (the only readers of
     /// those key strings are `[SpecialFlags]` I/O at `0x006B8B30`/`0x006B8CA0`
     /// and `[MultiplayerDialogSettings]` at `0x006720AA`) and no longer gate.
-    /// GrowthRate comes only from rules.ini (legacy scan fallback).
     pub fn resolve(
-        general: &GeneralRules,
         basic: &BasicSection,
         special_flags: &SpecialFlagsSection,
         session: &crate::sim::scenario_session::ScenarioSession,
@@ -140,26 +113,17 @@ impl OreGrowthConfig {
                 special_flags.tiberium_spreads.unwrap_or(true),
             )
         };
-        let growth_rate_minutes = general.growth_rate_minutes.max(0.01);
-        // Convert f32 minutes → integer seconds at the INI boundary via
-        // fixed-point to avoid platform-dependent f32 multiplication rounding.
-        let rate_fixed = SimFixed::saturating_from_num(growth_rate_minutes);
-        let growth_rate_seconds =
-            (rate_fixed * SimFixed::from_num(60)).to_num::<i32>().max(1) as u32;
-
         log::info!(
-            "OreGrowthConfig: grows={}, spreads={}, tiberium_grows_flag={}, rate={}s",
+            "OreGrowthConfig: grows={}, spreads={}, tiberium_grows_flag={}",
             grows,
             spreads,
             tiberium_grows_flag,
-            growth_rate_seconds,
         );
 
         Self {
             grows,
             spreads,
             tiberium_grows_flag,
-            growth_rate_seconds,
         }
     }
 
@@ -169,7 +133,6 @@ impl OreGrowthConfig {
             grows: false,
             spreads: false,
             tiberium_grows_flag: false,
-            growth_rate_seconds: 300, // 5 minutes
         }
     }
 }
@@ -198,28 +161,6 @@ pub(crate) fn native_growth_timer_reload(growth: u32, tiberium_grows_flag: bool)
     // The signed-dword input and multiplier at most 1.0 fit signed64;
     // native keeps EAX (the low dword).
     X87Chop53::ftol_i32_low_masked(product) as u32
-}
-
-/// Queued ore growth cell inserted by native-style AddToGrowthQueue callers.
-///
-/// Native stores queue priority as a float. This keeps the same observable
-/// priority shape while leaving execution to an explicit future queue processor.
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct OreGrowthQueueEntry {
-    pub rx: u16,
-    pub ry: u16,
-    pub priority: f32,
-}
-
-/// Native-style spread queue entry inserted by `Reduce_Tiberium` full removal.
-///
-/// The full queue processor is still being ported; this state captures the
-/// deterministic membership/reseed side effect so depletion no longer drops it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct OreSpreadQueueEntry {
-    pub resource_type: ResourceType,
-    pub rx: u16,
-    pub ry: u16,
 }
 
 /// Native `TiberiumClass` queue/timer state shell.
@@ -570,39 +511,16 @@ impl NativeTiberiumTimer {
     }
 }
 
-/// Persistent state for the incremental map scanner.
-///
-/// Lives in ProductionState. The scanner processes a fraction of the map each
-/// tick and collects candidates via reservoir sampling (fair random selection
-/// from a stream of unknown length, bounded to MAX_CANDIDATES).
+/// Persistent tiberium growth and spread state. Lives in ProductionState.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OreGrowthState {
-    /// Current position in the cell iteration (wraps to 0 after full scan).
-    scan_cursor: usize,
-    /// Total number of cells to scan (map_width * map_height).
+    /// Cells in the overlay storage (map_width * map_height).
     total_cells: usize,
     /// Map dimensions for cell coordinate conversion.
     map_width: u16,
     /// Map height for native neighbor bounds checks.
     #[serde(default)]
     map_height: u16,
-    /// Cells eligible for growth this scan cycle.
-    growth_candidates: Vec<(u16, u16)>,
-    /// Cells eligible for spread this scan cycle.
-    spread_candidates: Vec<(u16, u16)>,
-    /// Reservoir sampling counter for growth (total candidates seen).
-    growth_seen: usize,
-    /// Reservoir sampling counter for spread (total candidates seen).
-    spread_seen: usize,
-    /// Native AddToGrowthQueue-style entries inserted by explicit placement paths.
-    #[serde(default)]
-    growth_queue: Vec<OreGrowthQueueEntry>,
-    /// Native AddToSpreadQueue-style entries inserted by explicit cell events.
-    #[serde(default)]
-    spread_queue: Vec<OreSpreadQueueEntry>,
-    /// Deterministic membership guard for `spread_queue`.
-    #[serde(default)]
-    spread_membership: BTreeSet<(ResourceType, u16, u16)>,
     /// Native per-`TiberiumClass` state shell for the YR queue model.
     #[serde(default)]
     native_tiberium: NativeTiberiumState,
@@ -614,20 +532,12 @@ pub struct OreGrowthState {
 }
 
 impl OreGrowthState {
-    /// Create a new scanner for a map of the given dimensions.
+    /// Empty growth and spread state for a map of the given dimensions.
     pub fn new(map_width: u16, map_height: u16) -> Self {
         Self {
-            scan_cursor: 0,
             total_cells: map_width as usize * map_height as usize,
             map_width,
             map_height,
-            growth_candidates: Vec::with_capacity(MAX_CANDIDATES),
-            spread_candidates: Vec::with_capacity(MAX_CANDIDATES),
-            growth_seen: 0,
-            spread_seen: 0,
-            growth_queue: Vec::new(),
-            spread_queue: Vec::new(),
-            spread_membership: BTreeSet::new(),
             native_tiberium: NativeTiberiumState::default(),
             native_rect: (map_width, map_height),
         }
@@ -796,7 +706,6 @@ impl OreGrowthState {
         resolved_terrain: Option<&ResolvedTerrainGrid>,
         source_object_cells: &BTreeSet<(u16, u16)>,
         live_objects: Option<TiberiumPlacementObjectContext<'_>>,
-        resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
         rng: &mut SimRng,
         current_frame: u32,
         growth_enabled: bool,
@@ -831,7 +740,6 @@ impl OreGrowthState {
                 resolved_terrain,
                 source_object_cells,
                 live_objects,
-                resource_nodes,
                 rng,
                 current_frame,
                 growth_enabled,
@@ -863,7 +771,6 @@ impl OreGrowthState {
         tiberium_types: &TiberiumTypeRegistry,
         resolved_terrain: Option<&ResolvedTerrainGrid>,
         source_object_cells: &BTreeSet<(u16, u16)>,
-        _resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
         rng: &mut SimRng,
         current_frame: u32,
         spread_enabled: bool,
@@ -876,7 +783,6 @@ impl OreGrowthState {
             resolved_terrain,
             source_object_cells,
             None,
-            _resource_nodes,
             rng,
             current_frame,
             true,
@@ -897,7 +803,6 @@ impl OreGrowthState {
         resolved_terrain: Option<&ResolvedTerrainGrid>,
         source_object_cells: &BTreeSet<(u16, u16)>,
         live_objects: Option<TiberiumPlacementObjectContext<'_>>,
-        _resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
         rng: &mut SimRng,
         current_frame: u32,
         growth_enabled: bool,
@@ -1079,8 +984,6 @@ impl OreGrowthState {
         overlay_grid: &mut OverlayGrid,
         overlay_registry: &OverlayTypeRegistry,
         tiberium_types: &TiberiumTypeRegistry,
-        resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
-        path_grid: Option<&PathGrid>,
         resolved_terrain: Option<&ResolvedTerrainGrid>,
         source_object_cells: &BTreeSet<(u16, u16)>,
         live_objects: Option<TiberiumPlacementObjectContext<'_>>,
@@ -1109,14 +1012,13 @@ impl OreGrowthState {
         let mut stats = NativeSpreadProcessStats::default();
         let new_cell_admission = resolved_terrain
             .zip(live_objects)
-            .map(|(terrain, objects)| NewTiberiumAdmission::runtime(terrain, path_grid, objects));
+            .map(|(terrain, objects)| NewTiberiumAdmission::runtime(terrain, objects));
         for type_id in due_ids {
             stats.add(self.process_native_spread_for_type_with_placement(
                 type_id,
                 overlay_grid,
                 overlay_registry,
                 tiberium_types,
-                resource_nodes,
                 resolved_terrain,
                 source_object_cells,
                 new_cell_admission,
@@ -1143,45 +1045,6 @@ impl OreGrowthState {
         stats
     }
 
-    /// Compatibility-only processor for fixtures without a live map context.
-    #[cfg(test)]
-    pub fn process_native_spread_for_type_without_native_context(
-        &mut self,
-        type_id: TiberiumTypeId,
-        overlay_grid: &mut OverlayGrid,
-        overlay_registry: &OverlayTypeRegistry,
-        tiberium_types: &TiberiumTypeRegistry,
-        _resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
-        path_grid: Option<&PathGrid>,
-        resolved_terrain: Option<&ResolvedTerrainGrid>,
-        source_object_cells: &BTreeSet<(u16, u16)>,
-        rng: &mut SimRng,
-        current_frame: u32,
-        spread_enabled: bool,
-    ) -> NativeSpreadProcessStats {
-        let new_cell_admission = Some(NewTiberiumAdmission::compatibility_without_native_context(
-            resolved_terrain,
-            path_grid,
-            None,
-        ));
-        self.process_native_spread_for_type_with_placement(
-            type_id,
-            overlay_grid,
-            overlay_registry,
-            tiberium_types,
-            _resource_nodes,
-            resolved_terrain,
-            source_object_cells,
-            new_cell_admission,
-            rng,
-            current_frame,
-            spread_enabled,
-            None,
-            None,
-            None,
-        )
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn process_native_spread_for_type_with_placement(
         &mut self,
@@ -1189,7 +1052,6 @@ impl OreGrowthState {
         overlay_grid: &mut OverlayGrid,
         overlay_registry: &OverlayTypeRegistry,
         tiberium_types: &TiberiumTypeRegistry,
-        _resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
         resolved_terrain: Option<&ResolvedTerrainGrid>,
         source_object_cells: &BTreeSet<(u16, u16)>,
         new_cell_admission: Option<NewTiberiumAdmission<'_>>,
@@ -1237,9 +1099,7 @@ impl OreGrowthState {
                 let cells = native_rebuild_cells(self.native_rect, overlay_grid);
                 let occupied_cells = native_occupied_cells(
                     source_object_cells,
-                    new_cell_admission
-                        .and_then(|admission| admission.live_objects())
-                        .map(|objects| objects.object_view()),
+                    new_cell_admission.map(|admission| admission.live_objects().object_view()),
                 );
                 self.rebuild_spread_queue_for_type(
                     type_id,
@@ -1512,89 +1372,11 @@ impl OreGrowthState {
         seeded
     }
 
-    /// Enqueue a newly placed ore cell with native AddToGrowthQueue priority.
-    ///
-    /// Verified TIBTRE placement consumes one raw Random::Next word and stores
-    /// priority as `currentFrame + (signed_abs(raw) % 50)`.
-    pub fn enqueue_growth_queue_cell(
-        &mut self,
-        rx: u16,
-        ry: u16,
-        native_frame: u32,
-        rng: &mut SimRng,
-    ) -> OreGrowthQueueEntry {
-        let priority = growth_queue_priority(native_frame, rng.next_u32());
-        let entry = OreGrowthQueueEntry { rx, ry, priority };
-        self.growth_queue.push(entry);
-        entry
-    }
-
-    /// Native-style growth queue entries waiting for an explicit processor.
-    pub fn growth_queue_entries(&self) -> &[OreGrowthQueueEntry] {
-        &self.growth_queue
-    }
-
-    /// Native-style spread queue entries waiting for a future queue processor.
-    pub fn spread_queue_entries(&self) -> &[OreSpreadQueueEntry] {
-        &self.spread_queue
-    }
-
-    /// Clear all spread memberships for a removed cell across tiberium types.
-    pub fn clear_spread_memberships_for_cell(&mut self, rx: u16, ry: u16) {
-        self.spread_membership
-            .retain(|&(_, cell_rx, cell_ry)| cell_rx != rx || cell_ry != ry);
-        self.spread_queue
-            .retain(|entry| entry.rx != rx || entry.ry != ry);
-    }
-
     /// Native `ClearSpreadBitmaps_AllTypes` for one removed cell. Heap entries
     /// intentionally remain stale and are rejected when popped.
     pub fn clear_native_spread_bitmap_cell(&mut self, rx: u16, ry: u16) {
         for class in &mut self.native_tiberium.classes {
             class.spread_bitmap.remove(&(rx, ry));
-        }
-    }
-
-    /// Add one cell to the per-type spread queue if it is not already queued.
-    pub fn enqueue_spread_queue_cell(
-        &mut self,
-        resource_type: ResourceType,
-        rx: u16,
-        ry: u16,
-    ) -> bool {
-        if !self.spread_membership.insert((resource_type, rx, ry)) {
-            return false;
-        }
-        self.spread_queue.push(OreSpreadQueueEntry {
-            resource_type,
-            rx,
-            ry,
-        });
-        true
-    }
-
-    /// Reseed same-type resource neighbors around a just-depleted cell.
-    pub fn reseed_spread_neighbors_after_reduction(
-        &mut self,
-        resource_type: ResourceType,
-        cell: (u16, u16),
-        resource_nodes: &BTreeMap<(u16, u16), ResourceNode>,
-    ) {
-        self.clear_spread_memberships_for_cell(cell.0, cell.1);
-        let map_height = self.effective_map_height();
-        for &(dx, dy) in &ADJACENT_OFFSETS {
-            let nx = cell.0 as i32 + dx;
-            let ny = cell.1 as i32 + dy;
-            if nx < 0 || ny < 0 || nx >= self.map_width as i32 || ny >= map_height as i32 {
-                continue;
-            }
-            let neighbor = (nx as u16, ny as u16);
-            let Some(node) = resource_nodes.get(&neighbor) else {
-                continue;
-            };
-            if node.resource_type == resource_type && node.remaining > 0 {
-                self.enqueue_spread_queue_cell(resource_type, neighbor.0, neighbor.1);
-            }
         }
     }
 
@@ -1620,7 +1402,6 @@ impl OreGrowthState {
         spread_enabled: bool,
         rng: &mut SimRng,
     ) -> usize {
-        self.clear_spread_memberships_for_cell(removed_cell.0, removed_cell.1);
         self.clear_native_spread_bitmap_cell(removed_cell.0, removed_cell.1);
 
         let map_height = self.effective_map_height();
@@ -1676,29 +1457,24 @@ impl OreGrowthState {
     }
 
     /// Hash persistent ore-growth scheduler state for replay/desync checks.
-    pub fn hash_state(&self, hasher: &mut impl Hasher) {
-        self.scan_cursor.hash(hasher);
+    /// `retired_scanner_fold` reproduces the pre-174 stream for a sim whose
+    /// node-era scan never advanced and whose node-era queues were never
+    /// written, which is what the pinned fixtures held: the scanner's cursor,
+    /// two candidate lists and two sample counters sat here as zero/empty, and
+    /// its three queue folds were unframed loops over empty stores.
+    pub fn hash_state(&self, hasher: &mut impl Hasher, retired_scanner_fold: bool) {
+        if retired_scanner_fold {
+            0usize.hash(hasher);
+        }
         self.total_cells.hash(hasher);
         self.map_width.hash(hasher);
         self.effective_map_height().hash(hasher);
-        self.growth_candidates.hash(hasher);
-        self.spread_candidates.hash(hasher);
-        self.growth_seen.hash(hasher);
-        self.spread_seen.hash(hasher);
-        for entry in &self.growth_queue {
-            entry.rx.hash(hasher);
-            entry.ry.hash(hasher);
-            entry.priority.to_bits().hash(hasher);
-        }
-        for entry in &self.spread_queue {
-            entry.resource_type.hash(hasher);
-            entry.rx.hash(hasher);
-            entry.ry.hash(hasher);
-        }
-        for &(resource_type, rx, ry) in &self.spread_membership {
-            resource_type.hash(hasher);
-            rx.hash(hasher);
-            ry.hash(hasher);
+        if retired_scanner_fold {
+            let no_candidates: Vec<(u16, u16)> = Vec::new();
+            no_candidates.hash(hasher);
+            no_candidates.hash(hasher);
+            0usize.hash(hasher);
+            0usize.hash(hasher);
         }
         self.native_rect.hash(hasher);
         self.native_tiberium.classes.len().hash(hasher);
@@ -1911,9 +1687,7 @@ fn spread_tiberium_from_source(
         resolved_terrain,
         cell_has_native_object(
             source_object_cells,
-            admission
-                .live_objects()
-                .map(|objects| objects.object_view()),
+            Some(admission.live_objects().object_view()),
             (rx, ry),
         ),
         rx,
@@ -1941,9 +1715,7 @@ fn spread_tiberium_from_source(
             resolved_terrain,
             source_object_cells,
             new_cell_admission: Some(admission),
-            live_objects: admission
-                .live_objects()
-                .map(|objects| objects.object_view()),
+            live_objects: Some(admission.live_objects().object_view()),
             rng,
             binary_frame,
             growth_enabled: true,
@@ -1965,150 +1737,6 @@ fn spread_tiberium_from_source(
     None
 }
 
-/// Advance ore growth/spread by one sim tick.
-///
-/// This is the main entry point called from advance_tick(). It scans a fraction
-/// of the map each tick and executes growth/spread when a full cycle completes.
-pub fn tick_ore_growth(
-    config: &OreGrowthConfig,
-    state: &mut OreGrowthState,
-    resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
-    path_grid: Option<&PathGrid>,
-    mut overlay_grid: Option<&mut crate::sim::overlay_grid::OverlayGrid>,
-    rng: &mut SimRng,
-) {
-    if !config.grows && !config.spreads {
-        return;
-    }
-    if state.total_cells == 0 {
-        return;
-    }
-
-    // `GrowthRate` is authored against the engine's legacy 15-frame timebase.
-    // Game speed changes frame admission, not the number of simulation visits.
-    let rate_seconds: u32 = config.growth_rate_seconds.max(1);
-    const LEGACY_ORE_GROWTH_FRAMES_PER_RATE_SECOND: u32 =
-        crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND;
-    let ticks_per_cycle: u32 = rate_seconds
-        .saturating_mul(LEGACY_ORE_GROWTH_FRAMES_PER_RATE_SECOND)
-        .max(1);
-    let cells_per_tick: usize =
-        (state.total_cells as u32).div_ceil(ticks_per_cycle).max(1) as usize;
-
-    // Scan a chunk of cells from the cursor position.
-    let scan_end = (state.scan_cursor + cells_per_tick).min(state.total_cells);
-
-    // We iterate over resource_nodes rather than all cells — much more efficient
-    // since only a small fraction of cells have ore. We filter by coordinate range
-    // corresponding to the current scan chunk.
-    for (&(rx, ry), node) in resource_nodes.iter() {
-        let cell_index = ry as usize * state.map_width as usize + rx as usize;
-        if cell_index < state.scan_cursor || cell_index >= scan_end {
-            continue;
-        }
-
-        // Only ore grows/spreads (not gems), matching RA1 behavior.
-        if node.resource_type != ResourceType::Ore {
-            continue;
-        }
-
-        // Can this cell grow? (ore present, below max richness)
-        if config.grows && node.remaining < MAX_ORE_REMAINING {
-            reservoir_sample(
-                &mut state.growth_candidates,
-                &mut state.growth_seen,
-                (rx, ry),
-                rng,
-            );
-        }
-
-        // Can this cell spread? (ore present, above spread threshold)
-        if config.spreads && node.remaining > SPREAD_THRESHOLD {
-            reservoir_sample(
-                &mut state.spread_candidates,
-                &mut state.spread_seen,
-                (rx, ry),
-                rng,
-            );
-        }
-    }
-
-    state.scan_cursor = scan_end;
-
-    // When full scan completes, execute collected growth and spread actions.
-    if state.scan_cursor >= state.total_cells {
-        // Phase 1: Growth — increase remaining by one richness level.
-        if config.grows {
-            for &(rx, ry) in &state.growth_candidates {
-                if let Some(node) = resource_nodes.get_mut(&(rx, ry)) {
-                    if node.resource_type == ResourceType::Ore && node.remaining < MAX_ORE_REMAINING
-                    {
-                        let new_remaining = node.remaining + ORE_BASE_PER_LEVEL;
-                        node.remaining = new_remaining.min(MAX_ORE_REMAINING);
-                        // Sync overlay frame to match new density.
-                        if let Some(grid) = overlay_grid.as_deref_mut() {
-                            let frame = (node.remaining / ORE_BASE_PER_LEVEL)
-                                .saturating_sub(1)
-                                .min(11) as u8;
-                            grid.set_overlay_data(rx, ry, frame);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Phase 2: Spread — spawn new ore in a random adjacent empty cell.
-        if config.spreads {
-            for &(rx, ry) in &state.spread_candidates {
-                try_spread_ore(
-                    resource_nodes,
-                    path_grid,
-                    overlay_grid.as_deref_mut(),
-                    rng,
-                    rx,
-                    ry,
-                    state.map_width,
-                );
-            }
-        }
-
-        // Reset for next cycle.
-        state.scan_cursor = 0;
-        state.growth_candidates.clear();
-        state.spread_candidates.clear();
-        state.growth_seen = 0;
-        state.spread_seen = 0;
-
-        let node_count = resource_nodes.len();
-        log::debug!(
-            "Ore growth cycle complete: {} resource nodes on map",
-            node_count
-        );
-    }
-}
-
-/// Reservoir sampling: maintain a bounded random sample from a stream.
-///
-/// Ensures each candidate has an equal probability of being in the final sample,
-/// regardless of the total stream length. Matches RA1's MapClass::Logic approach.
-fn reservoir_sample(
-    candidates: &mut Vec<(u16, u16)>,
-    seen: &mut usize,
-    cell: (u16, u16),
-    rng: &mut SimRng,
-) {
-    *seen += 1;
-    if candidates.len() < MAX_CANDIDATES {
-        candidates.push(cell);
-    } else {
-        // Replace a random existing candidate with probability MAX_CANDIDATES / seen.
-        let r = rng.next_range_u32(*seen as u32) as usize;
-        if r < MAX_CANDIDATES {
-            candidates[r] = cell;
-        }
-    }
-}
-
 /// Native-shaped AddToGrowthQueue priority from one raw RNG word.
 /// `AddToGrowthQueue @ 0x007235F9..0x00723612` / `AddToSpreadQueue @
 /// 0x00722B5B..0x00722B74`: `abs(raw) % 50 + frame` in signed 32-bit
@@ -2124,84 +1752,11 @@ fn growth_queue_priority_delay(raw: u32) -> i32 {
         .wrapping_rem(GROWTH_QUEUE_PRIORITY_WINDOW as i32)
 }
 
-/// Try to spread ore from (rx, ry) to a random adjacent cell.
-///
-/// Picks a random starting direction and checks all 8 neighbors. The first
-/// cell that passes `can_germinate()` gets a new ore node at level 1.
-fn try_spread_ore(
-    resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
-    path_grid: Option<&PathGrid>,
-    overlay_grid: Option<&mut crate::sim::overlay_grid::OverlayGrid>,
-    rng: &mut SimRng,
-    rx: u16,
-    ry: u16,
-    map_width: u16,
-) {
-    // Random starting direction for fairness (matching RA1 Random_Pick(FACING_N, FACING_NW)).
-    let start_dir = rng.next_range_u32(8) as usize;
-
-    for i in 0..8 {
-        let dir = (start_dir + i) % 8;
-        let (dx, dy) = ADJACENT_OFFSETS[dir];
-        let nx = rx as i32 + dx;
-        let ny = ry as i32 + dy;
-
-        // Bounds check.
-        if nx < 0 || ny < 0 || nx >= map_width as i32 {
-            continue;
-        }
-        let nx = nx as u16;
-        let ny = ny as u16;
-
-        if can_germinate(resource_nodes, path_grid, nx, ny) {
-            resource_nodes.insert(
-                (nx, ny),
-                ResourceNode {
-                    resource_type: ResourceType::Ore,
-                    remaining: ORE_BASE_PER_LEVEL,
-                },
-            );
-            // New ore at level 1 -> frame 0. Copy overlay_id from source cell.
-            if let Some(grid) = overlay_grid {
-                if let Some(source_id) = grid.cell(rx, ry).overlay_id {
-                    grid.place_overlay(nx, ny, source_id, 0);
-                }
-            }
-            return;
-        }
-    }
-}
-
-/// Whether a cell can receive new ore via spread.
-///
-/// Matches RA1 CellClass::Can_Tiberium_Germinate:
-/// - No existing resource node on the cell
-/// - Cell is within map bounds
-/// - Cell is walkable (not water, cliff, or building footprint)
-fn can_germinate(
-    resource_nodes: &BTreeMap<(u16, u16), ResourceNode>,
-    path_grid: Option<&PathGrid>,
-    rx: u16,
-    ry: u16,
-) -> bool {
-    // Already has a resource node — can't place another.
-    if resource_nodes.contains_key(&(rx, ry)) {
-        return false;
-    }
-
-    // Must be walkable terrain (not water, cliff, or building).
-    if let Some(grid) = path_grid {
-        if !grid.is_walkable(rx, ry) {
-            return false;
-        }
-    }
-
-    true
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
+
     use crate::map::bridge_facts::BridgeCellFacts;
     use crate::map::entities::EntityCategory;
     use crate::map::overlay::OverlayEntry;
@@ -2214,7 +1769,6 @@ mod tests {
     use crate::sim::entity_store::EntityStore;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::StringInterner;
-    use crate::sim::miner::{ResourceNode, ResourceType};
     use crate::sim::movement::locomotor::MovementLayer;
     use crate::sim::occupancy::{CellListInsertion, OccupancyGrid};
     use crate::sim::overlay_grid::OverlayGrid;
@@ -2225,7 +1779,6 @@ mod tests {
             grows,
             spreads,
             tiberium_grows_flag: false,
-            growth_rate_seconds: 1, // Very fast for testing
         }
     }
 
@@ -2299,20 +1852,6 @@ mod tests {
         ResolvedTerrainGrid::from_cells(width, height, cells)
     }
 
-    fn ore_node(remaining: u16) -> ResourceNode {
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining,
-        }
-    }
-
-    fn gem_node(remaining: u16) -> ResourceNode {
-        ResourceNode {
-            resource_type: ResourceType::Gem,
-            remaining,
-        }
-    }
-
     fn tiberium_rebuild_fixture() -> (IniFile, OverlayTypeRegistry, TiberiumTypeRegistry) {
         let mut text = String::from(
             "\
@@ -2370,151 +1909,6 @@ SpreadPercentage=.06
         (ini, overlay_registry, tiberium_types)
     }
 
-    /// Run enough ticks to complete one full scan cycle.
-    fn run_full_cycle(
-        config: &OreGrowthConfig,
-        state: &mut OreGrowthState,
-        nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
-        rng: &mut SimRng,
-    ) {
-        for _ in 0..10000 {
-            tick_ore_growth(config, state, nodes, None, None, rng);
-            if state.scan_cursor == 0 {
-                return;
-            }
-        }
-        panic!("Full cycle did not complete within 10000 ticks");
-    }
-
-    #[test]
-    fn growth_increments_ore_remaining() {
-        let config = make_config(true, false);
-        let mut state = make_state(10, 10);
-        let mut nodes = BTreeMap::new();
-        nodes.insert((5, 5), ore_node(120)); // Level 1
-        let mut rng = SimRng::new(42);
-
-        run_full_cycle(&config, &mut state, &mut nodes, &mut rng);
-
-        let node = nodes.get(&(5, 5)).expect("node still exists");
-        assert_eq!(node.remaining, 240, "Should grow by one level (120)");
-    }
-
-    #[test]
-    fn growth_caps_at_max_remaining() {
-        let config = make_config(true, false);
-        let mut state = make_state(10, 10);
-        let mut nodes = BTreeMap::new();
-        nodes.insert((3, 3), ore_node(MAX_ORE_REMAINING - 10)); // Near max
-        let mut rng = SimRng::new(42);
-
-        run_full_cycle(&config, &mut state, &mut nodes, &mut rng);
-
-        let node = nodes.get(&(3, 3)).expect("node still exists");
-        assert_eq!(node.remaining, MAX_ORE_REMAINING, "Should cap at max");
-    }
-
-    #[test]
-    fn gems_do_not_grow_or_spread() {
-        let config = make_config(true, true);
-        let mut state = make_state(10, 10);
-        let mut nodes = BTreeMap::new();
-        nodes.insert((5, 5), gem_node(900)); // Rich gems — above spread threshold
-        let mut rng = SimRng::new(42);
-
-        run_full_cycle(&config, &mut state, &mut nodes, &mut rng);
-
-        let node = nodes.get(&(5, 5)).expect("node still exists");
-        assert_eq!(node.remaining, 900, "Gems should not grow");
-        // Only the original gem node should exist (no spread).
-        assert_eq!(nodes.len(), 1, "Gems should not spread");
-    }
-
-    #[test]
-    fn spread_creates_new_ore_node() {
-        let config = make_config(false, true);
-        let mut state = make_state(10, 10);
-        let mut nodes = BTreeMap::new();
-        // Rich ore above spread threshold.
-        nodes.insert((5, 5), ore_node(SPREAD_THRESHOLD + 120));
-        let mut rng = SimRng::new(42);
-
-        run_full_cycle(&config, &mut state, &mut nodes, &mut rng);
-
-        assert!(
-            nodes.len() > 1,
-            "Should have spread to at least one adjacent cell"
-        );
-        // New node should be ore at base level.
-        for (&(rx, ry), node) in &nodes {
-            if rx == 5 && ry == 5 {
-                continue;
-            }
-            assert_eq!(node.resource_type, ResourceType::Ore);
-            assert_eq!(node.remaining, ORE_BASE_PER_LEVEL);
-            // Must be adjacent to (5,5).
-            let dx = (rx as i32 - 5).unsigned_abs();
-            let dy = (ry as i32 - 5).unsigned_abs();
-            assert!(dx <= 1 && dy <= 1, "Spread node must be adjacent");
-        }
-    }
-
-    #[test]
-    fn ore_below_threshold_does_not_spread() {
-        let config = make_config(false, true);
-        let mut state = make_state(10, 10);
-        let mut nodes = BTreeMap::new();
-        nodes.insert((5, 5), ore_node(SPREAD_THRESHOLD - 1)); // Below threshold
-        let mut rng = SimRng::new(42);
-
-        run_full_cycle(&config, &mut state, &mut nodes, &mut rng);
-
-        assert_eq!(nodes.len(), 1, "Low ore should not spread");
-    }
-
-    #[test]
-    fn disabled_flags_prevent_all_activity() {
-        let config = make_config(false, false);
-        let mut state = make_state(10, 10);
-        let mut nodes = BTreeMap::new();
-        nodes.insert((5, 5), ore_node(120));
-        let mut rng = SimRng::new(42);
-
-        // Run many ticks — nothing should change.
-        for _ in 0..100 {
-            tick_ore_growth(&config, &mut state, &mut nodes, None, None, &mut rng);
-        }
-
-        let node = nodes.get(&(5, 5)).expect("node still exists");
-        assert_eq!(node.remaining, 120, "Nothing should change when disabled");
-    }
-
-    #[test]
-    fn cannot_germinate_on_existing_node() {
-        let mut nodes = BTreeMap::new();
-        nodes.insert((5, 5), ore_node(120));
-
-        assert!(!can_germinate(&nodes, None, 5, 5));
-        assert!(can_germinate(&nodes, None, 5, 6));
-    }
-
-    #[test]
-    fn reservoir_sampling_stays_bounded() {
-        let mut candidates: Vec<(u16, u16)> = Vec::new();
-        let mut seen: usize = 0;
-        let mut rng = SimRng::new(99);
-
-        for i in 0..500 {
-            reservoir_sample(&mut candidates, &mut seen, (i, 0), &mut rng);
-        }
-
-        assert_eq!(seen, 500);
-        assert!(
-            candidates.len() <= MAX_CANDIDATES,
-            "Candidates should not exceed MAX_CANDIDATES"
-        );
-    }
-
     #[test]
     fn growth_queue_priority_uses_signed_abs_raw_modulo() {
         assert_eq!(growth_queue_priority_delay(0), 0);
@@ -2530,25 +1924,6 @@ SpreadPercentage=.06
         assert_eq!(signed_abs_mod_plus_one(0x8000_0000, 5), -2);
         assert_eq!(signed_abs_mod_plus_one(0xFFFF_FFFB, 5), 1);
         assert_eq!(signed_abs_mod_plus_one(7, 5), 3);
-    }
-
-    #[test]
-    fn enqueue_growth_queue_cell_consumes_one_raw_draw_and_stores_priority() {
-        let mut state = make_state(20, 20);
-        let mut rng = SimRng::new(1);
-        let before = rng.state();
-
-        let entry = state.enqueue_growth_queue_cell(4, 7, 1234, &mut rng);
-
-        assert_ne!(rng.state(), before, "queue insertion consumes one raw draw");
-        assert_eq!(entry.rx, 4);
-        assert_eq!(entry.ry, 7);
-        assert_eq!(
-            entry.priority,
-            growth_queue_priority(1234, 0x78B7_6ED5),
-            "first raw draw for seed 1 should set native-style priority"
-        );
-        assert_eq!(state.growth_queue_entries(), &[entry]);
     }
 
     #[test]
@@ -2588,9 +1963,9 @@ SpreadPercentage=.06
         class.spread_bitmap.insert((5, 8));
 
         let mut base_hasher = DefaultHasher::new();
-        base.hash_state(&mut base_hasher);
+        base.hash_state(&mut base_hasher, false);
         let mut changed_hasher = DefaultHasher::new();
-        changed.hash_state(&mut changed_hasher);
+        changed.hash_state(&mut changed_hasher, false);
 
         assert_ne!(base_hasher.finish(), changed_hasher.finish());
     }
@@ -2936,7 +2311,6 @@ SpreadPercentage=.06
                 ry: 1,
                 priority_bits: 0.0f32.to_bits(),
             });
-        let mut nodes = BTreeMap::new();
         let mut rng = SimRng::new(7);
         let before = rng.state();
 
@@ -2947,7 +2321,6 @@ SpreadPercentage=.06
             &tiberium_types,
             None,
             &BTreeSet::new(),
-            &mut nodes,
             &mut rng,
             100,
             true,
@@ -2980,7 +2353,6 @@ SpreadPercentage=.06
         state.native_tiberium.classes[0]
             .growth_bitmap
             .insert((5, 5));
-        let mut nodes = BTreeMap::new();
         let mut rng = SimRng::new(9);
         let mut expected_rng = rng.clone();
         expected_rng.next_u32();
@@ -2992,7 +2364,6 @@ SpreadPercentage=.06
             &tiberium_types,
             None,
             &BTreeSet::new(),
-            &mut nodes,
             &mut rng,
             100,
             true,
@@ -3029,7 +2400,6 @@ SpreadPercentage=.06
         state.native_tiberium.classes[0]
             .growth_bitmap
             .insert((1, 1));
-        let mut nodes = BTreeMap::new();
         let mut rng = SimRng::new(3);
 
         let stats = state.process_native_growth_for_type(
@@ -3039,7 +2409,6 @@ SpreadPercentage=.06
             &tiberium_types,
             None,
             &BTreeSet::new(),
-            &mut nodes,
             &mut rng,
             100,
             true,
@@ -3076,8 +2445,6 @@ SpreadPercentage=.06
         state.native_tiberium.classes[0]
             .growth_bitmap
             .insert((1, 1));
-        let mut nodes = BTreeMap::new();
-        nodes.insert((1, 1), ore_node(10 * ORE_BASE_PER_LEVEL));
         let mut rng = SimRng::new(5);
         let mut expected_rng = rng.clone();
         expected_rng.next_u32(); // GrowthProcessor attempt budget.
@@ -3093,7 +2460,6 @@ SpreadPercentage=.06
             None,
             &BTreeSet::new(),
             None,
-            &mut nodes,
             &mut rng,
             100,
             true,
@@ -3128,11 +2494,6 @@ SpreadPercentage=.06
             "existing growth does not dirty radar"
         );
         assert_eq!(radar_generation, 0);
-        assert_eq!(
-            nodes.get(&(1, 1)).map(|node| node.remaining),
-            Some(10 * ORE_BASE_PER_LEVEL),
-            "the native overlay path does not maintain a duplicate ResourceNode stock"
-        );
         assert_eq!(rng.logical_state(), expected_rng.logical_state());
     }
 
@@ -3160,7 +2521,6 @@ SpreadPercentage=.06
         let (_ini, overlay_registry, tiberium_types) = tiberium_rebuild_fixture();
         let riparius = TiberiumTypeId(0);
         assert_eq!(tiberium_types.get(riparius).unwrap().growth, 2200);
-        let mut nodes = BTreeMap::new();
         let mut run = |tiberium_grows_flag: bool| -> Vec<u32> {
             let mut overlay_grid = OverlayGrid::new(8, 8);
             let mut state = make_state(8, 8);
@@ -3176,7 +2536,6 @@ SpreadPercentage=.06
                     None,
                     &BTreeSet::new(),
                     None,
-                    &mut nodes,
                     &mut rng,
                     frame,
                     true,
@@ -3235,21 +2594,20 @@ SpreadPercentage=.06
             tiberium_spreads_flag: true,
             ..ScenarioDescriptor::default()
         });
-        let config = OreGrowthConfig::resolve(&general, &basic, &map_off, &skirmish);
+        let config = OreGrowthConfig::resolve(&basic, &map_off, &skirmish);
         assert!(config.grows && config.spreads && config.tiberium_grows_flag);
 
         let campaign = ScenarioSession::from_descriptor(&ScenarioDescriptor::default());
-        let config = OreGrowthConfig::resolve(&general, &basic, &map_off, &campaign);
+        let config = OreGrowthConfig::resolve(&basic, &map_off, &campaign);
         assert!(config.grows && !config.spreads && !config.tiberium_grows_flag);
-        let config =
-            OreGrowthConfig::resolve(&general, &basic, &SpecialFlagsSection::default(), &campaign);
+        let config = OreGrowthConfig::resolve(&basic, &SpecialFlagsSection::default(), &campaign);
         assert!(config.grows && config.spreads && config.tiberium_grows_flag);
 
         let basic_off = BasicSection {
             tiberium_growth_enabled: Some(false),
             ..BasicSection::default()
         };
-        let config = OreGrowthConfig::resolve(&general, &basic_off, &map_off, &skirmish);
+        let config = OreGrowthConfig::resolve(&basic_off, &map_off, &skirmish);
         assert!(!config.grows && config.spreads && config.tiberium_grows_flag);
     }
 
@@ -3272,8 +2630,6 @@ SpreadPercentage=.06
                 ry: 1,
                 priority_bits: 0.0f32.to_bits(),
             });
-        let mut nodes = BTreeMap::new();
-        nodes.insert((1, 1), ore_node(3 * ORE_BASE_PER_LEVEL));
         let mut rng = SimRng::new(9);
 
         let stats = state.process_native_growth_for_type(
@@ -3283,7 +2639,6 @@ SpreadPercentage=.06
             &tiberium_types,
             None,
             &BTreeSet::new(),
-            &mut nodes,
             &mut rng,
             100,
             true,
@@ -3342,8 +2697,6 @@ SpreadPercentage=.06
                 &interner,
                 terrain_object_cells,
             );
-            let mut nodes = BTreeMap::new();
-            nodes.insert((5, 5), ore_node(3 * ORE_BASE_PER_LEVEL));
             let mut rng = SimRng::new(9);
             let stats = state.process_native_growth_for_type_with_placement(
                 TiberiumTypeId(0),
@@ -3353,7 +2706,6 @@ SpreadPercentage=.06
                 None,
                 &BTreeSet::new(),
                 Some(live_objects),
-                &mut nodes,
                 &mut rng,
                 100,
                 true,
@@ -3499,21 +2851,27 @@ SpreadPercentage=.06
         state.native_tiberium.classes[0]
             .spread_bitmap
             .insert((7, 7));
-        let mut nodes = BTreeMap::new();
         let mut rng = SimRng::new(12);
+        let terrain = crate::sim::tiberium::test_support::flat_terrain(10, 10);
+        let no_objects = crate::sim::tiberium::test_support::NoLiveObjects::new();
 
-        let stats = state.process_native_spread_for_type_without_native_context(
+        let stats = state.process_native_spread_for_type_with_placement(
             TiberiumTypeId(0),
             &mut overlay_grid,
             &overlay_registry,
             &tiberium_types,
-            &mut nodes,
-            None,
-            None,
+            Some(&terrain),
             &BTreeSet::new(),
+            Some(NewTiberiumAdmission::runtime(
+                &terrain,
+                no_objects.context(),
+            )),
             &mut rng,
             200,
             true,
+            None,
+            None,
+            None,
         );
 
         assert_eq!(stats.processor_calls, 1);
@@ -3557,22 +2915,28 @@ SpreadPercentage=.06
         state.native_tiberium.classes[0]
             .spread_bitmap
             .insert((5, 5));
-        let mut nodes = BTreeMap::new();
         let mut rng = SimRng::new(12);
         let before = rng.state();
+        let terrain = crate::sim::tiberium::test_support::flat_terrain(10, 10);
+        let no_objects = crate::sim::tiberium::test_support::NoLiveObjects::new();
 
-        let stats = state.process_native_spread_for_type_without_native_context(
+        let stats = state.process_native_spread_for_type_with_placement(
             TiberiumTypeId(0),
             &mut overlay_grid,
             &overlay_registry,
             &tiberium_types,
-            &mut nodes,
-            None,
-            None,
+            Some(&terrain),
             &BTreeSet::new(),
+            Some(NewTiberiumAdmission::runtime(
+                &terrain,
+                no_objects.context(),
+            )),
             &mut rng,
             200,
             true,
+            None,
+            None,
+            None,
         );
 
         assert_eq!(stats.popped_entries, 1);
@@ -3639,7 +3003,6 @@ SpreadPercentage=.06
         state.native_tiberium.classes[0]
             .spread_bitmap
             .insert((3, 3));
-        let mut nodes = BTreeMap::new();
         let mut rng = SimRng::new(13);
         let mut expected_rng = rng.clone();
         expected_rng.next_u32(); // SpreadProcessor budget.
@@ -3654,8 +3017,6 @@ SpreadPercentage=.06
             &mut overlay_grid,
             &overlay_registry,
             &tiberium_types,
-            &mut nodes,
-            None,
             Some(&terrain),
             &BTreeSet::new(),
             Some(live_objects),
@@ -3681,10 +3042,6 @@ SpreadPercentage=.06
             SPREAD_GERMINATION_DENSITY
         );
         assert_eq!(overlay_grid.cell(4, 3).overlay_id, Some(expected_overlay));
-        assert!(
-            nodes.is_empty(),
-            "native spread writes only the authoritative overlay cell"
-        );
         let class = &state.native_tiberium_state().classes[0];
         assert_eq!(class.growth.len(), 1);
         assert_eq!(
@@ -3757,7 +3114,6 @@ SpreadPercentage=.06
         state.native_tiberium.classes[0]
             .spread_bitmap
             .insert((3, 3));
-        let mut nodes = BTreeMap::new();
         let mut rng = SimRng::new(0x409);
         let mut expected_rng = rng.clone();
         expected_rng.next_u32(); // SpreadProcessor budget only; target count is zero.
@@ -3769,8 +3125,6 @@ SpreadPercentage=.06
             &mut overlay_grid,
             &overlay_registry,
             &tiberium_types,
-            &mut nodes,
-            None,
             Some(&terrain),
             &BTreeSet::new(),
             Some(live_objects),
@@ -3788,7 +3142,6 @@ SpreadPercentage=.06
         assert_eq!(stats.spread_calls, 0);
         assert_eq!(overlay_grid.cell(4, 3).overlay_id, None);
         assert!(state.native_tiberium_state().classes[0].growth.is_empty());
-        assert!(nodes.is_empty());
         assert!(radar_dirty.is_empty());
         assert_eq!(radar_generation, 0);
         assert!(tactical_dirty.is_empty());
@@ -3834,7 +3187,6 @@ SpreadPercentage=.06
         state.native_tiberium.classes[0]
             .spread_bitmap
             .insert((3, 3));
-        let mut nodes = BTreeMap::new();
         let mut rng = SimRng::new(0x409);
         let mut expected_rng = rng.clone();
         expected_rng.next_u32(); // SpreadProcessor budget only.
@@ -3846,8 +3198,6 @@ SpreadPercentage=.06
             &mut overlay_grid,
             &overlay_registry,
             &tiberium_types,
-            &mut nodes,
-            None,
             Some(&terrain),
             &BTreeSet::new(),
             Some(live_objects),
@@ -3865,130 +3215,10 @@ SpreadPercentage=.06
         assert_eq!(stats.spread_calls, 0);
         assert_eq!(overlay_grid.cell(4, 3).overlay_id, None);
         assert!(state.native_tiberium_state().classes[0].growth.is_empty());
-        assert!(nodes.is_empty());
         assert!(radar_dirty.is_empty());
         assert_eq!(radar_generation, 0);
         assert!(tactical_dirty.is_empty());
         assert_eq!(rng.logical_state(), expected_rng.logical_state());
-    }
-
-    #[test]
-    fn full_scan_cycle_resets_cursor() {
-        let config = make_config(true, false);
-        let mut state = make_state(5, 5); // 25 cells — very small
-        let mut nodes = BTreeMap::new();
-        nodes.insert((2, 2), ore_node(120));
-        let mut rng = SimRng::new(42);
-
-        // Run ticks until cursor wraps.
-        let mut wrapped = false;
-        for _ in 0..1000 {
-            tick_ore_growth(&config, &mut state, &mut nodes, None, None, &mut rng);
-            if state.scan_cursor == 0 {
-                wrapped = true;
-                break;
-            }
-        }
-
-        assert!(wrapped, "Scan cursor should wrap to 0 after full cycle");
-    }
-
-    #[test]
-    fn growth_rate_uses_the_legacy_fifteen_frame_scale() {
-        let config = OreGrowthConfig {
-            grows: true,
-            spreads: false,
-            tiberium_grows_flag: false,
-            growth_rate_seconds: 1,
-        };
-        let mut state = make_state(10, 10);
-        let mut nodes = BTreeMap::new();
-        let mut rng = SimRng::new(42);
-
-        tick_ore_growth(&config, &mut state, &mut nodes, None, None, &mut rng);
-
-        assert_eq!(state.scan_cursor, 7, "ceil(100 cells / 15 frames)");
-    }
-
-    #[test]
-    fn growth_rate_controls_scan_speed() {
-        // Fast rate: 0.01 minutes → scans many cells per tick.
-        let fast = make_config(true, false);
-        let mut state_fast = make_state(100, 100); // 10000 cells
-        let mut nodes_fast = BTreeMap::new();
-        nodes_fast.insert((50, 50), ore_node(120));
-        let mut rng = SimRng::new(42);
-
-        tick_ore_growth(
-            &fast,
-            &mut state_fast,
-            &mut nodes_fast,
-            None,
-            None,
-            &mut rng,
-        );
-        let fast_progress = state_fast.scan_cursor;
-
-        // Slow rate: 100 minutes → scans very few cells per tick.
-        let slow = OreGrowthConfig {
-            grows: true,
-            spreads: false,
-            tiberium_grows_flag: false,
-            growth_rate_seconds: 6000, // 100 minutes
-        };
-        let mut state_slow = make_state(100, 100);
-        let mut nodes_slow = BTreeMap::new();
-        nodes_slow.insert((50, 50), ore_node(120));
-        let mut rng2 = SimRng::new(42);
-
-        tick_ore_growth(
-            &slow,
-            &mut state_slow,
-            &mut nodes_slow,
-            None,
-            None,
-            &mut rng2,
-        );
-        let slow_progress = state_slow.scan_cursor;
-
-        assert!(
-            fast_progress > slow_progress,
-            "Fast rate ({}) should scan more cells per tick than slow rate ({})",
-            fast_progress,
-            slow_progress,
-        );
-    }
-
-    #[test]
-    fn spread_does_not_overwrite_existing_nodes() {
-        let config = make_config(false, true);
-        let mut state = make_state(10, 10);
-        let mut nodes = BTreeMap::new();
-        // Rich source at center.
-        nodes.insert((5, 5), ore_node(SPREAD_THRESHOLD + 120));
-        // Surround with existing gem nodes — spread should not overwrite them.
-        for &(dx, dy) in &ADJACENT_OFFSETS {
-            let nx = (5 + dx) as u16;
-            let ny = (5 + dy) as u16;
-            nodes.insert((nx, ny), gem_node(500));
-        }
-        let mut rng = SimRng::new(42);
-
-        run_full_cycle(&config, &mut state, &mut nodes, &mut rng);
-
-        // Should still have exactly 9 nodes (center + 8 neighbors).
-        assert_eq!(nodes.len(), 9, "No new nodes should appear when surrounded");
-        // All neighbors should still be gems.
-        for &(dx, dy) in &ADJACENT_OFFSETS {
-            let nx = (5 + dx) as u16;
-            let ny = (5 + dy) as u16;
-            let node = nodes.get(&(nx, ny)).expect("neighbor exists");
-            assert_eq!(
-                node.resource_type,
-                ResourceType::Gem,
-                "Neighbors should be unchanged gems"
-            );
-        }
     }
 
     fn entry(rx: u16, ry: u16, priority: f32) -> NativeTiberiumQueueEntry {

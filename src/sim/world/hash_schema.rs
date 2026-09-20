@@ -70,6 +70,13 @@ pub(super) enum HashFeature {
     EstimatedHealth = 168,
     AircraftDockState = 170,
     AnimationAuthority = 171,
+    /// Removes folds instead of adding them: the node-era tiberium scanner
+    /// state and the fallback ore overlay id no longer exist. Earlier schemas
+    /// fold zero/empty/`None` in their place, which is what the pinned harness
+    /// fixtures held. A scenario finalized by the map loader held
+    /// `Some(first TIB* id)`, so this projection reproduces those fixtures' old
+    /// hashes, not an arbitrary pre-174 stream.
+    RetiredTiberiumNodeState = 174,
 }
 
 impl HashSchema {
@@ -79,7 +86,9 @@ impl HashSchema {
             #[cfg(test)]
             Self::BeforeBuildingPowerIntegration => !matches!(
                 _feature,
-                HashFeature::AircraftDockState | HashFeature::AnimationAuthority
+                HashFeature::AircraftDockState
+                    | HashFeature::AnimationAuthority
+                    | HashFeature::RetiredTiberiumNodeState
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {
@@ -121,6 +130,15 @@ mod tests {
         );
         assert!(HashSchema::Before(168).includes(HashFeature::TrackAuthority));
         assert!(HashSchema::Current.includes(HashFeature::TrackAuthority));
+    }
+
+    #[test]
+    fn retired_tiberium_fold_ends_at_schema174() {
+        let feature = HashFeature::RetiredTiberiumNodeState;
+        assert!(!HashSchema::Before(174).includes(feature));
+        assert!(!HashSchema::BeforeBuildingPowerIntegration.includes(feature));
+        assert!(HashSchema::Before(175).includes(feature));
+        assert!(HashSchema::Current.includes(feature));
     }
 
     #[test]

@@ -15,61 +15,47 @@ Worktree `.claude/worktrees/refactor-candidates-review-3de5a3`.
 | --- | --- | --- |
 | Dead code (`bridge_re.rs`, write-only building anim phase map, caller-less helpers) | Merged | PR #416 |
 | Radar events: sim queue vs client array | Merged | PR #416 |
-| Refinery dock contacts: registry vs radio bus | In review | PR #417, branch `feature/refinery-contact-authority` |
-| Animation execution split four ways | Open | see below |
-| `resource_nodes` legacy ore map | Open | see below |
-| Move phases / Jumpjet destination | Open, blocked on other owners | see below |
+| Refinery dock contacts: registry vs radio bus | Merged | PR #417 |
+| Animation: teleport WarpOut, superweapon invoke, Lightning Storm | Merged | PR #418 |
+| `resource_nodes` legacy ore map and the state it left write-only | In review | branch `feature/retire-resource-nodes` |
+| Animation: bridge collapse producers, `WorldEffect` itself, muzzle flashes | Open | see below |
+| Move phases / Jumpjet destination | Open, overlaps other owners | see below |
 | Hand-built mover path facts | Owned elsewhere | see below |
 | Per-mover world scans | Partly done | see below |
 
-Validation of the last merged candidate: `cargo test -p vera20k --lib` 9134
-passed / 0 failed / 134 ignored; clippy exit 0. Windows only.
+Validation of the `resource_nodes` candidate: `cargo test -p vera20k --lib`
+and `cargo clippy -p vera20k --lib` results are recorded on its commits.
+Windows only.
 
 ## Other owners — do not collide
 
 - `feature/vera20k-yuris-revenge-movement-bc5040` (active Claude session) holds
-  unmerged wall-arm work across `movement_path.rs`, `movement/mod.rs`,
+  unmerged work across `movement_path.rs`, `movement/mod.rs`,
   `movement_tick.rs`, `movement_step.rs`, `pathfinding/core.rs`,
-  `cell_entry.rs`. It owns the **mover path facts** lead (ledger row I9b:
+  `cell_entry.rs`, and large edits to `world/mod.rs` and `world/techno_ai.rs`.
+  It owns the **mover path facts** lead (ledger row I9b:
   `mover_path_facts_without_wall_arm` at the two move-order sites).
 - `C:\Users\enok\Documents\vera20k-engine-authority`, branch
   `feature/persistent-facing-authority` (Codex): uncommitted `facing_class.rs`,
-  `turret.rs`, `walk_head.rs`, `snapshot.rs`. It also bumps the snapshot to
-  172, as PR #417 does; whichever lands second takes 173.
+  `turret.rs`, `walk_head.rs`, `snapshot.rs`. Its snapshot bump must land after
+  174.
 
 ## Open leads — findings so far
 
 **Animation.** `AnimStore`/`AnimClass` (`sim/anim_class.rs`) is the native
-owner and already carries combat explosions and the 21 building slots. Still
-outside it:
+owner. Still outside it:
 
 - `WorldEffect` (`components.rs`, ticked in `world/mod.rs`, drawn in
-  `app/presentation/instances/overlays.rs`), nine producers:
-  `teleport_movement.rs` (WarpOut), `bridge_orchestrator.rs` (three sites),
-  `superweapon/{iron_curtain,genetic_converter,force_shield}.rs`,
-  `superweapon/lightning_storm.rs` (two sites).
+  `app/presentation/instances/overlays.rs`): the three
+  `bridge_orchestrator.rs` collapse producers. They interleave their own RNG
+  draws with the spawn, so moving them reorders the scenario stream and moves
+  the replay pins; that needs its own increment with causal attribution.
+  MetallicDebris are native bouncers and AnimStore has no bouncer arm yet
+  (owned by the unmerged `feature/phase6-anim-bounce-damage`), so `WorldEffect`
+  cannot be deleted before that lands.
 - Garrison muzzle flashes (`components::AnimRuntime`,
   `app/presentation/building_anim.rs`) and `WeaponMuzzleFlash`
   (`fire_effects.rs`).
-
-Moving a producer onto `spawn_anim_at_world` is a behaviour change, not a
-rename: the real constructor allocates a stable id, draws `RandomRate` from the
-scenario stream, plays `Report=`/`StartSound=` and runs `Middle`
-(`Scorch=`, `Crater=`, `SpawnsParticle=`). The bridge producers interleave their
-own RNG draws with the spawn, so a deferred spawn would reorder the stream.
-Migrate one producer family per increment with native evidence for type,
-coordinate, delay and flags, and attribute any replay-pin movement.
-
-**`resource_nodes`.** Production never seeds it
-(`seed_resource_nodes_from_overlays` has no production caller) and miners read
-only the overlay grid (`ResourceQueryAuthority::OverlayGrid`). What remains is
-a test-only lane: `LegacyNodesForTests`, `tick_ore_growth`,
-`compatibility_without_native_context` in `terrain_spawn.rs`,
-`reduce_legacy_resource_node_for_tests`, the hash fold and the serialized
-field. About 350 references; roughly 45 miner tests seed it through
-`place_ore`. The global parity harness already uses the overlay grid, so its
-pins should not move. Needs a shared overlay-grid ore fixture
-(`tiberium/mod.rs` tests have the full 149-entry registry recipe).
 
 **Move phases / Jumpjet.** For Jumpjets `air_phase` is a mirror written each
 tick from the native state (`jumpjet_cruise.rs::air_phase_for`), and
@@ -87,7 +73,16 @@ building anim phase scan. Remaining (movement territory):
 `path_markers::snapshot_bridge_marker_peers`,
 `sync_formation_speeds_after_live_pass`.
 
+## Adjacent findings (not this goal's backlog)
+
+- Slave Miner scan correction has no implementation: `SlaveMinerKickFrameDelay=`
+  and `SlaveMinerScanCorrection=` are parsed and unread, so a deployed YAREFN
+  never repositions toward closer ore. Visible in Yuri games once nearby ore runs
+  out. The caller-less Rust sketch was removed; the native owner is unidentified.
+- `[General] GrowthRate=` is parsed and unread; VERA's growth runs on the
+  per-Tiberium `Growth=` timers. Whether gamemd reads it is UNCHECKED.
+
 ## Next safe action
 
-Land PR #417 after its critic. Then the animation lead, teleport WarpOut first
-(it already carries a verified `AnimClassSpawnDescriptor`).
+Land the `resource_nodes` PR after its critic re-review. Then the bridge
+collapse producers, with a per-producer replay-pin attribution.

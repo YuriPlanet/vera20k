@@ -366,7 +366,6 @@ fn spawn_bolt(
             rules.general.lightning_damage,
             true,
             scenario_no_damage,
-            &mut sim.production.resource_nodes,
             &mut sim.production.ore_growth_state,
             &sim.production.tiberium_spawning_terrain_cells,
             &sim.production.terrain_object_cells,
