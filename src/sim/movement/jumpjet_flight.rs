@@ -326,18 +326,12 @@ fn store_double(value: X87Value) -> u64 {
     X87Chop53::store_f64(value).map_or(0, |bits| bits.bits())
 }
 
-/// `Math::ftol @ 0x007C5F00`: the low dword of `FISTP qword`; an operand outside
-/// the signed 64-bit domain stores the integer indefinite, whose low dword is 0.
-fn ftol(value: X87Value) -> i32 {
-    X87Chop53::ftol_i64(value).map_or(0, |integer| integer as i32)
-}
-
 fn ordering(lhs: X87Value, rhs: X87Value) -> X87Ordering {
     X87Chop53::compare(lhs, rhs)
 }
 
 fn table_index(radians: X87Value) -> i32 {
-    ftol(X87Chop53::mul(radians, single(TRIG_UNITS_PER_RADIAN_F32)))
+    X87Chop53::ftol_i32_low_masked(X87Chop53::mul(radians, single(TRIG_UNITS_PER_RADIAN_F32)))
 }
 
 fn table_sin(trig: &TrigTable, radians: X87Value) -> X87Value {
@@ -440,7 +434,7 @@ pub(crate) fn update_coordinates_and_altitude(
         zero()
     };
     flight.bob_phase_bits = store_double(bob);
-    let bob_target = ftol(X87Chop53::add(
+    let bob_target = X87Chop53::ftol_i32_low_masked(X87Chop53::add(
         X87Chop53::mul(table_sin(host.trig(), bob), int(params.deviation)),
         int(flight.target_height),
     ));
@@ -484,12 +478,12 @@ pub(crate) fn update_coordinates_and_altitude(
         new_z = Some(if ordering(int(bob_target), reach) == X87Ordering::Less {
             z.wrapping_add(bob_target.wrapping_sub(altitude))
         } else {
-            ftol(X87Chop53::add(int(z), climb))
+            X87Chop53::ftol_i32_low_masked(X87Chop53::add(int(z), climb))
         });
     } else if altitude > bob_target {
         let floor = X87Chop53::sub(int(altitude), climb);
         let mut next = if ordering(int(bob_target), floor) != X87Ordering::Greater {
-            ftol(X87Chop53::sub(int(z), climb))
+            X87Chop53::ftol_i32_low_masked(X87Chop53::sub(int(z), climb))
         } else {
             z.wrapping_add(bob_target.wrapping_sub(altitude))
         };
@@ -513,17 +507,19 @@ pub(crate) fn update_coordinates_and_altitude(
     // Horizontal step along the locomotor facing (0x0054D55A..D607).
     let location = host.location();
     let frame = host.binary_frame();
-    let step = int(ftol(double(flight.current_speed_bits)));
+    let step = int(X87Chop53::ftol_i32_low_masked(double(
+        flight.current_speed_bits,
+    )));
     let facing = flight.facing.current(frame) as i16;
     let angle = X87Chop53::mul(
         int(i32::from(facing) - 0x3FFF),
         double(NEG_RADIANS_PER_FACING_UNIT),
     );
-    let new_y = ftol(X87Chop53::sub(
+    let new_y = X87Chop53::ftol_i32_low_masked(X87Chop53::sub(
         int(location[1]),
         X87Chop53::mul(table_sin(host.trig(), angle), step),
     ));
-    let new_x = ftol(X87Chop53::add(
+    let new_x = X87Chop53::ftol_i32_low_masked(X87Chop53::add(
         X87Chop53::mul(table_cos(host.trig(), angle), step),
         int(location[0]),
     ));
@@ -633,8 +629,10 @@ pub(crate) fn state3_translate(
             // A zero turn rate faults natively (`IDIV` at `0x0054C45E`); no
             // stock type reaches it, and VERA skips the zone instead.
             if !has_target {
-                flight.target_height =
-                    ftol(X87Chop53::mul(int(params.height), double(THREE_QUARTERS)));
+                flight.target_height = X87Chop53::ftol_i32_low_masked(X87Chop53::mul(
+                    int(params.height),
+                    double(THREE_QUARTERS),
+                ));
             }
             if turn_error > params.turn_rate.wrapping_mul(5) {
                 at_least_one(speed / 5)
@@ -702,7 +700,7 @@ fn desired_facing(destination: [i32; 3], location: [i32; 3], host: &impl Jumpjet
         X87Chop53::sub(int(location[1]), int(destination[1])),
         X87Chop53::sub(int(destination[0]), int(location[0])),
     );
-    ftol(X87Chop53::mul(
+    X87Chop53::ftol_i32_low_masked(X87Chop53::mul(
         X87Chop53::sub(angle, double(HALF_PI)),
         double(NEG_FACING_UNITS_PER_RADIAN),
     )) as u16

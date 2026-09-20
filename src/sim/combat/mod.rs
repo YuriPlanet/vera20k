@@ -2553,7 +2553,7 @@ fn postmortem_delay_duration(warhead: &WarheadType, distance_leptons: i32) -> i3
         base,
         X87Chop53::mul(X87Chop53::load_i32(distance_leptons), slope_per_lepton),
     );
-    X87Chop53::ftol_i64(delay).unwrap_or(i64::MIN) as i32
+    X87Chop53::ftol_i32_low_masked(delay)
 }
 
 fn postmortem_duration_for_event(

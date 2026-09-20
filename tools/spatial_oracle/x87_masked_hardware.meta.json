@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "2376 actual x87 hardware primitive captures using authenticated original arithmetic opcodes in an x86_64 register/operand wrapper",
+  "assumptions": [
+    "The standalone Rust source contains inline original x87 opcode bytes, never calls the VERA20k numeric implementation, and observes memory/condition bits directly. Python supplies raw operands and formats integer/hex outputs; no software floating-point model supplies expected values",
+    "Original numerical opcode bytes are authenticated against the pinned PE before compilation. They are relocated into a compiler-owned wrapper: address registers use 64-bit fixture pointers. This is hardware instruction-value evidence, not execution of original 32-bit parent control flow",
+    "Each row saves/restores the full caller FPU state with FXSAVE64/FXRSTOR64, initializes the x87 stack, supplies and observes0E7F, and verifies final TOP0. The hardware status word is recorded but only compare conditions and stack balance are asserted; this does not certify a full FPU environment model",
+    "FTOL rows execute the original FISTP qword opcode7C5F1B and observe low32 under0E7F, not the entire helper/control-cache function. The separate Unicorn corpus executes that original whole helper",
+    "The saved Unicorn2.1.4 observations remain alongside hardware values. Its FLD conversion preserves signaling NaNs instead of quieting them; later NaN selection consequently differs. Hardware outputs are reference authority for this matrix, including the rows where Unicorn disagrees",
+    "Capture requires x86_64 hardware and rustc, but production Rust arithmetic and fixture tests require neither x86 instructions nor retail files at runtime. A capture from another CPU/compiler has new provenance and must be reviewed deliberately",
+    "Representative operand-pair coverage is not arbitrary operation-chain, full extended-exponent range, unmasked trap or parent gameplay equivalence"
+  ],
+  "substitutions": [
+    "Original arithmetic opcodes are relocated; the wrapper supplies memory, control word, operand sequencing and observation. This does not patch a live game or synthesize expected arithmetic"
+  ],
+  "entry_points": {
+    "load_f32": "0x0070B743",
+    "load_f64": "0x004B1150",
+    "add": "0x004B1064",
+    "sub": "0x004223F2",
+    "mul": "0x004B105E",
+    "div": "0x004C2147",
+    "compare": "0x00412073",
+    "pop": "0x004B106F",
+    "store_f32": "0x0070B812",
+    "fistp": "0x007C5F1B"
+  },
+  "hardware_capture": {
+    "cpu": "AMD Ryzen 7 5825U with Radeon Graphics",
+    "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+    "host": "Windows/AMD64",
+    "disagreement_count": 228
+  },
+  "probe_source_sha256": "ee3ac74f0ceff36963b4aec7cff85420840d3e63a779276fed604242a26a158e",
+  "payload_sha256": "cf6cbc33769145ffecfaada2a1f59d87e7d14b9f0e1fa1d919ba81a8f85e97e6"
+}

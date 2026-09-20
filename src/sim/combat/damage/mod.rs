@@ -1,21 +1,18 @@
-//! Pure damage-math service: armor/Verses/distance kernel + receiver pipeline +
-//! attacker build. Reproduces gamemd's ftol-truncated multi-stage damage math
-//! over caller-built value-types.
+//! Damage math over caller-built views: the shared warhead numeric receiver,
+//! surrounding receiver stages and staged attacker transforms.
 //!
 //! ## Dependency rules
-//! - sim/ submodule: depends on rules/ (WarheadType) + util/fixed_math only.
+//! - sim/ submodule: uses shared util arithmetic and caller-resolved rule inputs.
 //! - NEVER depends on render/ui/sidebar/audio/net. No EntityStore/GameEntity
 //!   reach-in: callers extract inputs into the value-types below.
-//! - Verses is carried as f64 (the single documented float exception); every
-//!   stage boundary truncates toward zero via `f64 as i32` (gamemd ftol).
+//! - The kernel uses native PC53/chop, binary32 spills and signed64 conversion's
+//!   low32 through util/native_x87. A host `f64 as i32` is not that conversion.
+//!   Surrounding defense/attacker stages still contain unmigrated host arithmetic.
 //!
-//! ## Verification status (2026-06-04 adversarial Ghidra pass)
-//! The kernel/receiver/attacker contract was re-verified against gamemd.exe
-//! before transcription. The pre-plan numbers had two factor-errors that were
-//! corrected here: leptons/cell = 256.0 (read_memory 0x007e2224 = 0x43800000),
-//! and the running MaxDamage = 10000 (stock `ini/rulesmd.ini` overrides the
-//! legacy 1000). The attacker mult chain (`fire_damage`) was redesigned from the
-//! verified Fire_At stages. See each submodule for the inline citations.
+//! Original `489180` kernel comparisons live in spatial_oracle/estimated_damage;
+//! shared hardware primitive comparisons live in spatial_oracle/x87_masked_hardware.
+//! These bounded comparisons do not establish complete receiver/attacker parity.
+//! See docs/research/SHARED_WARHEAD_NUMERIC_COMPARISON.md and local citations.
 //!
 //! Ordered Apply_area_damage records use the receiver service live. Legacy
 //! direct/radiation routes still arrive as precomputed damage amounts.

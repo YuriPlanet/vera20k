@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "2376 Unicorn observations of original gamemd x87 primitive fragments; signaling-NaN load discrepancies require the separate hardware references",
+  "assumptions": [
+    "Harness sequences original instructions with supplied memory/register operands. This proves a bounded primitive value contract, not parent function control flow, gameplay reachability, or an entire x87 stack emulator",
+    "Every fragment is asserted against pinned original PE bytes before and after execution; the original _ftol body also executes unchanged with its original cached0E7F control word",
+    "Both input precisions cross signed zeros, least positive subnormal, +/-one, maximum finite positive, signed infinity, quiet/signaling NaNs, signs and payloads. Binary operations and compare use every pair of the representative same-format set; mixed rows focus NaN arbitration",
+    "Subtraction executes original FSUBP, not FCHS plus FADD, so source NaN signs are independently observed. Division executes FDIVP; FCOMPP condition bits supply ordering and unordered results",
+    "Arithmetic results are observed by original binary32 FSTP; load rows also cover quieting and store overflow. _ftol rows observe low EAX from original signed64 conversion. Full extended exponent overflow/underflow, status flags other than comparison conditions, unmasked traps and arbitrary operation chains are excluded",
+    "FPCW0E7F is supplied normal startup PC53/chop policy. Actual x87 loads quiet SNaNs, but Unicorn2.1.4 preserves their signaling classification, affecting later NaN selection. These rows deliberately retain raw emulator observations; x87_masked_hardware supplies actual reference values and identifies228 disagreements"
+  ],
+  "substitutions": [
+    "Harness chooses operand bits and fragment sequencing; no executable bytes are patched and no Python arithmetic model generates reference outputs"
+  ],
+  "entry_points": {
+    "load_f32": "0x0070B743",
+    "load_f64": "0x004B1150",
+    "add": "0x004B1064",
+    "sub": "0x004223F2",
+    "mul": "0x004B105E",
+    "div": "0x004C2147",
+    "compare": "0x00412073",
+    "pop": "0x004B106F",
+    "store_f32": "0x0070B812",
+    "ftol": "0x007C5F00"
+  },
+  "x87_control_word": "0E7F",
+  "original_fragments": {
+    "load_f32": {
+      "address": "0070B743",
+      "bytes": "d98630030000",
+      "sha256": "559317e54bb59c2a12c693698fe59a6c0e979ef4a1370c832ec5b97253833a9f"
+    },
+    "load_f64": {
+      "address": "004B1150",
+      "bytes": "dd4550",
+      "sha256": "53cbe288596c2be877f8614c1db614c888db538b9ca065dc066a3a8e686039c3"
+    },
+    "add": {
+      "address": "004B1064",
+      "bytes": "dec1",
+      "sha256": "dbb8b1d8ac9e70730ffefb515704781c137ccc91ebec31f1941deb123de2081d"
+    },
+    "sub": {
+      "address": "004223F2",
+      "bytes": "dee9",
+      "sha256": "323c48637c721707abe324241d3026570b3f2de17099eddc9aa903cbf5380a5e"
+    },
+    "mul": {
+      "address": "004B105E",
+      "bytes": "d8c9",
+      "sha256": "5512d099bd3d8c5e2aba20e9031e5ae2f7cf9e27bc819b2efc4d4e853e465bcb"
+    },
+    "div": {
+      "address": "004C2147",
+      "bytes": "def9",
+      "sha256": "70776d79fdeb937a2eb7fcd4fa3516ba1a7c8c7b0fb1178f5c0a720bcef44573"
+    },
+    "compare": {
+      "address": "00412073",
+      "bytes": "ded9",
+      "sha256": "038334f481b35c454efe47852578b64e03e66058a1ce9311c86daead98b76951"
+    },
+    "pop": {
+      "address": "004B106F",
+      "bytes": "ddd8",
+      "sha256": "1ef19409dab7c1173f8b89ea21923e57ed2e36092251e5c1366444920de1a843"
+    },
+    "store_f32": {
+      "address": "0070B812",
+      "bytes": "d99e30030000",
+      "sha256": "3f28a163232031a8f4b71a7f687096fc1dadad213b16d1e1e41a3ab737d3e29b"
+    }
+  },
+  "original_ftol": {
+    "address": "007C5F00",
+    "end": "007C5F3D",
+    "bytes": "83ec0cd93c248d4424048b142481e2ffff00003b15802d8200750bdf388b50048b0083c40cc38b15802d8200891424d92c24df388b50048b0083c40cc3",
+    "sha256": "164aed30b9c92bf114a2f5a68baa9084c30054087c4a03daa7ffbe8a6d7757ba"
+  },
+  "payload_sha256": "88033b7d532bf02b50741c4618b65ddd3fd3f24cdc1eb60fd9caf92f4a824214"
+}

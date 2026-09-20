@@ -1,12 +1,12 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `3398ef92f5acb1f71bd05e269f088c3ac832892b` (2026-09-19), cargo-modules 0.26.0.
+Generated snapshot: `f314b30b82af4841cc4b43557ad4aa7515b28c33` (2026-09-20), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
 External crates and the sysroot are excluded from the dependency graph.
-Contains **823 modules plus the crate root**, and **5240 distinct
+Contains **824 modules plus the crate root**, and **5244 distinct
 cross-module dependency edges**. Check this source commit against your checkout.
 <!-- module-map:provenance:end -->
 
@@ -505,7 +505,7 @@ sim::combat::combat_weapon -> map::entities; map::houses; map::resolved_terrain;
 sim::combat::damage -> -
 sim::combat::damage::attacker -> sim::combat::damage
 sim::combat::damage::gates -> sim::combat::damage
-sim::combat::damage::kernel -> sim::combat::damage
+sim::combat::damage::kernel -> sim::combat::damage; util::native_x87; util::native_x87::masked
 sim::combat::damage::receive -> sim::combat::damage; sim::combat::damage::gates; sim::combat::damage::kernel
 sim::combat::fire_decision -> -
 sim::combat::greatest_threat -> map::entities; map::houses; map::resolved_terrain; rules::object_type; rules::ruleset; sim::combat; sim::combat::combat_targeting; sim::combat::combat_weapon; sim::combat::line_of_fire; sim::combat::threat_range; sim::entity_store; sim::game_entity; sim::intern; sim::movement::locomotor; sim::occupancy; sim::pathfinding::zone_map; sim::vision; util::fixed_math; util::native_x87
@@ -851,7 +851,8 @@ util::native_file_name -> -
 util::native_file_time -> -
 util::native_string -> -
 util::native_trig -> -
-util::native_x87 -> -
+util::native_x87 -> util::native_x87::masked
+util::native_x87::masked -> util::native_x87
 util::read_helpers -> -
 util::retail_pointer_sort -> -
 util::sha256 -> -
