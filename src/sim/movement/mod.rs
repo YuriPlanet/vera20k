@@ -244,12 +244,39 @@ impl MoverPathFacts {
         }
     }
 
-    /// Facts for a search with no mover behind it.
+    /// Facts for a search issued outside the movement tick, where no
+    /// `MoverSnapshot` exists: a move order, or the process-entry repath.
     ///
-    /// The wall arm cannot run without an owner to compare, so this leaves the
-    /// mover unarmed and unowned, which answers 7 at `0x0073F48F` and keeps the
-    /// pre-I9b search exactly. Use it only where there genuinely is no mover;
-    /// it is deliberately verbose at the call site for that reason.
+    /// The crusher and infantry facts come from the mover itself, the same
+    /// fields `from_snapshot` reads, so no caller supplies them. Ledger row I9c
+    /// is what happened when callers did: the ones without context passed
+    /// `false`, and the same tank planned as a crusher or not depending on
+    /// which function issued its move.
+    ///
+    /// RESIDUAL (ledger I9b): the wall arm stays off on these searches. It needs
+    /// the type's armed flag and primary warhead, which need the rules, and the
+    /// order path's `PathfindingContext` carries no wall tables. Trigger: a
+    /// player move order whose shortest route crosses an enemy wall the unit
+    /// could shoot. Effect: the path detours where retail prices the wall at
+    /// 20x or 60x and drives at it.
+    pub fn from_entity_without_wall_arm(
+        entity: &crate::sim::game_entity::GameEntity,
+        urgency: u8,
+    ) -> Self {
+        Self {
+            urgency,
+            mover_is_crusher: bump_crush::CrushCapability::of(entity).can_crush_units(),
+            is_infantry: entity.category == EntityCategory::Infantry,
+            speed_type: None,
+            owner: None,
+            is_armed: false,
+            warhead_wall: false,
+            warhead_wood: false,
+        }
+    }
+
+    /// Hand-built facts for a search fixture with no entity behind it.
+    #[cfg(test)]
     pub fn without_wall_arm(urgency: u8, mover_is_crusher: bool, is_infantry: bool) -> Self {
         Self {
             urgency,

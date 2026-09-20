@@ -213,7 +213,6 @@ pub fn issue_move_command(
     terrain_costs: Option<&TerrainCostGrid>,
     entity_blocks: Option<&BTreeSet<(u16, u16)>>,
     entity_block_map: Option<&LayeredEntityBlockMap>,
-    mover_is_crusher: bool,
     timing: crate::sim::movement::DestinationTiming,
 ) -> bool {
     issue_move_command_with_layered(
@@ -228,7 +227,6 @@ pub fn issue_move_command(
         None, // resolved_terrain — per-tick repath has it
         None, // zone_grid — basic entrypoint has no Simulation context
         entity_block_map,
-        mover_is_crusher,
         None,
         None,
         None,
@@ -255,7 +253,6 @@ pub fn set_destination_for_teleporter_entity(
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     zone_grid: Option<&ZoneGrid>,
     entity_block_map: Option<&LayeredEntityBlockMap>,
-    mover_is_crusher: bool,
     rules: &GeneralRules,
     is_harvester: bool,
     is_teleporter: bool,
@@ -289,7 +286,6 @@ pub fn set_destination_for_teleporter_entity(
             resolved_terrain,
             zone_grid,
             entity_block_map,
-            mover_is_crusher,
             None,
             playfield_bounds,
             None,
@@ -319,7 +315,6 @@ pub fn set_destination_for_teleporter_entity(
             resolved_terrain,
             zone_grid,
             entity_block_map,
-            mover_is_crusher,
             None,
             playfield_bounds,
             None,
@@ -439,7 +434,6 @@ pub(crate) fn issue_move_command_with_layered(
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     zone_grid: Option<&ZoneGrid>,
     entity_block_map: Option<&LayeredEntityBlockMap>,
-    mover_is_crusher: bool,
     blocker_neighbor_counts: Option<&BlockerNeighborCounts>,
     playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
     cell_occupation: Option<&mut crate::sim::occupancy::CellOccupationGrid>,
@@ -457,7 +451,6 @@ pub(crate) fn issue_move_command_with_layered(
         resolved_terrain,
         zone_grid,
         entity_block_map,
-        mover_is_crusher,
         blocker_neighbor_counts,
         playfield_bounds,
         cell_occupation,
@@ -480,7 +473,6 @@ pub(crate) fn issue_move_command_with_destination(
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     zone_grid: Option<&ZoneGrid>,
     entity_block_map: Option<&LayeredEntityBlockMap>,
-    mover_is_crusher: bool,
     blocker_neighbor_counts: Option<&BlockerNeighborCounts>,
     playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
     cell_occupation: Option<&mut crate::sim::occupancy::CellOccupationGrid>,
@@ -502,7 +494,6 @@ pub(crate) fn issue_move_command_with_destination(
         resolved_terrain,
         zone_grid,
         entity_block_map,
-        mover_is_crusher,
         blocker_neighbor_counts,
         playfield_bounds,
         cell_occupation,
@@ -524,7 +515,6 @@ fn issue_move_command_with_destination_impl(
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     zone_grid: Option<&ZoneGrid>,
     entity_block_map: Option<&LayeredEntityBlockMap>,
-    mover_is_crusher: bool,
     blocker_neighbor_counts: Option<&BlockerNeighborCounts>,
     playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
     cell_occupation: Option<&mut crate::sim::occupancy::CellOccupationGrid>,
@@ -545,8 +535,9 @@ fn issue_move_command_with_destination_impl(
     }
     // The original engine dispatches its cell-entry predicate by object class,
     // so terrain-object occupation is read at sub-cell granularity for infantry
-    // and whole-cell for everything else. The search has to know which.
-    let is_infantry: bool = entity.category == EntityCategory::Infantry;
+    // and whole-cell for everything else, and reads the crusher flags from the
+    // mover's own type. urgency=0: an initial move command.
+    let path_facts = super::MoverPathFacts::from_entity_without_wall_arm(entity, 0);
     // `AStar @ 0x0042CAD6` uses hierarchy only for a mover whose stored
     // TechnoClass+0x3D5 byte is true. Authority is explicit: resolved terrain
     // and MapClass bounds have independent lifetimes in headless fixtures and
@@ -734,17 +725,7 @@ fn issue_move_command_with_destination_impl(
                     movement_zone,
                     too_big_to_fit_under_bridge,
                     entity_block_map,
-                    // urgency=0: initial move command. This site has no `MoverSnapshot`
-                    // and its `PathfindingContext` carries no wall tables, so the wall
-                    // arm stays off here and the search behaves exactly as before
-                    // I9b's search half. Ledger I9b records this as the remaining
-                    // producer: the player's own move order is the case that most
-                    // wants a wall priced rather than refused.
-                    super::movement_path::mover_path_facts_without_wall_arm(
-                        0,
-                        mover_is_crusher,
-                        is_infantry,
-                    ),
+                    path_facts,
                     allow_zone_hierarchy,
                 ) else {
                     return false;
@@ -797,17 +778,7 @@ fn issue_move_command_with_destination_impl(
             movement_zone,
             too_big_to_fit_under_bridge,
             entity_block_map,
-            // urgency=0: initial move command. This site has no `MoverSnapshot`
-            // and its `PathfindingContext` carries no wall tables, so the wall
-            // arm stays off here and the search behaves exactly as before
-            // I9b's search half. Ledger I9b records this as the remaining
-            // producer: the player's own move order is the case that most
-            // wants a wall priced rather than refused.
-            super::movement_path::mover_path_facts_without_wall_arm(
-                0,
-                mover_is_crusher,
-                is_infantry,
-            ),
+            path_facts,
             allow_zone_hierarchy,
         )
     };
@@ -1084,7 +1055,6 @@ pub(crate) fn prepare_walk_cell_destination(
         resolved_terrain,
         zone_grid,
         None,
-        false,
         None,
         playfield_bounds,
         Some(cell_occupation),

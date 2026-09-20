@@ -1221,7 +1221,6 @@ pub fn scatter_blocker(
         });
     // The one crush authority (I9c): native reads the type in every
     // Can_Enter_Cell (0x0073F438..F446, 0x0073FB2A..FB6C), not a caller flag.
-    let mover_is_crusher = CrushCapability::of(blocker).can_crush_units();
 
     // Find a valid adjacent cell. Random start direction matches Branch A.
     let start_dir = rng.next_range_u32(8) as usize;
@@ -1276,7 +1275,6 @@ pub fn scatter_blocker(
                 resolved_terrain,
                 None,
                 None,
-                mover_is_crusher,
                 None,
                 None,
                 None,

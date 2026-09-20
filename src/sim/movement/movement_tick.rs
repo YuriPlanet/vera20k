@@ -596,14 +596,8 @@ fn process_pending_drive_arrivals(
             movement_zone,
             entity.too_big_to_fit_under_bridge,
             entity_block_map,
-            // No `MoverSnapshot` on this path, so the wall arm stays off and
-            // this search behaves exactly as it did before I9b's search half.
-            // One crush authority for every search; see `CrushCapability::of`.
-            super::MoverPathFacts::without_wall_arm(
-                0,
-                bump_crush::CrushCapability::of(entity).can_crush_units(),
-                entity.category == EntityCategory::Infantry,
-            ),
+            // No `MoverSnapshot` on this path; see the constructor's note.
+            super::MoverPathFacts::from_entity_without_wall_arm(entity, 0),
             ctx.playfield_bounds.is_none() || entity.in_playfield,
         ) else {
             // VERA-internal retry policy: pathfinding failed, so re-arm the

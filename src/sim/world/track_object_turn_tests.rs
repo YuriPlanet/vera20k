@@ -386,7 +386,6 @@ fn first_process_after_command_applies_raw_head_once_without_a_paid_point_and_af
                 None,
                 None,
                 None,
-                false,
                 crate::sim::movement::DestinationTiming::new(0, 60),
             ));
             if reload {
@@ -488,7 +487,6 @@ fn terminal_arrival_resets_owner_speed_before_next_accelerating_move() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
     let entity = sim.substrate.entities.get_mut(1).unwrap();
@@ -527,7 +525,6 @@ fn ship_fresh_claim_survives_next_object_visit_and_snapshot_rebuild() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
     sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())

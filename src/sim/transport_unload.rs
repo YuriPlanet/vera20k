@@ -485,7 +485,6 @@ fn issue_pathed_move(
         sim.resolved_terrain.as_ref(),
         sim.zone_grid.as_ref(),
         Some(&entity_block_map),
-        info.mover_is_crusher,
         Some(&blocker_neighbor_counts),
         sim.playfield_bounds,
         Some(&mut sim.substrate.cell_occupation),

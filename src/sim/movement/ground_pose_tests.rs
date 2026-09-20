@@ -891,7 +891,6 @@ fn ordinary_drive_ship_command_keeps_subcell_origin_through_terminal_cleanup() {
                 None,
                 None,
                 None,
-                false,
                 crate::sim::movement::DestinationTiming::new(0, 60),
             ));
             for frame in 0..128 {
