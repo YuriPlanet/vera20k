@@ -15,7 +15,6 @@ use crate::rules::ruleset::RuleSet;
 /// Current Rust producers whose animation names have not yet been lifted into
 /// parsed rules fields. Keep the producer and this binding root list together
 /// until that follow-up is complete.
-const GENETIC_CONVERTER_INVOKE_ANIM: &str = "IONBLAST";
 const LIGHTNING_BOLT_ANIMS: [&str; 3] = ["WCLBOLT1", "WCLBOLT2", "WCLBOLT3"];
 
 /// Raw and consumer-visible frame counts for one authoritative effect asset.
@@ -182,9 +181,10 @@ pub fn available_effect_anim_frame_count(
     }
 }
 
-/// Every animation name the combat tick can turn into an `AnimClass` instance.
+/// Every animation name the simulation can turn into an `AnimClass` instance,
+/// which the loader must bind before the match starts.
 ///
-/// Exactly the three producers that fill `CombatResult::explosion_effects`:
+/// The three producers that fill `CombatResult::explosion_effects`:
 /// - the killing warhead's `AnimList=` pick
 ///   (`WarheadTypeClass::Detonate` -> `Warhead::SelectExplosionAnim @ 0x0048A4F0`),
 /// - the infantry death animation for the warhead's `InfDeath=`,
@@ -196,7 +196,7 @@ pub fn available_effect_anim_frame_count(
 /// `Explosion=`, 13 `DestroyAnim=`, plus the infantry-death family), which is
 /// why the binder that consumes it must tolerate the handful retail authors
 /// with no art section.
-pub fn combat_explosion_anim_roots(rules: &RuleSet) -> Vec<String> {
+pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     let mut roots = BTreeSet::new();
     let mut insert = |name: &str| {
         if let Some(name) = canonical_asset_id(name) {
@@ -216,6 +216,17 @@ pub fn combat_explosion_anim_roots(rules: &RuleSet) -> Vec<String> {
             insert(name);
         }
     }
+    // `[General] WarpOut=`: the teleport locomotor constructs it at both ends
+    // of a relocation (`sim::movement::teleport_movement`).
+    insert(&rules.general.warp_out.name);
+    // `SuperClass::Launch` invoke animations (`sim::superweapon`).
+    insert(&rules.general.iron_curtain_invoke_anim);
+    insert(&rules.general.force_shield_invoke_anim);
+    insert(&rules.general.ion_blast_anim);
+    // Lightning Storm bolts (`sim::superweapon::lightning_storm`).
+    for name in LIGHTNING_BOLT_ANIMS {
+        insert(name);
+    }
     roots.into_iter().collect()
 }
 
@@ -225,7 +236,7 @@ pub fn combat_explosion_anim_roots(rules: &RuleSet) -> Vec<String> {
 /// in aggregate: a data change that breaks ten roots reads the same as retail's
 /// standing three unless the count is stated once. Retail's own baseline is
 /// three (`MININUKE - ADDED 11/30`, `GTPOWEXP`, `TSTLEXP` — see
-/// `ArtRegistry::bind_combat_explosion_anim_assets`), so anything above that is
+/// `ArtRegistry::bind_anim_class_assets`), so anything above that is
 /// new and worth looking at.
 pub fn log_unbound_combat_explosion_roots(unbound: usize) {
     if unbound == 0 {
@@ -263,7 +274,7 @@ fn authoritative_effect_roots(rules: &RuleSet) -> BTreeSet<String> {
     }
     insert(&rules.general.iron_curtain_invoke_anim);
     insert(&rules.general.force_shield_invoke_anim);
-    insert(GENETIC_CONVERTER_INVOKE_ANIM);
+    insert(&rules.general.ion_blast_anim);
     for name in LIGHTNING_BOLT_ANIMS {
         insert(name);
     }

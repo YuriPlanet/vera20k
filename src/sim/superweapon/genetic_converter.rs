@@ -14,7 +14,6 @@ mod mutation;
 
 use crate::map::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::WorldEffect;
 use crate::sim::intern::InternedId;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
@@ -29,7 +28,8 @@ pub fn launch(
     overlay_registry: Option<&OverlayTypeRegistry>,
 ) -> bool {
     // Spawn the launch animation before mutation.
-    spawn_invoke_anim(sim, rules, "IONBLAST", target_rx, target_ry);
+    let anim_name = rules.general.ion_blast_anim.clone();
+    super::spawn_cell_anim(sim, rules, &anim_name, target_rx, target_ry);
 
     let kill_count = mutation::execute(sim, rules, owner, target_rx, target_ry, overlay_registry);
 
@@ -50,26 +50,4 @@ pub fn launch(
     );
 
     true
-}
-
-fn spawn_invoke_anim(sim: &mut Simulation, rules: &RuleSet, anim_name: &str, rx: u16, ry: u16) {
-    let frames = rules.effect_frame_count(anim_name).unwrap_or(20);
-    let iid = sim.interner.intern(anim_name);
-    sim.world_effects.push(WorldEffect {
-        anim_spawn: None,
-        shp_name: iid,
-        rx,
-        ry,
-        sub_x: crate::util::lepton::CELL_CENTER_LEPTON,
-        sub_y: crate::util::lepton::CELL_CENTER_LEPTON,
-        z: 5,
-        frame: 0,
-        total_frames: frames,
-        frame_delay: 1,
-        elapsed_frames: 0,
-        translucent: false,
-        delay_frames: 0,
-        start_sound_id: None,
-        start_sound_emitted: false,
-    });
 }

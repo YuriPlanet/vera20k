@@ -1933,8 +1933,8 @@ impl MapLoadInitial {
         .expect("retail scheduler animation closure");
         // Combat explosions are AnimClass instances; tolerant pass, after the
         // strict one, which rewrites the scheduler-owned set wholesale.
-        let unbound_explosion_roots = art.bind_combat_explosion_anim_assets(
-            &crate::rules::effect_asset_catalog::combat_explosion_anim_roots(&rules),
+        let unbound_explosion_roots = art.bind_anim_class_assets(
+            &crate::rules::effect_asset_catalog::anim_class_roots(&rules),
             asset_manager,
             theater_ext,
             &map_data.header.theater,
@@ -2744,8 +2744,8 @@ pub(crate) fn load_map_from_initial(
         // Combat explosions are AnimClass instances, so their art must carry the
         // same loader-derived End/LoopEnd. Tolerant by design; must follow the
         // strict pass, which rewrites the scheduler-owned set wholesale.
-        let unbound_explosion_roots = a.bind_combat_explosion_anim_assets(
-            &crate::rules::effect_asset_catalog::combat_explosion_anim_roots(r),
+        let unbound_explosion_roots = a.bind_anim_class_assets(
+            &crate::rules::effect_asset_catalog::anim_class_roots(r),
             &asset_manager,
             theater_ext,
             &map_data.header.theater,

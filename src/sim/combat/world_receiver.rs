@@ -1349,7 +1349,7 @@ fn finish_concrete_death(
     // nothing VERA can construct. That is correct against gamemd, which
     // also draws nothing there, but VERA skips the object entirely
     // where native still constructs and discards one. Read the residual
-    // on `ArtRegistry::bind_combat_explosion_anim_assets` before
+    // on `ArtRegistry::bind_anim_class_assets` before
     // treating a missing power-plant explosion as a bug.
     if matches!(category, EntityCategory::Unit | EntityCategory::Aircraft)
         && let Some(obj) = rules.object(world.interner.resolve(type_id))

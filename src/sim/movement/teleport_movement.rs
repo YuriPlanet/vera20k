@@ -20,7 +20,7 @@
 
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::GeneralRules;
-use crate::sim::components::{AnimClassSpawnDescriptor, WorldEffect};
+use crate::sim::components::AnimClassSpawnDescriptor;
 use crate::sim::debug_event_log::DebugEventKind;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::InternedId;
@@ -34,14 +34,16 @@ const TELEPORT_WARP_DELAY: u16 = 0;
 const TELEPORT_WARP_LOOP_COUNT: i32 = 1;
 const TELEPORT_WARP_Z_ADJUST: i32 = 0;
 const TELEPORT_WARP_REVERSE: bool = false;
-pub(crate) const FALLBACK_WARP_FRAME_COUNT: u16 = 20;
 
-/// World-effect bridge for verified teleport `AnimClass` constructor rows.
+/// Teleport `AnimClass` constructor rows reached during one Process call.
+///
+/// The teleport tick borrows only the entity store, so it cannot construct the
+/// animation itself. The object turn constructs every collected row through
+/// `Simulation::spawn_anim_object` as soon as the tick returns, inside the same
+/// mover's turn; nothing in between reads the animation registry.
 pub struct TeleportVisuals<'a> {
-    pub world_effects: &'a mut Vec<WorldEffect>,
+    pub anim_spawns: &'a mut Vec<AnimClassSpawnDescriptor>,
     pub warp_out_type: InternedId,
-    pub warp_out_total_frames: u16,
-    pub warp_out_frame_delay: u16,
 }
 
 impl TeleportVisuals<'_> {
@@ -60,13 +62,7 @@ impl TeleportVisuals<'_> {
         anim_spawn.z_adjust = TELEPORT_WARP_Z_ADJUST;
         anim_spawn.reverse = TELEPORT_WARP_REVERSE;
 
-        self.world_effects.push(WorldEffect::from_anim_spawn(
-            anim_spawn,
-            self.warp_out_total_frames,
-            self.warp_out_frame_delay,
-            true,
-            None,
-        ));
+        self.anim_spawns.push(anim_spawn);
     }
 }
 
@@ -920,13 +916,11 @@ mod tests {
         ));
 
         let warp_out_type = crate::sim::intern::test_intern("WARPOUT");
-        let mut world_effects = Vec::new();
+        let mut anim_spawns = Vec::new();
         {
             let mut visuals = TeleportVisuals {
-                world_effects: &mut world_effects,
+                anim_spawns: &mut anim_spawns,
                 warp_out_type,
-                warp_out_total_frames: 13,
-                warp_out_frame_delay: 1,
             };
             tick_teleport_movement(
                 &mut entities,
@@ -938,13 +932,8 @@ mod tests {
             );
         }
 
-        assert_eq!(world_effects.len(), 2);
-        for (effect, (rx, ry)) in world_effects.iter().zip([(5, 5), (8, 9)]) {
-            assert_eq!(effect.shp_name, warp_out_type);
-            assert_eq!((effect.rx, effect.ry, effect.z), (rx, ry, 2));
-            assert_eq!(effect.total_frames, 13);
-            assert_eq!(effect.frame_delay, 1);
-            let row = effect.anim_spawn.as_ref().expect("AnimClass row");
+        assert_eq!(anim_spawns.len(), 2);
+        for (row, (rx, ry)) in anim_spawns.iter().zip([(5, 5), (8, 9)]) {
             assert_eq!(row.type_name, warp_out_type);
             assert_eq!((row.rx, row.ry, row.z), (rx, ry, 2));
             assert_eq!(row.delay, TELEPORT_WARP_DELAY);
@@ -972,13 +961,11 @@ mod tests {
         ));
 
         let warp_out_type = crate::sim::intern::test_intern("WARPOUT");
-        let mut world_effects = Vec::new();
+        let mut anim_spawns = Vec::new();
         {
             let mut visuals = TeleportVisuals {
-                world_effects: &mut world_effects,
+                anim_spawns: &mut anim_spawns,
                 warp_out_type,
-                warp_out_total_frames: FALLBACK_WARP_FRAME_COUNT,
-                warp_out_frame_delay: 2,
             };
             tick_teleport_movement(
                 &mut entities,
@@ -999,7 +986,7 @@ mod tests {
         }
 
         assert_eq!(
-            world_effects.len(),
+            anim_spawns.len(),
             2,
             "only Relocate emits the verified departure and arrival rows"
         );

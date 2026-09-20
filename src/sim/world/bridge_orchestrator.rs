@@ -1627,7 +1627,6 @@ fn spawn_bridge_debris(sim: &mut Simulation, rules: &RuleSet, cells: &BTreeSet<(
                 .effect_frame_count(sim.interner.resolve(anim_id))
                 .unwrap_or(0);
             sim.world_effects.push(WorldEffect {
-                anim_spawn: None,
                 shp_name: anim_id,
                 rx,
                 ry,
@@ -1654,7 +1653,6 @@ fn spawn_bridge_debris(sim: &mut Simulation, rules: &RuleSet, cells: &BTreeSet<(
                 .effect_frame_count(sim.interner.resolve(anim_id))
                 .unwrap_or(0);
             sim.world_effects.push(WorldEffect {
-                anim_spawn: None,
                 shp_name: anim_id,
                 rx,
                 ry,
@@ -1696,7 +1694,6 @@ fn spawn_bridge_explosion_effect(
     presentation
         .world_effects
         .push(crate::sim::components::WorldEffect {
-            anim_spawn: None,
             shp_name: anim_id,
             rx,
             ry,

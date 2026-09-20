@@ -11,7 +11,6 @@
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::WorldEffect;
 use crate::sim::intern::InternedId;
 use crate::sim::superweapon::cell_grid::{live_successor, native_cells_3x3, selected_cell_list};
 use crate::sim::superweapon::invulnerability::{InvulnKind, apply_invulnerability};
@@ -33,7 +32,7 @@ pub fn launch(
     let current_frame = sim.session.binary_frame;
 
     // 1. Spawn invoke animation at target.
-    spawn_invoke_anim(sim, rules, &anim_name, target_rx, target_ry);
+    super::spawn_cell_anim(sim, rules, &anim_name, target_rx, target_ry);
 
     // SuperClass::Launch case 1 (0x006CCF39..0x006CD035) selects a live
     // CellClass list, invokes +0x154, then reads that object's +0x30 AFTER the
@@ -120,6 +119,53 @@ mod tests {
              [C4]\nInfDeath=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
         );
         RuleSet::from_ini(&ini).expect("test rules")
+    }
+
+    /// `SuperClass::Launch 0x006CCF09`: the invoke animation is a real
+    /// `AnimClass` with the row `(type, &coord, 0, 1, 0x600, 0, 0)`, so its art
+    /// `Report=` plays from `AnimClass::Start` (retail `[IRONBLST]
+    /// Report=IronCurtainBlast`, which no separate launch cue carries).
+    #[test]
+    fn launch_constructs_the_invoke_anim_and_plays_its_report() {
+        let mut rules = test_rules();
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
+            "[IRONBLST]
+Rate=450
+Report=IronCurtainBlast
+Translucent=yes
+",
+        ));
+        art.bind_anim_frame_count_for_test("IRONBLST", 12);
+        rules.art_registry = art;
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        spawn(&mut sim, 1, "MTNK", 10, 10, EntityCategory::Unit);
+        let sw_test = sim.interner.intern("SWTEST");
+
+        assert!(launch(&mut sim, &rules, owner, 10, 10, sw_test, None));
+
+        let invoke = sim.interner.intern("IRONBLST");
+        let anims: Vec<_> = sim
+            .substrate
+            .anims
+            .iter()
+            .map(|(_, anim)| anim)
+            .filter(|anim| anim.type_id == invoke)
+            .collect();
+        assert_eq!(anims.len(), 1);
+        let (rx, ry, ..) = anims[0].world_coord.to_cell_sub_z();
+        assert_eq!((rx, ry), (10, 10));
+        assert_eq!(anims[0].draw_flags, 0x600);
+        assert_eq!(anims[0].z_adjust, 0);
+        let report = sim.interner.intern("IronCurtainBlast");
+        assert!(
+            sim.sound_events.iter().any(|event| matches!(
+                event,
+                SimSoundEvent::AnimationStarted { sound_id, .. } if *sound_id == report
+            )),
+            "AnimClass::Start plays the art Report="
+        );
+        assert!(sim.world_effects.is_empty());
     }
 
     fn spawn(sim: &mut Simulation, id: u64, type_ref: &str, rx: u16, ry: u16, cat: EntityCategory) {
@@ -267,26 +313,4 @@ mod tests {
                 .is_none()
         );
     }
-}
-
-fn spawn_invoke_anim(sim: &mut Simulation, rules: &RuleSet, anim_name: &str, rx: u16, ry: u16) {
-    let frames = rules.effect_frame_count(anim_name).unwrap_or(20);
-    let iid = sim.interner.intern(anim_name);
-    sim.world_effects.push(WorldEffect {
-        anim_spawn: None,
-        shp_name: iid,
-        rx,
-        ry,
-        sub_x: crate::util::lepton::CELL_CENTER_LEPTON,
-        sub_y: crate::util::lepton::CELL_CENTER_LEPTON,
-        z: 5,
-        frame: 0,
-        total_frames: frames,
-        frame_delay: 1,
-        elapsed_frames: 0,
-        translucent: false,
-        delay_frames: 0,
-        start_sound_id: None,
-        start_sound_emitted: false,
-    });
 }

@@ -33,6 +33,10 @@ mod track_object_turn_tests;
 #[path = "forced_track_object_turn_tests.rs"]
 mod forced_track_object_turn_tests;
 
+#[cfg(test)]
+#[path = "teleport_anim_object_turn_tests.rs"]
+mod teleport_anim_object_turn_tests;
+
 #[derive(Default)]
 pub(super) struct LiveObjectPassOutcome {
     pub movement: movement::MovementTickStats,
@@ -446,14 +450,10 @@ impl Simulation {
             });
         if let Some(rules) = rules {
             let warp_out_type = sim.interner.intern(&rules.general.warp_out.name);
-            let warp_out_total_frames = rules
-                .effect_frame_count(&rules.general.warp_out.name)
-                .unwrap_or(teleport_movement::FALLBACK_WARP_FRAME_COUNT);
+            let mut warp_spawns = Vec::new();
             let mut teleport_visuals = teleport_movement::TeleportVisuals {
-                world_effects: &mut sim.world_effects,
+                anim_spawns: &mut warp_spawns,
                 warp_out_type,
-                warp_out_total_frames,
-                warp_out_frame_delay: rules.general.warp_out.frame_delay,
             };
             teleport_movement::tick_teleport_movement(
                 &mut sim.substrate.entities,
@@ -463,6 +463,17 @@ impl Simulation {
                 sim.resolved_terrain.as_ref(),
                 Some(&mut teleport_visuals),
             );
+            for descriptor in warp_spawns {
+                let type_name = descriptor.type_name;
+                if let Err(error) = sim.spawn_anim_object(rules, descriptor) {
+                    // An art type that never bound draws nothing natively
+                    // either; see `spawn_combat_explosion_anim`.
+                    log::debug!(
+                        "teleport warp [{}] did not construct: {error}",
+                        sim.interner.resolve(type_name)
+                    );
+                }
+            }
         } else {
             teleport_movement::tick_teleport_movement(
                 &mut sim.substrate.entities,

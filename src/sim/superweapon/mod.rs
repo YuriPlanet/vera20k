@@ -27,6 +27,68 @@ use crate::sim::intern::InternedId;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
+/// `AnimClass` draw flags of the superweapon cell animations.
+const INVOKE_ANIM_DRAW_FLAGS: u32 = 0x600;
+
+/// Construct a superweapon animation at a cell's centre coordinate.
+///
+/// `SuperClass::Launch @ 0x006CC390` builds all three the same way: Iron
+/// Curtain (`Rules+0x348`, `0x006CCF09`), Force Shield (`Rules+0x34C`,
+/// `0x006CD130`) and the Genetic Mutator's `IonBlast=` (`Rules+0x298`,
+/// `0x006CD8A5`) each call `AnimClass::AnimClass @ 0x00421EA0` with
+/// `(type, &coord, delay 0, loopCount 1, drawFlags 0x600, zAdjust 0, reverse 0)`.
+/// `LightningStorm::GroundStrike @ 0x0053A300` passes the same row for its bolt
+/// (`0x0053A387`), at the cell's centre coordinate without the `+5`.
+/// Read at `0x006CCE76..0x006CCF09` for Iron Curtain: `coord` is the target
+/// cell's own coordinate (`vtable+0x48`), its Z raised by the bridge height
+/// global when the cell carries flag `0x100`, then `+5` leptons.
+///
+/// A real `AnimClass` plays the art type's `Report=` from `AnimClass::Start`
+/// (retail `[IRONBLST] Report=IronCurtainBlast`), follows its `Rate=` and
+/// `Translucent=`, and runs `Middle`.
+///
+/// RESIDUAL: the store addresses Z by height level (see
+/// `AnimWorldCoord::to_cell_sub_z`), so the `+5` leptons are below its
+/// resolution and the anim sits on the cell's level, or the bridge deck's.
+pub(super) fn spawn_cell_anim(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    anim_name: &str,
+    rx: u16,
+    ry: u16,
+) {
+    if anim_name.trim().is_empty() {
+        return;
+    }
+    let level = sim
+        .resolved_terrain
+        .as_ref()
+        .and_then(|terrain| terrain.cell(rx, ry))
+        .map_or(0, |cell| {
+            cell.bridge_deck_level_if_any().unwrap_or(cell.level)
+        });
+    let type_name = sim.interner.intern(&anim_name.trim().to_ascii_uppercase());
+    let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
+        delay: 0,
+        loop_count: 1,
+        draw_flags: INVOKE_ANIM_DRAW_FLAGS,
+        z_adjust: 0,
+        reverse: false,
+        ..crate::sim::components::AnimClassSpawnDescriptor::new(
+            type_name,
+            rx,
+            ry,
+            crate::util::lepton::CELL_CENTER_LEPTON,
+            crate::util::lepton::CELL_CENTER_LEPTON,
+            level,
+        )
+    };
+    if let Err(error) = sim.spawn_anim_object(rules, descriptor) {
+        // An art type that never bound draws nothing natively either.
+        log::debug!("superweapon invoke anim [{anim_name}] did not construct: {error}");
+    }
+}
+
 /// Per-house, per-superweapon-type runtime state.
 ///
 /// Tracks charging progress, readiness, and power suspension.
