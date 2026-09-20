@@ -1,7 +1,7 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `f39e4438ee917d31b8a7a6f91226acd4a53b6ed9` (2026-09-20), cargo-modules 0.26.0.
+Generated snapshot: `4e767404daf7aea2909ab5cb1fc6f718793dab3b` (2026-09-20), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
@@ -557,8 +557,8 @@ sim::map::bridge_topology -> map::bridge_facts; map::resolved_terrain
 sim::mcv_deploy -> map::entities; rules::mission_data; rules::ruleset; sim::game_entity; sim::mission::authority; sim::mission::state; sim::movement; sim::movement::facing_class; sim::world
 sim::miner -> rules::object_type; rules::ruleset; sim::miner::harvest_mission; sim::miner::miner_dock_sequence; sim::miner::miner_system; sim::mission::timer; sim::movement::facing_class
 sim::miner::harvest_mission -> rules::overlay_types; rules::ruleset; sim::miner; sim::miner::miner_system; sim::pathfinding::core; sim::world
-sim::miner::miner_dock -> -
-sim::miner::miner_dock_sequence -> map::entities; rules::mission_data; rules::ruleset; sim::components; sim::economy; sim::house_state; sim::miner; sim::miner::miner_dock; sim::miner::miner_system; sim::movement; sim::movement::facing_class; sim::movement::locomotor; sim::occupancy; sim::pathfinding::core; sim::production::production_queue; sim::production::production_tech; sim::radio; sim::world; util::fixed_math
+sim::miner::miner_dock -> sim::radio; sim::world
+sim::miner::miner_dock_sequence -> map::entities; rules::mission_data; rules::ruleset; sim::components; sim::economy; sim::house_state; sim::miner; sim::miner::miner_dock; sim::miner::miner_system; sim::movement; sim::movement::facing_class; sim::movement::locomotor; sim::occupancy; sim::pathfinding::core; sim::production::production_queue; sim::production::production_tech; sim::world; util::fixed_math
 sim::miner::miner_system -> map::entities; rules::locomotor_type; rules::mission_data; rules::object_type; rules::overlay_types; rules::ruleset; rules::tiberium_type; sim::debug_event_log; sim::game_entity; sim::intern; sim::miner; sim::miner::miner_dock; sim::mission::authority; sim::mission::state; sim::movement; sim::movement::locomotor; sim::occupancy; sim::overlay_grid; sim::pathfinding::core; sim::pathfinding::zone_map; sim::production::production_tech; sim::world; util::fixed_math; util::lepton; util::native_x87
 sim::mission -> rules::mission_data; sim::mission::leaf; sim::mission::retask; sim::mission::state; sim::mission::timer
 sim::mission::authority -> map::entities; rules::ruleset; sim::combat; sim::components; sim::entity_store; sim::game_entity; sim::intern; sim::mission::concrete_effects; sim::mission::readiness; sim::mission::state; sim::mission::verb; sim::world
@@ -672,7 +672,7 @@ sim::production::production_refinery -> map::entities; rules::ruleset; sim::find
 sim::production::production_sell -> map::entities; rules::mission_data; rules::object_type; rules::ruleset; sim::combat; sim::components; sim::intern; sim::movement; sim::movement::locomotor; sim::passenger; sim::pathfinding::cell_entry; sim::production::production_queue; sim::production::production_tech; sim::world; sim::world::lifecycle; util::lepton
 sim::production::production_spawn -> map::resolved_terrain; rules::locomotor_type; rules::object_type; rules::ruleset; sim::entity_store; sim::movement::bump_crush; sim::movement::locomotor; sim::occupancy; sim::pathfinding::core; sim::production::production_tech; sim::production::production_types; sim::world
 sim::production::production_tech -> map::entities; rules::object_type; rules::ruleset; sim::entity_store; sim::intern; sim::production::factory; sim::production::production_queue; sim::production::production_types; sim::world
-sim::production::production_types -> rules::object_type; sim::docking::aircraft_dock; sim::intern; sim::miner; sim::miner::miner_dock; sim::ore_growth; sim::production::factory
+sim::production::production_types -> rules::object_type; sim::docking::aircraft_dock; sim::intern; sim::miner; sim::ore_growth; sim::production::factory
 sim::production::wall_placement -> rules::object_type; rules::overlay_types; rules::ruleset; sim::intern; sim::overlay_grid; sim::pathfinding::core; sim::production::production_placement; sim::world
 sim::production::war_factory_exit -> map::entities; rules::ruleset; sim::entity_store; sim::intern; sim::movement::locomotor; sim::occupancy; sim::production::production_spawn
 sim::projectile -> map::resolved_terrain; sim::intern; sim::movement::homing_movement; sim::rng; sim::timer; util::fixed_math; util::native_x87
