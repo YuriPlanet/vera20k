@@ -37,7 +37,7 @@ Validation results of each candidate are recorded on its commits. Windows only.
 - `C:\Users\enok\Documents\vera20k-engine-authority`, branch
   `feature/persistent-facing-authority` (Codex): uncommitted `facing_class.rs`,
   `turret.rs`, `walk_head.rs`, `snapshot.rs`. Its snapshot bump must land after
-  174.
+  175.
 
 ## Open leads — findings so far
 

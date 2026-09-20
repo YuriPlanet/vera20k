@@ -1713,8 +1713,7 @@ impl Simulation {
     /// `Crater=`, `ForceBigCraters=`, and plays nothing. Callers: the
     /// constructor for a zero delay (`0x00422702`), and `AnimClass::AI` when
     /// the delay countdown reaches zero (`0x004243A1`) or a `Next=` type takes
-    /// over (`0x00424925`). The Ghidra labels on the pair were once
-    /// transposed and have been corrected; older notes may still swap them.
+    /// over (`0x00424925`).
     ///
     /// `AnimType+0x2F8` is one slot: `AnimTypeClass::ReadINI @ 0x00427D00`
     /// reads `Report=` into it only when `StartSound=` resolved to `-1`, which
@@ -2289,11 +2288,7 @@ mod tests {
     #[test]
     fn delayed_anim_plays_its_report_when_the_delay_expires() {
         let rules = runtime_rules(
-            "[TWLT036]
-Translucent=yes
-Report=Explosion06
-End=8
-",
+            "[TWLT036]\nTranslucent=yes\nReport=Explosion06\nEnd=8\n",
             &[("TWLT036", 8)],
         );
         let mut sim = Simulation::new();

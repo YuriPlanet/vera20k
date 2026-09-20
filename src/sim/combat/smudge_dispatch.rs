@@ -25,9 +25,7 @@ use crate::sim::tiberium::{ReduceTiberiumContext, reduce_tiberium};
 const SMUDGE_ALTITUDE_GATE_LEPTONS: i32 = 30;
 
 /// Hardcoded ore-reduction amount on `AnimClass::Middle @ 0x00424F00`'s
-/// crater branch. (Ghidra labels `0x00424F00` `AnimClass__Start`; the label is
-/// transposed with `0x00424CE0` — `0x00424F00` is the particle/scorch/crater
-/// body and plays no sound, so it is `Middle`. The address is right.)
+/// crater branch (the particle/scorch/crater body; it plays no sound).
 const CRATER_ORE_REDUCTION: u16 = 6;
 
 /// Damage values passed to `SmudgeGrid::try_place` for building destruction

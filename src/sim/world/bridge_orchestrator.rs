@@ -1660,9 +1660,15 @@ const BRIDGE_ANIM_DRAW_FLAGS: u32 = 0x600;
 /// The `AnimClass::Constructor @ 0x00421EA0` row of a `BridgeExplosions=`
 /// animation: `(type, &coord, delay 1..=5, loop 1, flags 0x600, zAdjust 0,
 /// reverse 0)`, identical at `CellClass::BlowUpBridge` `0x0047E02C` and in the
-/// hut walkers (`0x00575540`, `0x00575BA0`). The start delay keeps the
-/// constructor from running `AnimClass::Middle`, so the type's `Report=`,
-/// `Scorch=` and `Crater=` fire from the store when the delay expires.
+/// four hut walkers. The start delay keeps the constructor from calling
+/// `AnimClass::Start @ 0x00424CE0`; the store calls it, and plays the type's
+/// `Report=`, on the visit that counts the delay to zero.
+///
+/// RESIDUAL: all four stock types author `Scorch=yes` and `Crater=yes`, which
+/// `AnimClass::Middle @ 0x00424F00` places from `Start`. The store does not
+/// run `Middle` (see `sim::anim_class`), and these producers queue no smudge
+/// rows, so a collapse leaves no scorch or crater. Visible after every bridge
+/// collapse; the legacy effect list did not place them either.
 fn bridge_explosion_descriptor(
     type_name: InternedId,
     cell: (u16, u16),
@@ -1688,8 +1694,9 @@ fn construct_bridge_explosion(
     descriptor: crate::sim::components::AnimClassSpawnDescriptor,
 ) {
     if let Err(error) = sim.spawn_anim_object(rules, descriptor) {
-        // An art type that never bound draws nothing natively either.
-        log::debug!("bridge explosion anim did not construct: {error}");
+        // `anim_class_roots` binds every `BridgeExplosions=` type, so this is
+        // a type with no art section or no SHP.
+        log::warn!("bridge explosion anim did not construct: {error}");
     }
 }
 
@@ -1700,6 +1707,10 @@ fn construct_bridge_explosion(
 /// these draws and the next cell's. No stock `BridgeExplosions=` type authors
 /// `RandomRate=`, so the constructor draws nothing and the scenario stream is
 /// unchanged; a modded one would take its rate draw after the walk's own draws.
+/// Stable ids follow the same order. Separately, and older than this producer,
+/// VERA runs every walker step's draws before the `BlowUpBridge` fallout draws,
+/// where native calls `DestroyBridge_*` inside each step; whether that body
+/// draws inline is UNCHECKED.
 fn queue_walker_bridge_explosion(
     presentation: &mut BridgePresentationContext<'_>,
     rx: u16,

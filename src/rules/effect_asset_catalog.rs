@@ -227,6 +227,13 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     for name in LIGHTNING_BOLT_ANIMS {
         insert(name);
     }
+    // `[General] BridgeExplosions=`: `CellClass::BlowUpBridge` and the
+    // `CollapseBridge_*` walkers construct them (`world::bridge_orchestrator`).
+    // Stock lists the same four types in `[TankOGas] AnimList=`, but nothing
+    // ties the two lists together.
+    for name in &rules.bridge_rules.explosions {
+        insert(name);
+    }
     roots.into_iter().collect()
 }
 
@@ -427,6 +434,24 @@ mod anim_class_root_tests {
         for name in [
             "MYWARP", "MYIRON", "MYSHIELD", "MYRING", "WCLBOLT1", "WCLBOLT2", "WCLBOLT3",
         ] {
+            assert!(
+                roots.iter().any(|root| root == name),
+                "{name} missing: {roots:?}"
+            );
+        }
+    }
+
+    /// Bridge collapse explosions are AnimClass objects; their types must be
+    /// roots in their own right, not through a warhead that happens to list
+    /// the same names.
+    #[test]
+    fn roots_cover_bridge_explosions_without_a_matching_warhead() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nBridgeExplosions=MYBRIDGE1,MYBRIDGE2\n",
+        ))
+        .expect("rules");
+        let roots = anim_class_roots(&rules);
+        for name in ["MYBRIDGE1", "MYBRIDGE2"] {
             assert!(
                 roots.iter().any(|root| root == name),
                 "{name} missing: {roots:?}"
