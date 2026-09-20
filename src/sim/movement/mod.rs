@@ -272,7 +272,8 @@ impl MoverPathFacts {
     /// Drive tick contexts carry them with `interner: None`, which keeps the
     /// arm off there too. Wiring this constructor alone would not give retail
     /// behavior. Walk orders already get the arm (`walk_path.rs`).
-    /// - Trigger: an armed Drive or Ship unit ordered to a goal it can reach
+    /// - Trigger: an armed unit that searches at command time (every locomotor
+    ///   but Walk: Drive, Ship, Hover) ordered to a goal it can reach
     ///   only through a wall its warhead can hit.
     /// - Effect: a detour, or no path at all when the goal is walled in, where
     ///   retail drives at the wall and shoots it.
