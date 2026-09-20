@@ -55,8 +55,9 @@ attempted RuleSet clone; the fixture now reconstructs immutable rules through a 
 parser. Independent criticism found missing active-production restore coverage; the
 revised test compares 30 frames of economy and complete factory state with uninterrupted
 execution, requires fresh charges, then checks cancellation. Source re-review accepts
-the correction. The next action is commit, module-map refresh, PR publication and
-merge after the PR checks pass. The full engine goal remains open.
+the correction. Source commit: `3398ef92`. The dependency map was regenerated from
+that committed source (823 modules plus root, 5,240 emitted cargo-modules edges). PR publication and merge
+after its checks are the next actions. The full engine goal remains open.
 
 Final local validation for increment 1:
 
