@@ -101,6 +101,9 @@ The whole-engine coverage ledger above remains open. In particular:
   feed damage. The deterministic compatibility policy is unresolved: explicit
   shared conversion bounds/matrix versus rejection of display-dependent offsets.
   No answer/default policy has been applied. This also affects Tile consumers.
+- Building body/timer ownership, Super/turret and constructor postlude,
+  HasPower/HasEngineer/temporal producers, and retained-slot repositioning remain
+  incomplete.
 - Snapshot 170 changes retained Building and dock state; save/restore tests cover
   selected paths, not a claim of universal historical save compatibility.
 
