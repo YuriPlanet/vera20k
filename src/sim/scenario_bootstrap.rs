@@ -2887,7 +2887,6 @@ mod tests {
                     &terrain,
                     "TEMPERATE",
                     Some(&rules),
-                    None,
                     &BTreeMap::new(),
                     Some(&overlays),
                     Some(&overlay_grid),

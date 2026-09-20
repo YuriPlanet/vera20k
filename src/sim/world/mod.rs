@@ -660,15 +660,6 @@ pub enum SimSoundEvent {
         owner: InternedId,
         radar: Option<RadarEventRequest>,
     },
-    /// A delayed world-effect animation reached its first active frame.
-    WorldEffectStarted {
-        sound_id: InternedId,
-        rx: u16,
-        ry: u16,
-        sub_x: SimFixed,
-        sub_y: SimFixed,
-        z: u8,
-    },
 }
 
 impl SimSoundEvent {
@@ -1078,9 +1069,6 @@ pub struct Simulation {
     /// runs allocation-free.
     #[serde(skip)]
     pub metallic_debris: Vec<InternedId>,
-    /// Selected start/report sound for bridge animation SHPs, keyed by SHP ID.
-    #[serde(skip)]
-    pub bridge_anim_sounds: BTreeMap<InternedId, InternedId>,
     /// Runtime terrain cells whose radar/minimap terrain pixel needs refresh.
     /// Presentation reads this generation and acknowledges the exact batch
     /// only after its radar update completes. The list is de-duplicated within
@@ -1112,8 +1100,9 @@ pub struct Simulation {
     /// From CloseEnough= in [General]. Default 576 (~2.25 cells).
     pub close_enough: SimFixed,
     /// Legacy world-position SHP animations. Every producer except the bridge
-    /// collapse has moved to `AnimStore`; those remain because `MetallicDebris=`
-    /// types are native bouncers, an `AnimClass::AI` arm the store lacks.
+    /// collapse `MetallicDebris=` spawn has moved to `AnimStore`; that one
+    /// remains because its types are native bouncers, an `AnimClass::AI` arm
+    /// the store lacks.
     /// Ticked each frame, auto-removed when finished. Neither saved nor hashed.
     #[serde(skip)]
     pub world_effects: Vec<crate::sim::components::WorldEffect>,
@@ -2901,7 +2890,6 @@ impl Simulation {
             playfield_revision: 0,
             bridge_explosions: Vec::new(),
             metallic_debris: Vec::new(),
-            bridge_anim_sounds: BTreeMap::new(),
             radar_terrain_dirty_cells: Vec::new(),
             radar_terrain_dirty_generation: 0,
             tactical_dirty_cells: Vec::new(),
@@ -4717,7 +4705,6 @@ impl Simulation {
         terrain_speed_config: terrain_speed::TerrainSpeedConfig,
         bridge_explosions: Vec<InternedId>,
         metallic_debris: Vec<InternedId>,
-        bridge_anim_sounds: BTreeMap<InternedId, InternedId>,
     ) {
         resolved_terrain.bind_shared_cell_dummy(self.shared_cell_dummy.clone());
         // Restore externally-derived data only. Substrate caches are rebuilt
@@ -4749,7 +4736,6 @@ impl Simulation {
         self.terrain_speed_config = terrain_speed_config;
         self.bridge_explosions = bridge_explosions;
         self.metallic_debris = metallic_debris;
-        self.bridge_anim_sounds = bridge_anim_sounds;
         self.terrain_costs = terrain_costs;
     }
 
@@ -5709,22 +5695,7 @@ impl Simulation {
         *spawned_entities |= self.tick_building_down(rules, overlay_registry);
 
         // Tick world-effect animations and remove finished ones.
-        let mut started_effect_sounds = Vec::new();
-        self.world_effects.retain_mut(|fx| {
-            let tick = fx.tick_with_start_sound();
-            if let Some(sound_id) = tick.started_sound {
-                started_effect_sounds.push(SimSoundEvent::WorldEffectStarted {
-                    sound_id,
-                    rx: fx.rx,
-                    ry: fx.ry,
-                    sub_x: fx.sub_x,
-                    sub_y: fx.sub_y,
-                    z: fx.z,
-                });
-            }
-            !tick.finished
-        });
-        self.sound_events.extend(started_effect_sounds);
+        self.world_effects.retain_mut(|fx| !fx.tick());
 
         // EventClass dispatch is a Main_Tick tail rung: the complete live
         // Logic walk observes frame N's pre-command state, so an accepted

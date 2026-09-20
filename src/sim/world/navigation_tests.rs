@@ -356,13 +356,7 @@ fn held_factory_and_attached_upgrade_stay_off_navigation_through_frame_and_resto
     let bytes = GameSnapshot::save(&sim, 0, 0, "marked-navigation.map", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
-    restored.rebuild_caches_after_load(
-        terrain,
-        Default::default(),
-        Vec::new(),
-        Vec::new(),
-        BTreeMap::new(),
-    );
+    restored.rebuild_caches_after_load(terrain, Default::default(), Vec::new(), Vec::new());
     restored
         .restore_map_authority_after_snapshot_load(&rules, &overlays)
         .unwrap();

@@ -1397,7 +1397,6 @@ fn walk_stop_and_retarget_finish_a_same_cell_committed_head() {
             sim.terrain_speed_config.clone(),
             sim.bridge_explosions.clone(),
             sim.metallic_debris.clone(),
-            sim.bridge_anim_sounds.clone(),
         );
         replay
             .restore_map_authority_after_snapshot_load(&rules, &registry)
@@ -1715,10 +1714,7 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
         let current = crate::sim::movement::ground_pose::position_world_coord(
             &sim.substrate.entities.get(rocketeer).unwrap().position,
         );
-        assert_eq!(
-            sim.foot_navigation_coordinate(rocketeer).unwrap(),
-            current
-        );
+        assert_eq!(sim.foot_navigation_coordinate(rocketeer).unwrap(), current);
         if ordered {
             // Infantry's accepted Foot setter4D96C2..9707 runs after Jumpjet
             // MoveTo: reset timers/latch while preserving the retry dword.
@@ -1835,7 +1831,6 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
             crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
             Vec::new(),
             Vec::new(),
-            BTreeMap::new(),
         );
         restored
             .restore_map_authority_after_snapshot_load(&rules, &registry)

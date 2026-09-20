@@ -242,13 +242,7 @@ fn bridge_rim_middle_section_fallout_and_restored_navigation() {
         .unwrap()
         .sim;
     restored.restore_after_snapshot_load().unwrap();
-    restored.rebuild_caches_after_load(
-        pristine,
-        Default::default(),
-        Vec::new(),
-        Vec::new(),
-        BTreeMap::new(),
-    );
+    restored.rebuild_caches_after_load(pristine, Default::default(), Vec::new(), Vec::new());
     restored
         .restore_map_authority_after_snapshot_load(
             &rules,

@@ -684,10 +684,10 @@ impl Simulation {
         let previous = self.substrate.anims.insert(object);
         debug_assert!(previous.is_none());
         // Native registry insertion precedes Reveal, and Reveal precedes the
-        // delay-zero constructor-time Middle call.
+        // delay-zero constructor-time Start call.
         self.reveal_anim(stable_id);
         if descriptor.delay == 0 {
-            self.anim_middle(stable_id, &config);
+            self.anim_start(stable_id, &config);
         }
         Ok(stable_id)
     }
@@ -776,7 +776,7 @@ impl Simulation {
 
         self.reveal_anim(stable_id);
         if descriptor.delay == 0 {
-            self.anim_middle(stable_id, &config);
+            self.anim_start(stable_id, &config);
         }
         Ok(stable_id)
     }
@@ -897,7 +897,7 @@ impl Simulation {
                 .insert(object)
                 .is_none()
         );
-        self.anim_middle(stable_id, &config);
+        self.anim_start(stable_id, &config);
         Ok(stable_id)
     }
 
@@ -1035,6 +1035,23 @@ impl Simulation {
             return;
         }
 
+        // `AnimClass::AI @ 0x00423AC0` delay countdown: the visit that takes it
+        // to zero calls `AnimClass::Start @ 0x00424CE0` (call site `0x004243A1`)
+        // and returns. The field also holds the `RandomLoopDelay=` pause, so a
+        // looping anim restarts, and replays its start sound, after each pause.
+        {
+            let Some(anim) = self.anim_mut_by_id(id) else {
+                return;
+            };
+            if anim.runtime.delay_remaining > 0 {
+                anim.runtime.delay_remaining -= 1;
+                if anim.runtime.delay_remaining == 0 {
+                    self.anim_start(id, &config);
+                }
+                return;
+            }
+        }
+
         let mut action = VisitAction::None;
         let mut random_loop_delay = None;
         let current_frame = self.session.binary_frame as i32;
@@ -1042,10 +1059,6 @@ impl Simulation {
             let Some(anim) = self.anim_mut_by_id(id) else {
                 return;
             };
-            if anim.runtime.delay_remaining > 0 {
-                anim.runtime.delay_remaining -= 1;
-                return;
-            }
             //42449B: power pause follows first-AI/delay gates and precedes timer advance.
             if anim.runtime.paused {
                 return;
@@ -1692,16 +1705,16 @@ impl Simulation {
 
     /// Native `AnimClass::Start @ 0x00424CE0` — the anim's sound emitter.
     ///
-    /// **The Ghidra labels on this pair are transposed.** `0x00424CE0` is
-    /// labelled `AnimClass__Middle` but its body is `Start`: it Marks, then
+    /// `AnimClass::Start @ 0x00424CE0`: it Marks, then
     /// `if (Anim+0x198 /* silent */ == 0 && AnimType+0x2F8 != -1)` takes the
     /// coordinate through vtable `+0x48` and plays it with `VocClass::PlayAt`,
-    /// then tail-calls `0x00424F00` when `AnimType+0x298 == 0`. `0x00424F00` is
-    /// labelled `AnimClass__Start` but its body is `Middle`: `SpawnsParticle=`
-    /// looped `NumParticles=` times, `Scorch=`, `Crater=`, `ForceBigCraters=`,
-    /// and it plays nothing. This function implements `0x00424CE0`; the Rust
-    /// name follows the (wrong) Ghidra label and is left alone only because
-    /// renaming it is a separate transaction. Read the address, not the name.
+    /// then calls `AnimClass::Middle @ 0x00424F00` when `AnimType+0x298 == 0`.
+    /// `Middle` is `SpawnsParticle=` looped `NumParticles=` times, `Scorch=`,
+    /// `Crater=`, `ForceBigCraters=`, and plays nothing. Callers: the
+    /// constructor for a zero delay (`0x00422702`), and `AnimClass::AI` when
+    /// the delay countdown reaches zero (`0x004243A1`) or a `Next=` type takes
+    /// over (`0x00424925`). The Ghidra labels on the pair were once
+    /// transposed and have been corrected; older notes may still swap them.
     ///
     /// `AnimType+0x2F8` is one slot: `AnimTypeClass::ReadINI @ 0x00427D00`
     /// reads `Report=` into it only when `StartSound=` resolved to `-1`, which
@@ -1709,7 +1722,7 @@ impl Simulation {
     ///
     /// The particle/scorch/crater half (`0x00424F00`) is not wired — see the
     /// module header.
-    fn anim_middle(&mut self, id: AnimId, config: &AnimTypeRuntimeConfig) {
+    fn anim_start(&mut self, id: AnimId, config: &AnimTypeRuntimeConfig) {
         let sound_name = config
             .start_sound
             .as_ref()
@@ -1771,7 +1784,7 @@ impl Simulation {
             anim.runtime.first_ai_guard = false;
             anim.runtime.inactive = false;
         }
-        self.anim_middle(id, &config);
+        self.anim_start(id, &config);
     }
 }
 
@@ -2269,6 +2282,70 @@ mod tests {
     /// The whole point of routing combat explosions through `AnimStore`: the
     /// verified constructor row from `BulletClass::DetonateAtCoord 0x00469C93`,
     /// and the `Report=` that only `AnimClass::Start @ 0x00424CE0` can play.
+    /// `AnimClass::AI @ 0x00423AC0`: a constructor delay keeps `Start` out of
+    /// the constructor; the AI visit that counts the delay to zero calls
+    /// `AnimClass::Start @ 0x00424CE0` (`0x004243A1`) and returns, so the
+    /// `Report=` of a delayed anim plays exactly then, once.
+    #[test]
+    fn delayed_anim_plays_its_report_when_the_delay_expires() {
+        let rules = runtime_rules(
+            "[TWLT036]
+Translucent=yes
+Report=Explosion06
+End=8
+",
+            &[("TWLT036", 8)],
+        );
+        let mut sim = Simulation::new();
+        let type_name = sim.interner.intern("TWLT036");
+        let descriptor = AnimClassSpawnDescriptor {
+            delay: 2,
+            ..AnimClassSpawnDescriptor::new(
+                type_name,
+                7,
+                9,
+                crate::util::lepton::CELL_CENTER_LEPTON,
+                crate::util::lepton::CELL_CENTER_LEPTON,
+                0,
+            )
+        };
+        let id = sim
+            .spawn_anim_object(&rules, descriptor)
+            .expect("bound art constructs");
+        let starts = |sim: &Simulation| {
+            sim.sound_events
+                .iter()
+                .filter(|event| {
+                    matches!(event, SimSoundEvent::AnimationStarted { anim_id, .. } if *anim_id == id)
+                })
+                .count()
+        };
+        assert_eq!(
+            starts(&sim),
+            0,
+            "a delayed constructor does not reach Start"
+        );
+        assert!(!sim.anim(id).unwrap().start_sound_active);
+
+        // The first AI visit only clears the first-AI guard.
+        sim.visit_anim(id, &rules, None);
+        sim.visit_anim(id, &rules, None);
+        assert_eq!(sim.anim(id).unwrap().runtime.delay_remaining, 1);
+        assert_eq!(starts(&sim), 0);
+
+        sim.visit_anim(id, &rules, None);
+        assert_eq!(sim.anim(id).unwrap().runtime.delay_remaining, 0);
+        assert_eq!(starts(&sim), 1, "the expiring visit runs Start");
+        assert_eq!(
+            sim.anim(id).unwrap().runtime.current_frame,
+            0,
+            "and returns before advancing a frame"
+        );
+
+        sim.visit_anim(id, &rules, None);
+        assert_eq!(starts(&sim), 1, "Start runs once per delay");
+    }
+
     #[test]
     fn combat_explosion_uses_the_verified_constructor_row_and_plays_report() {
         // TWLT036 is the stock AP-shell explosion: Report=Explosion06,

@@ -117,7 +117,6 @@ fn world_queries_match_all_original_foot_coordinate_rows_and_snapshot() {
                 crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
                 Vec::new(),
                 Vec::new(),
-                std::collections::BTreeMap::new(),
             );
         }
         assert_eq!(

@@ -3,6 +3,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::sim::native_identity::NativeUniqueIdCursor;
 use crate::sim::overlay_grid::OverlayGrid;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 
 fn fixture() -> (
     Simulation,

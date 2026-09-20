@@ -163,7 +163,6 @@ fn gap_flags_snapshot_hash_and_later_setter_preserve_value_authority() {
         crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
         Vec::new(),
         Vec::new(),
-        std::collections::BTreeMap::new(),
     );
     let ini = crate::rules::ini_parser::IniFile::from_str(
         "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n[OverlayTypes]\n",

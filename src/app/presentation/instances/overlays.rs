@@ -244,9 +244,6 @@ pub(crate) fn build_world_effect_instances(state: &AppState, paged: &mut [Vec<Sp
         state.render_height() as f32 / z,
     );
     for fx in &sim.world_effects {
-        if fx.delay_frames > 0 {
-            continue;
-        }
         let (center_x, center_y) =
             world_effect_screen_position(fx.rx, fx.ry, fx.sub_x, fx.sub_y, fx.z);
         if !in_view(

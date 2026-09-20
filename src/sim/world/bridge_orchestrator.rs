@@ -13,7 +13,7 @@
 //! Same as sim/world: depends on sim/bridge_state, sim/rng, rules/, map/;
 //! never render / ui / audio / net.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 #[path = "bridge_ground.rs"]
 mod ground_fallout;
@@ -34,10 +34,7 @@ use crate::sim::bridge_state::{
     BridgeRuntimeCell, BridgeRuntimeState, DamageState, DispatchPath, StateOutcome,
 };
 use crate::sim::world::Simulation;
-use crate::sim::{
-    intern::{InternedId, StringInterner},
-    rng::SimRng,
-};
+use crate::sim::{intern::InternedId, rng::SimRng};
 use crate::util::fixed_math::SimFixed;
 use crate::util::lepton::CELL_CENTER_LEPTON;
 
@@ -254,6 +251,7 @@ pub(crate) fn dispatch_bridge_collapse_from_hut_with_overlay_registry(
     let mut outcomes: Vec<StateOutcome> = Vec::new();
     let mut fallback_zones_dirty = false;
     let mut fallback_adjacent_dirty_anchor = None;
+    let mut anim_spawns = Vec::new();
     {
         let Some(terrain) = sim.resolved_terrain.as_mut() else {
             return false;
@@ -263,13 +261,10 @@ pub(crate) fn dispatch_bridge_collapse_from_hut_with_overlay_registry(
         };
         let mut presentation = BridgePresentationContext {
             // bridge collapse/repair — scenario stream. Direct field (NOT bridge_rng()):
-            // sits inside a live sim.bridge_state borrow + co-borrows world_effects etc.
+            // sits inside a live sim.bridge_state borrow.
             rng: &mut sim.scenario_rng,
-            world_effects: &mut sim.world_effects,
+            anim_spawns: &mut anim_spawns,
             bridge_explosions: &sim.bridge_explosions,
-            bridge_anim_sounds: &sim.bridge_anim_sounds,
-            rules,
-            interner: &sim.interner,
         };
 
         // Look for a seed cell whose overlay is already in the destroy-band.
@@ -293,6 +288,9 @@ pub(crate) fn dispatch_bridge_collapse_from_hut_with_overlay_registry(
             fallback_zones_dirty = fallback.zones_dirty;
             fallback_adjacent_dirty_anchor = fallback.adjacent_dirty_anchor;
         }
+    }
+    for descriptor in anim_spawns {
+        construct_bridge_explosion(sim, rules, descriptor);
     }
 
     apply_hut_bridge_execution(
@@ -598,11 +596,11 @@ enum HutBridgeFamily {
 
 struct BridgePresentationContext<'a> {
     rng: &'a mut SimRng,
-    world_effects: &'a mut Vec<crate::sim::components::WorldEffect>,
+    /// `BridgeExplosions` constructor rows in draw order. The walker runs
+    /// inside the bridge-state and terrain borrows, so the owner constructs
+    /// them as soon as those end.
+    anim_spawns: &'a mut Vec<crate::sim::components::AnimClassSpawnDescriptor>,
     bridge_explosions: &'a [InternedId],
-    bridge_anim_sounds: &'a BTreeMap<InternedId, InternedId>,
-    rules: &'a RuleSet,
-    interner: &'a StringInterner,
 }
 
 const HUT_FALLBACK_DIRS: [(i16, i16); 8] = [
@@ -634,16 +632,15 @@ const BRIDGE_DEBRIS_OUTER_GATE_EXCLUSIVE: u32 = 2_040_109_464;
 const BRIDGE_METALLIC_GATE_EXCLUSIVE: u32 = 0x3FFF_FFFF;
 const BRIDGE_JITTER_SPAN_LEPTONS: u64 = 50;
 const BRIDGE_JITTER_HALF_LEPTONS: i32 = 25;
-/// The gameplay frames each spawned bridge effect holds one image frame for.
+/// The gameplay frames a `MetallicDebris=` effect holds one image frame for.
+/// `BridgeExplosions=` are `AnimClass` objects and take their rate from their
+/// own type.
 ///
 /// gamemd-derived: `AnimTypeClass::Constructor @ 0x00427530` seeds this to 1,
 /// and `AnimTypeClass::ReadINI @ 0x00427D00` overwrites it with `900 / Rate`
-/// when the section authors `Rate=`. None of the four stock `BridgeExplosions`
-/// entries (`TWLT026`, `TWLT036`, `TWLT050`, `TWLT070`) authors one, so the
-/// constructor default is what retail uses here — this constant is NO-DIFF for
-/// the stock set, correcting pass 1's claim that it was invented.
+/// when the section authors `Rate=`.
 ///
-/// The frame-count fallback beside the debris spawns is now `0`, not `20`:
+/// The frame-count fallback beside the debris spawn is `0`, not `20`:
 /// `AnimTypeClass::Constructor` sets `End` to 0 and `AnimClass::Constructor @
 /// 0x00421EA0` reads the SHP header only when `End == -1`, so an unbound SHP
 /// ends the anim immediately. Unreachable with retail assets.
@@ -661,8 +658,8 @@ const BRIDGE_JITTER_HALF_LEPTONS: i32 = 25;
 ///   a draw VERA does not. Those same types carry `Bouncer=yes`, `Damage=10/20`,
 ///   `DamageRadius=50/80` and `Warhead=HE`, so retail's bridge debris bounces
 ///   and hurts what it lands on; VERA's is inert.
-/// - Per-AnimType `Rate=` is still not looked up, so a modded bridge explosion
-///   authoring one would animate at VERA's constant.
+/// - Per-AnimType `Rate=` is not looked up for the debris, so a `[DBRIS*]`
+///   type authoring one animates at VERA's constant.
 /// - Trigger: every bridge span destroyed. Frequency: routine on maps with
 ///   bridges. Downstream risk: the missing draw shifts the stream for every
 ///   collapse, so it must land with the damage half rather than alone.
@@ -1163,11 +1160,12 @@ fn spawn_hut_walker_pre_destroy_effects(
     };
     for delta in [-1, 0, 1] {
         if let Some((rx, ry)) = step_axis(center, perpendicular, delta) {
-            let z = terrain
-                .cell(rx, ry)
-                .map(|c| c.bridge_deck_level_if_any().unwrap_or(c.level))
-                .unwrap_or(0);
-            spawn_bridge_explosion_effect(presentation, rx, ry, z);
+            // `CollapseBridge_NS_Low @ 0x00575540` / `_NS_High @ 0x00575BA0`:
+            // Z is `Cell+0x11B (Level) * level height` with no deck offset, so
+            // these play on the ground or water under a high span.
+            // `BlowUpBridge` alone adds the structural deck offset.
+            let z = terrain.cell(rx, ry).map(|c| c.level).unwrap_or(0);
+            queue_walker_bridge_explosion(presentation, rx, ry, z);
         }
     }
 }
@@ -1638,41 +1636,70 @@ fn spawn_bridge_debris(sim: &mut Simulation, rules: &RuleSet, cells: &BTreeSet<(
                 frame_delay: BRIDGE_EFFECT_FRAME_DELAY,
                 elapsed_frames: 0,
                 translucent: true,
-                delay_frames: 0,
-                start_sound_id: None,
-                start_sound_emitted: false,
             });
         }
 
         // Step 5 + 6: always BridgeExplosion, delayed 1-5 frames.
-        if explosion_count > 0 {
-            let delay_frames = sim.bridge_rng().next_range_u32_inclusive(1, 5);
-            let idx = sim.bridge_rng().next_range_u32(explosion_count) as usize;
-            let anim_id = sim.bridge_explosions[idx];
-            let frames = rules
-                .effect_frame_count(sim.interner.resolve(anim_id))
-                .unwrap_or(0);
-            sim.world_effects.push(WorldEffect {
-                shp_name: anim_id,
-                rx,
-                ry,
-                sub_x,
-                sub_y,
-                z: deck_level,
-                frame: 0,
-                total_frames: frames,
-                frame_delay: BRIDGE_EFFECT_FRAME_DELAY,
-                elapsed_frames: 0,
-                translucent: true,
-                delay_frames: delay_frames as u16,
-                start_sound_id: sim.bridge_anim_sounds.get(&anim_id).copied(),
-                start_sound_emitted: false,
-            });
-        }
+        let delay_frames = sim.bridge_rng().next_range_u32_inclusive(1, 5);
+        let idx = sim.bridge_rng().next_range_u32(explosion_count) as usize;
+        let descriptor = bridge_explosion_descriptor(
+            sim.bridge_explosions[idx],
+            (rx, ry),
+            (sub_x, sub_y),
+            deck_level,
+            delay_frames as u16,
+        );
+        construct_bridge_explosion(sim, rules, descriptor);
     }
 }
 
-fn spawn_bridge_explosion_effect(
+/// `AnimClass` draw flags every bridge collapse animation is constructed with.
+const BRIDGE_ANIM_DRAW_FLAGS: u32 = 0x600;
+
+/// The `AnimClass::Constructor @ 0x00421EA0` row of a `BridgeExplosions=`
+/// animation: `(type, &coord, delay 1..=5, loop 1, flags 0x600, zAdjust 0,
+/// reverse 0)`, identical at `CellClass::BlowUpBridge` `0x0047E02C` and in the
+/// hut walkers (`0x00575540`, `0x00575BA0`). The start delay keeps the
+/// constructor from running `AnimClass::Middle`, so the type's `Report=`,
+/// `Scorch=` and `Crater=` fire from the store when the delay expires.
+fn bridge_explosion_descriptor(
+    type_name: InternedId,
+    cell: (u16, u16),
+    sub: (SimFixed, SimFixed),
+    level: u8,
+    delay: u16,
+) -> crate::sim::components::AnimClassSpawnDescriptor {
+    crate::sim::components::AnimClassSpawnDescriptor {
+        delay,
+        loop_count: 1,
+        draw_flags: BRIDGE_ANIM_DRAW_FLAGS,
+        z_adjust: 0,
+        reverse: false,
+        ..crate::sim::components::AnimClassSpawnDescriptor::new(
+            type_name, cell.0, cell.1, sub.0, sub.1, level,
+        )
+    }
+}
+
+fn construct_bridge_explosion(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    descriptor: crate::sim::components::AnimClassSpawnDescriptor,
+) {
+    if let Err(error) = sim.spawn_anim_object(rules, descriptor) {
+        // An art type that never bound draws nothing natively either.
+        log::debug!("bridge explosion anim did not construct: {error}");
+    }
+}
+
+/// One walker explosion: two jitter draws, the `RandomRanged(1, 5)` start
+/// delay, then the slot, in that order (`0x00575540`, `0x00575BA0`).
+///
+/// RESIDUAL: the row is constructed when the walk's borrows end, not between
+/// these draws and the next cell's. No stock `BridgeExplosions=` type authors
+/// `RandomRate=`, so the constructor draws nothing and the scenario stream is
+/// unchanged; a modded one would take its rate draw after the walk's own draws.
+fn queue_walker_bridge_explosion(
     presentation: &mut BridgePresentationContext<'_>,
     rx: u16,
     ry: u16,
@@ -1681,34 +1708,18 @@ fn spawn_bridge_explosion_effect(
     if presentation.bridge_explosions.is_empty() {
         return;
     }
-    let (sub_x, sub_y) = bridge_jittered_subcells(presentation.rng);
+    let sub = bridge_jittered_subcells(presentation.rng);
     let delay_frames = presentation.rng.next_range_u32_inclusive(1, 5);
     let idx = presentation
         .rng
         .next_range_u32(presentation.bridge_explosions.len() as u32) as usize;
-    let anim_id = presentation.bridge_explosions[idx];
-    let frames = presentation
-        .rules
-        .effect_frame_count(presentation.interner.resolve(anim_id))
-        .unwrap_or(0);
-    presentation
-        .world_effects
-        .push(crate::sim::components::WorldEffect {
-            shp_name: anim_id,
-            rx,
-            ry,
-            sub_x,
-            sub_y,
-            z,
-            frame: 0,
-            total_frames: frames,
-            frame_delay: BRIDGE_EFFECT_FRAME_DELAY,
-            elapsed_frames: 0,
-            translucent: true,
-            delay_frames: delay_frames as u16,
-            start_sound_id: presentation.bridge_anim_sounds.get(&anim_id).copied(),
-            start_sound_emitted: false,
-        });
+    presentation.anim_spawns.push(bridge_explosion_descriptor(
+        presentation.bridge_explosions[idx],
+        (rx, ry),
+        sub,
+        z,
+        delay_frames as u16,
+    ));
 }
 
 fn bridge_jittered_subcells(rng: &mut SimRng) -> (SimFixed, SimFixed) {
@@ -2432,7 +2443,28 @@ mod tests {
             voxel_max
         );
         let ini = crate::rules::ini_parser::IniFile::from_str(&body);
-        crate::rules::ruleset::RuleSet::from_ini(&ini).expect("rules parse")
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini(&ini).expect("rules parse");
+        // Stock-shaped `BridgeExplosions=` art: an unbound type constructs no
+        // AnimClass, natively or here.
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[BRIDGEEXP1]\nTranslucent=yes\nReport=Explosion06\n\
+                 [BRIDGEEXP2]\nTranslucent=yes\nReport=Explosion07\n",
+            ),
+        );
+        art.bind_anim_frame_count_for_test("BRIDGEEXP1", 8);
+        art.bind_anim_frame_count_for_test("BRIDGEEXP2", 8);
+        rules.art_registry = art;
+        rules
+    }
+
+    fn bridge_explosion_anims(sim: &Simulation) -> Vec<&crate::sim::anim_class::AnimObject> {
+        sim.substrate
+            .anims
+            .iter()
+            .map(|(_, anim)| anim)
+            .filter(|anim| sim.bridge_explosions.contains(&anim.type_id))
+            .collect()
     }
 
     #[test]
@@ -2603,6 +2635,23 @@ mod tests {
             predicted.logical_state(),
             "RNG draw order/count diverged from binary parity sequence"
         );
+        if outer < BRIDGE_DEBRIS_OUTER_GATE_EXCLUSIVE {
+            // `CellClass::BlowUpBridge` `0x0047E02C`: one delayed explosion at
+            // the structural deck height, which is where this differs from
+            // the hut walkers.
+            let anims = bridge_explosion_anims(&sim);
+            assert_eq!(anims.len(), 1);
+            assert_eq!(anims[0].draw_flags, 0x600);
+            assert!((1..=5).contains(&anims[0].runtime.delay_remaining));
+            let (rx, ry, _, _, level) = anims[0].world_coord.to_cell_sub_z();
+            assert_eq!((rx, ry, level), (5, 5, 3));
+            assert!(
+                sim.world_effects
+                    .iter()
+                    .all(|fx| fx.shp_name == metallic_debris),
+                "only MetallicDebris stays on the legacy effect list"
+            );
+        }
         assert_eq!(
             sim.main_rng.logical_state(),
             main_before,
@@ -2660,11 +2709,30 @@ mod tests {
             Some(0xE0),
             "fixture must run the real hut dispatcher without a terminal transition"
         );
+        let anims = bridge_explosion_anims(&sim);
         assert_eq!(
-            sim.world_effects.len(),
+            anims.len(),
             3,
-            "one walker step must emit one effect for each perpendicular cell"
+            "one walker step must construct one explosion for each perpendicular cell"
         );
+        for anim in &anims {
+            // `CollapseBridge_NS_Low @ 0x00575540`: row `(type, &coord,
+            // RandomRanged(1, 5), 1, 0x600, 0, 0)`, Z from the cell level with
+            // no deck offset.
+            assert_eq!(anim.draw_flags, 0x600);
+            assert_eq!(anim.z_adjust, 0);
+            assert!((1..=5).contains(&anim.runtime.delay_remaining));
+            let (.., level) = anim.world_coord.to_cell_sub_z();
+            assert_eq!(
+                level, 0,
+                "walker explosions sit on the cell level, not the deck"
+            );
+        }
+        assert!(
+            sim.sound_events.is_empty(),
+            "a delayed anim plays its Report= when the delay expires, not at construction"
+        );
+        assert!(sim.world_effects.is_empty());
         assert_eq!(
             sim.scenario_rng.logical_state(),
             predicted.logical_state(),

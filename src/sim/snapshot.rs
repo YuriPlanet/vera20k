@@ -513,7 +513,10 @@ use crate::sim::world::Simulation;
 // overlay id from ProductionState, the node-era scanner and queue fields from
 // OreGrowthState and the scan rate from OreGrowthConfig; the overlay grid is the
 // only tiberium store.
-const SNAPSHOT_VERSION: u32 = 174;
+// 174 -> 175: bridge collapse explosions are AnimStore members. The layout is
+// unchanged, but they are now saved, hashed and take ids from the shared
+// stable-id counter, so a 174 save taken during a collapse resumes differently.
+const SNAPSHOT_VERSION: u32 = 175;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -2388,7 +2391,6 @@ mod tests {
                 Default::default(),
                 Vec::new(),
                 Vec::new(),
-                BTreeMap::new(),
             );
             restored
         }
@@ -2713,7 +2715,6 @@ mod tests {
             crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
             Vec::new(),
             Vec::new(),
-            BTreeMap::new(),
         );
     }
 
@@ -2793,7 +2794,6 @@ mod tests {
             crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
             Vec::new(),
             Vec::new(),
-            BTreeMap::new(),
         );
 
         let restore_output = restored
@@ -3409,7 +3409,8 @@ mod tests {
         // 165 -> 166: Economy owns the sole house credit balance.
         // 170 -> 171: shared animation bounds and retained HasEngineer.
         // 173 -> 174: ProductionState drops the resource node map.
-        assert_eq!(super::SNAPSHOT_VERSION, 174);
+        // 174 -> 175: bridge collapse explosions join the AnimStore.
+        assert_eq!(super::SNAPSHOT_VERSION, 175);
     }
 
     #[test]
@@ -3534,7 +3535,7 @@ mod tests {
 
     #[test]
     fn combined_bridge_membership_history_schema_rejects_separate_layouts() {
-        for version in 153..=173 {
+        for version in 153..=174 {
             let preamble = GameSnapshotPreamble {
                 product_magic: SNAPSHOT_PRODUCT_MAGIC,
                 envelope_version: SNAPSHOT_ENVELOPE_VERSION,
@@ -6698,7 +6699,6 @@ mod tests {
             crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
             Vec::new(),
             Vec::new(),
-            BTreeMap::new(),
         );
         let rebuilt_dummy = restored
             .resolved_terrain
@@ -6833,7 +6833,6 @@ mod tests {
             crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
             Vec::new(),
             Vec::new(),
-            BTreeMap::new(),
         );
         let rebuilt_terrain = restored.resolved_terrain.as_ref().unwrap();
         assert_eq!(
@@ -7615,7 +7614,6 @@ mod tests {
             crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
             Vec::new(),
             Vec::new(),
-            BTreeMap::new(),
         );
 
         assert_eq!(

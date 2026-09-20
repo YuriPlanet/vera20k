@@ -905,9 +905,10 @@ impl AnimClassSpawnDescriptor {
 /// A temporary one-shot SHP animation playing at a fixed world position.
 ///
 /// Legacy lane, superseded by `sim::anim_class::AnimStore`. Its only remaining
-/// producers are the bridge collapse effects (`world::bridge_orchestrator`);
-/// do not add new ones. The render loop draws these as flat ground-level
-/// sprites. They auto-remove when finished.
+/// producer is the bridge collapse `MetallicDebris=` spawn
+/// (`world::bridge_orchestrator`), which stays here until the store has a
+/// bouncer arm; do not add new ones. The render loop draws these as flat
+/// ground-level sprites. They auto-remove when finished.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WorldEffect {
     /// SHP type interned ID (uppercase), e.g., "WARPOUT", "WARPIN", "FBALL1".
@@ -931,66 +932,24 @@ pub struct WorldEffect {
     pub elapsed_frames: u16,
     /// Whether the effect renders with alpha/translucency (art.ini Translucent=yes).
     pub translucent: bool,
-    /// Optional start delay in native gameplay frames.
-    /// Used for staggering multiple explosions on bridge destruction.
-    pub delay_frames: u16,
-    /// Optional sound ID to play when the effect starts after its delay.
-    pub start_sound_id: Option<InternedId>,
-    /// One-shot guard for `start_sound_id`.
-    pub start_sound_emitted: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WorldEffectTick {
-    pub finished: bool,
-    pub started_sound: Option<InternedId>,
 }
 
 impl WorldEffect {
-    /// Advance the animation by one native gameplay frame.
+    /// Advance the animation by one native gameplay frame. Returns true when
+    /// it has finished.
     pub fn tick(&mut self) -> bool {
-        self.tick_with_start_sound().finished
-    }
-
-    /// Advance the animation and report a delayed-start sound edge.
-    pub fn tick_with_start_sound(&mut self) -> WorldEffectTick {
-        let mut started_sound = None;
-        if self.delay_frames > 0 {
-            self.delay_frames -= 1;
-            if self.delay_frames == 0 && !self.start_sound_emitted {
-                started_sound = self.start_sound_id;
-                self.start_sound_emitted = true;
-            }
-            return WorldEffectTick {
-                finished: false,
-                started_sound,
-            };
-        }
-        if !self.start_sound_emitted {
-            started_sound = self.start_sound_id;
-            self.start_sound_emitted = true;
-        }
         if self.total_frames == 0 {
-            return WorldEffectTick {
-                finished: true,
-                started_sound,
-            };
+            return true;
         }
         if self.frame_delay == 0 {
-            return WorldEffectTick {
-                finished: false,
-                started_sound,
-            };
+            return false;
         }
         self.elapsed_frames = self.elapsed_frames.saturating_add(1);
         while self.elapsed_frames >= self.frame_delay && self.frame < self.total_frames {
             self.elapsed_frames -= self.frame_delay;
             self.frame += 1;
         }
-        WorldEffectTick {
-            finished: self.frame >= self.total_frames,
-            started_sound,
-        }
+        self.frame >= self.total_frames
     }
 }
 
@@ -1326,9 +1285,6 @@ mod tests {
             frame_delay: 2,
             elapsed_frames: 0,
             translucent: true,
-            delay_frames: 0,
-            start_sound_id: None,
-            start_sound_emitted: false,
         };
         assert!(!fx.tick());
         assert_eq!(fx.frame, 0);
@@ -1339,32 +1295,5 @@ mod tests {
         }
         assert!(fx.tick());
         assert_eq!(fx.frame, 3);
-    }
-
-    #[test]
-    fn bridge_twlt_sound_fires_once_when_delay_elapses() {
-        use crate::sim::intern::test_intern;
-        let sound_id = test_intern("Explosion06");
-        let mut fx = WorldEffect {
-            shp_name: test_intern("TWLT036"),
-            rx: 10,
-            ry: 10,
-            sub_x: crate::util::lepton::CELL_CENTER_LEPTON,
-            sub_y: crate::util::lepton::CELL_CENTER_LEPTON,
-            z: 0,
-            frame: 0,
-            total_frames: 3,
-            frame_delay: 2,
-            elapsed_frames: 0,
-            translucent: true,
-            delay_frames: 1,
-            start_sound_id: Some(sound_id),
-            start_sound_emitted: false,
-        };
-
-        let first = fx.tick_with_start_sound();
-        assert_eq!(first.started_sound, Some(sound_id));
-        let second = fx.tick_with_start_sound();
-        assert_eq!(second.started_sound, None);
     }
 }

@@ -252,7 +252,6 @@ mod tests {
             &terrain,
             "TEMPERATE",
             None,
-            None,
             &std::collections::BTreeMap::new(),
             None,
             None,
@@ -527,7 +526,6 @@ pub(crate) fn construct_scenario<F>(
     resolved_terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
     theater_name: &str,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    art: Option<&crate::rules::art_data::ArtRegistry>,
     height_map: &std::collections::BTreeMap<(u16, u16), u8>,
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
@@ -544,7 +542,6 @@ where
         resolved_terrain,
         theater_name,
         rules,
-        art,
         height_map,
         overlay_registry,
         overlay_grid,
@@ -566,7 +563,6 @@ pub(crate) fn construct_scenario_with_generated_inits<F>(
     resolved_terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
     theater_name: &str,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    art: Option<&crate::rules::art_data::ArtRegistry>,
     height_map: &std::collections::BTreeMap<(u16, u16), u8>,
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
@@ -586,7 +582,6 @@ where
         resolved_terrain,
         theater_name,
         rules,
-        art,
         height_map,
         overlay_registry,
         overlay_grid,
@@ -619,7 +614,6 @@ pub(crate) fn populate_staged_scenario_with_generated_inits<F>(
     resolved_terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
     theater_name: &str,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    art: Option<&crate::rules::art_data::ArtRegistry>,
     height_map: &std::collections::BTreeMap<(u16, u16), u8>,
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
@@ -637,7 +631,6 @@ where
         resolved_terrain,
         theater_name,
         rules,
-        art,
         height_map,
         overlay_registry,
         overlay_grid,
@@ -662,7 +655,6 @@ fn populate_staged_scenario_inner<F>(
     resolved_terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
     theater_name: &str,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    art: Option<&crate::rules::art_data::ArtRegistry>,
     height_map: &std::collections::BTreeMap<(u16, u16), u8>,
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
@@ -763,25 +755,6 @@ where
                 .collect()
         })
         .unwrap_or_default();
-    if let Some(art) = art {
-        let mut bridge_anim_sounds = std::collections::BTreeMap::new();
-        for anim_id in sim
-            .bridge_explosions
-            .iter()
-            .chain(sim.metallic_debris.iter())
-            .copied()
-        {
-            let anim_name = sim.interner.resolve(anim_id);
-            if let Some(entry) = art.get(anim_name) {
-                let sound_name = entry.start_sound.as_ref().or(entry.report.as_ref());
-                if let Some(sound_name) = sound_name {
-                    let sound_id = sim.interner.intern(sound_name);
-                    bridge_anim_sounds.insert(anim_id, sound_id);
-                }
-            }
-        }
-        sim.bridge_anim_sounds = bridge_anim_sounds;
-    }
     // gamemd `TerrainClass::Read_Map_Section` runs while the map sections are
     // walked, ahead of `[Units]`/`[Aircraft]`/`[Infantry]`/`[Structures]`: every
     // tree owns its cell before the first map object is placed on it. The
@@ -1032,7 +1005,6 @@ where
         &terrain,
         theater_name,
         Some(rules),
-        Some(art),
         &construction_height_map,
         Some(overlay_registry),
         Some(&overlay_grid),
