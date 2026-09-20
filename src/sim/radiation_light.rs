@@ -182,5 +182,4 @@ mod tests {
         site.duration = 0;
         assert!(radiation_site_light(&site, &stock_rules()).is_none());
     }
-
 }

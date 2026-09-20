@@ -516,7 +516,11 @@ use crate::sim::world::Simulation;
 // 174 -> 175: bridge collapse explosions are AnimStore members. The layout is
 // unchanged, but they are now saved, hashed and take ids from the shared
 // stable-id counter, so a 174 save taken during a collapse resumes differently.
-const SNAPSHOT_VERSION: u32 = 175;
+// 175 -> 176: the effect asset catalog folded into `simulation_config_hash`
+// now holds particle images only. The layout is unchanged, but a 175 save
+// carries the old rules hash and would fail as a rules mismatch; the version
+// gate names the real cause instead.
+const SNAPSHOT_VERSION: u32 = 176;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3410,7 +3414,7 @@ mod tests {
         // 170 -> 171: shared animation bounds and retained HasEngineer.
         // 173 -> 174: ProductionState drops the resource node map.
         // 174 -> 175: bridge collapse explosions join the AnimStore.
-        assert_eq!(super::SNAPSHOT_VERSION, 175);
+        assert_eq!(super::SNAPSHOT_VERSION, 176);
     }
 
     #[test]

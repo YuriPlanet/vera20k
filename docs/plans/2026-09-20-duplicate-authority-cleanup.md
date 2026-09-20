@@ -18,7 +18,7 @@ Replace this file on each update; do not append a diary.
 | `resource_nodes` | the node map, the second growth algorithm, the miner authority switch, the test-only admission seam, and the state they left write-only | #419 |
 | Animation | bridge `BridgeExplosions=` on `AnimStore`; the store's delayed start edge; the whole `WorldEffect` lane, which drew nothing | #420 |
 | Map load | building animations bound tolerantly; the native anim file-name rule; ore twinkle and cliff-collapse roots | #422 |
-| Dead code | items dead in both builds; superseded test-only duplicates (map-list funnels, `radiation_light_epoch`); test probes gated; the effect asset catalog trimmed to particle images | #421 |
+| Dead code | items dead in both builds; superseded test-only duplicates (map-list funnels, `radiation_light_epoch`); test probes gated; the effect asset catalog trimmed to particle images, which changes the rules hash, so snapshot 176 | #421 |
 
 Three per-mover world scans went with those: the per-frame dock sweep, the
 whole-entity scan in `interrupt_refinery_docked_miners`, and the per-frame
@@ -31,16 +31,16 @@ correct in the database and the stale source notes saying otherwise are gone.
 
 ## Independent audit, 2026-09-20
 
-A read-only reviewer checked the rows above against main and accepted them. Of
-the retentions this file used to carry it accepted one (debris bouncers) and
-rejected the rest: the movement branch named as an owner had already been
-squash-merged as `527ac301` (identical tree), so no open lead is blocked by
-another session, and the sim already computes an integer fire coordinate, so the
-muzzle flashes are not blocked on a port. The goal is not done.
+A read-only reviewer checked the rows above against main and accepted them. It
+accepted the debris bouncer retention and rejected the others this file used
+to carry: the movement branch named as an owner had already been squash-merged
+as `527ac301` (identical tree), so no open lead is blocked by another session,
+and the sim already computes an integer fire coordinate, so the muzzle flashes
+are not blocked on a port. The goal is not done.
 
-## Retained, reason accepted
+## Retained
 
-**Animation: debris bouncers.** `MetallicDebris=` and `DebrisAnims=` types are
+**Animation: debris bouncers (accepted by the audit).** `MetallicDebris=` and `DebrisAnims=` types are
 native bouncers (`Bouncer=yes`, `RandomRate=`, `Damage=`, `ExpireAnim=`).
 `AnimStore` has no bouncer arm: RESIDUAL M11b in `sim/anim_class.rs`. That is
 a port of a native mechanism (constructor RNG fork, landing damage), not a
@@ -53,7 +53,8 @@ PRESERVE: the worktree `.claude/worktrees/phase6-audio-lane` (branch
 uncommitted lines of parked bouncer/damage-arm work from 2026-09-03. Do not
 delete it.
 
-**Staged native ports with no production caller yet.**
+**Staged native ports with no production caller yet (for the final audit to
+confirm).**
 `track_fresh_dispatch.rs`, `track_speed_native.rs`, the `load_object_lifecycle`
 wall arm, `all_to_hunt_score_override`,
 `projectile_slope_reflect_with_elasticity`, `advance_emergency_state`,
@@ -127,4 +128,4 @@ release: a chrono warp, a superweapon invoke, a bridge collapse.
 - The separate `vera20k-engine-authority` checkout, branch
   `feature/persistent-facing-authority`: dirty facing, turret, walk-head
   and snapshot files. No open lead above touches them; its snapshot bump must
-  land after 175.
+  land after 176.

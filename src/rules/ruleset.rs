@@ -202,7 +202,7 @@ impl Default for ProductionRules {
     }
 }
 
-/// A world-effect animation reference parsed from rules.ini + art.ini.
+/// A `[General]` animation reference parsed from rules.ini + art.ini.
 ///
 /// The name comes from rules.ini `[General]` (e.g., WarpIn=WARPIN).
 /// The rate comes from the anim's own art.ini section (e.g., `[WARPIN]` Rate=120).

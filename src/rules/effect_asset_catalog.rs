@@ -113,6 +113,7 @@ impl EffectAssetCatalog {
     /// AnimType body/shadow split. Native behavior for a modded particle image
     /// carrying `Shadow=yes` remains UNCHECKED; retaining both values prevents
     /// the catalog from baking that policy decision into asset binding.
+    #[cfg(test)]
     pub fn raw_frame_count(&self, name: &str) -> Option<u16> {
         self.entry(name).map(|counts| counts.raw)
     }

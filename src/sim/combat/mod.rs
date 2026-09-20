@@ -1617,10 +1617,11 @@ pub struct UnitLostEvent {
 ///
 /// Every native caller sits in a non-building `ReceiveDamage` override
 /// (`BuildingClass` has none), and `0x004D98DD` skips `Spawned=` types.
-/// Shared by the damage kill loop and the non-damage death sites that
-/// natively route through `+0x16C` (`ReceiveDamage`) with `C4Warhead=`:
+/// Called by the damage kill loop only. The non-damage death sites that
+/// natively route through `+0x16C` (`ReceiveDamage`) with `C4Warhead=`,
 /// `InfantryClass::IronCurtain 0x00522632` and `CellClass::BlowUpBridge
-/// 0x0047DDAE`. Paths that natively skip `ReceiveDamage` (crush
+/// 0x0047DDAE`, reach it the same way: VERA kills through that loop too.
+/// Paths that natively skip `ReceiveDamage` (crush
 /// `0x007416A0` → `RecordKill` only, `AircraftClass::Enter_Idle_Mode
 /// 0x004179FD/0x00417B88` → `Crash` slot `+0x3DC`, the off-playfield
 /// `UnInit` at `AircraftClass::AI 0x00414F93/0x00414FD1`) must not call it.
