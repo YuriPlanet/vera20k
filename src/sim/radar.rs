@@ -5,11 +5,11 @@
 //! radar; `SpySat=yes` is handled by the separate shroud-reveal path. The
 //! ordinary provider branch goes offline at negative house power balance.
 //!
-//! Radar events themselves are client-local: native `RadarClass` keeps the
-//! event array beside its radar surfaces and every `CreateRadarEvent` caller is
-//! gated on `g_PlayerPtr`. The simulation therefore only names the event it
-//! reached ([`RadarEventRequest`]); `render::radar_events` owns admission,
-//! dedup, animation and the Spacebar review ring.
+//! Radar events themselves are client-local: native `RadarClass` keeps one
+//! event array per process beside its radar surfaces. The simulation therefore
+//! only names the event it reached ([`RadarEventRequest`]);
+//! `render::radar_events` owns admission, dedup, animation and the Spacebar
+//! review ring.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on rules/, map/ (via entity components).

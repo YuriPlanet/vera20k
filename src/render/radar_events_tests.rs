@@ -439,3 +439,70 @@ fn review_ring_holds_every_accepted_type_in_creation_order() {
         Some((5, 5))
     );
 }
+
+fn request(event_type: RadarEventType, rx: u16, ry: u16) -> crate::sim::radar::RadarEventRequest {
+    crate::sim::radar::RadarEventRequest::new(event_type, rx, ry)
+}
+
+#[test]
+fn admit_ages_by_frame_without_a_composed_radar_frame_until_the_dedupe_expires() {
+    // No `advance_to_frame` call here: the app may admit many requests
+    // between two radar frames, and an expired event must not keep deduping.
+    let mut queue = ClientRadarEvents::default();
+    let config = configured();
+    let geometry = Some(((60, 40), (200, 120)));
+    assert!(queue.admit(
+        request(RadarEventType::UnitLost, 20, 20),
+        0,
+        geometry,
+        &config
+    ));
+    assert!(!queue.admit(
+        request(RadarEventType::UnitLost, 22, 20),
+        0,
+        geometry,
+        &config
+    ));
+
+    let mut readmitted_at = None;
+    for frame in 1..2_000_u64 {
+        if queue.admit(
+            request(RadarEventType::UnitLost, 22, 20),
+            frame,
+            geometry,
+            &config,
+        ) {
+            readmitted_at = Some(frame);
+            break;
+        }
+    }
+    let readmitted_at = readmitted_at.expect("type 7 dedupe ends with its event");
+    // Initial radius is the farthest surface edge (140 px); at 1.2 px/frame the
+    // shrink alone outlasts 100 frames, and the 200-frame lifetime starts only
+    // after it. A fixed 200-frame window, as the former sim queue used, would
+    // have re-admitted far earlier.
+    assert!(readmitted_at > 300, "re-admitted at frame {readmitted_at}");
+    assert_eq!(queue.len(), 1, "only the re-admitted event is left");
+
+    // The catch-up stops one frame short, so a later radar frame for the same
+    // frame neither skips nor repeats the creation-frame tick.
+    let before = queue.events[0].radius;
+    queue.advance_to_frame(readmitted_at, &config);
+    let after_first = queue.events[0].radius;
+    assert!(after_first < before, "creation-frame tick ran once");
+    queue.advance_to_frame(readmitted_at, &config);
+    assert_eq!(queue.events[0].radius, after_first, "and only once");
+}
+
+#[test]
+fn admit_without_radar_geometry_still_gates_by_cell_distance() {
+    let mut queue = ClientRadarEvents::default();
+    let config = configured();
+    assert!(queue.admit(request(RadarEventType::UnitReady, 10, 10), 5, None, &config));
+    assert!(!queue.admit(request(RadarEventType::UnitReady, 11, 10), 5, None, &config));
+    assert!(queue.admit(request(RadarEventType::UnitReady, 12, 10), 5, None, &config));
+    assert_eq!(
+        queue.events[0].radius, 0.0,
+        "no surface: no shrink distance"
+    );
+}

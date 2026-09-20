@@ -331,7 +331,11 @@ Rechecked 2026-09-20 against `CreateRadarEvent 0x0065FA70`, `InitRadarEvent
 holds the only event array: all 17 types, the compiled type table of §4, the
 colour switch, the shared tick/cleanup lifecycle and the eight-cell Spacebar
 ring. It is client-local presentation state, never snapshot or hash input,
-because every native caller is gated on `g_PlayerPtr`.
+because the array belongs to the per-process `RadarClass`. The callers ported
+so far test the local player before the call; no such test was found before
+the type-12, type-13 and `TriggerAction::Execute` call sites (linear context
+only, not a control-flow proof), so a future port of those must not inherit
+the local-owner filter.
 
 **Producers.** The simulation publishes a `RadarEventRequest` (type + cell,
 [src/sim/radar.rs](../../src/sim/radar.rs)) on the sound event of each caller it
@@ -345,7 +349,8 @@ Type 5 is created render-side by the radar object tracker.
 its own aging, a rotation-only animation and an owner-blind dedupe), its
 `minimap_legacy_events` drawer, and the Spacebar fallback that could not reach
 it once a type-5 cell existed. Also removed: the type-0 `Combat` push on every
-`RevealOnFire` shot. §8 shows no engine caller passes type 0, and the
+`RevealOnFire` shot. §8's 24 constant-type call sites never pass type 0
+(`TriggerAction::Execute` takes its type from map data), and the
 `BulletClass::AI` site (`0x00467EA7`) is the `NUKE` payload's silent type 13.
 
 **Not yet produced** (no Rust caller; each needs its own native caller port):
@@ -355,9 +360,20 @@ storm start, nuke payload), 15 `StructureAbandoned`, the
 `TemporalClass::InitiateWarp` type-4 site, and `TriggerAction::Execute`'s
 dynamic type.
 
-**Known difference.** Native dedupe distance is `ftol(Sqrt_Approx(dx²+dy²))`;
-Rust compares squared integer distance, which is identical for an exact square
-root. `Sqrt_Approx` was not compared numerically.
+**Known differences.**
+
+- Aging cadence: native ticks events from `RadarClass::Draw 0x0065336D` and
+  cleans up from `RadarClass::Update 0x0065786D`; whether either still runs
+  with the radar offline or undrawn was not traced. Rust ages every event by
+  simulation frame regardless, which now also sets the EVA rate limit.
+- Local-owner test: Rust compares against the local owner's name; native
+  `0x0050B6F0` passes any `PlayerControl` house when `GameMode == 0`. Only a
+  campaign with a second player-controlled house can tell them apart.
+- A view-owner switch resets the array at the next radar frame, so an event
+  admitted between the switch and that frame is discarded.
+- Native dedupe distance is `ftol(Sqrt_Approx(dx²+dy²))`; Rust compares
+  squared integer distance, which is identical for an exact square root.
+  `Sqrt_Approx` was not compared numerically.
 
 ---
 

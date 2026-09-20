@@ -1,12 +1,15 @@
 //! Client-local radar-event array, animation and Spacebar history.
 //!
-//! Native `RadarClass` owns this beside its generated radar surfaces. Every
-//! `CreateRadarEvent @ 0x0065FA70` caller is gated on `g_PlayerPtr`, so the
-//! array is deliberately presentation state: never snapshot or world-hash
-//! authority. All 17 native event types share this one array, the one
-//! `TickRadarEvent @ 0x0065FE00` lifecycle and the one eight-cell review ring.
-//! The simulation only publishes `RadarEventRequest`s; admission, and the EVA
-//! lines native gates on its return value, happen here for the local player.
+//! Native `RadarClass` owns this beside its generated radar surfaces: one
+//! array per client process, which the callers modelled so far reach only for
+//! the local player. It is therefore presentation state, never snapshot or
+//! world-hash authority. All 17 native event types share this one array
+//! (`CreateRadarEvent @ 0x0065FA70`), the one `TickRadarEvent @ 0x0065FE00`
+//! lifecycle and the one eight-cell review ring. The simulation only publishes
+//! `RadarEventRequest`s; admission, and the EVA lines native gates on its
+//! return value, happen here. Whether a caller tests the local player first is
+//! that caller's own rule: no such test was found before the type-12, type-13
+//! and trigger-action call sites, which are not ported yet.
 //! Type 5 is produced render-side by the radar object tracker
 //! (`TechnoClass::IdleAnimDispatch 0x0070DAD7`).
 
@@ -398,6 +401,37 @@ impl ClientRadarEvents {
         self.newest_ring_index = Some(index);
         self.cycle_index = Some(index);
         true
+    }
+
+    /// Admit a simulation-published request at `current_frame`.
+    ///
+    /// Events normally age when a radar frame is composed. Catching up to the
+    /// previous frame first keeps an already-expired event from deduping this
+    /// one when no radar frame was composed in between; the new event still
+    /// takes its first tick in its own creation frame. `geometry` is the
+    /// event's radar pixel and the generated surface size; without a surface
+    /// (no resolved playfield) the event starts at its minimum radius.
+    pub fn admit(
+        &mut self,
+        request: crate::sim::radar::RadarEventRequest,
+        current_frame: u64,
+        geometry: Option<((i32, i32), (i32, i32))>,
+        config: &RadarEventConfig,
+    ) -> bool {
+        if let Some(previous_frame) = current_frame.checked_sub(1) {
+            self.advance_to_frame(previous_frame, config);
+        }
+        let (radar_pixel, surface_size) = geometry.unwrap_or(((0, 0), (0, 0)));
+        self.create(
+            request.event_type,
+            RadarEventSource {
+                cell: (request.rx, request.ry),
+                radar_pixel,
+            },
+            current_frame,
+            surface_size,
+            config,
+        )
     }
 
     /// `RadarClass::Draw @ 0x0065336D` ticks before `RadarClass::Update` draws.

@@ -218,9 +218,11 @@ impl DamageConsequences {
             .invulnerability_impact_effects
             .append(&mut effects.invulnerability_impact_effects);
         // RevealOnFire only lifts the shooter's shroud above. gamemd reaches
-        // `CreateRadarEvent @ 0x0065FA70` from no weapon-fire path: none of its
-        // 25 callers passes type 0, and the one in `BulletClass::AI`
-        // (`0x00467EA7`) is the silent type 13 of the `NUKE` payload.
+        // `CreateRadarEvent @ 0x0065FA70` from no weapon-fire path: its 24
+        // constant-type call sites never pass type 0 (the 25th,
+        // `TriggerAction::Execute`, takes its type from map data), and the one
+        // in `BulletClass::AI` (`0x00467EA7`) is the silent type 13 of the
+        // `NUKE` payload.
         if let DamageDelivery::Ordinary { fire_events, .. } = delivery {
             world.fire_events.extend(fire_events);
         }

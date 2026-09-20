@@ -32,10 +32,18 @@ impl SoundEventRandom for SfxPlayer {
 /// Keep this call at the frame's original sound-publication point: feedback
 /// rolls precede listener gating and must not move to playback or simulation.
 ///
-/// `admit_radar` is the local client's `CreateRadarEvent @ 0x0065FA70`. Native
-/// reaches it only on the client whose player the event concerns, so every arm
-/// applies its local-owner test first and calls it at most once, in producer
-/// order; its result is the rate limit on the arm's EVA line.
+/// `admit_radar` is the local client's `CreateRadarEvent @ 0x0065FA70`. Each
+/// arm below ports a native caller that tests the local player before that
+/// call, so it applies the same test first and then calls `admit_radar` at
+/// most once, in producer order; the result is the rate limit on the arm's EVA
+/// line. That ordering belongs to those callers, not to radar events: a caller
+/// with no such test must admit unconditionally.
+///
+/// RESIDUAL: the owner tests here compare against the local owner's name.
+/// Native `0x0050B6F0` passes any `PlayerControl` house in campaign
+/// (`GameMode == 0`), which can differ from the local owner. Trigger: a
+/// campaign with a second player-controlled house; effect: its radar events
+/// and EVA lines are dropped. Campaign play is not supported yet.
 pub(super) fn dispatch_sim_sound_events(
     events: impl IntoIterator<Item = SimSoundEvent>,
     sim: &Simulation,

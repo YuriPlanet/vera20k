@@ -682,10 +682,8 @@ impl MinimapRenderer {
     }
 
     /// `CreateRadarEvent @ 0x0065FA70` for a simulation-published request the
-    /// app already filtered to the local player. The result gates the EVA
-    /// line of the native caller. Events normally age in `update_unit_dots`;
-    /// catching up to the previous frame first keeps an expired event from
-    /// deduping this one when no radar frame was composed in between.
+    /// app already passed through the native caller's own gate. The result
+    /// gates that caller's EVA line.
     pub(crate) fn admit_radar_event(
         &mut self,
         request: crate::sim::radar::RadarEventRequest,
@@ -696,30 +694,16 @@ impl MinimapRenderer {
         let config = rules
             .map(|rules| &rules.radar_event_config)
             .unwrap_or(&default_config);
-        if let Some(previous_frame) = sim_tick.checked_sub(1) {
-            self.radar_events.advance_to_frame(previous_frame, config);
-        }
         // `InitRadarEvent @ 0x0065FB80` measures the shrink start from the
-        // generated primary surface. Without one (no resolved playfield) the
-        // event has no geometry and starts at its minimum radius.
-        let (radar_pixel, surface_size) =
-            self.native_radar_surface
-                .map_or(((0, 0), (0, 0)), |surface| {
-                    (
-                        surface.cell_to_surface_pixel((request.rx, request.ry)),
-                        surface.generated_size(),
-                    )
-                });
-        self.radar_events.create(
-            request.event_type,
-            RadarEventSource {
-                cell: (request.rx, request.ry),
-                radar_pixel,
-            },
-            sim_tick,
-            surface_size,
-            config,
-        )
+        // generated primary surface.
+        let geometry = self.native_radar_surface.map(|surface| {
+            (
+                surface.cell_to_surface_pixel((request.rx, request.ry)),
+                surface.generated_size(),
+            )
+        });
+        self.radar_events
+            .admit(request, sim_tick, geometry, config)
     }
 
     /// Spacebar review of the eight most recent accepted event cells.
