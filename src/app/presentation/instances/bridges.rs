@@ -21,7 +21,6 @@ use crate::render::bridge_atlas::{BridgeAtlasLookup, is_high_bridge_body_identit
 use crate::render::bridge_railing_atlas::BridgeKind;
 use crate::render::draw_state::DrawState;
 use crate::sim::bridge_state::{Axis, BridgeRuntimeCell, BridgeRuntimeState, DamageState};
-use crate::sim::map::bridge_topology::CellBridgeView;
 
 use super::helpers::{apply_shape_z_adjust, compute_sprite_depth_params, in_view};
 
@@ -515,92 +514,9 @@ fn resolve_bridge_kind_and_sub_idx(
     Some((kind, tile_index, caller_sub_tile))
 }
 
-/// Render-facing bridge draw-offset trait (Slice 3, L18).
-///
-/// This is the render-side counterpart to the sim `BridgeTopology` predicates:
-/// it reads the SAME borrowed `CellBridgeView` the sim service uses, but lives in
-/// the render/app layer so `sim/` never gains a render dependency (invariant #1).
-/// It is the single render entry that folds the scattered draw-offset constants
-/// (`BRIDGE_BODY_Y_OFFSET_*`, `BRIDGE_SHADOW_EW_*`) so the per-pass builders can
-/// migrate onto one source as consumers are routed through it.
-pub trait BridgeDrawOffset {
-    /// Per-cell body draw offset `(dx, dy)` relative to the cell's screen anchor.
-    ///
-    /// `state_byte` selects the body Y offset (states 0..=8 vs 9..=17). For the
-    /// EW family (states 9..=17) the NS/EW shadow shift `(DX, DY)` is folded in
-    /// on the X axis. The shadow DX is still open (-15 vs -45 per the const doc)
-    /// and is intentionally read from the single `BRIDGE_SHADOW_EW_DX` change
-    /// point rather than re-literal'd here.
-    fn bridge_draw_offset(&self, view: &CellBridgeView) -> (i32, i32);
-}
-
-/// The app-layer offset policy, applied over a `CellBridgeView`. Folds the
-/// `:34-48` constants behind the trait without changing the authoritative
-/// per-pass builders above (those migrate onto this in a later step).
-pub struct BridgeDrawOffsetPolicy;
-
-impl BridgeDrawOffset for BridgeDrawOffsetPolicy {
-    fn bridge_draw_offset(&self, view: &CellBridgeView) -> (i32, i32) {
-        // State byte 9..=17 is the EW family: extra body lift + the shadow shift.
-        // 0..=8 is the NS family: the base HasBridge lift only.
-        let (dx, dy) = if (9..=17).contains(&view.state_byte) {
-            (
-                BRIDGE_SHADOW_EW_DX,
-                BRIDGE_BODY_Y_OFFSET_STATE_9_TO_17 as i32 + BRIDGE_SHADOW_EW_DY,
-            )
-        } else {
-            (0, BRIDGE_BODY_Y_OFFSET_STATE_0_TO_8 as i32)
-        };
-        (dx, dy)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::bridge_facts::BridgeFlags;
-
-    /// Build a minimal view fixture pinned to a given bridge state byte.
-    fn view_with_state(state_byte: u8) -> CellBridgeView {
-        CellBridgeView {
-            level: 0,
-            flags: BridgeFlags(0),
-            ramp_byte: 0,
-            iso_tile_index: 0,
-            tube_index: None,
-            land_type: 0,
-            state_byte,
-        }
-    }
-
-    #[test]
-    fn bridge_draw_offset_ns_states_use_base_lift_no_shadow_shift() {
-        // NS family (states 0..=8): base HasBridge lift only, no X shift.
-        let policy = BridgeDrawOffsetPolicy;
-        for state in [0u8, 4, 8] {
-            let (dx, dy) = policy.bridge_draw_offset(&view_with_state(state));
-            assert_eq!(dx, 0, "NS family has no shadow X shift (state {state})");
-            assert_eq!(
-                dy, BRIDGE_BODY_Y_OFFSET_STATE_0_TO_8 as i32,
-                "state {state}"
-            );
-        }
-    }
-
-    #[test]
-    fn bridge_shadow_shift_ns_x_minus15_y_plus7() {
-        // EW family (states 9..=17): the shadow X shift is the single open
-        // `BRIDGE_SHADOW_EW_DX` change point (-15 vs -45 unresolved), and the Y
-        // folds the state-9..17 body lift plus `BRIDGE_SHADOW_EW_DY` (+7).
-        let policy = BridgeDrawOffsetPolicy;
-        let (dx, dy) = policy.bridge_draw_offset(&view_with_state(9));
-        assert_eq!(dx, BRIDGE_SHADOW_EW_DX);
-        assert_eq!(dx, -15, "DX defaults to -15 (open value)");
-        assert_eq!(
-            dy,
-            BRIDGE_BODY_Y_OFFSET_STATE_9_TO_17 as i32 + BRIDGE_SHADOW_EW_DY
-        );
-    }
 
     #[test]
     fn latin_square_value_at_xy() {

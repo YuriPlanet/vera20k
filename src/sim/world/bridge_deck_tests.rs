@@ -55,7 +55,7 @@ fn infantry_terminal_hut_collapse_retires_effect_only_ground_victim() {
         sim.sound_events
             .iter()
             .filter(|event| matches!(event,
-        SimSoundEvent::UnitLost { owner: lost } if *lost == owner))
+        SimSoundEvent::UnitLost { owner: lost, .. } if *lost == owner))
             .count(),
         1
     );

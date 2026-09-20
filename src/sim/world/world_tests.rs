@@ -10157,13 +10157,15 @@ fn captured_events(
                 old_owner,
                 new_owner,
                 tech_building,
-                radar_accepted,
+                radar,
                 capture_eva_event,
             } => Some((
                 *old_owner,
                 *new_owner,
                 *tech_building,
-                *radar_accepted,
+                radar.is_some_and(|request| {
+                    request.event_type == crate::sim::radar::RadarEventType::BuildingCaptured
+                }),
                 *capture_eva_event,
             )),
             _ => None,
@@ -10172,12 +10174,13 @@ fn captured_events(
 }
 
 /// `BuildingClass::ChangeOwner 0x004483FB..0x0044848F`: an ordinary building
-/// goes through `CreateRadarEvent(10, cell)` and announces only when the radar
-/// queue accepted the event. Native row 10 of the `0x007F0998` type table
-/// (`0x007F0A38`: dedup 8, visibility 0, blink 100, unique 0) is NOT unique,
-/// so a second capture next to a live diamond is accepted too.
+/// goes through `CreateRadarEvent(10, cell)` and announces only when the
+/// client's radar array accepted the event, so the world publishes the type-10
+/// request with every such capture (the fourth tuple field). Row 10 of the
+/// `0x007F0998` type table is not unique; `render::radar_events` pins that a
+/// second capture next to a live event is accepted too.
 #[test]
-fn engineer_capture_of_an_ordinary_building_is_gated_by_the_radar_event() {
+fn engineer_capture_of_an_ordinary_building_requests_the_radar_event() {
     let rules = capture_eva_rules();
     let mut sim = Simulation::new();
     sim.session.game_mode_nonzero = true;
@@ -10198,29 +10201,13 @@ fn engineer_capture_of_an_ordinary_building_is_gated_by_the_radar_event() {
         captured_events(&sim),
         vec![(enemy, player, false, true, None)]
     );
-    assert_eq!(
-        sim.radar_events
-            .iter()
-            .filter(|event| event.event_type == crate::sim::radar::RadarEventType::BuildingCaptured)
-            .count(),
-        1,
-        "`0x00448472 MOV ECX,0xA` creates the type-10 radar event"
-    );
 
-    // A second capture one cell away while the first diamond lives: type 10
-    // is not unique, so the radar event and the line both go through.
+    // A second capture one cell away publishes its own request as well.
     sim.sound_events.clear();
     sim.announce_engineer_capture(2, player, &rules);
     assert_eq!(
         captured_events(&sim),
         vec![(enemy, player, false, true, None)]
-    );
-    assert_eq!(
-        sim.radar_events
-            .iter()
-            .filter(|event| event.event_type == crate::sim::radar::RadarEventType::BuildingCaptured)
-            .count(),
-        2
     );
 }
 
@@ -10244,11 +10231,7 @@ fn engineer_capture_of_a_tech_building_carries_its_capture_eva_event() {
     );
     assert_eq!(
         captured_events(&sim),
-        vec![(civilian, player, true, false, line)]
-    );
-    assert_eq!(
-        sim.radar_events.len(),
-        0,
+        vec![(civilian, player, true, false, line)],
         "NeedsEngineer skips CreateRadarEvent"
     );
 }
@@ -10283,7 +10266,6 @@ fn engineer_capture_is_silent_without_a_human_side_or_into_a_passive_house() {
         captured_events(&sim).is_empty(),
         "passive new owner is silent"
     );
-    assert_eq!(sim.radar_events.len(), 0);
 }
 
 /// `HouseClass::MPlayer_Defeated 0x004FC30F..0x004FC3BC`: every non-passive

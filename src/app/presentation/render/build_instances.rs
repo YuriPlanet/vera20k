@@ -632,7 +632,6 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                     full_visibility,
                     view.session().game_mode_nonzero,
                     Some(&runtime.resources.rules),
-                    Some(view.radar_events()),
                     Some(view.interner()),
                     view.bridge_state(),
                     view.overlay_grid(),

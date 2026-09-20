@@ -62,17 +62,18 @@ impl Simulation {
         cell: (u16, u16),
         building_cell: (u16, u16),
     ) {
-        let eva_allowed = self.bridge_repair_notification_allowed(owner)
-            && self.radar_events.push(
+        let radar = self.bridge_repair_notification_allowed(owner).then(|| {
+            crate::sim::radar::RadarEventRequest::new(
                 crate::sim::radar::RadarEventType::BridgeRepaired,
                 cell.0,
                 cell.1,
-            );
+            )
+        });
         self.sound_events.push(SimSoundEvent::BridgeRepaired {
             rx: building_cell.0,
             ry: building_cell.1,
             owner,
-            eva_allowed,
+            radar,
         });
     }
 
@@ -420,18 +421,18 @@ impl Simulation {
             .map(|obj| (obj.needs_engineer, obj.capture_eva_event.clone()))
             .unwrap_or((false, None));
         let capture_eva_event = capture_eva_event.map(|name| self.interner.intern(&name));
-        let radar_accepted = !tech_building
-            && self.radar_events.push_owned(
+        let radar = (!tech_building).then(|| {
+            crate::sim::radar::RadarEventRequest::new(
                 crate::sim::radar::RadarEventType::BuildingCaptured,
                 rx,
                 ry,
-                None,
-            );
+            )
+        });
         self.sound_events.push(SimSoundEvent::BuildingCaptured {
             old_owner,
             new_owner,
             tech_building,
-            radar_accepted,
+            radar,
             capture_eva_event,
         });
     }
@@ -1384,30 +1385,28 @@ mod repair_notification_tests {
         let mut restored = restore();
         assert_eq!(restored.session.current_house, Some(owner));
         restored.announce_bridge_repair(owner, (7, 8), (8, 8));
-        assert_eq!(
-            restored.radar_events.len(),
-            1,
+        assert!(
+            matches!(
+                restored.sound_events.last(),
+                Some(SimSoundEvent::BridgeRepaired {
+                    radar: Some(crate::sim::radar::RadarEventRequest {
+                        event_type: crate::sim::radar::RadarEventType::BridgeRepaired,
+                        rx: 7,
+                        ry: 8,
+                    }),
+                    ..
+                })
+            ),
             "headless restore needs no app viewer bind"
         );
-        assert!(matches!(
-            restored.sound_events.last(),
-            Some(SimSoundEvent::BridgeRepaired {
-                eva_allowed: true,
-                ..
-            })
-        ));
 
         let mut other_current = restore();
         other_current.session.current_house = Some(other);
         other_current.announce_bridge_repair(owner, (7, 8), (8, 8));
-        assert_eq!(other_current.radar_events.len(), 0);
         assert!(
             matches!(
                 other_current.sound_events.last(),
-                Some(SimSoundEvent::BridgeRepaired {
-                    eva_allowed: false,
-                    ..
-                })
+                Some(SimSoundEvent::BridgeRepaired { radar: None, .. })
             ),
             "the spatial repair sound remains even when the native radar/EVA gate refuses"
         );
@@ -1428,15 +1427,17 @@ mod repair_notification_tests {
         }
         sim.houses.get_mut(&player).unwrap().player_control = true;
         sim.announce_bridge_repair(ai, (7, 8), (8, 8));
-        assert_eq!(sim.radar_events.len(), 0);
+        assert!(
+            matches!(
+                sim.sound_events.last(),
+                Some(SimSoundEvent::BridgeRepaired { radar: None, .. })
+            ),
+            "an AI repair never reaches CreateRadarEvent, so it cannot dedupe the human's"
+        );
         sim.announce_bridge_repair(player, (7, 8), (8, 8));
-        assert_eq!(sim.radar_events.len(), 1);
         assert!(matches!(
             sim.sound_events.last(),
-            Some(SimSoundEvent::BridgeRepaired {
-                eva_allowed: true,
-                ..
-            })
+            Some(SimSoundEvent::BridgeRepaired { radar: Some(_), .. })
         ));
     }
 }

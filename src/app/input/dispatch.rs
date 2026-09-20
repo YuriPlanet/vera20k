@@ -1509,23 +1509,14 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::ToggleSell => apply_sidebar_action(state, SidebarAction::ToggleSellMode),
         HotkeyCommand::CenterBase => jump_camera_to_base(state),
         HotkeyCommand::CenterOnRadarEvent => {
-            // Native's eight-cell review ring lives in RadarClass. Prefer the
-            // client-local EnemyObjectSensed history, then retain the older
-            // sim queue for event types whose producers have not migrated.
+            // Native's eight-cell review ring lives in RadarClass and holds
+            // the cell of every accepted event, whatever its type.
             let event = state
                 .match_state
                 .match_presentation
                 .minimap
                 .as_mut()
-                .and_then(|minimap| minimap.cycle_enemy_sensed_event(std::time::Instant::now()))
-                .or_else(|| {
-                    state
-                        .match_state
-                        .sim_runtime
-                        .as_mut()
-                        .map(|rt| &mut rt.simulation)
-                        .and_then(|sim| sim.cycle_radar_event())
-                });
+                .and_then(|minimap| minimap.cycle_radar_event(std::time::Instant::now()));
             if let Some((rx, ry)) = event {
                 crate::app::input::camera::center_camera_on_cell(state, rx, ry);
             }

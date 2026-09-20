@@ -36,7 +36,6 @@ pub mod minimap;
 mod current_radar_cell;
 mod minimap_interaction;
 mod minimap_helpers;
-mod minimap_legacy_events;
 mod minimap_projection;
 mod native_radar_surface;
 mod native_radar_terrain;

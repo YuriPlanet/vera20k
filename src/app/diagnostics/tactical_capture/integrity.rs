@@ -169,10 +169,6 @@ pub(crate) fn sha256_file(path: &Path, label: &str) -> Result<FileDigest> {
     })
 }
 
-pub(crate) fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
-    crate::util::sha256::sha256_bytes(bytes)
-}
-
 pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     crate::util::sha256::sha256_hex(bytes)
 }

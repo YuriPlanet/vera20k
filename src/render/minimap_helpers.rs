@@ -319,33 +319,6 @@ pub(super) fn set_pixel(rgba: &mut [u8], width: u32, x: u32, y: u32, color: [u8;
     }
 }
 
-/// Draw a line between two points using DDA. Bounds-safe via `set_pixel`.
-pub(super) fn draw_line(
-    rgba: &mut [u8],
-    width: u32,
-    x0: i32,
-    y0: i32,
-    x1: i32,
-    y1: i32,
-    color: [u8; 4],
-) {
-    let dx = x1 - x0;
-    let dy = y1 - y0;
-    let steps = dx.abs().max(dy.abs());
-    if steps == 0 {
-        set_pixel(rgba, width, x0 as u32, y0 as u32, color);
-        return;
-    }
-    let x_inc = dx as f32 / steps as f32;
-    let y_inc = dy as f32 / steps as f32;
-    let (mut x, mut y) = (x0 as f32, y0 as f32);
-    for _ in 0..=steps {
-        set_pixel(rgba, width, x.round() as u32, y.round() as u32, color);
-        x += x_inc;
-        y += y_inc;
-    }
-}
-
 /// Map an owner name to a minimap dot color using house color data.
 ///
 /// Looks up the owner's `[Colors]` entry index from the HouseColorMap, then uses

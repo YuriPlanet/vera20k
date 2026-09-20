@@ -133,10 +133,6 @@ impl<'a> SimView<'a> {
         self.simulation.resolved_terrain.as_ref()
     }
 
-    pub fn radar_events(&self) -> &'a crate::sim::radar::RadarEventQueue {
-        &self.simulation.radar_events
-    }
-
     pub fn bridge_state(&self) -> Option<&'a crate::sim::bridge_state::BridgeRuntimeState> {
         self.simulation.bridge_state.as_ref()
     }
@@ -730,8 +726,6 @@ where
                 rules.general.wheeled_uphill,
                 rules.general.wheeled_downhill,
             );
-        sim.radar_events =
-            crate::sim::radar::RadarEventQueue::from_config(&rules.radar_event_config);
     }
     // Normal loading first clips/normalizes LocalSize through
     // `MapClass::Set_Clipped_LocalSize @ 0x00567230`; every playfield consumer

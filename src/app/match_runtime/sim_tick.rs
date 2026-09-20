@@ -710,10 +710,6 @@ fn advance_in_game_runtime_mode(
         // were finalized inside the authoritative sim transaction. Only the
         // independent wall-clock terrain-overlay timer remains app-owned.
         crate::app::presentation::building_anim::tick_terrain_overlay_animations(state, 16);
-        // Looping slot animations are phased off the logic frame their building
-        // was placed, so the base has to be recorded on a sim frame boundary
-        // rather than on a render frame.
-        crate::app::presentation::building_anim::refresh_building_anim_phase_bases(state);
         crate::app::presentation::building_anim::tick_garrison_muzzle_flashes(
             state,
             garrison_flash_elapsed_ticks.saturating_mul(u64::from(SIM_TICK_MS)) as u32,
@@ -891,6 +887,16 @@ fn advance_one_simulation_frame(state: &mut AppState, tick_lane: TickLane) -> bo
                 &mut state.match_state.match_presentation.pending_fire_effects,
                 &drained_fire_events,
             );
+            // The radar event array is the local client's (RadarClass). A
+            // match without a minimap renderer has no such client, so nothing
+            // is admitted and the radar-gated EVA lines stay silent.
+            let radar_frame = sim.session.tick;
+            let minimap = &mut state.match_state.match_presentation.minimap;
+            let mut admit_radar = |request: crate::sim::radar::RadarEventRequest| {
+                minimap.as_mut().is_some_and(|minimap| {
+                    minimap.admit_radar_event(request, radar_frame, Some(&resources.rules))
+                })
+            };
             super::sound_dispatch::dispatch_sim_sound_events(
                 frame_sound_events,
                 sim,
@@ -901,6 +907,7 @@ fn advance_one_simulation_frame(state: &mut AppState, tick_lane: TickLane) -> bo
                     .sfx_player
                     .as_mut()
                     .map(|player| player as &mut dyn super::sound_dispatch::SoundEventRandom),
+                &mut admit_radar,
                 &mut state.match_state.match_audio.sound_events,
             );
             if tick_result.destroyed_structure {

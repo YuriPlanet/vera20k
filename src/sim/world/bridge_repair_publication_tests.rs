@@ -558,7 +558,7 @@ fn walk_boundary_marks_current_xyz_without_replacing_head_or_consuming_path() {
         list.iter_layer(MovementLayer::Ground)
             .any(|entry| entry.entity_id == id && entry.sub_cell == Some(0))
     }));
-    assert!(sim.radar_events.is_empty());
+    assert!(repair_sounds(&sim).is_empty());
 }
 
 #[test]
@@ -910,12 +910,16 @@ fn repair_frame(
     sim.advance_tick(&[], Some(rules), &BTreeMap::new(), None, Some(registry), 67)
 }
 
+/// One entry per repair announcement: whether it published the type-14 radar
+/// request whose client-side accept gates `EVA_BridgeRepaired`.
 fn repair_sounds(sim: &Simulation) -> Vec<bool> {
     sim.sound_events
         .iter()
         .filter_map(|event| match event {
-            crate::sim::world::SimSoundEvent::BridgeRepaired { eva_allowed, .. } => {
-                Some(*eva_allowed)
+            crate::sim::world::SimSoundEvent::BridgeRepaired { radar, .. } => {
+                Some(radar.is_some_and(|request| {
+                    request.event_type == crate::sim::radar::RadarEventType::BridgeRepaired
+                }))
             }
             _ => None,
         })
@@ -1016,7 +1020,6 @@ fn consecutive_engineers_cancel_the_successors_hut_target_before_its_next_turn()
     assert_eq!(successor.navigation.nav_com, None);
     assert!(successor.locomotor.as_ref().unwrap().step_head().is_some());
     assert_eq!(repair_sounds(&sim), [true]);
-    assert_eq!(sim.radar_events.len(), 1);
     assert!(sim.radar_terrain_dirty_generation > 0);
     for p in [(17, 14), (17, 15), (17, 16)] {
         assert!(sim.radar_terrain_dirty_cells.contains(&p));
@@ -1045,7 +1048,6 @@ fn nonconsecutive_engineer_finishes_its_head_without_repeating_cancelled_repair(
     assert_eq!(successor.navigation.nav_com, None);
     assert_eq!(successor.locomotor.as_ref().unwrap().step_head(), None);
     assert_eq!(repair_sounds(&sim), [true]);
-    assert_eq!(sim.radar_events.len(), 1);
 }
 
 #[test]

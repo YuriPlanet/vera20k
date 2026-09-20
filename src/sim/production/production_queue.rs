@@ -515,21 +515,24 @@ fn tick_production_impl(
             // `HouseClass::Place_Production 0x004FB5C6..0x004FB644`: for a
             // human-controlled house (`this == PlayerPtr` in MP, `+0x1EC ||
             // +0x1ED` in campaign) `CreateRadarEvent(6, object cell)` gates
-            // `EVA_UnitReady` — type 6 dedupes within 2 cells for 200 frames,
-            // so two units leaving one factory in quick succession give one
-            // line. The app still filters the owner to the local player.
-            let unit_ready_allowed =
-                sim.houses.get(&owner_id).is_some_and(|house| {
-                    house.is_controlled_by_human(sim.session.game_mode_nonzero)
-                }) && sim.radar_events.push_owned(
-                    crate::sim::radar::RadarEventType::UnitReady,
-                    rx,
-                    ry,
-                    Some(owner_id),
-                );
-            if unit_ready_allowed {
+            // `EVA_UnitReady` — type 6 dedupes within 2 cells, so two units
+            // leaving one factory in quick succession give one line. The app
+            // filters the owner to the local player and admits the event on
+            // that client's radar.
+            if sim
+                .houses
+                .get(&owner_id)
+                .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero))
+            {
                 sim.sound_events
-                    .push(crate::sim::world::SimSoundEvent::UnitComplete { owner: owner_id });
+                    .push(crate::sim::world::SimSoundEvent::UnitComplete {
+                        owner: owner_id,
+                        radar: crate::sim::radar::RadarEventRequest::new(
+                            crate::sim::radar::RadarEventType::UnitReady,
+                            rx,
+                            ry,
+                        ),
+                    });
             }
             // Auto-move newly produced unit to rally point (if set).
             // Skip for aircraft docked on helipad — they wait for orders.

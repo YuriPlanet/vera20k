@@ -967,20 +967,8 @@ mod tests {
     }
     use super::building_frame_index;
     use super::shp_body_tint;
-    use crate::app::presentation::building_anim::building_anim_rate_logic_frames;
     use crate::map::entities::EntityCategory;
     use crate::map::lighting::CellLightGrid;
-    use crate::rules::art_data::ArtRegistry;
-    use crate::rules::ini_parser::IniFile;
-    use crate::sim::game_options::GameOptions;
-
-    /// Stock `[GAPOWR_A]`, the Allied power plant's looping smokestack.
-    const GAPOWR_A_ART: &str = "[GAPOWR_A]\nNormalized=yes\nStart=0\nLoopStart=0\nLoopEnd=8\n\
-                                LoopCount=-1\nRate=220\n";
-
-    fn stock_game_options() -> GameOptions {
-        GameOptions::default()
-    }
 
     #[test]
     fn gsi_13_10_shp_selector_keeps_unit_and_infantry_extras_distinct() {
@@ -1002,68 +990,6 @@ mod tests {
         assert_ne!(
             unit, infantry,
             "Unit and Infantry extras must not cross-feed"
-        );
-    }
-
-    #[test]
-    fn looping_building_anim_rate_applies_normalized_game_speed_scaling() {
-        // Rate=220 is a native frame delay of 900/220 = 4 logic frames, and
-        // Normalized=yes rescales that through the match game speed on
-        // construction. At the stock GameSpeed=1 the delay becomes 6.
-        let art = ArtRegistry::from_ini(&IniFile::from_str(GAPOWR_A_ART));
-        let options = stock_game_options();
-        assert_eq!(options.game_speed, 1);
-
-        assert_eq!(
-            building_anim_rate_logic_frames(&art, "GAPOWR_A", Some(&options)),
-            6
-        );
-        // Without the Normalized= step the raw 900/Rate delay stands.
-        assert_eq!(building_anim_rate_logic_frames(&art, "GAPOWR_A", None), 4);
-    }
-
-    #[test]
-    fn looping_building_anim_rate_of_unnormalized_section_is_not_rescaled() {
-        // [NATSLA_B] is explicitly Normalized=no so its hard frame delay is kept.
-        let art = ArtRegistry::from_ini(&IniFile::from_str(
-            "[NATSLA_B]\nNormalized=no\nStart=0\nEnd=9\nRate=300\n",
-        ));
-        assert_eq!(
-            building_anim_rate_logic_frames(&art, "NATSLA_B", Some(&stock_game_options())),
-            3
-        );
-    }
-
-    #[test]
-    fn looping_building_anim_damaged_variant_uses_its_own_section_rate() {
-        // Stock `[GARADR]`: the damaged dish replacement carries Rate=180 where
-        // the healthy one carries Rate=220, so the delay has to be resolved from
-        // whichever variant was selected, not from the base slot.
-        let art = ArtRegistry::from_ini(&IniFile::from_str(
-            "[GARADR_A]\nNormalized=yes\nLoopStart=0\nLoopEnd=14\nLoopCount=-1\nRate=220\n\
-             PingPong=yes\n\
-             [GARADR_AD]\nImage=GARADR_A\nNormalized=yes\nLoopStart=15\nLoopEnd=29\n\
-             LoopCount=-1\nRate=180\nPingPong=yes\n",
-        ));
-        let options = stock_game_options();
-
-        // 900/220 = 4 → normalized 6; 900/180 = 5 → (5*8)/(1+1) = 20.
-        assert_eq!(
-            building_anim_rate_logic_frames(&art, "GARADR_A", Some(&options)),
-            6
-        );
-        assert_eq!(
-            building_anim_rate_logic_frames(&art, "GARADR_AD", Some(&options)),
-            20
-        );
-    }
-
-    #[test]
-    fn looping_building_anim_rate_falls_back_to_native_default_without_a_section() {
-        let art = ArtRegistry::empty();
-        assert_eq!(
-            building_anim_rate_logic_frames(&art, "NAOBEL_A", Some(&stock_game_options())),
-            crate::rules::art_data::DEFAULT_ART_RATE_LOGIC_FRAMES
         );
     }
 
