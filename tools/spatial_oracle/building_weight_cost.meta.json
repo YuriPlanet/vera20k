@@ -10,7 +10,8 @@
   "scope": "original BuildingType virtual+84 callback45EDD0, Techno711F00 and actualcost+AC45ED50. Declared type costs/free unit and House cost multipliers; stock SeparateAircraft=true. No producer for live multipliers/country fields, full House recalc, or Rust parity claim.",
   "assumptions": [
     "Original BuildingTypeVT7E4570 and UnitTypeVT7F6218; native Cost+610 and FreeUnit+EA0 populated directly. Supplied HouseType cost fields114..124 and House5390..53A0 floats. Unused object storagezero; BuildingBuildCat0.",
-    "PadAircraft first pointer and Dock first pointer valid but do not equal Building; supplied SeparateAircrafttrue excludes legacy bundled-aircraft adjustment. No null/malformed configuration claim."
+    "PadAircraft first pointer and Dock first pointer valid but do not equal Building; supplied SeparateAircrafttrue excludes legacy bundled-aircraft adjustment. No null/malformed configuration claim.",
+    "Twelve existing normal-factor rows are retained. Twenty-four added rows cross signed zero, minimum/maximum subnormal and minimum normal factors with extreme i32 costs or an optional FreeUnit. Raw input bits are decoded for fixture storage only; original instructions produce all expected integer costs. These are arithmetic-domain fixtures, not assertions about stock rule values."
   ],
   "substitutions": [],
   "entry_points": {
@@ -21,5 +22,5 @@
     "building_actual_cost": "0x0045ED50",
     "raw_cost": "0x00711EB0"
   },
-  "payload_sha256": "f830b3771a4e702a60fca66813b3715f585824baf179ff5a3e0ae64ab2cd5138"
+  "payload_sha256": "528f9f12247e3d512ced4cc66f1ca4ab0a8389f707791ec3c48c58a11c02def2"
 }

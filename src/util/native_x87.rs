@@ -65,10 +65,6 @@ pub enum X87Ordering {
 pub enum NativeX87Error {
     #[error("{format} NaN or infinity is outside the verified x87 domain")]
     NonFiniteInput { format: &'static str },
-    #[error("{format} subnormal input is outside the verified x87 domain")]
-    SubnormalInput { format: &'static str },
-    #[error("{format} subnormal result is outside the verified x87 domain")]
-    SubnormalResult { format: &'static str },
     #[error("{format} overflow is outside the verified x87 domain")]
     StoreOverflow { format: &'static str },
     #[error("x87 division by zero is outside the verified finite domain")]
@@ -95,6 +91,18 @@ impl X87Value {
 
     const fn is_zero(self) -> bool {
         self.significand == 0
+    }
+
+    /// FLD normalizes a finite memory subnormal in the wider x87 exponent range.
+    /// `least_exponent` names the value of the fraction's least significant bit.
+    fn from_subnormal(sign: bool, fraction: u64, least_exponent: i32) -> Self {
+        debug_assert_ne!(fraction, 0);
+        let top = 63 - fraction.leading_zeros();
+        Self {
+            sign,
+            exponent: least_exponent + top as i32,
+            significand: fraction << (52 - top),
+        }
     }
 
     fn magnitude_cmp(self, rhs: Self) -> Ordering {
@@ -134,7 +142,7 @@ impl X87Chop53 {
             if fraction == 0 {
                 return Ok(X87Value::zero(sign));
             }
-            return Err(NativeX87Error::SubnormalInput { format: "f32" });
+            return Ok(X87Value::from_subnormal(sign, u64::from(fraction), -149));
         }
         Ok(X87Value {
             sign,
@@ -155,7 +163,7 @@ impl X87Chop53 {
             if fraction == 0 {
                 return Ok(X87Value::zero(sign));
             }
-            return Err(NativeX87Error::SubnormalInput { format: "f64" });
+            return Ok(X87Value::from_subnormal(sign, fraction, -1074));
         }
         Ok(X87Value {
             sign,
@@ -304,7 +312,15 @@ impl X87Chop53 {
             return Err(NativeX87Error::StoreOverflow { format: "f32" });
         }
         if value.exponent < -126 {
-            return Err(NativeX87Error::SubnormalResult { format: "f32" });
+            // Original FSTP m32real (70B812), masked PC53/chop: discard all
+            // bits below 2^-149, preserving the sign even when none remain.
+            // Native comparison: tools/spatial_oracle/x87_subnormal_primitives.
+            let fraction = if value.exponent < -149 {
+                0
+            } else {
+                (value.significand >> (29 + (-126 - value.exponent) as u32)) as u32
+            };
+            return Ok(NativeF32Bits::from_bits(sign | fraction));
         }
         let exponent = ((value.exponent + 127) as u32) << 23;
         let fraction = ((value.significand >> 29) as u32) & 0x007f_ffff;
@@ -320,7 +336,13 @@ impl X87Chop53 {
             return Err(NativeX87Error::StoreOverflow { format: "f64" });
         }
         if value.exponent < -1022 {
-            return Err(NativeX87Error::SubnormalResult { format: "f64" });
+            // Original FSTP m64real (4B10F6) has the same chop policy at 2^-1074.
+            let fraction = if value.exponent < -1074 {
+                0
+            } else {
+                value.significand >> (-1022 - value.exponent) as u32
+            };
+            return Ok(NativeF64Bits::from_bits(sign | fraction));
         }
         let exponent = ((value.exponent + 1023) as u64) << 52;
         let fraction = value.significand & 0x000f_ffff_ffff_ffff;
@@ -604,9 +626,101 @@ mod tests {
             Err(NativeX87Error::NonFiniteInput { format: "f32" }),
         );
         assert_eq!(
-            X87Chop53::load_f64(NativeF64Bits::from_bits(0x0000_0000_0000_0001)),
-            Err(NativeX87Error::SubnormalInput { format: "f64" }),
+            X87Chop53::load_f64(NativeF64Bits::from_bits(0x7ff0_0000_0000_0000)),
+            Err(NativeX87Error::NonFiniteInput { format: "f64" }),
         );
+    }
+
+    #[test]
+    fn finite_subnormal_primitives_match_original_x87_instructions() {
+        let rows: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tools/spatial_oracle/x87_subnormal_primitives.json"
+        ))
+        .unwrap();
+        let rows = rows.as_array().unwrap();
+        assert_eq!(rows.len(), 1780);
+        let mut subnormal_inputs = 0;
+        let mut subnormal_outputs = 0;
+        let mut signed_zero_outputs = 0;
+        for row in rows {
+            let input = &row["input"];
+            let name = input["name"].as_str().unwrap();
+            let format = input["format"].as_str().unwrap();
+            let mut load = |key: &str| {
+                let bits = u64::from_str_radix(input[key].as_str().unwrap(), 16).unwrap();
+                if format == "f32" {
+                    subnormal_inputs +=
+                        usize::from(bits & 0x7f80_0000 == 0 && bits & 0x007f_ffff != 0);
+                    X87Chop53::load_f32(NativeF32Bits::from_bits(bits as u32)).unwrap()
+                } else {
+                    assert_eq!(format, "f64");
+                    subnormal_inputs += usize::from(
+                        bits & 0x7ff0_0000_0000_0000 == 0 && bits & 0x000f_ffff_ffff_ffff != 0,
+                    );
+                    X87Chop53::load_f64(NativeF64Bits::from_bits(bits)).unwrap()
+                }
+            };
+            let lhs = load("lhs_bits");
+            let actual = match input["operation"].as_str().unwrap() {
+                "load" => lhs,
+                "add" => X87Chop53::add(lhs, load("rhs_bits")),
+                "sub" => X87Chop53::sub(lhs, load("rhs_bits")),
+                "mul" => X87Chop53::mul(lhs, load("rhs_bits")),
+                operation => panic!("unknown operation {operation}: {name}"),
+            };
+            let expected = u64::from_str_radix(row["output_bits"].as_str().unwrap(), 16).unwrap();
+            if input["store"].as_str().unwrap() == "f32" {
+                let actual = X87Chop53::store_f32(actual).unwrap().bits();
+                assert_eq!(u64::from(actual), expected, "{name}");
+                subnormal_outputs +=
+                    usize::from(actual & 0x7f80_0000 == 0 && actual & 0x007f_ffff != 0);
+                signed_zero_outputs += usize::from(actual == 0x8000_0000);
+            } else {
+                let actual = X87Chop53::store_f64(actual).unwrap().bits();
+                assert_eq!(actual, expected, "{name}");
+                subnormal_outputs += usize::from(
+                    actual & 0x7ff0_0000_0000_0000 == 0 && actual & 0x000f_ffff_ffff_ffff != 0,
+                );
+                signed_zero_outputs += usize::from(actual == 0x8000_0000_0000_0000);
+            }
+        }
+        assert!(subnormal_inputs > 1000);
+        assert!(subnormal_outputs > 100);
+        assert!(signed_zero_outputs > 100);
+    }
+
+    #[test]
+    fn finite_overlay_velocity_addition_matches_original_common_tail() {
+        let rows: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tools/spatial_oracle/unit_per_cell_overlay.json"
+        ))
+        .unwrap();
+        let rows = rows.as_array().unwrap();
+        assert_eq!(rows.len(), 296);
+        let addend = f32_value(0x3ca3_d70a);
+        let mut additions = 0;
+        for row in rows {
+            let input = &row["input"];
+            let output = &row["output"];
+            let bits = u32::from_str_radix(input["velocity_bits"].as_str().unwrap(), 16).unwrap();
+            let loaded = X87Chop53::load_f32(NativeF32Bits::from_bits(bits)).unwrap();
+            assert_eq!(X87Chop53::store_f32(loaded).unwrap().bits(), bits);
+            let actual = if output["applied"].as_bool().unwrap() {
+                additions += 1;
+                X87Chop53::add(loaded, addend)
+            } else {
+                loaded
+            };
+            let expected =
+                u32::from_str_radix(output["velocity_bits"].as_str().unwrap(), 16).unwrap();
+            assert_eq!(
+                X87Chop53::store_f32(actual).unwrap().bits(),
+                expected,
+                "{}",
+                input["name"].as_str().unwrap(),
+            );
+        }
+        assert_eq!(additions, 144);
     }
 
     #[test]

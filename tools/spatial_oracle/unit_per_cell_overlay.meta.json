@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "296 executions of original Unit PerCell common overlay tail 73AFD4..73B074: native capability/overlay/zone branches, receiver call order and binary32 owner stores; explicit external receiver stubs",
+  "assumptions": [
+    "Pinned retail gamemd.exe instructions, Unit vtable7F5C70 and addend7F4E38 are never patched. The original virtual+48 slot selects the observed GetCoords stub address. Code, vtable and addend bytes are checked unchanged per row",
+    "Interior boundary EBP=owner and ESP=live local-frame base; supplied stack+1C is the signed packed entry cell captured upstream at739EE2, while supplied owner+9C is the current XYZ exposed by the GetCoords stub. Upstream capture and callbacks are not executed",
+    "Both original reason argument values0/2 are seeded at stack+44. The selected common tail does not inspect that slot. This establishes reason independence for identical boundary state, not reason-specific prefix reachability or whole PerCell equivalence",
+    "192 gate rows cross reasons0/2, Crusher0/1, ability return0/1, overlay absent/present, Crushable0/1, Wall0/1 and type movement zone0/12/13. Eight additional rows cover truthy bytes, zone-1/11, invalid sound index, negative damage return and two distinct live XYZ samples with the same retained cell",
+    "96 numeric rows cross24 binary32 patterns with reasons0/2 and damage returns0/1. Patterns include signed zero, signed min/max subnormals, min normals, addend and adjacent ULPs with both signs, fractions, unit magnitudes, large values and max finite. Nonfinite input is excluded",
+    "x87 FPCW0E7F (53-bit precision, truncate) is supplied from the established project native runtime contract. Original FLD/FADD/FSTP execute and outputs are raw binary32 bits. No Python float arithmetic computes expected results",
+    "Owner writes are observed at original73B067 then73B06E; damage is called before either write. Non-Wall numeric rows deliberately supply damage return0/1 to isolate the unconditional continuation. A return1 for non-Wall is a counterfactual receiver result, not a claim about480CB0",
+    "Stops before73B074 full-cell crush and Foot PerCell. Wall mutation, recursion/RNG, pointer expiry, lifecycle, map/dummy rules, audio playback, ability resolution, upstream MCV/missions, rocking update and Rust integration are outside this corpus"
+  ],
+  "substitutions": [
+    "Map5657A0: assert ECX=87F7E8 and argument=&retained stack cell; record signed cell, return fixture Cell pointer with RET4 semantics; no native lookup/dummy behavior executes",
+    "HasWeaponAbility70D0D0: assert owner and literal argument17; record call and return supplied AL with RET4 semantics; rank/type ability bodies are excluded",
+    "GetCoords005F65A0: called through untouched original Unit vtable+48; copy supplied live owner+9C XYZ to caller output buffer and return it with RET4 semantics",
+    "Sound7509E0: record actual ECX sound index, EDX XYZ and stack argument0; return0 with RET4 semantics; no audio receiver, RNG or playback executes, including invalid sound index-1",
+    "Damage480CB0: assert retained Cell receiver and literal damage-1; record pre-write owner state and return supplied EAX with RET4 semantics; no overlay/owner mutation or damage body executes"
+  ],
+  "entry_points": {
+    "entry": "0x0073AFD4",
+    "before_full_cell_crush": "0x0073B074",
+    "map_lookup": "0x005657A0",
+    "ability_17": "0x0070D0D0",
+    "get_coords": "0x005F65A0",
+    "sound": "0x007509E0",
+    "damage": "0x00480CB0",
+    "original_addend": "0x007F4E38",
+    "flag_store": "0x0073B067",
+    "velocity_store": "0x0073B06E"
+  },
+  "x87_control_word": "0E7F",
+  "addend_binary32_bits": "3CA3D70A",
+  "original_code_range_sha256": {
+    "0073AFD4..0073B074": "5869e5629950a4e1cc812771d8f7708bae05fa0e03929416f78dcfe1b116b4e3"
+  },
+  "payload_sha256": "50921b7972b963f99aa81536fe7b84e82315d0d2f825d0ca4aae2f757e648e50"
+}

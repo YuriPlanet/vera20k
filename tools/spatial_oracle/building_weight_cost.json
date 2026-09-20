@@ -130,5 +130,269 @@
       "free": 1400,
       "unit": 0.75
     }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": 0.0,
+      "cost": 2147483647,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 0,
+      "unit": 0.0
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": 0.0,
+      "cost": -2147483648,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 0,
+      "unit": 0.0
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": 0.0,
+      "cost": 2000,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 1400,
+      "unit": 0.0
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": -0.0,
+      "cost": 2147483647,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 0,
+      "unit": -0.0
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": -0.0,
+      "cost": -2147483648,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 0,
+      "unit": -0.0
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": -0.0,
+      "cost": 2000,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 1400,
+      "unit": -0.0
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": 1.401298464324817e-45,
+      "cost": 2147483647,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 0,
+      "unit": 1.401298464324817e-45
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": 1.401298464324817e-45,
+      "cost": -2147483648,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 0,
+      "unit": 1.401298464324817e-45
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": 1.401298464324817e-45,
+      "cost": 2000,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 1400,
+      "unit": 1.401298464324817e-45
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": -1.401298464324817e-45,
+      "cost": 2147483647,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 0,
+      "unit": -1.401298464324817e-45
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": -1.401298464324817e-45,
+      "cost": -2147483648,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 0,
+      "unit": -1.401298464324817e-45
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": -1.401298464324817e-45,
+      "cost": 2000,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 1400,
+      "unit": -1.401298464324817e-45
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": 1.1754942106924411e-38,
+      "cost": 2147483647,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 0,
+      "unit": 1.1754942106924411e-38
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": 1.1754942106924411e-38,
+      "cost": -2147483648,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 0,
+      "unit": 1.1754942106924411e-38
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": 1.1754942106924411e-38,
+      "cost": 2000,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 1400,
+      "unit": 1.1754942106924411e-38
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": -1.1754942106924411e-38,
+      "cost": 2147483647,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 0,
+      "unit": -1.1754942106924411e-38
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": -1.1754942106924411e-38,
+      "cost": -2147483648,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 0,
+      "unit": -1.1754942106924411e-38
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": -1.1754942106924411e-38,
+      "cost": 2000,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 1400,
+      "unit": -1.1754942106924411e-38
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": 1.1754943508222875e-38,
+      "cost": 2147483647,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 0,
+      "unit": 1.1754943508222875e-38
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": 1.1754943508222875e-38,
+      "cost": -2147483648,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 0,
+      "unit": 1.1754943508222875e-38
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": 1.1754943508222875e-38,
+      "cost": 2000,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 1400,
+      "unit": 1.1754943508222875e-38
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": -1.1754943508222875e-38,
+      "cost": 2147483647,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 0,
+      "unit": -1.1754943508222875e-38
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": -1.1754943508222875e-38,
+      "cost": -2147483648,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 0,
+      "unit": -1.1754943508222875e-38
+    }
+  },
+  {
+    "cost84": 0,
+    "input": {
+      "building": -1.1754943508222875e-38,
+      "cost": 2000,
+      "country_building": 1,
+      "country_unit": 1,
+      "free": 1400,
+      "unit": -1.1754943508222875e-38
+    }
   }
 ]

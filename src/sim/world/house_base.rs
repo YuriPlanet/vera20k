@@ -12,7 +12,7 @@ use crate::sim::find_nearby_cell::{
     map_owned_radius_cap,
 };
 use crate::sim::pathfinding::zone_map::ZoneId;
-use crate::util::native_x87::{NativeF32Bits, X87Chop53};
+use crate::util::native_x87::{NativeF32Bits, NativeX87Error, X87Chop53};
 
 // Consumer pending: House 0x4FD150 base centre / nonhuman failed-path
 // relocation 0x500200 (AI-deferred); the projection is kept current so that
@@ -212,57 +212,27 @@ fn remove_first(ids: &mut Vec<u64>, id: u64) {
 }
 
 ///50BF60 multiplies two f32 operands exactly in x87, then stores toward zero.
-/// Integer significands also retain native gradual underflow after many stock
-/// NAINDP plants; the normal-only X87Chop53 store cannot cover that domain.
+/// The shared arithmetic owner includes gradual underflow after many stock
+/// NAINDP plants. This receiver retains its masked-overflow result policy.
 fn multiply_factor(lhs: NativeF32Bits, rhs: NativeF32Bits) -> NativeF32Bits {
-    let decode = |bits: u32| {
-        let exponent = (bits >> 23) & 0xff;
-        assert_ne!(
-            exponent, 0xff,
-            "nonfinite cost bonus is outside retail data"
-        );
-        let fraction = bits & 0x7fffff;
-        if exponent == 0 {
-            (u64::from(fraction), -149)
-        } else {
-            (u64::from(fraction | 0x800000), exponent as i32 - 150)
+    let product = X87Chop53::mul(
+        X87Chop53::load_f32(lhs).expect("retail cost factors are finite"),
+        X87Chop53::load_f32(rhs).expect("retail cost bonuses are finite"),
+    );
+    match X87Chop53::store_f32(product) {
+        Ok(bits) => bits,
+        // House50BF60 stores with exceptions masked and rounding toward zero.
+        // Keep that receiver policy explicit; other users retain checked stores.
+        // Native comparison: tools/spatial_oracle/factory_plant_factors.
+        Err(NativeX87Error::StoreOverflow { format: "f32" }) => {
+            NativeF32Bits::from_bits(((lhs.bits() ^ rhs.bits()) & 0x8000_0000) | 0x7f7f_ffff)
         }
-    };
-    let sign = (lhs.bits() ^ rhs.bits()) & 0x80000000;
-    let (a, ae) = decode(lhs.bits());
-    let (b, be) = decode(rhs.bits());
-    let product = a * b;
-    if product == 0 {
-        return NativeF32Bits::from_bits(sign);
+        Err(error) => panic!("finite cost factor store failed: {error}"),
     }
-    let top = 63 - product.leading_zeros() as i32;
-    let exponent = ae + be + top;
-    let result = if exponent > 127 {
-        0x7f7fffff // masked overflow under round-toward-zero
-    } else if exponent < -126 {
-        let shift = ae + be + 149;
-        if shift >= 0 {
-            (product << shift) as u32
-        } else {
-            product.checked_shr((-shift) as u32).unwrap_or(0) as u32
-        }
-    } else {
-        let significand = if top >= 23 {
-            product >> (top - 23)
-        } else {
-            product << (23 - top)
-        };
-        ((exponent + 127) as u32) << 23 | (significand as u32 & 0x7fffff)
-    };
-    NativeF32Bits::from_bits(sign | result)
 }
 
 #[allow(dead_code)]
 fn scaled_cost(cost: i32, factor: NativeF32Bits) -> i32 {
-    // Any subnormal factor times an i32 cost truncates to zero.
-    if factor.bits() & 0x7f800000 == 0 {
-        return 0;
-    }
     let product = X87Chop53::mul(
         X87Chop53::load_i32(cost),
         X87Chop53::load_f32(factor).expect("retail cost factors are finite"),
@@ -439,7 +409,12 @@ mod tests {
             let mut state = HouseBaseState::default();
             let mut bonus = UNIT_FACTORS;
             bonus[1] = NativeF32Bits::from_bits(0.75_f32.to_bits());
-            for id in 0..count {
+            if let Some(bits) = row["bonus_bits"].as_array() {
+                for (factor, bits) in bonus.iter_mut().zip(bits) {
+                    *factor = NativeF32Bits::from_bits(bits.as_u64().unwrap() as u32);
+                }
+            }
+            for id in 0..=count {
                 state.register(RegisteredBuilding {
                     id,
                     tracks_base: true,
@@ -448,9 +423,11 @@ mod tests {
                     defense: false,
                     plant: Some(bonus),
                 });
-                state.plants.push(id);
+                state.append_membership(id);
             }
-            state.refresh_factors();
+            // Exercise the membership receiver used by production Limbo/expiry:
+            // removing one plant recomputes the remaining ordered native fold.
+            state.remove_membership(count);
             let expected: Vec<u32> = row["factor_bits"]
                 .as_array()
                 .unwrap()
