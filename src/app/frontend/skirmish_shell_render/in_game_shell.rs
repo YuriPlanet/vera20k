@@ -69,13 +69,6 @@ pub(crate) fn native_in_game_shell_active(state: &AppState) -> bool {
         )
 }
 
-pub(crate) fn native_in_game_options_active(state: &AppState) -> bool {
-    state.match_state.match_presentation.in_game_menu
-        == crate::ui::pause_menu::InGameMenuState::Options
-        && state.frontend.skirmish_shell_chrome.is_some()
-        && native_in_game_shell_active(state)
-}
-
 pub(crate) fn current_in_game_shell_layout(
     state: &AppState,
 ) -> Option<(InGameShellLayout, [i32; 2])> {

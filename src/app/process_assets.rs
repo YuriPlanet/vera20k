@@ -90,12 +90,6 @@ impl ProcessAssets {
         self.manager.as_ref()
     }
 
-    /// Exclusive borrow while the manager is home. Shell-side theater
-    /// activation (the random-map dialog) mutates through this.
-    pub(crate) fn manager_mut(&mut self) -> Option<&mut AssetManager> {
-        self.manager.as_mut()
-    }
-
     /// Field-level split borrow: the resident manager and the terrain-variant
     /// cache live on the same owner, and the RMG preview path needs both at
     /// once.

@@ -710,10 +710,6 @@ fn advance_in_game_runtime_mode(
         // were finalized inside the authoritative sim transaction. Only the
         // independent wall-clock terrain-overlay timer remains app-owned.
         crate::app::presentation::building_anim::tick_terrain_overlay_animations(state, 16);
-        // Looping slot animations are phased off the logic frame their building
-        // was placed, so the base has to be recorded on a sim frame boundary
-        // rather than on a render frame.
-        crate::app::presentation::building_anim::refresh_building_anim_phase_bases(state);
         crate::app::presentation::building_anim::tick_garrison_muzzle_flashes(
             state,
             garrison_flash_elapsed_ticks.saturating_mul(u64::from(SIM_TICK_MS)) as u32,

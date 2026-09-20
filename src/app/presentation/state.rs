@@ -110,21 +110,6 @@ pub(crate) struct MatchPresentationState {
     pub(crate) parachute_anims: Vec<crate::sim::components::ParachuteAnim>,
     /// Global elapsed time for looping terrain overlay animations.
     pub(crate) idle_anim_elapsed_ms: u32,
-    /// Logic frame on which each building's slot animations were created, by
-    /// entity id.
-    ///
-    /// gamemd gives every building animation slot its own animation object whose
-    /// frame timer is based at the frame it was constructed, so two identical
-    /// buildings placed at different times run out of phase with each other.
-    /// Presentation-only, so it lives here rather than on the entity.
-    ///
-    /// DRIFT: gamemd serializes each animation object with its own timer, so a
-    /// saved game restores the phases it was saved with. This map is not in the
-    /// snapshot. Entries whose IDs survive replacement retain their old phase;
-    /// newly observed IDs start at the current frame. A reused ID can therefore
-    /// inherit an unrelated phase. Native animation restoration remains DRIFT;
-    /// a blanket reset would also change the current retained-match behavior.
-    pub(crate) building_anim_phase_base: std::collections::BTreeMap<u64, u64>,
     // -- Reusable per-frame scratch buffers (avoid allocation each frame) --
     /// Overlay instance scratch vec — cleared and refilled each frame.
     pub(crate) cached_overlay_instances: Vec<crate::render::batch::SpriteInstance>,

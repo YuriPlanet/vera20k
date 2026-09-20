@@ -78,15 +78,6 @@ impl<'a> UninitContext<'a> {
         }
     }
 
-    pub(crate) fn with_terrain_and_rules(
-        terrain: Option<&'a crate::map::resolved_terrain::ResolvedTerrainGrid>,
-        rules: &'a RuleSet,
-    ) -> Self {
-        let mut context = Self::with_terrain(terrain);
-        context.rules = Some(rules);
-        context
-    }
-
     pub(crate) const fn with_rules(rules: &'a RuleSet) -> Self {
         Self {
             terrain: None,

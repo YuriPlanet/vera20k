@@ -570,7 +570,6 @@ impl App {
                     weapon_muzzle_flashes: Vec::new(),
                     parachute_anims: Vec::new(),
                     idle_anim_elapsed_ms: 0,
-                    building_anim_phase_base: std::collections::BTreeMap::new(),
                     cached_overlay_instances: Vec::new(),
                     cached_unit_instances: Vec::new(),
                     cached_unit_pages: Vec::new(),

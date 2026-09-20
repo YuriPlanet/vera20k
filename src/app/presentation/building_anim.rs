@@ -26,90 +26,6 @@ pub(crate) fn tick_terrain_overlay_animations(state: &mut AppState, dt_ms: u32) 
     state.match_state.match_presentation.idle_anim_elapsed_ms += dt_ms;
 }
 
-pub(crate) use crate::sim::world::building_anim::building_anim_rate_logic_frames;
-
-/// Record the logic frame each structure's slot animations were created on, and
-/// drop the record for structures that no longer exist.
-///
-/// gamemd builds a building's animation slots when the building is placed on the
-/// map, and each slot's animation object bases its own frame timer on the frame
-/// it was constructed. The looping animation therefore has a per-building phase:
-/// two power plants raised a few seconds apart never pulse together. This map is
-/// the app-side stand-in for that construction frame — recorded once, the first
-/// logic frame the structure is seen.
-pub(crate) fn refresh_building_anim_phase_bases(state: &mut AppState) {
-    let Some(sim) = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .map(|rt| &rt.simulation)
-    else {
-        state
-            .match_state
-            .match_presentation
-            .building_anim_phase_base
-            .clear();
-        return;
-    };
-    let tick = sim.session.tick;
-    let live: Vec<u64> = sim
-        .entities()
-        .iter_sorted()
-        .filter(|(_, entity)| entity.category == crate::map::entities::EntityCategory::Structure)
-        .map(|(id, _)| id)
-        .collect();
-    record_building_anim_phase_bases(
-        &mut state
-            .match_state
-            .match_presentation
-            .building_anim_phase_base,
-        &live,
-        tick,
-    );
-}
-
-/// Insert a phase base for every newly seen structure and forget the ones that
-/// are gone.
-///
-/// An existing entry is never re-stamped: the animation object outlives every
-/// intervening frame, so re-basing it would restart the loop and put the whole
-/// base back in step.
-///
-/// `live_structures` must be sorted ascending — `EntityStore::iter_sorted`
-/// yields stable ids in that order.
-fn record_building_anim_phase_bases(
-    bases: &mut std::collections::BTreeMap<u64, u64>,
-    live_structures: &[u64],
-    tick: u64,
-) {
-    bases.retain(|id, _| live_structures.binary_search(id).is_ok());
-    for id in live_structures {
-        bases.entry(*id).or_insert(tick);
-    }
-}
-
-/// Logic frames elapsed since a building's slot animations were created.
-///
-/// Falls back to zero for a structure with no recorded base, which renders the
-/// animation's first loop frame rather than an arbitrary one.
-pub(crate) fn building_anim_elapsed_logic_frames(state: &AppState, stable_id: u64) -> u32 {
-    let Some(sim) = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .map(|rt| &rt.simulation)
-    else {
-        return 0;
-    };
-    state
-        .match_state
-        .match_presentation
-        .building_anim_phase_base
-        .get(&stable_id)
-        .map(|base| sim.session.tick.saturating_sub(*base).min(u32::MAX as u64) as u32)
-        .unwrap_or(0)
-}
-
 /// Tick the sidebar power bar animation (segment-by-segment transition).
 pub(crate) fn update_power_bar_anim(state: &mut AppState) {
     let owner_name = preferred_local_owner_name(state);
@@ -996,31 +912,6 @@ mod tests {
     use crate::rules::art_data::{ArtRegistry, DEFAULT_ART_RATE_LOGIC_FRAMES};
     use crate::rules::ini_parser::IniFile;
     use crate::sim::world::Simulation;
-
-    #[test]
-    fn building_anim_phase_base_is_stamped_once_and_never_rebased() {
-        // Two power plants placed 15 logic frames apart keep their own bases for
-        // as long as they live, which is what holds their loops out of phase.
-        let mut bases = std::collections::BTreeMap::new();
-
-        record_building_anim_phase_bases(&mut bases, &[10], 100);
-        record_building_anim_phase_bases(&mut bases, &[10, 11], 115);
-        record_building_anim_phase_bases(&mut bases, &[10, 11], 130);
-
-        assert_eq!(bases.get(&10), Some(&100));
-        assert_eq!(bases.get(&11), Some(&115));
-    }
-
-    #[test]
-    fn building_anim_phase_base_is_dropped_when_the_building_dies() {
-        let mut bases = std::collections::BTreeMap::new();
-
-        record_building_anim_phase_bases(&mut bases, &[10, 11], 100);
-        record_building_anim_phase_bases(&mut bases, &[11], 140);
-
-        assert_eq!(bases.get(&10), None);
-        assert_eq!(bases.get(&11), Some(&100));
-    }
 
     #[test]
     fn garrison_occupant_anim_rate_uses_art_section_rate_logic_frames() {

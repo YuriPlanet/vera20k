@@ -5042,29 +5042,6 @@ impl Simulation {
         Some(tail_path_grid)
     }
 
-    /// Publish one native wall Recalc/zone-graph step before DestroyOverlay
-    /// advances to its next cleanup visit or pointer-expiry callback.
-    fn repair_wall_damage_navigation_step(
-        &mut self,
-        terrain: &ResolvedTerrainGrid,
-        bridge_state: Option<&BridgeRuntimeState>,
-        cell: (u16, u16),
-        navigation_changed: bool,
-        repair: WallZoneRepairKind,
-    ) {
-        repair_wall_damage_navigation_authorities(
-            &mut self.terrain_costs,
-            &mut self.zone_grid,
-            &mut self.path_grid,
-            terrain,
-            bridge_state,
-            self.playfield_bounds,
-            cell,
-            navigation_changed,
-            repair,
-        );
-    }
-
     pub(crate) fn effective_build_blocked(&self, rx: u16, ry: u16) -> Option<bool> {
         let terrain = self.resolved_terrain.as_ref()?;
         let cell = terrain.cell(rx, ry)?;

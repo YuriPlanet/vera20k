@@ -2195,17 +2195,6 @@ fn bridge_surface_z(
         .then(|| floor.wrapping_add(crate::util::lepton::BRIDGE_HEIGHT_DELTA_LEPTONS as i32))
 }
 
-/// `FUN_00568350`: whether the coordinate is still inside the playfield.
-fn coord_is_on_grid(grid: &ResolvedTerrainGrid, coord: ProjectileCoord) -> bool {
-    let (Ok(rx), Ok(ry)) = (
-        u16::try_from(coord.x.div_euclid(256)),
-        u16::try_from(coord.y.div_euclid(256)),
-    ) else {
-        return false;
-    };
-    grid.cell(rx, ry).is_some()
-}
-
 fn squared_horizontal_distance(a: ProjectileCoord, b: ProjectileCoord) -> i64 {
     let dx = i64::from(a.x) - i64::from(b.x);
     let dy = i64::from(a.y) - i64::from(b.y);

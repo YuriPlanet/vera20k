@@ -26,22 +26,6 @@ pub(crate) fn finalize(
     sim.bunker_wall_events.clear();
 }
 
-/// Kept for non-slot presentation clients. Native slot constructors use the
-/// common AnimStore rate/RandomRate owner and scenario stream instead.
-pub(crate) fn building_anim_rate_logic_frames(
-    art: &ArtRegistry,
-    name: &str,
-    options: Option<&crate::sim::game_options::GameOptions>,
-) -> u16 {
-    let Some(config) = art.anim_runtime_config(name) else {
-        return crate::rules::art_data::DEFAULT_ART_RATE_LOGIC_FRAMES;
-    };
-    match (config.normalized, options) {
-        (true, Some(options)) => options.normalized_anim_delay(config.rate_logic_frames),
-        _ => config.rate_logic_frames,
-    }
-}
-
 fn trigger_crane_anim(sim: &mut Simulation, rules: &RuleSet, _art: &ArtRegistry, owner: &str) {
     let Some(producer) = production::active_producer_for_owner_category(
         sim,
