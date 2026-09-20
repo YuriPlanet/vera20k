@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Complete original estimated-damage6FDB80 with nested rank/type/house-category/ftol/warhead bodies; separate direct489180 distance-boundary rows. Supplied live input records, no gameplay producer or full scanner claim",
+  "assumptions": [
+    "Every row records all fixture factors and gates, with raw binary32/binary64 bits: attacker/target object and house multipliers, both country category arrays, rank and ability bytes, Rules combat/armor/MaxDamage, weapon damage/flags, warhead pointer/spread/percent/eleven verses, target armor and Scenario flags. No missing live multiplier is silently modeled as a gameplay default1",
+    "Ordinary Unit, Infantry, Aircraft and Building use original object and type vtables/getters/RTTI. Attacker+160 and attackerHouse+188 multiply damage. TargetHouse category query is passed attacker type, then multiplies attacker+158. Contrasting target+158/+160/house+188 and attacker-country values are recorded but unused; these are intentionally different ownership paths from delivered damage",
+    "Original74FF90 checks binary32 rank >=1 and <2;750010 checks >=2. Original ability branches use attacker+29E/+2B0 and target+29D/+2AF, including elite inheriting veteran ability. Constructors, parsed ability lists, crate/country/difficulty/veterancy multiplier producers and real house setup are excluded",
+    "Original489180 always receives distance0 and positive>=1 damage when reached from6FDB80. Nonpositive weapon damage returns raw from6FDB80 before factors/kernel; null target and weapon bytes130/129 return0. A null weapon is supplied only with null target; no unsupported null-weapon guard is invented",
+    "For direct489180 rows, entry ECX is damage, EDX warhead, stack arg1 armor, arg2 distance. After SUB ESP,0Ch and two pushes, ESP+18h is armor (verses at489229), ESP+1Ch is distance (negative gate4891AF and spread489202). Negative damage returns raw only for signed distance<8, otherwise0; this is not an armor restriction or a reachable negative nested-estimator path",
+    "x87 ambient and cached control are0E7F (PC53/chop, masked exceptions). The unchanged retail cache822D80 is asserted. Startup hardware captures bounce_startup_capture.json and tube_startup_capture.json record0E7F before WinMain; FOOTCLASS_GET_CURRENT_SPEED_EXACT_GHIDRA_REPORT.md documents later chop request/cache setup. This is pinned ambient execution, not a live6FDB80 CW capture or runtime immutability proof",
+    "Original7C5F00 FISTP stores signed64 then returns EDX:EAX; the caller uses only low EAX. Each conversion records the full signed64 and low signedi32, preserving wrap/indefinite behavior. Finite subnormals, signed zero denominators, i32/i64 overflow boundaries and finite inputs causing masked intermediate infinity/invalid conversion are arithmetic-domain probes, not proof such rules are retail-authored or supported by current Rust",
+    "Native float stores, callback order, selected factor reads, original return and register/stack/input preservation are observed. Hooks never change registers, memory, execution addresses or arithmetic outcomes. No Python arithmetic generates expected damage",
+    "Invalid armor indices, malformed/null positive-path house/type pointers, unmasked traps, full extended-exponent overflow, runtime FP-status hardware parity, weapon selection, scanner/debit scheduling, actual FireAt/ReceiveDamage, persistence and factor producer parity are excluded. Separate direct-kernel rows do not certify the entire warhead function domain",
+    "The original405 payload rows and subsequent finite862 rows are unchanged prefixes. Appended direct-kernel cases cross positive nonzero distance before/at/beyond spread, negative-result floor, binary32 spill equality, non-dyadic PercentAtMax, finite signed zero/subnormal/normal/max inputs, signed SUB wrap, low32 ftol wrap, masked signed64 indefinite and signed MaxDamage/gates. These are numeric receiver fixtures, not proof that the area collector generates every supplied distance",
+    "Appended exceptional direct489180 rows supply signed infinities and quiet/signaling NaN payloads as raw binary32 PAM/CellSpread and binary64 Verses. PAM decimal +/-1e40 is admitted by the current complete Rust WarheadType parser. Literal NaN parses as0, so raw NaNs are separate value-domain evidence. CellSpread get_f32 overflow has a separate SimFixed projection gate outside this fixture; spread-infinity rows do not establish complete rules-parser admission",
+    "FCOMP at4891ED followed by FNSTSW/TEST AH,40h branches on C3: equal and unordered spills both bypass interpolation. A nonfinite spread converts through original ftol to low0. Interpolation can generate invalid infinity cancellation or zero-times-infinity, and the final verse can multiply either zero or positive falloff by infinity/NaN. Original observed low EAX and both f32 store bits are asserted; exception-status hardware parity and generic two-NaN arithmetic selection are not covered"
+  ],
+  "substitutions": [
+    "One named category-default boundary row routes a copied type vtable+2C to original literal-RTTI1 leaf746E20; this is a supplied category identity and not a real UnitType RTTI. Other rows retain actual class/type vtables; no arithmetic, rank, house, ftol or warhead callee is substituted"
+  ],
+  "entry_points": {
+    "estimated_damage": "0x006FDB80",
+    "warhead": "0x00489180",
+    "house_category": "0x0050BD30",
+    "ftol": "0x007C5F00",
+    "is_veteran": "0x0074FF90",
+    "is_elite": "0x00750010",
+    "unit_type_getter": "0x00741490",
+    "infantry_type_getter": "0x0051FAF0",
+    "aircraft_type_getter": "0x0041C200",
+    "building_type_getter": "0x00459EE0"
+  },
+  "row_counts": {
+    "estimator": 381,
+    "direct_warhead": 685
+  },
+  "x87_control_word": "0E7F",
+  "cached_x87_control_word": "0E7F",
+  "original_code_sha256": {
+    "006FDB80..006FDD42": "e309940c4b3518168f4aa6373c25a6c34e70992f5ae7473af134dc3ad4b5e7e2",
+    "00489180..0048926D": "07254fca878b07c43de371ae141a28d08cec8666b0e90b58ac43a36c6832d047",
+    "0050BD30..0050BDEA": "9b8f0d21753da84e14f427c11ca4a7bbf774426273d098213be34d50837c919a",
+    "0074FF90..0074FFB7": "9c75f9984bba4d07b01861bc101e0fe693b1d6213413eea52f024366635fddaf",
+    "00750010..00750028": "7840252e8d294c1d597e8ad96f8530f88960b5689cdbb8910508a0a46c06eed3",
+    "007C5F00..007C5F3D": "164aed30b9c92bf114a2f5a68baa9084c30054087c4a03daa7ffbe8a6d7757ba",
+    "006F3270..006F3278": "b7655f4aae69b7187b779cdc966f345e6a878c6ce4f756b676a079015b791f42",
+    "00746E20..00746E26": "2db31f4e09597946e56e859813bfdad7046d457c32332c3a882654d1e3ffdf67",
+    "00741490..00741497": "8b3b8079858d27e0a2380dbf780c211a99983f17c0b4c448ea6f3209d7858320",
+    "0051FAF0..0051FAF7": "30e5afe858862025db06208f38448c7852bdefff3baedf98f065ed26d901ea19",
+    "0041C200..0041C207": "8b3b8079858d27e0a2380dbf780c211a99983f17c0b4c448ea6f3209d7858320",
+    "00459EE0..00459EE7": "e14f94839512c1779785a7c447f5ebab5bc4995dddc9c24e2bc5b22aab8db3d0",
+    "00748170..00748176": "2ae904b3a6bc4ca2b742b13a6b4372b0110f2731cdf29edd795459ef1845e802",
+    "00524D40..00524D46": "75f533bd3e59de2588c8f1901e45a3eea6688bc16b7ecaf3dcaf4d49cf4f3d49",
+    "0041CFB0..0041CFB6": "7adb2a5467d3718ab3b55c6851599af573d4fbeadcd90dd961cfd69d4f94cc9f",
+    "00465D90..00465D96": "7500687ab6484f894dd29beddc484e671de6539e4faf19ef80805cfd49e55624"
+  },
+  "original_constants": {
+    "007E2224": "00008043",
+    "007E2AC8": "0000803f",
+    "007E37B4": "00000040",
+    "00822D80": "7f0e0000"
+  },
+  "original_classes": {
+    "unit": {
+      "object_vtable": 8346736,
+      "type_vtable": 8348184,
+      "type_offset": 1732,
+      "getter": 7607440,
+      "rtti": 7635312,
+      "type_rtti": 40
+    },
+    "infantry": {
+      "object_vtable": 8302680,
+      "type_vtable": 8304144,
+      "type_offset": 1728,
+      "getter": 5372656,
+      "rtti": 5393728,
+      "type_rtti": 16
+    },
+    "aircraft": {
+      "object_vtable": 8266404,
+      "type_vtable": 8267880,
+      "type_offset": 1732,
+      "getter": 4309504,
+      "rtti": 4313008,
+      "type_rtti": 3
+    },
+    "building": {
+      "object_vtable": 8273596,
+      "type_vtable": 8275312,
+      "type_offset": 1312,
+      "getter": 4562656,
+      "rtti": 4611472,
+      "type_rtti": 7
+    }
+  },
+  "payload_sha256": "d56082f519e6df070ebc97cada808c37144aa338a2d40cb0c4325beb1a6fe8e9"
+}

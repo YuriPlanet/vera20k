@@ -16,8 +16,9 @@ use super::gates::evaluate_gates;
 use super::kernel::apply_warhead_damage;
 use super::{CombatMods, DamageGate, DamageOutcome, DamageState, ImmunityInputs, TargetDamageView};
 
-/// ftol toward zero (gamemd Math__ftol). Mirrors kernel::ftol; defined here to
-/// keep the receiver divides truncating identically without exporting it.
+/// Unmigrated defense-stage host-f64 conversion. This saturating cast does not
+/// implement native7C5F00's signed64/low32 contract. The shared warhead kernel
+/// already uses X87Chop53; the preceding defense arithmetic still needs migration.
 #[inline]
 fn ftol(v: f64) -> i32 {
     v as i32

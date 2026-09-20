@@ -127,11 +127,10 @@ pub(crate) fn response_delay_frames(delay_minutes: f64) -> i32 {
     let Ok(delay) = loaded else {
         return i32::MIN;
     };
-    X87Chop53::ftol_i64(X87Chop53::mul(
+    X87Chop53::ftol_i32_low_masked(X87Chop53::mul(
         delay,
         X87Chop53::load_i32(FRAMES_PER_MINUTE),
     ))
-    .unwrap_or(i64::MIN) as i32
 }
 
 /// Exact signed threat score used only by the base-defence responder.

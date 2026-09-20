@@ -195,9 +195,9 @@ pub(crate) fn native_growth_timer_reload(growth: u32, tiberium_grows_flag: bool)
     let multiplier = X87Chop53::load_f64(NativeF64Bits::from_bits(multiplier_bits))
         .expect("retail reload multipliers are finite normals");
     let product = X87Chop53::mul(X87Chop53::load_i32(growth as i32), multiplier);
-    // `|growth| <= i32::MAX` and the multiplier is at most 1.0, so the
-    // conversion cannot overflow; native keeps EAX (the low dword).
-    X87Chop53::ftol_i64(product).map_or(0, |value| value as u32)
+    // The signed-dword input and multiplier at most 1.0 fit signed64;
+    // native keeps EAX (the low dword).
+    X87Chop53::ftol_i32_low_masked(product) as u32
 }
 
 /// Queued ore growth cell inserted by native-style AddToGrowthQueue callers.

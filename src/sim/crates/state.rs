@@ -101,7 +101,7 @@ pub(crate) fn crate_timer_words(
     // `Math__ftol @ 0x007C5F00` executes masked `FISTP qword`; an
     // out-of-range conversion stores integer-indefinite i64::MIN. The crate
     // writer at 0x004A18C5 keeps only EAX, so either-sign overflow becomes 0.
-    let duration = X87Chop53::ftol_i64(value).unwrap_or(i64::MIN) as i32;
+    let duration = X87Chop53::ftol_i32_low_masked(value);
     (current_frame, (stored_upper.bits() >> 32) as u32, duration)
 }
 
@@ -218,11 +218,8 @@ mod tests {
     #[test]
     fn crate_timer_out_of_range_fistp_stores_integer_indefinite_low_dword() {
         for regen in [1.0e20_f64, -1.0e20_f64] {
-            let (_, _, duration) = crate_timer_words(
-                NativeF64Bits::from_bits(regen.to_bits()),
-                0x3fff_ffff,
-                91,
-            );
+            let (_, _, duration) =
+                crate_timer_words(NativeF64Bits::from_bits(regen.to_bits()), 0x3fff_ffff, 91);
             assert_eq!(
                 duration, 0,
                 "masked FISTP qword writes i64::MIN and the native slot keeps low EAX"

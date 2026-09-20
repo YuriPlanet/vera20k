@@ -8,6 +8,9 @@ use std::cmp::Ordering;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+mod masked;
+pub use masked::{MaskedX87Chop53, MaskedX87Ordering, MaskedX87Value};
+
 const SIGNIFICAND_TOP: u64 = 1_u64 << 52;
 const EXTENDED_TOP: u64 = 1_u64 << 55;
 
@@ -327,6 +330,20 @@ impl X87Chop53 {
         Ok(NativeF32Bits::from_bits(sign | exponent | fraction))
     }
 
+    /// Masked `FST[P] m32real` under the native chop control word `0x0E7F`.
+    /// Finite overflow stores signed maximum finite, rather than infinity.
+    /// Original `4891D4` spills in `tools/spatial_oracle/estimated_damage`
+    /// cover both overflow signs. The fallible storage API remains separate.
+    pub fn store_f32_masked_chop(value: X87Value) -> NativeF32Bits {
+        match Self::store_f32(value) {
+            Ok(bits) => bits,
+            Err(NativeX87Error::StoreOverflow { format: "f32" }) => {
+                NativeF32Bits::from_bits((u32::from(value.sign) << 31) | 0x7f7f_ffff)
+            }
+            Err(error) => unreachable!("unexpected finite f32 store error: {error}"),
+        }
+    }
+
     pub fn store_f64(value: X87Value) -> Result<NativeF64Bits, NativeX87Error> {
         let sign = u64::from(value.sign) << 63;
         if value.is_zero() {
@@ -375,6 +392,19 @@ impl X87Chop53 {
                 return Err(NativeX87Error::IntegerConversion);
             }
             Ok(magnitude as i64)
+        }
+    }
+
+    /// Native `Math::ftol 7C5F00` when its caller consumes only EAX.
+    /// `FISTP qword` first converts toward zero to signed64; narrowing keeps
+    /// its low32 bits. Masked invalid conversion stores `i64::MIN`, whose low
+    /// dword is zero. Only that finite conversion error takes this path.
+    /// Original conversion/output pairs: `tools/spatial_oracle/estimated_damage`.
+    pub fn ftol_i32_low_masked(value: X87Value) -> i32 {
+        match Self::ftol_i64(value) {
+            Ok(integer) => integer as i32,
+            Err(NativeX87Error::IntegerConversion) => 0,
+            Err(error) => unreachable!("unexpected finite integer conversion error: {error}"),
         }
     }
 }

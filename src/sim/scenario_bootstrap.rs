@@ -1629,7 +1629,7 @@ pub(crate) fn native_ai_opening_grant(coefficient: i32, money: i32) -> i32 {
     .expect("0.01 is a finite normal double");
     let scaled = X87Chop53::mul(X87Chop53::load_i32(coefficient), percent);
     let product = X87Chop53::mul(scaled, X87Chop53::load_i32(money));
-    X87Chop53::ftol_i64(product).map_or(0, |value| value as i32)
+    X87Chop53::ftol_i32_low_masked(product)
 }
 
 /// Apply the generated skirmish AI opening-credit grant at the Post_Map_Init handoff.
