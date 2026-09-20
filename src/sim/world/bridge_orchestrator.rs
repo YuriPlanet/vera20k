@@ -1160,10 +1160,11 @@ fn spawn_hut_walker_pre_destroy_effects(
     };
     for delta in [-1, 0, 1] {
         if let Some((rx, ry)) = step_axis(center, perpendicular, delta) {
-            // `CollapseBridge_NS_Low @ 0x00575540` / `_NS_High @ 0x00575BA0`:
-            // Z is `Cell+0x11B (Level) * level height` with no deck offset, so
-            // these play on the ground or water under a high span.
-            // `BlowUpBridge` alone adds the structural deck offset.
+            // All four `CollapseBridge_*` walkers build Z as `MOVSX Cell+0x11B
+            // (Level); IMUL [0x00ABDE88]` (`0x00575391` EW_Low, `0x005756B3`
+            // NS_Low, `0x005759EC` EW_High, `0x00575D1E` NS_High) and add no
+            // deck offset, so these play on the ground or water under a high
+            // span. `BlowUpBridge` alone adds the structural deck offset.
             let z = terrain.cell(rx, ry).map(|c| c.level).unwrap_or(0);
             queue_walker_bridge_explosion(presentation, rx, ry, z);
         }
