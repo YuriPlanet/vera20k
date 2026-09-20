@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded original Foot4D82B0 latch, END lifecycle calls, live NavQueue removal and speed-setter gates; complete Foot body with declared external callbacks; separately labelled FootAI alive/latch reset entry slice",
+  "assumptions": [
+    "Fresh full RET8 function entry; real Unit vtable copied to scratch with only Scatter+174, destination+480 and speed+544 replaced. Original Unit RTTI746E20 executes. Every return checks stack and all nonvolatile registers; native code spans and original Unit vtable remain unchanged",
+    "Owner+520=-1 excludes legacy team/planning branch4D83F8..8445; original Unit RTTI=1 excludes Infantry RTTI15 archive branch4D8472..852A. Team/script effects, Infantry archive pursuit and outer Unit/Infantry/Aircraft leaf receivers are not covered",
+    "Original QI helper45AF20 executes against supplied COM interfaces: no locomotor, E_NOINTERFACE, permission denied, permission accepted. Restore writes a supplied replacement pointer. Actual END class policy, lifetime/refcount correctness and allocator behavior are not executed",
+    "Target addresses remain opaque to Foot base. Fixture labels0/3=Cell,1/4=Unit,2/5=Building contain original vtables7E4EEC/7F5C70/7E3EBC; their native RTTI instruction bytes returning11/1/6 are asserted. Whole objects are not initialized; no target RTTI is called or needed in this body. Destination acceptance/effects are supplied, so this is category-unfiltered transport evidence, not complete category-aware setter parity",
+    "192 core rows cross entered latch, four arg pairs, Scatter pending, four END outcomes and three queues.54 rows mutate live count/storage in destination callback;16 reenter original Foot from external callbacks;3 change live queue during Techno and forward noncanonical arg bytes",
+    "Reentrant calls execute original native Foot entry under already-published latch; no fixture computes their result. Event/store snapshots record callback-visible state and native post-callback reloads. Callback-mutated queues are deliberately supplied interference, with no claim that all mutations have an active native producer",
+    "Techno709A40 has real Temporal, attackmove and PlanMgr effects omitted here; its entire body is explicitly substituted. This oracle cannot justify skipping those prerequisites in production",
+    "16 separately labelled foot_ai_reset rows execute original FootAI4DA530, original CALL6F9E50, supplied TechnoAI callback and original postcallback +90 branch/latch clear. Matrix crosses entry alive/latch and callback alive/latch. Alive rows stop before4DA554; dead rows execute original4DAF00 epilogue to return. Later FootAI work, object dispatcher and whole TechnoAI behavior are excluded"
+  ],
+  "substitutions": [
+    "At original direct callee709A40 only, segmented execution runs scratch callback with original CALL stack and RET8 then resumes original return address. It optionally reenters Foot or mutates queue; it does not execute actual Techno base semantics",
+    "Copied owner virtual slots+174/+480/+544 use explicit scratch callbacks; Scatter observes cleared+687, destination can replace queue contents/count/storage, speed records original binary64 argument. Other slots remain original",
+    "Scratch COM QueryInterface RET12 writes supplied output pointer/HRESULT; permission RET4 returns supplied AL; old locomotor Release RET4 records invocation; restore RET8 writes supplied pointer; queried END Release RET4 records invocation. No real COM implementation or lifetime is claimed",
+    "FootAI slice separately substitutes entire TechnoAI6F9E50 with scratch RET callback writing declared owner+90 and+6B3. The original caller reload and branch execute; callback return255 demonstrates that caller gate reads owner memory rather than callback AL"
+  ],
+  "entry_points": {
+    "foot_enter_idle": "0x004D82B0",
+    "techno_external_boundary": "0x00709A40",
+    "query_interface_helper": "0x0045AF20",
+    "unit_rtti": "0x00746E20",
+    "unit_scatter_original": "0x00743A50",
+    "unit_destination_original": "0x00741970",
+    "foot_ai_entry": "0x004DA530",
+    "techno_ai_external_boundary": "0x006F9E50",
+    "foot_ai_live_boundary": "0x004DA554",
+    "foot_ai_dead_epilogue": "0x004DAF00"
+  },
+  "original_code_range_sha256": {
+    "004D82B0..004D8557": "e48bdf15f53560f221628aff1b6b55641804aa6d344686ca3cbe45b352f193a6",
+    "0045AF20..0045AF95": "dd0ad5eb55f2053af5e5e0f8378865e20f773f8b0fb85a36de8c9cd108d3785d",
+    "00746E20..00746E26": "2db31f4e09597946e56e859813bfdad7046d457c32332c3a882654d1e3ffdf67",
+    "004DA530..004DA554": "6c6f61a73cb6400efde4c755bc3f4f9ffb40f7412eed3d74a1231da334cd6315",
+    "004DAF00..004DAF08": "8ef86a96ba7242d06ca326572e1bb9ea64c9a0225c1de572f9fce91c12f87711"
+  },
+  "case_counts": {
+    "total": 281,
+    "core": 192,
+    "queue_mutation": 54,
+    "reentrant": 16,
+    "techno_live_queue": 3,
+    "foot_ai_reset": 16
+  },
+  "payload_sha256": "24171ad629b58da9e7a9046eadf8500c950fcfcc833841b7c37dea9f4e576c8e"
+}
