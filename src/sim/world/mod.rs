@@ -3142,7 +3142,7 @@ impl Simulation {
                 .wrapping_mul(256)
                 .wrapping_add(entity.position.sub_y.to_num::<i32>()),
             z: i32::from(entity.position.z)
-                .wrapping_mul(128)
+                .wrapping_mul(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS)
                 .wrapping_add(locomotor_z),
         }
     }

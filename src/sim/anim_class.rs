@@ -83,12 +83,11 @@ pub struct AnimWorldCoord {
 }
 
 impl AnimWorldCoord {
-    /// Decompose the absolute lepton coordinate into the (cell, sub-cell,
-    /// height-level) tuple the app projection consumes. The single owner of
-    /// the decomposition and of the anim Z scale
-    /// (`ANIM_HEIGHT_LEVEL_LEPTONS`): the anim sound path and the anim
-    /// sprite path must decompose identically or a sound drifts away from
-    /// its sprite.
+    /// Decompose the absolute lepton coordinate into (cell, sub-cell,
+    /// height level). The level is the floor of Z over the native level height
+    /// and is for consumers that key on a level (depth rows, lighting); a
+    /// screen position comes from the exact `z` field, which may sit between
+    /// levels (a muzzle, an airburst).
     pub(crate) fn to_cell_sub_z(
         &self,
     ) -> (
@@ -112,15 +111,16 @@ impl AnimWorldCoord {
             crate::util::fixed_math::SimFixed::from_num(self.y.rem_euclid(LEPTONS_PER_CELL));
         let z = self
             .z
-            .div_euclid(ANIM_HEIGHT_LEVEL_LEPTONS)
+            .div_euclid(LEVEL_HEIGHT_LEPTONS)
             .clamp(0, i32::from(u8::MAX)) as u8;
         (rx, ry, sub_x, sub_y, z)
     }
 
-    /// Inverse of [`Self::to_cell_sub_z`]: compose the absolute lepton
-    /// coordinate a producer's (cell, sub-cell, height-level) triple names.
-    /// Shares the anim Z scale with the decomposition, so a spawn followed by a
-    /// draw round-trips exactly.
+    /// Compose the absolute lepton coordinate a producer's (cell, sub-cell,
+    /// height-level) triple names: `Level * LevelHeight`, the product the
+    /// native level-keyed producers form (`MOVSX (Level); IMUL [0x00ABDE88]`
+    /// in `MapClass::CollapseBridge_EW_Low`, `0x00575391`). A producer that
+    /// knows its exact Z builds the coordinate directly instead.
     pub(crate) fn from_cell_sub_z(
         rx: u16,
         ry: u16,
@@ -135,7 +135,7 @@ impl AnimWorldCoord {
             y: i32::from(ry)
                 .wrapping_mul(LEPTONS_PER_CELL)
                 .wrapping_add(sub_y.to_num::<i32>()),
-            z: i32::from(z).wrapping_mul(ANIM_HEIGHT_LEVEL_LEPTONS),
+            z: i32::from(z).wrapping_mul(LEVEL_HEIGHT_LEPTONS),
         }
     }
 }
@@ -159,7 +159,19 @@ pub const COMBAT_EXPLOSION_DRAW_FLAGS: u32 = 0x2600;
 pub const COMBAT_EXPLOSION_Z_ADJUST: i32 = -15;
 
 const LEPTONS_PER_CELL: i32 = crate::util::lepton::LEPTONS_PER_CELL_I32;
-const ANIM_HEIGHT_LEVEL_LEPTONS: i32 = 128;
+/// The native level height. `AnimClass` coordinates are ordinary world
+/// `CoordStruct` leptons, so a producer that places an anim by height level
+/// multiplies by the level step, 104 (`util::lepton::LEPTONS_PER_LEVEL` records
+/// the runtime captures of the per-module level globals; the image holds
+/// zeroes). The one such producer read in the binary is MapClass's: the bridge
+/// walkers form `Level * [0x00ABDE88]`, a Map-module scalar written only by
+/// the static initialiser `0x005617E0` and otherwise read by other Map-module
+/// code (shroud reveal, bridge edge tiles); its
+/// value is taken from those captures, not re-proved here. No native 128 was
+/// found, though the `AnimClass` constructor and `AI` bodies were not audited
+/// for one. This store used to keep a private 128-per-level Z while half its
+/// producers already wrote 104-frame leptons.
+const LEVEL_HEIGHT_LEPTONS: i32 = crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
 const TRAILER_DRAW_FLAGS: u32 = 0x600;
 const BUILDING_RENDER_ORIGIN_LEPTONS: i32 = 128;
 const DAMAGE_FIRE_SLOT_COUNT: usize = 8;
@@ -331,8 +343,7 @@ pub struct AnimObject {
     /// the field directly only where native reads the stored `ObjectClass`
     /// coordinate directly, which is the multiplayer sync checksum
     /// (`Compute_Game_Sync_Checksum @ 0x0064DAB0` folds `+0x9c`/`+0xa0`) and
-    /// the state hash. Z uses the animation constructor's 128-lepton height
-    /// level, not combat's terrain-height conversion.
+    /// the state hash. All three axes are world leptons.
     pub world_coord: AnimWorldCoord,
     pub draw_flags: u32,
     pub z_adjust: i32,
@@ -569,21 +580,17 @@ impl Simulation {
     /// default `AnimTypeClass` in that case whose `End` stays 0, so the anim
     /// retains its first-AI guard, expires on a later visit, and draws nothing.
     ///
-    /// RESIDUAL — the impact Z arrives as the producer's coarse height-level
-    /// byte, not exact leptons. `ExplosionEffect` carries that byte while its
-    /// paired `SmudgeSpawnRequest::Anim` carries the exact
-    /// `world_z_leptons`; this constructor uses the byte because the whole
-    /// `AnimStore` Z frame is 128 leptons per level (see
-    /// [`AnimWorldCoord::to_cell_sub_z`] and `Simulation::anim_owner_coords`),
-    /// and mixing frames inside one store is worse than the coarseness.
-    /// - Trigger: any detonation whose impact Z is not a multiple of 128
-    ///   leptons — an airburst, or a shot landing on a slope.
+    /// RESIDUAL — the impact Z arrives as the producer's height-level byte,
+    /// not exact leptons: `ExplosionEffect` carries the byte while its paired
+    /// `SmudgeSpawnRequest::Anim` carries the exact `world_z_leptons`. The
+    /// store itself holds exact leptons, so this is the producer's to fix.
+    /// - Trigger: any detonation whose impact Z is not a whole level — an
+    ///   airburst, or a shot landing on a slope.
     /// - Player effect: the explosion sprite's height, and therefore its depth
     ///   sort against nearby objects, can be off by up to one height level.
-    /// - Frequency: common, but the legacy world-effect path had exactly the
-    ///   same byte, so this is inherited, not introduced.
-    /// - Downstream risk: reconciling it means moving the whole anim Z frame to
-    ///   exact leptons, which is a separate transaction.
+    /// - Frequency: common.
+    /// - Downstream risk: widening `ExplosionEffect` moves hashed anim
+    ///   coordinates for every such detonation.
     pub(crate) fn spawn_combat_explosion_anim(
         &mut self,
         rules: &RuleSet,
@@ -1316,53 +1323,24 @@ impl Simulation {
     }
 
     /// The owner side of `AnimClass::GetCoords`: `ObjectClass::GetCoords` on
-    /// the attached-to object, in the anim coordinate frame.
+    /// the attached-to object.
     ///
-    /// X and Y are leptons, with `BuildingClass::GetCoords @ 0x00447AC0`'s
-    /// `(W-1) * 128` / `(H-1) * 128` shift off the stored NW anchor onto the
-    /// geometric foundation centre — the same derivation
-    /// `world/lifecycle.rs`'s `object_get_coords_cell` and `combat`'s
-    /// `target_coords` use.
-    ///
-    /// Z deliberately uses the anim height-level scale
-    /// (`ANIM_HEIGHT_LEVEL_LEPTONS`, 128), NOT `Position::exact_z_leptons` and
-    /// NOT the 104-lepton `LevelHeight` the locomotor and combat use. Native
-    /// has one Z frame and this engine has two: an anim's own Z is stored in
-    /// 128-per-level units (see [`AnimWorldCoord::to_cell_sub_z`] and the anim
-    /// constructor), so the owner's Z must be converted into that same frame or
-    /// the subtraction native performs would compare two different scales.
-    /// Feeding `exact_z_leptons` in here would look more faithful and be wrong.
-    ///
-    /// The consequence, recorded rather than hidden: this reads the owner's
-    /// coarse height level only. An owner with a non-zero locomotor altitude —
-    /// a flying or falling attach target — would contribute no altitude to the
-    /// delta. No attach producer in this engine targets a moving or airborne
-    /// owner (the sole producer is building damage fire), so the term has zero
-    /// occurrences today; the first airborne-owner producer must reconcile the
-    /// two Z frames before relying on it. The attach/detach round trip is exact
-    /// regardless, because the same value is subtracted and added back.
+    /// X and Y come from `object_center_coord_with_foundation`, the owner of
+    /// `BuildingClass::GetCoords @ 0x00447AC0`'s `(W-1) * 128` / `(H-1) * 128`
+    /// shift onto the foundation centre. Z is `object_world_z_leptons`, the
+    /// object's actual height including locomotor altitude, so an anim attached
+    /// to an airborne or elevated owner follows it. The attach/detach round
+    /// trip is exact because the same value is subtracted and added back.
     fn anim_owner_coords(&self, owner_id: u64) -> Option<AnimWorldCoord> {
         let owner = self.substrate.entities.get(owner_id)?;
-        let mut x = i32::from(owner.position.rx)
-            .wrapping_mul(LEPTONS_PER_CELL)
-            .wrapping_add(owner.position.sub_x.to_num::<i32>());
-        let mut y = i32::from(owner.position.ry)
-            .wrapping_mul(LEPTONS_PER_CELL)
-            .wrapping_add(owner.position.sub_y.to_num::<i32>());
-        if owner.category == crate::map::entities::EntityCategory::Structure {
-            let (width, height) =
-                crate::rules::foundation::foundation_dimensions(&owner.foundation);
-            x = x.wrapping_add(
-                i32::from(width.saturating_sub(1)).wrapping_mul(BUILDING_RENDER_ORIGIN_LEPTONS),
-            );
-            y = y.wrapping_add(
-                i32::from(height.saturating_sub(1)).wrapping_mul(BUILDING_RENDER_ORIGIN_LEPTONS),
-            );
-        }
+        let centre = crate::sim::movement::ground_pose::object_center_coord_with_foundation(
+            owner,
+            &owner.foundation,
+        );
         Some(AnimWorldCoord {
-            x,
-            y,
-            z: i32::from(owner.position.z).wrapping_mul(ANIM_HEIGHT_LEVEL_LEPTONS),
+            x: centre.x,
+            y: centre.y,
+            z: crate::sim::combat::object_world_z_leptons(owner, self.resolved_terrain.as_ref()),
         })
     }
 
@@ -1610,7 +1588,11 @@ impl Simulation {
             .wrapping_mul(LEPTONS_PER_CELL)
             .wrapping_add(position.sub_y.to_num::<i32>())
             .wrapping_sub(BUILDING_RENDER_ORIGIN_LEPTONS);
-        let base_z = i32::from(position.z).wrapping_mul(ANIM_HEIGHT_LEVEL_LEPTONS);
+        // The building's own Z, so the attached fire's stored delta is zero
+        // in Z, as it always was.
+        let base_z = self
+            .anim_owner_coords(building_id)
+            .map_or(0, |owner| owner.z);
 
         for slot in 0..DAMAGE_FIRE_SLOT_COUNT {
             let occupied = self
@@ -2395,8 +2377,8 @@ mod tests {
             sim.sound_events
         );
 
-        // The spawn coordinate round-trips through the shared anim Z scale, so
-        // the sprite lands where the legacy world effect did.
+        // The level-keyed spawn coordinate decomposes back to the same cell,
+        // sub-cell and level.
         let coord = sim.anim_absolute_coord(id).expect("absolute coordinate");
         assert_eq!(
             coord.to_cell_sub_z(),
@@ -2966,6 +2948,81 @@ mod tests {
             "detach writes the resolved absolute back into the stored field"
         );
         assert_eq!(sim.anim_absolute_coord(anim_id).unwrap(), moved);
+    }
+
+    /// One Z frame: a producer's height level is `Level * 104` world leptons
+    /// (`IMUL [0x00ABDE88]`, the ground height unit), and the level a consumer
+    /// reads back is the floor over the same unit. The store used to keep a
+    /// private 128-per-level scale next to producers that wrote 104-frame
+    /// leptons, so those drew a level low on raised ground.
+    #[test]
+    fn anim_coordinates_use_the_native_level_height() {
+        let level_three = AnimWorldCoord::from_cell_sub_z(
+            4,
+            5,
+            SimFixed::from_num(128),
+            SimFixed::from_num(64),
+            3,
+        );
+        assert_eq!(
+            level_three,
+            AnimWorldCoord {
+                x: 4 * 256 + 128,
+                y: 5 * 256 + 64,
+                z: 3 * 104
+            }
+        );
+        assert_eq!(level_three.to_cell_sub_z().4, 3);
+        // An exact-Z producer's coordinate one lepton under level 1 is still
+        // level 0; at 104 it is level 1 (128 would have called both level 0).
+        let under = AnimWorldCoord {
+            z: 103,
+            ..level_three
+        };
+        let at = AnimWorldCoord {
+            z: 104,
+            ..level_three
+        };
+        assert_eq!((under.to_cell_sub_z().4, at.to_cell_sub_z().4), (0, 1));
+    }
+
+    /// `AnimClass::GetCoords @ 0x00422BE0` adds the owner's live coordinate on
+    /// every axis, so an anim attached to an owner that gains height rises with
+    /// it. The owner term used to be the coarse level byte only.
+    #[test]
+    fn gsi_05_12_attached_anim_follows_the_owners_height() {
+        let (mut sim, rules, building_id) = damage_fire_fixture(false);
+        sim.substrate
+            .entities
+            .get_mut(building_id)
+            .unwrap()
+            .health
+            .current = 50;
+        sim.update_building_damage_fire(building_id, &rules);
+        let anim_id = sim
+            .substrate
+            .entities
+            .get(building_id)
+            .unwrap()
+            .damage_fire_anim_ids[0]
+            .expect("slot zero");
+        let before = sim.anim_absolute_coord(anim_id).expect("attached anim");
+
+        sim.substrate
+            .entities
+            .get_mut(building_id)
+            .unwrap()
+            .position
+            .exact_z_leptons = Some(before.z + 250);
+
+        assert_eq!(
+            sim.anim_absolute_coord(anim_id).unwrap(),
+            AnimWorldCoord {
+                z: before.z + 250,
+                ..before
+            },
+            "250 leptons is not a whole level: the exact height carries through"
+        );
     }
 
     #[test]

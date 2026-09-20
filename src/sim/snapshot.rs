@@ -520,7 +520,12 @@ use crate::sim::world::Simulation;
 // now holds particle images only. The layout is unchanged, but a 175 save
 // carries the old rules hash and would fail as a rules mismatch; the version
 // gate names the real cause instead.
-const SNAPSHOT_VERSION: u32 = 176;
+// 176 -> 177: AnimStore coordinates are world leptons on every axis. Anims a
+// producer placed by height level used to store `level * 128`; they now store
+// `level * 104`, and an attached anim's delta is taken from the owner's actual
+// height. The layout is unchanged, but a 176 save with such an anim above
+// level 0 would draw and hash it at the wrong height.
+const SNAPSHOT_VERSION: u32 = 177;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3414,7 +3419,7 @@ mod tests {
         // 170 -> 171: shared animation bounds and retained HasEngineer.
         // 173 -> 174: ProductionState drops the resource node map.
         // 174 -> 175: bridge collapse explosions join the AnimStore.
-        assert_eq!(super::SNAPSHOT_VERSION, 176);
+        assert_eq!(super::SNAPSHOT_VERSION, 177);
     }
 
     #[test]

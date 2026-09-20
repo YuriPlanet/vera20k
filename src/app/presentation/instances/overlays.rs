@@ -337,7 +337,7 @@ pub(crate) fn build_anim_class_instances(
         let Some(anim_coord) = sim.anim_absolute_coord(anim.stable_id) else {
             continue;
         };
-        let (center_x, center_y, rx, ry, z) = anim_world_render_coords(anim_coord);
+        let (center_x, center_y, rx, ry, _, lift_px) = anim_world_render_coords(anim_coord);
         if !in_view(
             center_x, center_y, 200.0, 200.0, cam_x, cam_y, sw, sh, 200.0,
         ) {
@@ -394,7 +394,12 @@ pub(crate) fn build_anim_class_instances(
             .as_ref()
             .map(|grid| (grid.origin_y, grid.world_height))
             .unwrap_or((0.0, 1.0));
-        let fire_depth = compute_sprite_depth_params(origin_y, world_height, center_y, z);
+        let fire_depth = super::helpers::compute_sprite_depth_params_lifted(
+            origin_y,
+            world_height,
+            center_y,
+            lift_px,
+        );
         debug_assert!(!anim.terrain_attached || anim.use_cell_drawer);
         // Native Z (`AnimClass__DrawIt @ 0x00422CA0`): 0x2800, gradient entry
         // 2 (0 when Flat), `YDrawOffset + ZAdjust - AdjustForZ - 2`; tests Z
@@ -415,8 +420,8 @@ pub(crate) fn build_anim_class_instances(
             alpha,
             // YDrawOffset is baked into the atlas offset, so it must also
             // ride the Z term to keep Z on the un-offset row, as natively.
-            z_adjust: super::helpers::ground_z_adjust(
-                z,
+            z_adjust: super::helpers::lifted_z_adjust(
+                lift_px,
                 anim.z_adjust + config.map_or(0, |c| c.y_draw_offset) + ANIM_DRAW_DEPTH_BIAS_PX,
             ),
             z_gradient: crate::render::native_z::pack_z_gradient(
@@ -543,12 +548,20 @@ fn presentation_anim_frame_count(
     })
 }
 
+/// Screen position, cell, height level and the exact pixel lift of an anim.
+///
+/// The sprite sits at the anim's exact Z (a muzzle or an airburst is not on a
+/// level boundary). The lift is the same `AdjustForZ(z)` the projection
+/// subtracted, so depth can cancel exactly what was drawn, as
+/// `AnimClass::DrawIt @ 0x00422CA0` does.
 fn anim_world_render_coords(
     world: crate::sim::anim_class::AnimWorldCoord,
-) -> (f32, f32, u16, u16, u8) {
+) -> (f32, f32, u16, u16, u8, i32) {
     let (rx, ry, sub_x, sub_y, z) = world.to_cell_sub_z();
-    let (screen_x, screen_y) = crate::util::lepton::lepton_to_screen(rx, ry, sub_x, sub_y, z);
-    (screen_x, screen_y, rx, ry, z)
+    let (screen_x, screen_y) =
+        crate::util::lepton::lepton_to_screen_exact_z(rx, ry, sub_x, sub_y, world.z);
+    let lift_px = crate::util::flh_transform::adjust_for_z_leptons(world.z);
+    (screen_x, screen_y, rx, ry, z, lift_px)
 }
 
 /// Build SpriteInstances for visible overlay objects and terrain objects.
@@ -1456,6 +1469,37 @@ pub(crate) fn build_parachute_instances(
 
 #[cfg(test)]
 mod tests {
+    /// The sprite is projected from the anim's exact Z. Half a level up lands
+    /// between the two level rows; the old level-byte projection drew it on the
+    /// lower row, and drew a 104-frame level-1 coordinate on row 0.
+    #[test]
+    fn anim_sprite_is_projected_at_its_exact_height() {
+        let at = |z: i32| {
+            super::anim_world_render_coords(crate::sim::anim_class::AnimWorldCoord {
+                x: 10 * 256 + 128,
+                y: 12 * 256 + 128,
+                z,
+            })
+        };
+        let (ground, half, level_one) = (at(0), at(52), at(104));
+        assert_eq!((ground.0, ground.4), (level_one.0, 0));
+        assert_eq!(level_one.4, 1, "104 leptons is height level 1");
+        assert!(
+            level_one.1 < half.1 && half.1 < ground.1,
+            "screen Y rises with exact Z: {} < {} < {}",
+            level_one.1,
+            half.1,
+            ground.1
+        );
+        // The lift handed to depth is exactly what the projection subtracted,
+        // on and between levels, so the depth row is the ground row.
+        assert_eq!(ground.5, 0);
+        for lifted in [half, level_one] {
+            assert_eq!(lifted.1 + lifted.5 as f32, ground.1);
+        }
+        assert_eq!(level_one.5, 15, "one level is one 15 px height step");
+    }
+
     #[test]
     fn static_terrain_body_and_shadow_use_native_shared_point_and_piece_z() {
         use crate::render::overlay_atlas::OverlaySpriteEntry;
@@ -2055,5 +2099,4 @@ mod tests {
         );
         assert_eq!(anim_instance_alpha(None, 4, 8), 1.0);
     }
-
 }

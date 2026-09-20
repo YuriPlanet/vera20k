@@ -19,6 +19,7 @@ Replace this file on each update; do not append a diary.
 | Animation | bridge `BridgeExplosions=` on `AnimStore`; the store's delayed start edge; the whole `WorldEffect` lane, which drew nothing | #420 |
 | Map load | building animations bound tolerantly; the native anim file-name rule; ore twinkle and cliff-collapse roots | #422 |
 | Mover path facts | the crusher flag every move-order caller passed; facts now come from the mover (`from_snapshot`, `from_entity_without_wall_arm`), cell-entry contexts take the wall-arm key from `CrushCapability`. The wall arm on order and Drive tick searches is movement-ledger row I9b, a parity port, not a duplicate | this PR |
+| Animation | `AnimStore`'s private 128-per-level Z scale: one frame, world leptons (104 per level), owner-attached anims follow the owner's actual height, sprites project from exact Z. Prerequisite for the muzzle flashes; snapshot 177 | this PR |
 | Dead code | items dead in both builds; superseded test-only duplicates (map-list funnels, `radiation_light_epoch`); test probes gated; the effect asset catalog trimmed to particle images, which changes the rules hash, so snapshot 176 | #421 |
 
 Three per-mover world scans went with those: the per-frame dock sweep, the
@@ -72,7 +73,11 @@ them discards evidence-backed work; wiring each is a port. The six unused
 (`app/presentation/fire_effects.rs`). The sim has the integer fire coordinate
 (`combat/world_receiver.rs`, `native_flh_world_delta`); the app recomputes
 another in `f32` from the body facing only. Move the flashes onto `AnimStore`
-from the sim coordinate and delete the app stepper and the `f32` FLH.
+from the sim coordinate and delete the app stepper and the `f32` FLH. Native:
+one block at the tail of `TechnoClass::Fire_At` (`0x006FF2E0..0x006FF43F`)
+builds both, `AnimClass(type, &fireCoord, 0, 1, 0x600, 0, 0)`, the weapon's
+`Anim=` by facing or `OccupantAnim=` for an occupied building (`ZAdjust`
+-200), attached to the firer unless it is a building.
 
 **Animation: parachute.** `app/presentation/chute_anim.rs` +
 `components::ParachuteAnim` is a third app-side stepper. Natively the chute is
@@ -116,6 +121,15 @@ release: a chrono warp, a superweapon invoke, a bridge collapse.
 - Bridge collapse explosions leave no `Scorch=`/`Crater=` and skip one native
   draw per hut-walker explosion, because the store does not run
   `AnimClass::Middle` (recorded in `bridge_orchestrator.rs`).
+- A building's Z has several readers that agree only on flat ground: damage
+  fire anims use `object_world_z_leptons` (resamples terrain), slot anims use
+  `position_world_coord` (`level * 104`), `movement_sound_world` ignores
+  `exact_z_leptons`.
+- A `MakeInfantry=` anim placed by a level byte on a bridge deck over a ramp
+  cell sits at `(L+4) * 104`, under the ramp ground plus the 416-lepton deck
+  test in `apply_anim_raw_occupation`, so it marks the ground occupation bits.
+  The old 128 scale passed that test by accident. Rare; the producer's level
+  byte is the coarse input.
 - Combat death debris never binds a sprite (GSI-05.14); theaters other than
   TEMPERATE were not checked for unbound building animations.
 
@@ -124,4 +138,4 @@ release: a chrono warp, a superweapon invoke, a bridge collapse.
 - The separate `vera20k-engine-authority` checkout, branch
   `feature/persistent-facing-authority`: dirty facing, turret, walk-head
   and snapshot files. No open lead above touches them; its snapshot bump must
-  land after 176.
+  land after 177.
