@@ -1465,9 +1465,6 @@ fn issue_move_if_idle(
                 &sim.interner,
                 Some(rules),
             );
-        let mover_is_crusher = sim.substrate.entities.get(entity_id).is_some_and(|e| {
-            crate::sim::movement::bump_crush::CrushCapability::of(e).can_crush_units()
-        });
         let _ = movement::issue_move_command_with_layered(
             &mut sim.substrate.entities,
             grid,
@@ -1480,7 +1477,6 @@ fn issue_move_if_idle(
             sim.resolved_terrain.as_ref(),
             sim.zone_grid.as_ref(),
             None,
-            mover_is_crusher,
             Some(&blocker_neighbor_counts),
             sim.playfield_bounds,
             Some(&mut sim.substrate.cell_occupation),

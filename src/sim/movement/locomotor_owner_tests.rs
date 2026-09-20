@@ -113,7 +113,6 @@ fn destination(sim: &mut Simulation, rules: &RuleSet, building: bool) -> bool {
         None,
         None,
         None,
-        false,
         &rules.general,
         true,
         true,

@@ -1370,7 +1370,7 @@ pub(super) fn process_cell_crossings(
                                 target.bypass_grid,
                                 crate::sim::pathfinding::cell_entry::TerrainEntryMode::RuntimeTransition,
                                 category == EntityCategory::Infantry,
-                                snap.regular_crusher,
+                                snap.crush_capability().wall_arm_crusher(),
                                 ctx.wall_tables.map(|tables| {
                                     crate::sim::pathfinding::cell_entry::WallArmContext {
                                         overlay_grid: tables.overlay_grid,

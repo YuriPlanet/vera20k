@@ -134,7 +134,6 @@ fn accepted_direct_and_regular_orders_keep_signed_rules_delays_and_retry_word() 
                             None,
                             None,
                             None,
-                            false,
                             timing,
                         )),
                         _ => unreachable!(),

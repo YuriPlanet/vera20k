@@ -557,6 +557,13 @@ impl CrushCapability {
     pub const fn of(entity: &GameEntity) -> Self {
         Self::new(entity.regular_crusher, entity.omni_crusher)
     }
+
+    /// The key of the wall arm's crusher route: `Crusher=` alone
+    /// (`UnitTypeClass+0xD28`, read at `0x0073F438`). Every cell-entry context
+    /// built for a known mover takes it from here.
+    pub const fn wall_arm_crusher(self) -> bool {
+        self.regular_crusher
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1219,10 +1226,6 @@ pub fn scatter_blocker(
                 SimFixed::from_num(object.slowdown_distance),
             )
         });
-    // The one crush authority (I9c): native reads the type in every
-    // Can_Enter_Cell (0x0073F438..F446, 0x0073FB2A..FB6C), not a caller flag.
-    let mover_is_crusher = CrushCapability::of(blocker).can_crush_units();
-
     // Find a valid adjacent cell. Random start direction matches Branch A.
     let start_dir = rng.next_range_u32(8) as usize;
     let mut target: Option<(u16, u16)> = None;
@@ -1276,7 +1279,6 @@ pub fn scatter_blocker(
                 resolved_terrain,
                 None,
                 None,
-                mover_is_crusher,
                 None,
                 None,
                 None,

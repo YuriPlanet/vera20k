@@ -84,7 +84,6 @@ fn first_process_publishes_raw_head_and_matching_progress_for_drive_and_ship() {
             None,
             None,
             None,
-            false,
             crate::sim::movement::DestinationTiming::new(0, 60),
         ));
         assert!(committed_track_head(entities.get(1).unwrap()).is_none());

@@ -213,9 +213,20 @@ pub(super) struct PathfindingContext<'a> {
 /// callers without context quietly passed `false` and crushers detoured around
 /// sandbags they would have driven through.
 ///
-/// So they travel together, and `from_snapshot` is the single place they are
-/// derived. A caller that has a `MoverSnapshot` cannot get them wrong, and a
-/// caller that does not have one has to say so explicitly.
+/// So they travel together and are derived in two places only, both from the
+/// mover itself: `from_snapshot` on the tick path and
+/// `from_entity_without_wall_arm` where no snapshot exists. No caller supplies
+/// a fact.
+///
+/// RESIDUAL: `mover_is_crusher` here is `Crusher=` or `OmniCrusher=`, and the
+/// search uses it both for the entity soft-block exemption and for the
+/// crushable-wall admission. The runtime crossing keys the wall admission on
+/// `Crusher=` alone (`CrushCapability::wall_arm_crusher`, native
+/// `0x0073F438`). Trigger: a modded `OmniCrusher=yes`, `Crusher=no` unit
+/// routed across a sandbag line; stock `[BFRT]` sets both. Effect: the search
+/// admits a cell the crossing then refuses, and the unit repaths at the wall.
+/// Frequency: never in stock rules. Downstream risk: splitting the fact moves
+/// search results for such mods only.
 #[derive(Clone, Copy)]
 pub(super) struct MoverPathFacts {
     pub urgency: u8,
@@ -244,12 +255,49 @@ impl MoverPathFacts {
         }
     }
 
-    /// Facts for a search with no mover behind it.
+    /// Facts for a search issued outside the movement tick, where no
+    /// `MoverSnapshot` exists: a move order, or the process-entry repath.
     ///
-    /// The wall arm cannot run without an owner to compare, so this leaves the
-    /// mover unarmed and unowned, which answers 7 at `0x0073F48F` and keeps the
-    /// pre-I9b search exactly. Use it only where there genuinely is no mover;
-    /// it is deliberately verbose at the call site for that reason.
+    /// The crusher and infantry facts come from the mover itself, the same
+    /// fields `from_snapshot` reads, so no caller supplies them. Ledger row I9c
+    /// is what happened when callers did: the ones without context passed
+    /// `false`, and the same tank planned as a crusher or not depending on
+    /// which function issued its move.
+    ///
+    /// RESIDUAL (ledger I9b): the wall arm is off on these searches, so a wall
+    /// the mover could shoot answers 7, a hard block, where retail prices it at
+    /// 20x or 60x. The armed flag and primary warhead need the rules, which
+    /// this signature does not take, and they would have no consumer yet: the
+    /// order path's context carries no wall tables, and the process-entry and
+    /// Drive tick contexts carry them with `interner: None`, which keeps the
+    /// arm off there too. Wiring this constructor alone would not give retail
+    /// behavior. Walk orders already get the arm (`walk_path.rs`).
+    /// - Trigger: an armed unit that searches at command time (every locomotor
+    ///   but Walk: Drive, Ship, Hover) ordered to a goal it can reach
+    ///   only through a wall its warhead can hit.
+    /// - Effect: a detour, or no path at all when the goal is walled in, where
+    ///   retail drives at the wall and shoots it.
+    /// - Frequency: uncommon; walled-in goals in base assaults.
+    /// - Downstream risk: enabling it changes search results in the lockstep
+    ///   stream, so it is a movement-parity change with its own evidence.
+    pub fn from_entity_without_wall_arm(
+        entity: &crate::sim::game_entity::GameEntity,
+        urgency: u8,
+    ) -> Self {
+        Self {
+            urgency,
+            mover_is_crusher: bump_crush::CrushCapability::of(entity).can_crush_units(),
+            is_infantry: entity.category == EntityCategory::Infantry,
+            speed_type: None,
+            owner: None,
+            is_armed: false,
+            warhead_wall: false,
+            warhead_wood: false,
+        }
+    }
+
+    /// Hand-built facts for a search fixture with no entity behind it.
+    #[cfg(test)]
     pub fn without_wall_arm(urgency: u8, mover_is_crusher: bool, is_infantry: bool) -> Self {
         Self {
             urgency,

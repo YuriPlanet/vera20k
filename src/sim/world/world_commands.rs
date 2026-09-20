@@ -71,7 +71,6 @@ pub(crate) struct MoveInfo {
     pub(crate) omni_crusher: bool,
     #[cfg(test)]
     pub(crate) drive_accelerates: bool,
-    pub(crate) mover_is_crusher: bool,
 }
 
 #[cfg(test)]
@@ -603,7 +602,6 @@ impl Simulation {
             omni_crusher: e.omni_crusher,
             #[cfg(test)]
             drive_accelerates: e.drive_accelerates,
-            mover_is_crusher: bump_crush::CrushCapability::of(e).can_crush_units(),
         })
     }
 
@@ -739,7 +737,6 @@ impl Simulation {
                                 self.resolved_terrain.as_ref(),
                                 self.zone_grid.as_ref(),
                                 Some(&entity_block_map),
-                                info.mover_is_crusher,
                                 Some(&blocker_neighbor_counts),
                                 self.playfield_bounds,
                                 Some(&mut self.substrate.cell_occupation),
@@ -796,7 +793,6 @@ impl Simulation {
                         self.resolved_terrain.as_ref(),
                         self.zone_grid.as_ref(),
                         Some(&entity_block_map),
-                        info.mover_is_crusher,
                         Some(&blocker_neighbor_counts),
                         self.playfield_bounds,
                         Some(&mut self.substrate.cell_occupation),
@@ -1162,7 +1158,6 @@ impl Simulation {
                         self.resolved_terrain.as_ref(),
                         self.zone_grid.as_ref(),
                         Some(&entity_block_map),
-                        info.mover_is_crusher,
                         Some(&blocker_neighbor_counts),
                         self.playfield_bounds,
                         Some(&mut self.substrate.cell_occupation),
@@ -1603,7 +1598,6 @@ impl Simulation {
                     .as_ref()
                     .map(|i| i.speed_type)
                     .unwrap_or(SpeedType::Track);
-                let crusher = info.as_ref().map_or(false, |i| i.mover_is_crusher);
                 let (entity_blocks, entity_block_map) = bump_crush::build_entity_block_set(
                     &self.substrate.entities,
                     command_owner,
@@ -1636,7 +1630,6 @@ impl Simulation {
                         self.resolved_terrain.as_ref(),
                         self.zone_grid.as_ref(),
                         Some(&entity_block_map),
-                        crusher,
                         Some(&blocker_neighbor_counts),
                         self.playfield_bounds,
                         Some(&mut self.substrate.cell_occupation),
@@ -1736,7 +1729,6 @@ impl Simulation {
                     .as_ref()
                     .map(|i| i.speed_type)
                     .unwrap_or(SpeedType::Track);
-                let crusher = info.as_ref().map_or(false, |i| i.mover_is_crusher);
                 let (entity_blocks, entity_block_map) = bump_crush::build_entity_block_set(
                     &self.substrate.entities,
                     command_owner,
@@ -1769,7 +1761,6 @@ impl Simulation {
                         self.resolved_terrain.as_ref(),
                         self.zone_grid.as_ref(),
                         Some(&entity_block_map),
-                        crusher,
                         Some(&blocker_neighbor_counts),
                         self.playfield_bounds,
                         Some(&mut self.substrate.cell_occupation),
@@ -1997,7 +1988,6 @@ impl Simulation {
                     .as_ref()
                     .map(|i| i.speed_type)
                     .unwrap_or(crate::rules::locomotor_type::SpeedType::Foot);
-                let crusher = info.as_ref().map_or(false, |i| i.mover_is_crusher);
                 let (entity_blocks, entity_block_map) =
                     crate::sim::movement::bump_crush::build_entity_block_set(
                         &self.substrate.entities,
@@ -2031,7 +2021,6 @@ impl Simulation {
                         self.resolved_terrain.as_ref(),
                         self.zone_grid.as_ref(),
                         Some(&entity_block_map),
-                        crusher,
                         Some(&blocker_neighbor_counts),
                         self.playfield_bounds,
                         Some(&mut self.substrate.cell_occupation),
@@ -2152,7 +2141,6 @@ impl Simulation {
                     .as_ref()
                     .map(|i| i.speed_type)
                     .unwrap_or(crate::rules::locomotor_type::SpeedType::Foot);
-                let crusher = info.as_ref().map_or(false, |i| i.mover_is_crusher);
                 let (entity_blocks, entity_block_map) =
                     crate::sim::movement::bump_crush::build_entity_block_set(
                         &self.substrate.entities,
@@ -2186,7 +2174,6 @@ impl Simulation {
                         self.resolved_terrain.as_ref(),
                         self.zone_grid.as_ref(),
                         Some(&entity_block_map),
-                        crusher,
                         Some(&blocker_neighbor_counts),
                         self.playfield_bounds,
                         Some(&mut self.substrate.cell_occupation),
@@ -2426,7 +2413,6 @@ impl Simulation {
                         .as_ref()
                         .map(|i| i.speed_type)
                         .unwrap_or(SpeedType::Track);
-                    let crusher = info.as_ref().map_or(false, |i| i.mover_is_crusher);
                     let (entity_blocks, entity_block_map) = bump_crush::build_entity_block_set(
                         &self.substrate.entities,
                         command_owner,
@@ -2459,7 +2445,6 @@ impl Simulation {
                             self.resolved_terrain.as_ref(),
                             self.zone_grid.as_ref(),
                             Some(&entity_block_map),
-                            crusher,
                             Some(&blocker_neighbor_counts),
                             self.playfield_bounds,
                             Some(&mut self.substrate.cell_occupation),

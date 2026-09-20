@@ -68,7 +68,6 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
         Some(&terrain),
         Some(&zones),
         None,
-        false,
         None,
         None,
         Some(&mut sim.substrate.cell_occupation),
@@ -357,7 +356,6 @@ fn test_drive_queue_command_reissues_destination_without_navqueue_append() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
     assert!(issue_move_command(
@@ -370,7 +368,6 @@ fn test_drive_queue_command_reissues_destination_without_navqueue_append() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -429,7 +426,6 @@ fn walk_path_timer_waits_without_double_aging_or_losing_owner_state() {
             None,
             None,
             None,
-            false,
             DestinationTiming::new(100, 60),
         ));
         let retained = FootPathRuntime {
@@ -483,7 +479,6 @@ fn walk_path_timer_waits_without_double_aging_or_losing_owner_state() {
             None,
             None,
             None,
-            false,
             DestinationTiming::new(201, 22),
         ));
         let actor = sim.substrate.entities.get(1).unwrap();
@@ -825,7 +820,6 @@ fn gsi_04_05_production_drive_observes_premark_clear_cross_and_finish() {
             None,
             None,
             None,
-            false,
             None,
             None,
             Some(cell_occupation),
@@ -1068,7 +1062,6 @@ fn cell_arrival_infantry_keeps_detour_order_and_snapshot_continuation() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
     let initial_cell = (1, 1);
@@ -1447,7 +1440,6 @@ fn gsi_06_02_cross_zone_move_order_is_accepted_and_moves_the_unit() {
             None,
             Some(&zone_grid),
             None,
-            false,
             None,
             None,
             None,
@@ -1524,7 +1516,6 @@ fn techno_playfield_false_mover_uses_flat_astar_instead_of_hierarchy_abort() {
         Some(&terrain),
         Some(&zone_grid),
         None,
-        false,
         None,
         Some(bounds),
         None,
@@ -1571,7 +1562,6 @@ fn gsi_04_05_second_mover_cannot_adopt_reserved_head_to_endpoint() {
         None,
         None,
         None,
-        false,
         None,
         None,
         Some(&mut sim.substrate.cell_occupation),
@@ -1609,7 +1599,6 @@ fn gsi_04_05_second_mover_cannot_adopt_reserved_head_to_endpoint() {
         None,
         None,
         None,
-        false,
         None,
         None,
         Some(&mut sim.substrate.cell_occupation),
@@ -1961,7 +1950,6 @@ fn test_issue_move_command_sets_path() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     );
     assert!(result, "Should find a path on open grid");
@@ -1997,7 +1985,6 @@ fn move_order_defers_drive_track_admission_until_process() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
     let entity = entities.get(1).unwrap();
@@ -2067,7 +2054,6 @@ fn test_issue_move_command_starts_drive_track_for_initial_drive_turn() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -2121,7 +2107,6 @@ fn test_reissue_mid_curve_keeps_track_and_anchors_path_at_head() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
     tick_movement_with_grid(
@@ -2167,7 +2152,6 @@ fn test_reissue_mid_curve_keeps_track_and_anchors_path_at_head() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
     let entity = entities.get(1).expect("entity exists");
@@ -2233,7 +2217,6 @@ fn test_reissue_mid_curve_does_not_snap_position_backward() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -2277,7 +2260,6 @@ fn test_reissue_mid_curve_does_not_snap_position_backward() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
     let entity = entities.get(1).expect("entity exists");
@@ -2319,7 +2301,6 @@ fn test_issue_move_command_no_path() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     );
     assert!(!result, "Should fail with blocked path");
@@ -2348,7 +2329,6 @@ fn test_issue_move_command_queue_appends_waypoint_path() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
     assert!(issue_move_command(
@@ -2361,7 +2341,6 @@ fn test_issue_move_command_queue_appends_waypoint_path() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -2399,7 +2378,6 @@ fn test_tick_movement_repaths_when_next_cell_becomes_blocked() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -2919,7 +2897,6 @@ fn gsi_06_06_vehicle_clears_path_blocked_on_forward_progress() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
     // Pretend a block already happened: the mover is impatient with a full
@@ -3251,7 +3228,6 @@ fn test_repath_cooldown_prevents_thrashing_on_unrecoverable_block() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -3317,7 +3293,6 @@ fn test_dynamic_occupancy_repath_routes_around_stationary_blocker() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -3390,7 +3365,6 @@ fn test_stuck_recovery_clears_unreachable_movement_target() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -3460,7 +3434,6 @@ fn test_movement_tick_stats_report_blocked_attempts() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -3685,7 +3658,6 @@ fn test_friendly_scatter_issues_move_command() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -3937,7 +3909,6 @@ fn test_short_path_no_truncation() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -3970,7 +3941,6 @@ fn test_long_path_truncated_to_24_steps() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -4006,7 +3976,6 @@ fn test_segment_exhaustion_triggers_auto_repath() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -4057,7 +4026,6 @@ fn test_exact_24_step_path_no_repath_needed() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -4109,7 +4077,6 @@ fn test_auto_repath_fails_entity_stops() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -4165,7 +4132,6 @@ fn test_blocked_repath_uses_final_goal_not_segment_end() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -4345,7 +4311,6 @@ fn walk_infantry_corridor(grid: &PathGrid) -> (Vec<(u16, u16)>, Vec<(u16, u16)>)
             None,
             None,
             None,
-            false,
             crate::sim::movement::DestinationTiming::new(0, 60),
         ),
         "infantry must get a route down the corridor",
@@ -4722,7 +4687,6 @@ fn test_initial_layered_path_avoids_friendly_building_footprint() {
         None,          // terrain_costs
         Some(&blocks), // entity_blocks
         None,          // entity_block_map
-        false,         // mover_is_crusher
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -4778,7 +4742,6 @@ fn test_queued_drive_reissue_layered_path_avoids_friendly_building_footprint() {
         None,
         Some(&blocks),
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
     assert!(issue_move_command(
@@ -4791,7 +4754,6 @@ fn test_queued_drive_reissue_layered_path_avoids_friendly_building_footprint() {
         None,
         Some(&blocks),
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -4870,7 +4832,6 @@ fn test_segment_exhaustion_repath_avoids_friendly_building_footprint() {
         None,
         None,
         None,
-        false,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
@@ -6542,7 +6503,6 @@ fn group_gis_do_not_acquire_scatter_speed_or_lose_their_goal() {
                 None,
                 None,
                 None,
-                false,
                 crate::sim::movement::DestinationTiming::new(0, 60),
             ));
         }
@@ -6643,7 +6603,6 @@ fn blocked_walk_keeps_exact_pre_step_position() {
             None,
             None,
             None,
-            false,
             crate::sim::movement::DestinationTiming::new(0, 60),
         ));
     }
@@ -6738,7 +6697,6 @@ fn segment_repath_lets_a_crusher_tank_through_a_sandbag_line() {
             None,
             None,
             None,
-            regular_crusher,
             crate::sim::movement::DestinationTiming::new(0, 60),
         ));
         let mut lifecycle_requests = Vec::new();
@@ -6787,6 +6745,67 @@ fn segment_repath_lets_a_crusher_tank_through_a_sandbag_line() {
     assert!(
         run(false).0 < 27,
         "non-crusher repath is refused at the sandbag cell"
+    );
+}
+
+/// I9c regression, order path. The move order's own search reads the crusher
+/// flags from the mover: no caller passes them, so no caller can pass `false`
+/// for a tank. One row, a sandbag at x=5, the goal beyond it.
+#[test]
+fn move_order_search_reads_the_crusher_flags_from_the_mover() {
+    use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zone_class};
+    let mut cells = Vec::with_capacity(12);
+    for rx in 0..12u16 {
+        let mut cell = ResolvedTerrainCell::clear_for_test(rx, 0);
+        if rx == 5 {
+            cell.overlay_zone_type = Some(zone_class::CRUSHABLE);
+            cell.zone_type = zone_class::CRUSHABLE;
+        }
+        cells.push(cell);
+    }
+    let terrain = ResolvedTerrainGrid::from_cells(12, 1, cells);
+    let grid = PathGrid::from_resolved_terrain(&terrain);
+
+    let ordered_path = |regular_crusher: bool| {
+        let mut entities = EntityStore::new();
+        let mut e = GameEntity::test_default(1, "MTNK", "Americans", 0, 0);
+        e.regular_crusher = regular_crusher;
+        e.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+        entities.insert(e);
+        let accepted = crate::sim::movement::movement_commands::issue_move_command_with_layered(
+            &mut entities,
+            &grid,
+            1,
+            (10, 0),
+            SimFixed::from_num(15360),
+            false,
+            None,
+            None,
+            Some(&terrain),
+            None,
+            None,
+            None,
+            None,
+            None,
+            crate::sim::movement::DestinationTiming::new(0, 60),
+        );
+        let path = entities
+            .get(1)
+            .and_then(|e| e.movement_target.as_ref())
+            .map(|target| target.path.clone())
+            .unwrap_or_default();
+        (accepted, path)
+    };
+    let (accepted, path) = ordered_path(true);
+    assert!(accepted);
+    assert!(
+        path.contains(&(5, 0)) && path.last() == Some(&(10, 0)),
+        "the crusher's ordered path crosses the sandbag: {path:?}"
+    );
+    let (_, path) = ordered_path(false);
+    assert!(
+        !path.contains(&(5, 0)),
+        "a non-crusher is never routed through the sandbag: {path:?}"
     );
 }
 

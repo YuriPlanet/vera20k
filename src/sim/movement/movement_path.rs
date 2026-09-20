@@ -27,16 +27,6 @@ use crate::util::fixed_math::facing_from_delta_int as facing_from_delta;
 
 use super::{MovementConfig, MoverPathFacts, PathfindingContext};
 
-/// Re-export of `MoverPathFacts::without_wall_arm` for call sites outside this
-/// module, so they do not need the type in scope to say "no mover facts here".
-pub(super) fn mover_path_facts_without_wall_arm(
-    urgency: u8,
-    mover_is_crusher: bool,
-    is_infantry: bool,
-) -> MoverPathFacts {
-    MoverPathFacts::without_wall_arm(urgency, mover_is_crusher, is_infantry)
-}
-
 #[cfg(test)]
 pub(crate) fn reset_path_search_used_zone_grid_marker() {
     PATH_SEARCH_USED_ZONE_GRID.with(|used| used.set(false));

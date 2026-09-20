@@ -558,9 +558,6 @@ fn tick_production_impl(
                             &sim.interner,
                             Some(rules),
                         );
-                    let mover_is_crusher = sim.substrate.entities.get(stable_id).is_some_and(|e| {
-                        crate::sim::movement::bump_crush::CrushCapability::of(e).can_crush_units()
-                    });
                     let _ = crate::sim::movement::issue_move_command_with_layered(
                         &mut sim.substrate.entities,
                         grid,
@@ -573,7 +570,6 @@ fn tick_production_impl(
                         sim.resolved_terrain.as_ref(),
                         sim.zone_grid.as_ref(),
                         None,
-                        mover_is_crusher, // mover_is_crusher
                         Some(&blocker_neighbor_counts),
                         sim.playfield_bounds,
                         Some(&mut sim.substrate.cell_occupation),

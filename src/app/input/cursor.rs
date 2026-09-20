@@ -400,7 +400,7 @@ fn what_action_on_cell(
                         mover_is_crusher: crate::sim::movement::bump_crush::CrushCapability::of(
                             entity,
                         )
-                        .can_crush_units(),
+                        .wall_arm_crusher(),
                     },
                 )
                 .is_clear()
