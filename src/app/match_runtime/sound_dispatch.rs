@@ -31,12 +31,18 @@ impl SoundEventRandom for SfxPlayer {
 /// Append each event's output in producer order, including multi-cue events.
 /// Keep this call at the frame's original sound-publication point: feedback
 /// rolls precede listener gating and must not move to playback or simulation.
+///
+/// `admit_radar` is the local client's `CreateRadarEvent @ 0x0065FA70`. Native
+/// reaches it only on the client whose player the event concerns, so every arm
+/// applies its local-owner test first and calls it at most once, in producer
+/// order; its result is the rate limit on the arm's EVA line.
 pub(super) fn dispatch_sim_sound_events(
     events: impl IntoIterator<Item = SimSoundEvent>,
     sim: &Simulation,
     rules: &RuleSet,
     local_owner_name: Option<&str>,
     mut random: Option<&mut dyn SoundEventRandom>,
+    admit_radar: &mut dyn FnMut(crate::sim::radar::RadarEventRequest) -> bool,
     output: &mut SoundEventQueue,
 ) {
     // Convert sim sound events to app-layer sound events for playback.
@@ -294,12 +300,16 @@ pub(super) fn dispatch_sim_sound_events(
                     source: Some(sound_source_at_cell(rx, ry)),
                 }
             }
-            SimSoundEvent::UnitComplete { owner } => {
+            SimSoundEvent::UnitComplete { owner, radar } => {
                 let owner_str = sim.interner.resolve(owner);
                 if !local_owner_name.map_or(false, |l| l.eq_ignore_ascii_case(owner_str)) {
                     continue;
                 }
-                // `HouseClass::Place_Production 0x004FB644`: type -1.
+                // `HouseClass::Place_Production 0x004FB631`: the type-6 radar
+                // accept gates the line; `0x004FB644` plays it with type -1.
+                if !admit_radar(radar) {
+                    continue;
+                }
                 GameSoundEvent::Eva {
                     event: "EVA_UnitReady".to_string(),
                     type_override: None,
@@ -508,7 +518,7 @@ pub(super) fn dispatch_sim_sound_events(
                 rx,
                 ry,
                 owner: _,
-                eva_allowed,
+                radar,
             } => {
                 // Spatial SFX gated on rules.bridge_rules.repair_sound
                 // being set (the original game gates on
@@ -521,10 +531,13 @@ pub(super) fn dispatch_sim_sound_events(
                 } else {
                     Some(sound_source_at_cell(rx, ry))
                 };
-                // Infantry519BC9 calls EVA only after House50B6F0 and
-                // radar insertion admitted it. A second owner filter here
-                // would incorrectly suppress mode-0 PlayerControl output.
-                let eva_event = eva_allowed.then(|| "EVA_BridgeRepaired".to_string());
+                // Infantry519BC9 calls EVA only after House50B6F0 (the sim
+                // published `radar`) and radar insertion `0x00519BB6`
+                // admitted it. A second owner filter here would incorrectly
+                // suppress mode-0 PlayerControl output.
+                let eva_event = radar
+                    .is_some_and(|request| admit_radar(request))
+                    .then(|| "EVA_BridgeRepaired".to_string());
                 if sound_id.is_empty() && eva_event.is_none() {
                     continue;
                 }
@@ -537,21 +550,20 @@ pub(super) fn dispatch_sim_sound_events(
             SimSoundEvent::UnderAttack {
                 owner,
                 miner,
-                eva_allowed,
+                radar,
                 ..
             } => {
-                // Voice for the LOCAL player only; the radar diamond is
-                // sim-side (owner-scoped) and needs nothing here.
+                // Diamond and voice are both for the LOCAL player only.
                 let owner_str = sim.interner.resolve(owner);
                 let is_local = local_owner_name.is_some_and(|l| l.eq_ignore_ascii_case(owner_str));
-                if !eva_allowed || !is_local {
+                if !is_local || !admit_radar(radar) {
                     continue;
                 }
                 // `HouseClass::NotifyUnderAttack 0x004F94FB/0x004F95B3`,
                 // `UnitClass::ReceiveDamage 0x00738530`: `PlayEVA` type
                 // -1 (stock entries STANDARD NORMAL → pending slot).
-                // The radar accept (`CreateRadarEvent`, folded into
-                // `eva_allowed` sim-side) is native's only rate limit.
+                // The radar accept (`CreateRadarEvent`) is native's only
+                // rate limit.
                 let cue = if miner {
                     "EVA_OreMinerUnderAttack"
                 } else {
@@ -566,12 +578,14 @@ pub(super) fn dispatch_sim_sound_events(
                 }
                 continue;
             }
-            SimSoundEvent::AllyUnderAttack { owner } => {
-                // `NotifyUnderAttack 0x004F95AE..0x004F95CF`: the ally
-                // line for the LOCAL listener, then the same siren
-                // tail as the base line.
+            SimSoundEvent::AllyUnderAttack { owner, radar } => {
+                // `NotifyUnderAttack 0x004F95A0..0x004F95CF`: the type-16
+                // radar accept, then the ally line for the LOCAL listener
+                // and the same siren tail as the base line.
                 let owner_str = sim.interner.resolve(owner);
-                if !local_owner_name.is_some_and(|l| l.eq_ignore_ascii_case(owner_str)) {
+                if !local_owner_name.is_some_and(|l| l.eq_ignore_ascii_case(owner_str))
+                    || !admit_radar(radar)
+                {
                     continue;
                 }
                 output.push(GameSoundEvent::Eva {
@@ -583,12 +597,14 @@ pub(super) fn dispatch_sim_sound_events(
                 }
                 continue;
             }
-            SimSoundEvent::UnitLost { owner } => {
-                // `TechnoClass::Death_Announcement 0x004D9911`:
-                // `PlayEVA("EVA_UnitLost", -1)` for the local owner
-                // once the sim's Spawned and radar type-7 gates passed.
+            SimSoundEvent::UnitLost { owner, radar } => {
+                // `TechnoClass::Death_Announcement 0x004D98FE..0x004D9911`:
+                // `PlayEVA("EVA_UnitLost", -1)` for the local owner once
+                // the sim's Spawned gate and this radar type-7 accept passed.
                 let owner_str = sim.interner.resolve(owner);
-                if !local_owner_name.is_some_and(|l| l.eq_ignore_ascii_case(owner_str)) {
+                if !local_owner_name.is_some_and(|l| l.eq_ignore_ascii_case(owner_str))
+                    || !admit_radar(radar)
+                {
                     continue;
                 }
                 GameSoundEvent::Eva {
@@ -637,7 +653,7 @@ pub(super) fn dispatch_sim_sound_events(
                 old_owner,
                 new_owner,
                 tech_building,
-                radar_accepted,
+                radar,
                 capture_eva_event,
             } => {
                 // `BuildingClass::ChangeOwner 0x004483C6/0x004483D1
@@ -648,6 +664,11 @@ pub(super) fn dispatch_sim_sound_events(
                 let local = local_owner_name;
                 let local_is_old = owner_is_local(&sim.interner, old_owner, local);
                 let local_is_new = owner_is_local(&sim.interner, new_owner, local);
+                // `0x00448477 CreateRadarEvent(10)` is reached only past the
+                // old-or-new-owner `0x0050B6F0` tests (`0x004483C6`,
+                // `0x004483D1`; flag read at `0x004483EF`).
+                let radar_accepted = (local_is_old || local_is_new)
+                    && radar.is_some_and(|request| admit_radar(request));
                 let capture_event = capture_eva_event.map(|id| sim.interner.resolve(id));
                 for event in eva_producers::capture_eva_events(
                     tech_building,
@@ -1066,12 +1087,31 @@ mod tests {
             rx: 5,
             ry: 7,
         };
-        let attack = |owner, miner, eva_allowed| SimSoundEvent::UnderAttack {
+        use crate::sim::radar::{RadarEventRequest, RadarEventType};
+        // The scripted client radar refuses every request at column 99.
+        let attack = |owner, miner, radar_accepts: bool| {
+            let rx = if radar_accepts { 5 } else { 99 };
+            let event_type = if miner {
+                RadarEventType::HarvesterUnderAttack
+            } else {
+                RadarEventType::BaseUnderAttack
+            };
+            SimSoundEvent::UnderAttack {
+                owner,
+                miner,
+                radar: RadarEventRequest::new(event_type, rx, 7),
+                rx,
+                ry: 7,
+            }
+        };
+        let unit_lost = |owner, rx| SimSoundEvent::UnitLost {
             owner,
-            miner,
-            eva_allowed,
-            rx: 5,
-            ry: 7,
+            radar: RadarEventRequest::new(RadarEventType::UnitLost, rx, 7),
+        };
+        let mut admitted = Vec::new();
+        let mut admit_radar = |request: RadarEventRequest| {
+            admitted.push((request.event_type, request.rx));
+            request.rx != 99
         };
         let mut output = SoundEventQueue::new();
         output.push(GameSoundEvent::UiSound {
@@ -1085,13 +1125,27 @@ mod tests {
                 attack(remote, false, true),
                 attack(local, false, false),
                 attack(local, true, true),
-                SimSoundEvent::UnitLost { owner: local },
+                unit_lost(remote, 5),
+                unit_lost(local, 99),
+                unit_lost(local, 5),
             ],
             &sim,
             &rules,
             Some("LOCAL"),
             None,
+            &mut admit_radar,
             &mut output,
+        );
+        assert_eq!(
+            admitted,
+            [
+                (RadarEventType::BaseUnderAttack, 5),
+                (RadarEventType::BaseUnderAttack, 99),
+                (RadarEventType::HarvesterUnderAttack, 5),
+                (RadarEventType::UnitLost, 99),
+                (RadarEventType::UnitLost, 5),
+            ],
+            "only the local player's events reach its radar array, once each, in producer order"
         );
         let events = output.drain();
         assert_eq!(
@@ -1145,6 +1199,7 @@ mod tests {
             &rules,
             Some("Local"),
             Some(&mut random),
+            &mut |_| panic!("no radar-gated event in this batch"),
             &mut output,
         );
         assert_eq!(random.calls, ["percent", "percent", "index", "percent"]);
@@ -1188,6 +1243,7 @@ mod tests {
             &rules,
             Some("Local"),
             None,
+            &mut |_| panic!("no radar-gated event in this batch"),
             &mut output,
         );
         let events = output.drain();

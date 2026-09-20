@@ -144,7 +144,7 @@ use crate::sim::projectile::{
     Projectile, ProjectileBridgeCrossing, ProjectileCollisionResponse, ProjectileCoord,
     projectile_bridge_crossing,
 };
-use crate::sim::radar::{RadarEventQueue, RadarEventType};
+use crate::sim::radar::{RadarEventRequest, RadarEventType};
 use crate::sim::rng::{SimRng, SimRngLogicalState, SimRngLogicalView};
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::team_script_vm::{TeamScriptEffect, TeamScriptVm};
@@ -331,8 +331,13 @@ pub enum SimSoundEvent {
     DockDeploy { building_id: u64 },
     /// A building finished construction — play EVA "Construction complete".
     BuildingComplete { owner: InternedId },
-    /// A unit finished training — play EVA "Unit ready".
-    UnitComplete { owner: InternedId },
+    /// `HouseClass::Place_Production 0x004FB5C6..0x004FB644`: a unit left the
+    /// factory of a human-controlled house. `EVA_UnitReady` plays for the
+    /// local owner once its client admits `radar` (type 6).
+    UnitComplete {
+        owner: InternedId,
+        radar: RadarEventRequest,
+    },
     /// One accepted HouseClass win/loss transition. The app resolves the
     /// local owner's faction-specific STANDARD EVA; this edge is transient so
     /// loading a mid-Savour snapshot cannot replay the announcement.
@@ -394,28 +399,34 @@ pub enum SimSoundEvent {
         rx: u16,
         ry: u16,
     },
-    /// A base structure / harvester took enemy damage — the radar ping is
-    /// already enqueued sim-side; `eva_allowed` mirrors the queue's dedup
-    /// result (the BridgeRepaired pattern). App gates the EVA voice to the
-    /// local owner.
+    /// A base structure / harvester took enemy damage. For the local owner
+    /// the app admits `radar` (type 3 base / type 4 miner) on its client
+    /// event array; that result is native's only rate limit on the EVA voice.
     UnderAttack {
         rx: u16,
         ry: u16,
         owner: InternedId,
         miner: bool,
-        eva_allowed: bool,
+        radar: RadarEventRequest,
     },
     /// `HouseClass::NotifyUnderAttack @ 0x004F93E0`, non-local branch
     /// (`0x004F955D..0x004F95B3`): a building of a house that lists `owner`
-    /// (a human house) as its ally took sourced damage and
-    /// `CreateRadarEvent(0x10, cell)` accepted. `EVA_OurAllyIsUnderAttack`
-    /// plus the `BaseUnderAttackSound` siren, both for `owner`.
-    AllyUnderAttack { owner: InternedId },
+    /// (a human house) as its ally took sourced damage. Once the listener's
+    /// client admits `radar` (`CreateRadarEvent(0x10, cell)`):
+    /// `EVA_OurAllyIsUnderAttack` plus the `BaseUnderAttackSound` siren, both
+    /// for `owner`.
+    AllyUnderAttack {
+        owner: InternedId,
+        radar: RadarEventRequest,
+    },
     /// `TechnoClass::Death_Announcement @ 0x004D98C0` fired for a unit of
-    /// `owner` (a human house): not `Spawned=`, and `CreateRadarEvent(7, cell)`
-    /// accepted (8-cell, 200-frame dedupe). App plays `EVA_UnitLost` for the
-    /// local owner.
-    UnitLost { owner: InternedId },
+    /// `owner` (a human house) that is not `Spawned=`. The app plays
+    /// `EVA_UnitLost` for the local owner once its client admits `radar`
+    /// (`CreateRadarEvent(7, cell)`, 8-cell dedupe).
+    UnitLost {
+        owner: InternedId,
+        radar: RadarEventRequest,
+    },
     /// One of the `HouseClass::Update` advice lines
     /// (`EVA_InsufficientFunds` `0x004F8BA0`, `EVA_LowPower` `0x004F8D14`)
     /// for a human house; `event` is the `evamd.ini` section name.
@@ -451,13 +462,13 @@ pub enum SimSoundEvent {
     /// (`0x00448415`, ECX = `this->Owner`) and the type's `CaptureEvaEvent=`
     /// (`Type+0x1554`, `0x00448459 QueueVoice`) for a local NEW owner. The
     /// sim cannot see the local player: it emits for any human-controlled
-    /// side and the app applies the local test. `radar_accepted` carries the
-    /// radar result.
+    /// side and the app applies the local test. `radar` is the type-10
+    /// request of an ordinary building; a tech building reaches none.
     BuildingCaptured {
         old_owner: InternedId,
         new_owner: InternedId,
         tech_building: bool,
-        radar_accepted: bool,
+        radar: Option<RadarEventRequest>,
         capture_eva_event: Option<InternedId>,
     },
     /// `SuperClass::AI_Ready @ 0x006CBCA0` (`0x006CBE63`): the charge
@@ -639,16 +650,16 @@ pub enum SimSoundEvent {
     C4Planted { rx: u16, ry: u16 },
     /// An engineer entered a `BridgeRepairHut` and triggered bridge repair.
     /// Played at the BUILDING's cell, NOT the engineer's. `owner` is the
-    /// engineer's house. Native House50B6F0 and radar dedup determine the
-    /// already-admitted `eva_allowed` result. App layer plays the spatial
-    /// `[BridgeRepaired]` sound for everyone in range, gated on
-    /// `rules.bridge_rules.repair_sound.is_some()`. `eva_allowed` is the
-    /// result of gamemd's non-drawing radar event creation/dedup gate.
+    /// engineer's house. App layer plays the spatial `[BridgeRepaired]` sound
+    /// for everyone in range, gated on
+    /// `rules.bridge_rules.repair_sound.is_some()`. `radar` is present when
+    /// native House50B6F0 passed; the EVA line then waits on the client's
+    /// non-drawing type-14 radar event creation/dedup gate.
     BridgeRepaired {
         rx: u16,
         ry: u16,
         owner: InternedId,
-        eva_allowed: bool,
+        radar: Option<RadarEventRequest>,
     },
     /// A delayed world-effect animation reached its first active frame.
     WorldEffectStarted {
@@ -1071,9 +1082,6 @@ pub struct Simulation {
     /// Selected start/report sound for bridge animation SHPs, keyed by SHP ID.
     #[serde(skip)]
     pub bridge_anim_sounds: BTreeMap<InternedId, InternedId>,
-    /// Radar event queue for minimap pings and Spacebar cycling.
-    #[serde(skip)]
-    pub radar_events: RadarEventQueue,
     /// Runtime terrain cells whose radar/minimap terrain pixel needs refresh.
     /// Presentation reads this generation and acknowledges the exact batch
     /// only after its radar update completes. The list is de-duplicated within
@@ -2414,9 +2422,8 @@ impl Simulation {
     /// plus the `UnitClass::ReceiveDamage 0x00738530` harvester ping.
     ///
     /// The victim's own line: the radar diamond (type 4 miner / type 3 base,
-    /// `0x004F94E4`/`0x004F9544`) is enqueued for the victim house and its
-    /// accept result rides along as `eva_allowed`; the app keeps the
-    /// local-player voice filter. The ally line (`0x004F955D..0x004F95B3`,
+    /// `0x004F94E4`/`0x004F9544`) is requested for the victim house; the app
+    /// keeps the local-player filter and admits it there. The ally line (`0x004F955D..0x004F95B3`,
     /// building path only): every *other* human house that the victim house
     /// lists in its own ally bitfield (`House+0x5788`, read at `0x004F9450`
     /// through `IsAlliedWith`'s one-way rule) hears
@@ -2434,15 +2441,12 @@ impl Simulation {
             } else {
                 RadarEventType::BaseUnderAttack
             };
-            let eva_allowed =
-                self.radar_events
-                    .push_owned(event_type, event.rx, event.ry, Some(event.owner));
             self.sound_events.push(SimSoundEvent::UnderAttack {
                 rx: event.rx,
                 ry: event.ry,
                 owner: event.owner,
                 miner: event.miner,
-                eva_allowed,
+                radar: RadarEventRequest::new(event_type, event.rx, event.ry),
             });
             if !event.structure {
                 continue;
@@ -2474,15 +2478,14 @@ impl Simulation {
                 })
                 .collect();
             for listener in listeners {
-                if self.radar_events.push_owned(
-                    RadarEventType::AllyUnderAttack,
-                    event.rx,
-                    event.ry,
-                    Some(listener),
-                ) {
-                    self.sound_events
-                        .push(SimSoundEvent::AllyUnderAttack { owner: listener });
-                }
+                self.sound_events.push(SimSoundEvent::AllyUnderAttack {
+                    owner: listener,
+                    radar: RadarEventRequest::new(
+                        RadarEventType::AllyUnderAttack,
+                        event.rx,
+                        event.ry,
+                    ),
+                });
             }
         }
     }
@@ -2491,7 +2494,8 @@ impl Simulation {
     /// kills: owner passes `HouseClass::IsHumanPlayer @ 0x0050B6F0`
     /// (`0x004D98CA`; the local player natively, every human house here with
     /// the app filtering), then `CreateRadarEvent(7, cell)` (`0x004D98FE`,
-    /// 8-cell / 200-frame dedupe) gates `EVA_UnitLost` (`0x004D9911`).
+    /// 8-cell dedupe, admitted client-side) gates `EVA_UnitLost`
+    /// (`0x004D9911`).
     pub(crate) fn dispatch_unit_lost_events(
         &mut self,
         events: &[crate::sim::combat::UnitLostEvent],
@@ -2505,15 +2509,10 @@ impl Simulation {
             if !human {
                 continue;
             }
-            if self.radar_events.push_owned(
-                RadarEventType::UnitLost,
-                event.rx,
-                event.ry,
-                Some(event.owner),
-            ) {
-                self.sound_events
-                    .push(SimSoundEvent::UnitLost { owner: event.owner });
-            }
+            self.sound_events.push(SimSoundEvent::UnitLost {
+                owner: event.owner,
+                radar: RadarEventRequest::new(RadarEventType::UnitLost, event.rx, event.ry),
+            });
         }
     }
 
@@ -2910,7 +2909,6 @@ impl Simulation {
             bridge_explosions: Vec::new(),
             metallic_debris: Vec::new(),
             bridge_anim_sounds: BTreeMap::new(),
-            radar_events: RadarEventQueue::default(),
             radar_terrain_dirty_cells: Vec::new(),
             radar_terrain_dirty_generation: 0,
             tactical_dirty_cells: Vec::new(),
@@ -3753,12 +3751,6 @@ impl Simulation {
         runtime: crate::sim::trigger_runtime::TriggerRuntime,
     ) {
         self.trigger_runtime = runtime;
-    }
-
-    /// Advance the radar-event review cursor and return the next event cell
-    /// (F10 boundary method backing the center-on-radar-event hotkey).
-    pub(crate) fn cycle_radar_event(&mut self) -> Option<(u16, u16)> {
-        self.radar_events.cycle_event()
     }
 
     #[cfg(test)]
@@ -5766,9 +5758,6 @@ impl Simulation {
         }
         // Advance building-down (undeploy) animations; spawn units when done.
         *spawned_entities |= self.tick_building_down(rules, overlay_registry);
-
-        // Tick radar event aging (remove expired pings).
-        self.radar_events.tick();
 
         // Tick world-effect animations and remove finished ones.
         let mut started_effect_sounds = Vec::new();

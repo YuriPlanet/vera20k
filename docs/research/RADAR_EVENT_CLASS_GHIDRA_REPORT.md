@@ -33,7 +33,7 @@ Two decoupled things are easy to conflate:
 - **RadarEventClass** — the *visual* event (pulsing diamond on the minimap). This report.
 - **EVA announcement** — the voice cue ("Our base is under attack"). Owned by `VoxClass` (see `EVA_SYSTEM_DEEP_DIVE_GHIDRA_REPORT.md`).
 
-These are separate queues. They are *correlated* (most callers fire both), and for "Base under attack" the EVA is actually rate-limited *by* the radar event: `HouseClass::BaseUnderAttack` at `0x004F93E0` only plays `EVA_OurBaseIsUnderAttack` if `CreateRadarEvent` returned 1 (the dedup distance check passed). That's the only documented coupling. All other systems call them independently.
+These are separate queues. They are *correlated* (most callers fire both), and for "Base under attack" the EVA is actually rate-limited *by* the radar event: `HouseClass::BaseUnderAttack` at `0x004F93E0` only plays `EVA_OurBaseIsUnderAttack` if `CreateRadarEvent` returned 1 (the dedup distance check passed). *Corrected 2026-09-20:* it is not the only coupling. The same return-value gate was read at `ChangeOwner 0x0044847C` (`TEST AL,AL; JZ` past `EVA_BuildingCaptured`), and the Rust producers cite it for the miner and ally lines of `NotifyUnderAttack`, `Place_Production` (`EVA_UnitReady`), `Death_Announcement` (`EVA_UnitLost`) and the bridge repair line. The remaining §8 callers were not rechecked for it.
 
 ---
 
@@ -317,36 +317,47 @@ The **complete xref set** for `CreateRadarEvent` (`0x0065FA70`) — 25 distinct 
 **Outputs:**
 - Visual: radar primary surface (only) — drawn on top of object dots each frame.
 - Spacebar cycling: last-8-cell ring buffer.
-- EVA coupling: one-way. `HouseClass::BaseUnderAttack` uses the return value of `CreateRadarEvent(3, cell)` to gate EVA playback. No other EVA lines are gated on radar events.
+- EVA coupling: one-way. A caller gates its EVA line on `CreateRadarEvent`'s return value; see §1 for the sites where that gate was read. *Corrected 2026-09-20: an earlier revision named `BaseUnderAttack` as the only gated line.*
 
 ---
 
 ## 10. Current Rust implementation — status vs binary
 
-Scanned by parallel recon agent; key files:
-- [src/sim/radar.rs](../src/sim/radar.rs) — enum `RadarEventType` + `RadarEvent` + `RadarEventQueue` ring buffer (cap 8).
-- [src/rules/radar_event_config.rs](../src/rules/radar_event_config.rs) — parses a subset of the global knobs.
-- [src/render/minimap.rs:334-408](../src/render/minimap.rs#L334-L408) — draws rotating diamond pulses.
-- [src/sim/world/mod.rs:1230-1233](../src/sim/world/mod.rs#L1230-L1233) — combat pushes type `Combat`.
-- [src/sim/combat/mod.rs:1173-1178](../src/sim/combat/mod.rs#L1173-L1178) — `reveal_on_fire` gates the combat event push.
+Rechecked 2026-09-20 against `CreateRadarEvent 0x0065FA70`, `InitRadarEvent
+0x0065FB80`, `TickRadarEvent 0x0065FE00` and `CleanupExpiredEvents 0x006603B0`
+(decompilation and the complete 25-entry xref set of `0x0065FA70`).
 
-**Matches the binary:**
-- Enum has the correct six types with correct ordering (Combat / Noncombat / Dropzone / BaseUnderAttack / MinerUnderAttack / EnemyObjectSensed).
-- Ring buffer capacity of 8 matches the binary's `event_cell_ring`.
-- Phase-1 shrink → phase-2 fade lifecycle is reflected (via `progress()` + `expired()`).
+**One owner.** [src/render/radar_events.rs](../../src/render/radar_events.rs)
+holds the only event array: all 17 types, the compiled type table of §4, the
+colour switch, the shared tick/cleanup lifecycle and the eight-cell Spacebar
+ring. It is client-local presentation state, never snapshot or hash input,
+because every native caller is gated on `g_PlayerPtr`.
 
-**Divergences / gaps:**
-- **Only type 0 (Combat) is ever pushed.** BaseUnderAttack, HarvesterUnderAttack, Dropzone, Noncombat, EnemyObjectSensed have no callers yet. §8 gives the binary's full caller set — these are the hook points to add.
-- **Dedup / suppression is hardcoded to 8 cells for Combat only.** The binary uses per-type thresholds from `RadarEventSuppressionDistances` (and only `unique_flag` types dedup at all). In particular, BaseUnderAttack (type 3) and HarvesterUnderAttack (type 4) have `unique_flag=yes`; Noncombat (1) and Dropzone (2) have `unique_flag=no`.
-- **Per-type visibility / blink durations** (from `RadarEventVisibilityDurations` / `RadarEventDurations`) are not parsed. All events get a global `duration` from config.
-- **Color switch** is hardcoded at [radar.rs:59-68](../src/sim/radar.rs#L59-L68) rather than matching the binary's `{0,3,4}→WHITE / {1,2,11,12}→YELLOW / 5→CYAN / default→no-draw` switch. Specifically, Rust has Dropzone (type 2) = CYAN and EnemyObjectSensed (type 5) = YELLOW — these are swapped relative to the binary (and to §4 of this doc). The Rust colors were assigned under an earlier label mapping that placed Dropzone on type 5; §5's INI reconciliation corrects it.
-- **Rust models 6 of the binary's 17 types.** The Rust enum captures only the INI-configurable subset (Combat / Noncombat / Dropzone / BaseUnderAttack / MinerUnderAttack / EnemyObjectSensed). The binary's hardcoded types 6–16 (UnitReady / UnitLost / UnitRepaired / SpyInfiltration / BuildingCaptured / BeaconPlaced / ConstructionComplete / ImpactSilent / BridgeRepaired / StructureAbandoned / AllyUnderAttack — see §4 and §8) have no representation. For full parity the enum needs to grow.
-- **The "Combat" hook in Rust pushes the wrong type semantically.** [src/sim/world/mod.rs:1230-1233](../src/sim/world/mod.rs#L1230-L1233) pushes `RadarEventType::Combat` (= type 0, white pulse) on every `reveal_on_fire` weapon firing. The binary uses **type 13** (silent ring-buffer event with `blink=5`) for bullet impacts via `BulletClass::AI`. So the Rust currently shows pulsing white diamonds for events the binary handles silently. Type 0 (Combat) is reserved for a different code path that does not appear in the §8 xref list — possibly TS-legacy or only reachable via `TriggerAction::Execute`.
-- **`RadarEventDurations` parsing is broken — but it's a moot bug for parity.** [radar_event_config.rs:63](../src/rules/radar_event_config.rs#L63) reads the singular key `"RadarEventDuration"`; the real INI key is the plural array `RadarEventDurations`. The lookup always misses and falls through to the 13000 ms default. **However**, per §11 OQ1 the binary itself ignores the parsed array — the engine's per-type durations come from compile-time constants in the type-config table, not from RulesClass+0x474. So fixing the Rust parser would *technically* honor the modder's INI entry where the binary doesn't, which is a parity *regression*. The right fix for parity is to delete the `event_duration_ms` field entirely and use the per-type constants from §4 instead.
-- **Initial radius** — binary sets it to `max(radar_x, radar_y, radar_w−radar_x, radar_h−radar_y)`. The Rust uses `4 × min_radius` as the start. Cosmetically similar but not identical; this drives how long the shrink phase lasts.
-- **Expand-phase rotation deceleration** — the binary decays `rotation_speed` to `base × 0.3333` during phase 1 in `0.02·base` steps; the Rust uses a constant rotation speed throughout. Users may notice the diamond spinning more "snappily" early in the Rust version.
-- **No EVA coupling yet.** The BaseUnderAttack rate-limit-by-radar-event pattern is the only documented coupling in the binary; any EVA system added later should use `CreateRadarEvent`'s return value to gate `EVA_OurBaseIsUnderAttack` (and only that).
-- **DrawViewportRect** is a separate rendering path in the Rust — the binary shares the event struct. Not important for parity; noted for future unification if desired.
+**Producers.** The simulation publishes a `RadarEventRequest` (type + cell,
+[src/sim/radar.rs](../../src/sim/radar.rs)) on the sound event of each caller it
+models: types 3/4/16 (`NotifyUnderAttack`), 6 (`Place_Production`), 7
+(`Death_Announcement`), 10 (`ChangeOwner`) and 14 (bridge repair). The app
+dispatcher applies the caller's local-owner test, then asks the minimap's
+event array for admission; that result gates the caller's EVA line, as in §8.
+Type 5 is created render-side by the radar object tracker.
+
+**Removed.** The former sim-side `RadarEventQueue` (a second, capped queue with
+its own aging, a rotation-only animation and an owner-blind dedupe), its
+`minimap_legacy_events` drawer, and the Spacebar fallback that could not reach
+it once a type-5 cell existed. Also removed: the type-0 `Combat` push on every
+`RevealOnFire` shot. §8 shows no engine caller passes type 0, and the
+`BulletClass::AI` site (`0x00467EA7`) is the `NUKE` payload's silent type 13.
+
+**Not yet produced** (no Rust caller; each needs its own native caller port):
+types 8 `UnitRepaired`, 9 `SpyInfiltration`, 11 `BeaconPlaced`, 12
+`ConstructionComplete`, 13 `ImpactSilent` (superweapon launches, lightning
+storm start, nuke payload), 15 `StructureAbandoned`, the
+`TemporalClass::InitiateWarp` type-4 site, and `TriggerAction::Execute`'s
+dynamic type.
+
+**Known difference.** Native dedupe distance is `ftol(Sqrt_Approx(dx²+dy²))`;
+Rust compares squared integer distance, which is identical for an exact square
+root. `Sqrt_Approx` was not compared numerically.
 
 ---
 

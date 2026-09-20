@@ -176,10 +176,10 @@ mod tests {
 
     /// `InfantryClass::IronCurtain @ 0x00522632` kills through `ReceiveDamage`
     /// (`+0x16C`, `C4Warhead=`), so the death reaches `Death_Announcement`
-    /// (`+0x3B8`): a human owner hears "Unit lost", deduped by the radar
-    /// type-7 window (`0x004D98FE`, 8 cells / 200 frames) across the grid.
+    /// (`+0x3B8`): each human-owned kill publishes the radar type-7 request
+    /// (`0x004D98FE`) whose client-side 8-cell dedupe limits "Unit lost".
     #[test]
-    fn ic_infantry_kill_announces_unit_lost_once_per_radar_window() {
+    fn ic_infantry_kill_publishes_unit_lost_per_human_death() {
         use crate::sim::house_state::HouseState;
 
         let rules = test_rules();
@@ -200,14 +200,14 @@ mod tests {
             .sound_events
             .iter()
             .filter_map(|event| match event {
-                SimSoundEvent::UnitLost { owner } => Some(*owner),
+                SimSoundEvent::UnitLost { owner, .. } => Some(*owner),
                 _ => None,
             })
             .collect();
         assert_eq!(
             lost,
-            vec![owner],
-            "two infantry kills in one 3x3 grid announce exactly once"
+            vec![owner, owner],
+            "both infantry kills reach Death_Announcement; the vehicle survives"
         );
         assert!(sim.substrate.entities.get(1).unwrap().dying);
         assert!(sim.substrate.entities.get(2).unwrap().dying);

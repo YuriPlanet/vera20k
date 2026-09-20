@@ -83,9 +83,7 @@ pub struct RadarEventConfig {
     /// Per-frame color-fade delta.
     /// Stock default 0.1.
     pub color_speed: f32,
-    /// Maximum number of events kept in the ring buffer for Spacebar cycling.
-    pub max_events: usize,
-    /// Bit-exact deterministic representation consumed by simulation.
+    /// Bit-exact representation consumed by the client radar-event tick.
     pub native_scalars: NativeRadarEventScalars,
 }
 
@@ -96,7 +94,6 @@ impl Default for RadarEventConfig {
             speed: 1.2,
             rotation_speed: 0.05,
             color_speed: 0.1,
-            max_events: 8,
             native_scalars: NativeRadarEventScalars::default(),
         }
     }
@@ -114,7 +111,6 @@ impl RadarEventConfig {
             speed: f32::from_bits(native_scalars.speed.bits()),
             rotation_speed: f32::from_bits(native_scalars.rotation_speed.bits()),
             color_speed: f32::from_bits(native_scalars.color_speed.bits()),
-            max_events: 8,
             native_scalars,
         }
     }
@@ -129,7 +125,6 @@ mod tests {
         let config = RadarEventConfig::default();
         assert!(config.min_radius > 0.0);
         assert!(config.speed > 0.0);
-        assert_eq!(config.max_events, 8);
     }
 
     #[test]

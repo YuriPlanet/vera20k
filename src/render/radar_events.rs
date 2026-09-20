@@ -1,35 +1,113 @@
-//! Client-local radar-event animation and Spacebar history.
+//! Client-local radar-event array, animation and Spacebar history.
 //!
-//! Native `RadarClass` owns this beside its generated radar surfaces. It reads
-//! `g_PlayerPtr` visibility, so it is deliberately presentation state: never
-//! snapshot or world-hash authority. The production writer closed here is the
-//! type-5 `EnemyObjectSensed` call at `TechnoClass::IdleAnimDispatch`
-//! `0x0070DAD7`; other event producers remain on the older sim queue.
+//! Native `RadarClass` owns this beside its generated radar surfaces. Every
+//! `CreateRadarEvent @ 0x0065FA70` caller is gated on `g_PlayerPtr`, so the
+//! array is deliberately presentation state: never snapshot or world-hash
+//! authority. All 17 native event types share this one array, the one
+//! `TickRadarEvent @ 0x0065FE00` lifecycle and the one eight-cell review ring.
+//! The simulation only publishes `RadarEventRequest`s; admission, and the EVA
+//! lines native gates on its return value, happen here for the local player.
+//! Type 5 is produced render-side by the radar object tracker
+//! (`TechnoClass::IdleAnimDispatch 0x0070DAD7`).
 
 use std::time::{Duration, Instant};
 
 use crate::rules::radar_event_config::RadarEventConfig;
+use crate::sim::radar::RadarEventType;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering};
 
 use super::native_radar_surface::native_event_initial_radius;
 
-const TYPE5_DEDUP_DISTANCE: i32 = 6;
-const TYPE5_VISIBLE_FRAMES: u32 = 200;
-const TYPE5_LIFETIME_FRAMES: u32 = 400;
 const CYCLE_RING_LEN: usize = 8;
 const CYCLE_RESTART: Duration = Duration::from_millis(1600);
-const TYPE5_BRIGHT: [u8; 4] = [0, 255, 255, 255];
-const TYPE5_DIM: [u8; 4] = [0, 128, 128, 255];
+
+/// One row of gamemd's compiled `g_RadarEventTypeConfig @ 0x007F0998`
+/// (17 rows x 16 bytes, zero writers). `[General]`'s three six-value
+/// `RadarEvent*` arrays are parsed by `RulesClass` but never copied here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RadarEventTypeConfig {
+    /// `+0x00`: `CreateRadarEvent` rejects a truncated integer cell distance
+    /// strictly below this, against live events of the same type.
+    dedup_distance_cells: i32,
+    /// `+0x04`: timer2 (`event+0x30`), the frames the outline keeps drawing
+    /// after the shrink phase ends (`TickRadarEvent 0x0065FE0B..0x0065FE35`).
+    visible_frames: u32,
+    /// `+0x08`: timer1 (`event+0x24`), the frames the event stays in the live
+    /// array, still deduping, after the shrink phase ends
+    /// (`CleanupExpiredEvents @ 0x006603B0`).
+    lifetime_frames: u32,
+    /// `+0x0C`: only unique types run the dedup scan at all.
+    unique: bool,
+}
+
+const fn type_config(
+    dedup_distance_cells: i32,
+    visible_frames: u32,
+    lifetime_frames: u32,
+    unique: bool,
+) -> RadarEventTypeConfig {
+    RadarEventTypeConfig {
+        dedup_distance_cells,
+        visible_frames,
+        lifetime_frames,
+        unique,
+    }
+}
+
+const RADAR_EVENT_TYPE_CONFIGS: [RadarEventTypeConfig; 17] = [
+    type_config(8, 200, 400, true),
+    type_config(8, 200, 400, false),
+    type_config(8, 200, 400, false),
+    type_config(8, 200, 600, true),
+    type_config(8, 200, 400, true),
+    type_config(6, 200, 400, true),
+    type_config(2, 0, 200, true),
+    type_config(8, 0, 200, true),
+    type_config(2, 0, 400, true),
+    type_config(5, 0, 400, false),
+    type_config(8, 0, 100, false),
+    type_config(8, 200, 200, true),
+    type_config(8, 200, 400, false),
+    type_config(8, 0, 5, false),
+    type_config(8, 0, 200, true),
+    type_config(8, 0, 400, true),
+    type_config(8, 200, 600, true),
+];
+
+fn config_for(event_type: RadarEventType) -> RadarEventTypeConfig {
+    RADAR_EVENT_TYPE_CONFIGS[event_type as usize]
+}
+
+/// `DrawRadarEvent @ 0x00660050` colour switch as `(bright, dim)`, dim being
+/// the bright colour with each channel halved. Every other type takes the
+/// default arm, whose all-zero colour skips the draw block: those events
+/// occupy the array and the review ring but never paint an outline.
+fn outline_colors(event_type: RadarEventType) -> Option<([u8; 4], [u8; 4])> {
+    match event_type {
+        RadarEventType::Combat
+        | RadarEventType::BaseUnderAttack
+        | RadarEventType::HarvesterUnderAttack => {
+            Some(([255, 255, 255, 255], [128, 128, 128, 255]))
+        }
+        RadarEventType::EnemyObjectSensed => Some(([0, 255, 255, 255], [0, 128, 128, 255])),
+        RadarEventType::Noncombat
+        | RadarEventType::Dropzone
+        | RadarEventType::BeaconPlaced
+        | RadarEventType::ConstructionComplete => Some(([255, 255, 0, 255], [128, 128, 0, 255])),
+        _ => None,
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct EnemySensedSource {
+pub(super) struct RadarEventSource {
     pub cell: (u16, u16),
     pub radar_pixel: (i32, i32),
 }
 
 #[derive(Debug, Clone)]
 pub(super) struct ClientRadarEvent {
-    source: EnemySensedSource,
+    event_type: RadarEventType,
+    source: RadarEventSource,
     created_frame: u64,
     radius: f32,
     rotation: f32,
@@ -43,13 +121,15 @@ pub(super) struct ClientRadarEvent {
 
 impl ClientRadarEvent {
     fn new(
-        source: EnemySensedSource,
+        event_type: RadarEventType,
+        source: RadarEventSource,
         current_frame: u64,
         surface_size: (i32, i32),
         config: &RadarEventConfig,
     ) -> Self {
         let initial_radius = native_event_initial_radius(source.radar_pixel, surface_size);
         Self {
+            event_type,
             source,
             created_frame: current_frame,
             radius: initial_radius as f32,
@@ -69,7 +149,8 @@ impl ClientRadarEvent {
         }
         if !self.expanding
             && self.phase_started_frame.is_some_and(|started| {
-                current_frame.wrapping_sub(started) >= u64::from(TYPE5_VISIBLE_FRAMES)
+                current_frame.wrapping_sub(started)
+                    >= u64::from(config_for(self.event_type).visible_frames)
             })
         {
             self.needs_draw = false;
@@ -81,29 +162,26 @@ impl ClientRadarEvent {
             load_native_f32(config.native_scalars.speed),
         );
         let min_radius_x87 = X87Chop53::load_i32(min_radius);
-        self.radius = store_f32(if X87Chop53::compare(radius, min_radius_x87)
-            == X87Ordering::Greater
-        {
-            radius
-        } else {
-            min_radius_x87
-        });
+        self.radius = store_f32(
+            if X87Chop53::compare(radius, min_radius_x87) == X87Ordering::Greater {
+                radius
+            } else {
+                min_radius_x87
+            },
+        );
         let snap_offset = native_rotation_remainder(self.rotation);
         if self.expanding {
             let radius_difference = X87Chop53::sub(load_f32(self.radius), min_radius_x87);
-            let epsilon = X87Chop53::load_f64(NativeF64Bits::from_bits(
-                0x3f84_7ae1_47ae_147b,
-            ))
-            .expect("native 0.01 is finite");
-            let absolute_difference = if X87Chop53::compare(
-                radius_difference,
-                X87Chop53::load_i32(0),
-            ) == X87Ordering::Less
-            {
-                X87Chop53::neg(radius_difference)
-            } else {
-                radius_difference
-            };
+            let epsilon = X87Chop53::load_f64(NativeF64Bits::from_bits(0x3f84_7ae1_47ae_147b))
+                .expect("native 0.01 is finite");
+            let absolute_difference =
+                if X87Chop53::compare(radius_difference, X87Chop53::load_i32(0))
+                    == X87Ordering::Less
+                {
+                    X87Chop53::neg(radius_difference)
+                } else {
+                    radius_difference
+                };
             if X87Chop53::compare(absolute_difference, epsilon) != X87Ordering::Less {
                 self.rotation = native_add_stored_f32(self.rotation, self.rotation_speed);
             } else if snap_offset < self.rotation_speed {
@@ -141,7 +219,8 @@ impl ClientRadarEvent {
     fn expired(&self, current_frame: u64) -> bool {
         !self.expanding
             && self.phase_started_frame.is_some_and(|started| {
-                current_frame.wrapping_sub(started) >= u64::from(TYPE5_LIFETIME_FRAMES)
+                current_frame.wrapping_sub(started)
+                    >= u64::from(config_for(self.event_type).lifetime_frames)
             })
     }
 
@@ -183,18 +262,12 @@ fn native_rotation_remainder(rotation: f32) -> f32 {
     // `TickRadarEvent @ 0x0065FE69..0x0065FE98`: x87 computes
     // `(angle + pi/4) - trunc((angle + pi/4) * 2/pi) * pi/2`, then stores
     // the remainder to f32 before comparing it with the f32 rotation speed.
-    let quarter_turn = X87Chop53::load_f64(NativeF64Bits::from_bits(
-        0x3fe9_21fb_5444_2d18,
-    ))
-    .expect("native pi/4 is finite");
-    let two_over_pi = X87Chop53::load_f64(NativeF64Bits::from_bits(
-        0x3fe4_5f30_6dc9_c883,
-    ))
-    .expect("native two-over-pi is finite");
-    let half_turn = X87Chop53::load_f64(NativeF64Bits::from_bits(
-        0x3ff9_21fb_5444_2d18,
-    ))
-    .expect("native pi/2 is finite");
+    let quarter_turn = X87Chop53::load_f64(NativeF64Bits::from_bits(0x3fe9_21fb_5444_2d18))
+        .expect("native pi/4 is finite");
+    let two_over_pi = X87Chop53::load_f64(NativeF64Bits::from_bits(0x3fe4_5f30_6dc9_c883))
+        .expect("native two-over-pi is finite");
+    let half_turn = X87Chop53::load_f64(NativeF64Bits::from_bits(0x3ff9_21fb_5444_2d18))
+        .expect("native pi/2 is finite");
     let shifted = X87Chop53::add(load_f32(rotation), quarter_turn);
     let turns = X87Chop53::ftol_i64(X87Chop53::mul(shifted, two_over_pi))
         .expect("radar-event rotation quotient fits i64") as i32;
@@ -208,24 +281,23 @@ fn native_decelerated_rotation_speed(current: f32, base: NativeF32Bits) -> f32 {
     // `0x0065FF23..0x0065FF58` keeps the floor extended for the compare but
     // rounds the subtraction to the native f32 local before selecting.
     let base = load_native_f32(base);
-    let floor = X87Chop53::mul(
-        base,
-        load_f32(f32::from_bits(0x3eaa_aaab)),
-    );
+    let floor = X87Chop53::mul(base, load_f32(f32::from_bits(0x3eaa_aaab)));
     let step = X87Chop53::mul(base, load_f32(f32::from_bits(0x3ca3_d70a)));
     let decelerated = X87Chop53::load_f32(
         X87Chop53::store_f32(X87Chop53::sub(load_f32(current), step))
             .expect("decelerated rotation speed remains finite"),
     )
     .expect("stored rotation speed reloads");
-    store_f32(if X87Chop53::compare(floor, decelerated) == X87Ordering::Greater {
-        floor
-    } else {
-        decelerated
-    })
+    store_f32(
+        if X87Chop53::compare(floor, decelerated) == X87Ordering::Greater {
+            floor
+        } else {
+            decelerated
+        },
+    )
 }
 
-/// Exact type-5 live array plus the independent eight-cell review ring from
+/// The live event array plus the independent eight-cell review ring from
 /// `InitRadarEvent @ 0x0065FB80`. The live array is intentionally uncapped.
 #[derive(Debug)]
 pub(super) struct ClientRadarEvents {
@@ -261,13 +333,11 @@ impl ClientRadarEvents {
         self.suppress_until_baseline = false;
     }
 
-    /// `CreateRadarEvent @ 0x0065FA70`: unique type-5 events scan the entire
-    /// live array and suppress only when truncated integer Euclidean distance
-    /// is less than six. Equality is accepted. Only accepted events enter the
-    /// eight-cell review ring (`0x0065FC6E..0x0065FC99`).
+    /// The tracker's type-5 feed. The first object scan after a load or view
+    /// change is a baseline, not a sighting, so it creates nothing.
     pub fn create_enemy_sensed(
         &mut self,
-        source: EnemySensedSource,
+        source: RadarEventSource,
         current_frame: u64,
         surface_size: (i32, i32),
         config: &RadarEventConfig,
@@ -275,23 +345,55 @@ impl ClientRadarEvents {
         if self.suppress_until_baseline {
             return false;
         }
-        let duplicate = self.events.iter().any(|event| {
-            let dx = i32::from(event.source.cell.0).wrapping_sub(i32::from(source.cell.0));
-            let dy = i32::from(event.source.cell.1).wrapping_sub(i32::from(source.cell.1));
-            dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy))
-                < TYPE5_DEDUP_DISTANCE * TYPE5_DEDUP_DISTANCE
-        });
+        self.create(
+            RadarEventType::EnemyObjectSensed,
+            source,
+            current_frame,
+            surface_size,
+            config,
+        )
+    }
+
+    /// `CreateRadarEvent @ 0x0065FA70`: a unique type scans the entire live
+    /// array for events of its own type and is suppressed only when the
+    /// truncated integer Euclidean cell distance is below the type's dedup
+    /// distance. Equality is accepted, and an event that stopped drawing still
+    /// dedupes until cleanup removes it. Only accepted events enter the
+    /// eight-cell review ring (`0x0065FC6E..0x0065FC99`). Native callers gate
+    /// their EVA line on this return value.
+    pub fn create(
+        &mut self,
+        event_type: RadarEventType,
+        source: RadarEventSource,
+        current_frame: u64,
+        surface_size: (i32, i32),
+        config: &RadarEventConfig,
+    ) -> bool {
+        let type_config = config_for(event_type);
+        let duplicate = type_config.unique
+            && self.events.iter().any(|event| {
+                if event.event_type != event_type {
+                    return false;
+                }
+                let dx = i32::from(event.source.cell.0).wrapping_sub(i32::from(source.cell.0));
+                let dy = i32::from(event.source.cell.1).wrapping_sub(i32::from(source.cell.1));
+                dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy))
+                    < type_config.dedup_distance_cells * type_config.dedup_distance_cells
+            });
         if duplicate {
             return false;
         }
 
         self.events.push(ClientRadarEvent::new(
+            event_type,
             source,
             current_frame,
             surface_size,
             config,
         ));
-        let index = self.newest_ring_index.map_or(0, |index| (index + 1) % CYCLE_RING_LEN);
+        let index = self
+            .newest_ring_index
+            .map_or(0, |index| (index + 1) % CYCLE_RING_LEN);
         self.cycle_cells[index] = Some(source.cell);
         self.newest_ring_index = Some(index);
         self.cycle_index = Some(index);
@@ -319,7 +421,7 @@ impl ClientRadarEvents {
         self.last_advanced_frame = Some(current_frame);
     }
 
-    pub fn draw_type5(
+    pub fn draw(
         &self,
         rgba: &mut [u8],
         stride_width: u32,
@@ -331,8 +433,11 @@ impl ClientRadarEvents {
         let clip_width = surface_size.0.max(0) as u32;
         let clip_height = surface_size.1.max(0) as u32;
         for event in self.events.iter().filter(|event| event.needs_draw) {
+            let Some((bright, dim)) = outline_colors(event.event_type) else {
+                continue;
+            };
             let corners = event.corners();
-            let color = blend_color(TYPE5_DIM, TYPE5_BRIGHT, event.fade);
+            let color = blend_color(dim, bright, event.fade);
             for edge in 0..4 {
                 draw_line(
                     rgba,
@@ -347,12 +452,8 @@ impl ClientRadarEvents {
                         corners[edge].1.wrapping_add(destination_offset.1),
                     ),
                     (
-                        corners[(edge + 1) % 4]
-                            .0
-                            .wrapping_add(destination_offset.0),
-                        corners[(edge + 1) % 4]
-                            .1
-                            .wrapping_add(destination_offset.1),
+                        corners[(edge + 1) % 4].0.wrapping_add(destination_offset.0),
+                        corners[(edge + 1) % 4].1.wrapping_add(destination_offset.1),
                     ),
                     color,
                 );

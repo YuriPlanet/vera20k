@@ -3597,10 +3597,11 @@ mod tests {
 
     /// `CellClass::BlowUpBridge @ 0x0047DDAE` kills each ground occupant
     /// through `ReceiveDamage` (`+0x16C`, `C4Warhead=`), so the deaths reach
-    /// `Death_Announcement` (`+0x3B8`): a human owner hears "Unit lost" once
-    /// per radar type-7 window (`0x004D98FE`); an AI owner hears nothing.
+    /// `Death_Announcement` (`+0x3B8`): every human-owned death publishes the
+    /// radar type-7 request (`0x004D98FE`) that rate-limits "Unit lost" on the
+    /// owner's client; an AI owner publishes nothing.
     #[test]
-    fn bridge_collapse_kill_announces_unit_lost_once_per_radar_window() {
+    fn bridge_collapse_kill_publishes_unit_lost_per_human_death() {
         use crate::sim::house_state::HouseState;
         use crate::sim::world::SimSoundEvent;
 
@@ -3658,14 +3659,14 @@ mod tests {
             .sound_events
             .iter()
             .filter_map(|event| match event {
-                SimSoundEvent::UnitLost { owner } => Some(*owner),
+                SimSoundEvent::UnitLost { owner, .. } => Some(*owner),
                 _ => None,
             })
             .collect();
         assert_eq!(
             lost,
-            vec![human],
-            "two human kills in one cell announce once; the AI kill is silent"
+            vec![human, human],
+            "each human kill publishes its type-7 request (the client's radar              array dedupes them); the AI kill is silent"
         );
         for id in 1..=3 {
             assert!(sim.substrate.entities.get(id).unwrap().dying);

@@ -887,6 +887,16 @@ fn advance_one_simulation_frame(state: &mut AppState, tick_lane: TickLane) -> bo
                 &mut state.match_state.match_presentation.pending_fire_effects,
                 &drained_fire_events,
             );
+            // The radar event array is the local client's (RadarClass). A
+            // match without a minimap renderer has no such client, so nothing
+            // is admitted and the radar-gated EVA lines stay silent.
+            let radar_frame = sim.session.tick;
+            let minimap = &mut state.match_state.match_presentation.minimap;
+            let mut admit_radar = |request: crate::sim::radar::RadarEventRequest| {
+                minimap.as_mut().is_some_and(|minimap| {
+                    minimap.admit_radar_event(request, radar_frame, Some(&resources.rules))
+                })
+            };
             super::sound_dispatch::dispatch_sim_sound_events(
                 frame_sound_events,
                 sim,
@@ -897,6 +907,7 @@ fn advance_one_simulation_frame(state: &mut AppState, tick_lane: TickLane) -> bo
                     .sfx_player
                     .as_mut()
                     .map(|player| player as &mut dyn super::sound_dispatch::SoundEventRandom),
+                &mut admit_radar,
                 &mut state.match_state.match_audio.sound_events,
             );
             if tick_result.destroyed_structure {

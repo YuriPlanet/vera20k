@@ -617,7 +617,7 @@ fn native_radar_event_surface_rebuild_uses_current_playfield_without_baseline_re
 
     let mut events = ClientRadarEvents::default();
     let config = crate::rules::radar_event_config::RadarEventConfig::default();
-    let source = EnemySensedSource {
+    let source = RadarEventSource {
         cell,
         radar_pixel: rebuilt_surface.cell_to_surface_pixel(cell),
     };

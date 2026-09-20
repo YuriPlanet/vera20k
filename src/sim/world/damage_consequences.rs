@@ -12,7 +12,6 @@ use crate::sim::combat::{DeathEffects, RevealEvent, UnderAttackEvent};
 use crate::sim::intern::InternedId;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::production;
-use crate::sim::radar::RadarEventType;
 use std::sync::Arc;
 
 enum DamageDelivery {
@@ -218,17 +217,12 @@ impl DamageConsequences {
         world
             .invulnerability_impact_effects
             .append(&mut effects.invulnerability_impact_effects);
-        if let DamageDelivery::Ordinary {
-            fire_events,
-            reveal_events,
-        } = delivery
-        {
+        // RevealOnFire only lifts the shooter's shroud above. gamemd reaches
+        // `CreateRadarEvent @ 0x0065FA70` from no weapon-fire path: none of its
+        // 25 callers passes type 0, and the one in `BulletClass::AI`
+        // (`0x00467EA7`) is the silent type 13 of the `NUKE` payload.
+        if let DamageDelivery::Ordinary { fire_events, .. } = delivery {
             world.fire_events.extend(fire_events);
-            for event in reveal_events {
-                world
-                    .radar_events
-                    .push(RadarEventType::Combat, event.rx, event.ry);
-            }
         }
         for (die_sound_id, rx, ry) in effects.death_sounds.drain(..) {
             world.sound_events.push(SimSoundEvent::EntityDied {
