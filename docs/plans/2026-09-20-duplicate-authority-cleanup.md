@@ -17,15 +17,14 @@ Worktree `.claude/worktrees/refactor-candidates-review-3de5a3`.
 | Radar events: sim queue vs client array | Merged | PR #416 |
 | Refinery dock contacts: registry vs radio bus | Merged | PR #417 |
 | Animation: teleport WarpOut, superweapon invoke, Lightning Storm | Merged | PR #418 |
-| `resource_nodes` legacy ore map and the state it left write-only | In review | branch `feature/retire-resource-nodes` |
-| Animation: bridge collapse producers, `WorldEffect` itself, muzzle flashes | Open | see below |
+| `resource_nodes` legacy ore map and the state it left write-only | Merged | PR #419 |
+| Animation: bridge collapse `BridgeExplosions=`; AnimStore delayed start edge | In review | branch `feature/bridge-explosions-animstore` |
+| Animation: `MetallicDebris=` on `WorldEffect`, muzzle flashes | Open, blocked | see below |
 | Move phases / Jumpjet destination | Open, overlaps other owners | see below |
 | Hand-built mover path facts | Owned elsewhere | see below |
 | Per-mover world scans | Partly done | see below |
 
-Validation of the `resource_nodes` candidate: `cargo test -p vera20k --lib`
-and `cargo clippy -p vera20k --lib` results are recorded on its commits.
-Windows only.
+Validation results of each candidate are recorded on its commits. Windows only.
 
 ## Other owners — do not collide
 
@@ -45,17 +44,20 @@ Windows only.
 **Animation.** `AnimStore`/`AnimClass` (`sim/anim_class.rs`) is the native
 owner. Still outside it:
 
-- `WorldEffect` (`components.rs`, ticked in `world/mod.rs`, drawn in
-  `app/presentation/instances/overlays.rs`): the three
-  `bridge_orchestrator.rs` collapse producers. They interleave their own RNG
-  draws with the spawn, so moving them reorders the scenario stream and moves
-  the replay pins; that needs its own increment with causal attribution.
-  MetallicDebris are native bouncers and AnimStore has no bouncer arm yet
-  (owned by the unmerged `feature/phase6-anim-bounce-damage`), so `WorldEffect`
-  cannot be deleted before that lands.
-- Garrison muzzle flashes (`components::AnimRuntime`,
-  `app/presentation/building_anim.rs`) and `WeaponMuzzleFlash`
-  (`fire_effects.rs`).
+- `WorldEffect` (`components.rs`) has one producer left, the bridge collapse
+  `MetallicDebris=` spawn. Those types are native bouncers (`Bouncer=yes`,
+  `RandomRate=`, `Damage=`), and AnimStore has no bouncer arm: RESIDUAL M11b
+  in `sim/anim_class.rs`, a native port (constructor RNG fork, landing damage,
+  `ExpireAnim=`) that moves the lockstep stream and nobody owns yet. The local
+  branch `feature/phase6-anim-bounce-damage` is an empty placeholder, 0 commits
+  ahead of main. `WorldEffect`, its tick and its draw path go with that port.
+- Garrison muzzle flashes (`components::AnimRuntime` + `GarrisonMuzzleFlash`,
+  stepped in `app/presentation/building_anim.rs`) and `WeaponMuzzleFlash`
+  (`fire_effects.rs`) are app-side and unhashed. Natively they are AnimClass
+  objects built at the fire coordinate. The sim has no deterministic fire
+  coordinate yet: FLH is resolved in the app in floats
+  (`resolve_fire_origin_from_sim`), and `sim/projectile.rs` records FLH as an
+  open residual (GSI-08.06/07). Moving them needs that port first.
 
 **Move phases / Jumpjet.** For Jumpjets `air_phase` is a mirror written each
 tick from the native state (`jumpjet_cruise.rs::air_phase_for`), and
@@ -84,5 +86,5 @@ building anim phase scan. Remaining (movement territory):
 
 ## Next safe action
 
-Land the `resource_nodes` PR after its critic re-review. Then the bridge
-collapse producers, with a per-producer replay-pin attribution.
+Land the bridge explosion PR after its critic. Then the final whole-goal audit
+with an independent review of every retained lead.
