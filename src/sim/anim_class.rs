@@ -165,7 +165,8 @@ const LEPTONS_PER_CELL: i32 = crate::util::lepton::LEPTONS_PER_CELL_I32;
 /// the runtime captures of the per-module level globals; the image holds
 /// zeroes). The one such producer read in the binary is MapClass's: the bridge
 /// walkers form `Level * [0x00ABDE88]`, a Map-module scalar written only by
-/// the static initialiser `0x005617E0` and otherwise read by shroud code; its
+/// the static initialiser `0x005617E0` and otherwise read by other Map-module
+/// code (shroud reveal, bridge edge tiles); its
 /// value is taken from those captures, not re-proved here. No native 128 was
 /// found, though the `AnimClass` constructor and `AI` bodies were not audited
 /// for one. This store used to keep a private 128-per-level Z while half its

@@ -48,7 +48,8 @@ const INVOKE_ANIM_DRAW_FLAGS: u32 = 0x600;
 /// by the bridge height global (`0x00B0C07C`) when the cell carries flag
 /// `0x100`, then `+5` leptons. The bolt takes
 /// `CellClass::Get_Center_Coords @ 0x00480A30`, which is the ground with no
-/// bridge term. `on_bridge_deck` selects between them.
+/// bridge term. `on_bridge_deck` selects between them: `true` is an invoke
+/// row (deck-aware, `+5` leptons), `false` the bolt.
 ///
 /// A real `AnimClass` plays the art type's `Report=` from `AnimClass::Start`
 /// (retail `[IRONBLST] Report=IronCurtainBlast`) and follows its `Rate=` and
