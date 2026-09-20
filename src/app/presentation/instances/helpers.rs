@@ -382,6 +382,24 @@ pub(crate) fn compute_sprite_depth_params(
     native_z::depth_for_row(iso_row, origin_y, world_height)
 }
 
+/// Depth of a sprite whose rows were drawn lifted by `lift_px` pixels, the
+/// exact `AdjustForZ(Location.Z)`; the un-lifted row is the ground-projected
+/// one the depth keys on.
+pub(crate) fn compute_sprite_depth_params_lifted(
+    origin_y: f32,
+    world_height: f32,
+    screen_y: f32,
+    lift_px: i32,
+) -> f32 {
+    native_z::depth_for_row(screen_y + lift_px as f32, origin_y, world_height)
+}
+
+/// `SpriteInstance::z_adjust` for a draw lifted by an exact `AdjustForZ`
+/// rather than whole levels: every native class folds `-AdjustForZ` in.
+pub(crate) fn lifted_z_adjust(lift_px: i32, class_term: i32) -> f32 {
+    (class_term - lift_px) as f32
+}
+
 /// `SpriteInstance::z_adjust` for a draw whose rows are drawn lifted by
 /// `z` height levels: the class term with the lift cancelled
 /// (`native_z::ground_anchored_z_adjust`).

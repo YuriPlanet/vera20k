@@ -155,6 +155,8 @@ Translucent=yes
         assert_eq!(anims.len(), 1);
         let (rx, ry, ..) = anims[0].world_coord.to_cell_sub_z();
         assert_eq!((rx, ry), (10, 10));
+        // `0x006CCE76..0x006CCF09`: the cell coordinate plus 5 leptons.
+        assert_eq!(anims[0].world_coord.z, 5);
         assert_eq!(anims[0].draw_flags, 0x600);
         assert_eq!(anims[0].z_adjust, 0);
         let report = sim.interner.intern("IronCurtainBlast");

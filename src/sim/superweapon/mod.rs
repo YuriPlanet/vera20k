@@ -27,6 +27,9 @@ use crate::sim::intern::InternedId;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
+/// Leptons `SuperClass::Launch` raises an invoke animation above its cell.
+const INVOKE_ANIM_Z_LIFT_LEPTONS: i32 = 5;
+
 /// `AnimClass` draw flags of the superweapon cell animations.
 const INVOKE_ANIM_DRAW_FLAGS: u32 = 0x600;
 
@@ -52,9 +55,8 @@ const INVOKE_ANIM_DRAW_FLAGS: u32 = 0x600;
 /// `Translucent=`. The store does not build native `Middle @ 0x00424F00`
 /// (particles, `Scorch=`, `Crater=`).
 ///
-/// RESIDUAL: the store addresses Z by height level (see
-/// `AnimWorldCoord::to_cell_sub_z`), so the `+5` leptons are below its
-/// resolution and an invoke anim sits on the cell's level, or the deck's.
+/// RESIDUAL: the cell's own Z is taken as `level * 104`; on a ramp cell
+/// native's cell coordinate carries the sloped height at the centre.
 pub(super) fn spawn_cell_anim(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -95,7 +97,19 @@ pub(super) fn spawn_cell_anim(
             level,
         )
     };
-    if let Err(error) = sim.spawn_anim_object(rules, descriptor) {
+    let mut world = crate::sim::anim_class::AnimWorldCoord::from_cell_sub_z(
+        rx,
+        ry,
+        crate::util::lepton::CELL_CENTER_LEPTON,
+        crate::util::lepton::CELL_CENTER_LEPTON,
+        level,
+    );
+    if on_bridge_deck {
+        // The invoke rows add 5 leptons (`0x006CCE76..0x006CCF09`); the bolt's
+        // `Get_Center_Coords` does not.
+        world.z = world.z.wrapping_add(INVOKE_ANIM_Z_LIFT_LEPTONS);
+    }
+    if let Err(error) = sim.spawn_anim_at_world(rules, descriptor, world) {
         // An art type that never bound draws nothing natively either.
         log::debug!("superweapon invoke anim [{anim_name}] did not construct: {error}");
     }

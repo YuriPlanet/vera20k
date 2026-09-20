@@ -119,8 +119,8 @@ impl AnimWorldCoord {
     /// Compose the absolute lepton coordinate a producer's (cell, sub-cell,
     /// height-level) triple names: `Level * LevelHeight`, the product the
     /// native level-keyed producers form (`MOVSX (Level); IMUL [0x00ABDE88]`
-    /// in the bridge walkers, `0x00575391`). A producer that knows its exact Z
-    /// builds the coordinate directly instead.
+    /// in `MapClass::CollapseBridge_EW_Low`, `0x00575391`). A producer that
+    /// knows its exact Z builds the coordinate directly instead.
     pub(crate) fn from_cell_sub_z(
         rx: u16,
         ry: u16,
@@ -160,10 +160,16 @@ pub const COMBAT_EXPLOSION_Z_ADJUST: i32 = -15;
 
 const LEPTONS_PER_CELL: i32 = crate::util::lepton::LEPTONS_PER_CELL_I32;
 /// The native level height. `AnimClass` coordinates are ordinary world
-/// leptons: the anim's level scale (`0x00ABDE88`) is initialised by the same
-/// startup arithmetic as the ground height unit (`0x005617E0` / `0x0047B220`),
-/// and every captured value is 104. This store used to keep a private
-/// 128-per-level Z while half its producers already wrote 104-frame leptons.
+/// `CoordStruct` leptons, so a producer that places an anim by height level
+/// multiplies by the level step, 104 (`util::lepton::LEPTONS_PER_LEVEL` records
+/// the runtime captures of the per-module level globals; the image holds
+/// zeroes). The one such producer read in the binary is MapClass's: the bridge
+/// walkers form `Level * [0x00ABDE88]`, a Map-module scalar written only by
+/// the static initialiser `0x005617E0` and otherwise read by shroud code; its
+/// value is taken from those captures, not re-proved here. No native 128 was
+/// found, though the `AnimClass` constructor and `AI` bodies were not audited
+/// for one. This store used to keep a private 128-per-level Z while half its
+/// producers already wrote 104-frame leptons.
 const LEVEL_HEIGHT_LEPTONS: i32 = crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
 const TRAILER_DRAW_FLAGS: u32 = 0x600;
 const BUILDING_RENDER_ORIGIN_LEPTONS: i32 = 128;
@@ -2370,8 +2376,8 @@ mod tests {
             sim.sound_events
         );
 
-        // The spawn coordinate round-trips through the shared anim Z scale, so
-        // the sprite lands where the legacy world effect did.
+        // The level-keyed spawn coordinate decomposes back to the same cell,
+        // sub-cell and level.
         let coord = sim.anim_absolute_coord(id).expect("absolute coordinate");
         assert_eq!(
             coord.to_cell_sub_z(),

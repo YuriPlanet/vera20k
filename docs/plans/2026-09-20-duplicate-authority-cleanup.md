@@ -121,6 +121,15 @@ release: a chrono warp, a superweapon invoke, a bridge collapse.
 - Bridge collapse explosions leave no `Scorch=`/`Crater=` and skip one native
   draw per hut-walker explosion, because the store does not run
   `AnimClass::Middle` (recorded in `bridge_orchestrator.rs`).
+- A building's Z has several readers that agree only on flat ground: damage
+  fire anims use `object_world_z_leptons` (resamples terrain), slot anims use
+  `position_world_coord` (`level * 104`), `movement_sound_world` ignores
+  `exact_z_leptons`.
+- A `MakeInfantry=` anim placed by a level byte on a bridge deck over a ramp
+  cell sits at `(L+4) * 104`, under the ramp ground plus the 416-lepton deck
+  test in `apply_anim_raw_occupation`, so it marks the ground occupation bits.
+  The old 128 scale passed that test by accident. Rare; the producer's level
+  byte is the coarse input.
 - Combat death debris never binds a sprite (GSI-05.14); theaters other than
   TEMPERATE were not checked for unbound building animations.
 
