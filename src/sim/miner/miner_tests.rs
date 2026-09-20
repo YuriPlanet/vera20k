@@ -24,6 +24,19 @@ use crate::sim::pathfinding::PathGrid;
 use crate::sim::production::credits_for_owner;
 use crate::sim::world::Simulation;
 
+/// Selector0x47 belongs to reciprocal bunker release. Stock refinery
+/// contacts/on_pad must not cause this track to be installed.
+fn has_bunker_release_track(entity: &GameEntity) -> bool {
+    entity
+        .locomotor
+        .as_ref()
+        .is_some_and(|state| state.kind == LocomotorKind::Drive)
+        && entity
+            .drive_locomotion
+            .as_ref()
+            .is_some_and(|drive| drive.track.turn_index == 0x47 && drive.head_to.is_some())
+}
+
 /// Minimal rules that know about HARV, CMIN, and GAREFN.
 fn miner_rules() -> RuleSet {
     let ini = IniFile::from_str(
@@ -107,7 +120,7 @@ fn spawn_miner(sim: &mut Simulation, sid: u64, kind: MinerKind, rx: u16, ry: u16
         MinerKind::Chrono => "CMIN",
         MinerKind::Slave => "SMIN",
     };
-    let health_val: u16 = match kind {
+    let health_val: i32 = match kind {
         MinerKind::War => 600,
         MinerKind::Chrono => 400,
         MinerKind::Slave => 2000,
@@ -123,7 +136,6 @@ fn spawn_miner(sim: &mut Simulation, sid: u64, kind: MinerKind, rx: u16, ry: u16
         owner_id,
         Health {
             current: health_val,
-            max: health_val,
         },
         type_id_interned,
         EntityCategory::Unit,
@@ -155,10 +167,7 @@ fn spawn_refinery(sim: &mut Simulation, sid: u64, rx: u16, ry: u16) {
         0,
         0,
         owner_id,
-        Health {
-            current: 900,
-            max: 900,
-        },
+        Health { current: 900 },
         type_id,
         EntityCategory::Structure,
         0,
@@ -194,10 +203,7 @@ fn spawn_structure_owned(
         0,
         0,
         owner_id,
-        Health {
-            current: 900,
-            max: 900,
-        },
+        Health { current: 900 },
         type_id_interned,
         EntityCategory::Structure,
         0,
@@ -230,10 +236,7 @@ fn spawn_inert_dock_instance(sim: &mut Simulation) {
         0,
         0,
         owner_id,
-        Health {
-            current: 900,
-            max: 900,
-        },
+        Health { current: 900 },
         type_id,
         EntityCategory::Structure,
         0,
@@ -308,6 +311,7 @@ fn tick_miners_n(sim: &mut Simulation, rules: &RuleSet, n: usize) {
             &mut OccupancyGrid::new(),
             &[],
             sim.session.tick,
+            None,
             None,
         );
         super::miner_system::tick_miners(sim, rules, &config, Some(&grid));
@@ -567,6 +571,7 @@ fn chrono_miner_teleports_to_refinery_on_return() {
         &mut OccupancyGrid::new(),
         &[],
         sim.session.tick,
+        None,
         None,
     );
 
@@ -4158,7 +4163,7 @@ fn two_miners_waiter_after_releaser_same_tick_claims_on_own_mission_enter() {
         .entities
         .get(occupant)
         .expect("occupant entity");
-    assert!(occupant_entity.forced_drive_track.is_none());
+    assert!(!has_bunker_release_track(occupant_entity));
     assert!(occupant_entity.movement_target.is_none());
 }
 
@@ -4759,7 +4764,7 @@ fn stock_departing_hands_directly_to_search_without_exit_move() {
     assert_eq!(entity.miner_state().unwrap(), MinerState::SearchOre);
     assert_eq!((entity.position.rx, entity.position.ry), (13, 11));
     assert!(entity.movement_target.is_none());
-    assert!(entity.forced_drive_track.is_none());
+    assert!(!has_bunker_release_track(entity));
     assert!(m.exit_cell.is_none());
     assert!(m.reserved_refinery.is_none());
     assert!(!sim.production.dock_reservations.is_occupied(100));
@@ -4795,7 +4800,7 @@ fn stock_departing_does_not_start_force_track_0x47() {
     assert!(miner.exit_cell.is_none());
     assert!(entity.movement_target.is_none());
     assert!(
-        entity.forced_drive_track.is_none(),
+        !has_bunker_release_track(entity),
         "stock Departing must not seed Force_Track(0x47)"
     );
     assert_ne!(entity.facing, 0x47);
@@ -4825,7 +4830,7 @@ fn stock_departing_does_not_start_explicit_exit_move() {
     tick_miners_n(&mut sim, &rules, 1);
     let after_first = sim.substrate.entities.get(miner_id).expect("miner entity");
     assert_eq!((after_first.position.rx, after_first.position.ry), (13, 11));
-    assert!(after_first.forced_drive_track.is_none());
+    assert!(!has_bunker_release_track(after_first));
     assert!(after_first.movement_target.is_none());
     assert!(matches!(
         after_first.miner_state().expect("miner cursor"),
@@ -4842,7 +4847,7 @@ fn stock_departing_does_not_start_explicit_exit_move() {
 }
 
 #[test]
-fn sell_refinery_interrupts_docked_miner_with_force_track_0x47() {
+fn sell_refinery_adapter_preserves_docked_miner_track_speed_and_cargo() {
     let mut sim = Simulation::new();
     let rules = miner_rules();
 
@@ -4855,6 +4860,23 @@ fn sell_refinery_interrupts_docked_miner_with_force_track_0x47() {
             .get_mut(miner_id)
             .expect("miner entity");
         entity.display_type_override = Some(sim.interner.intern("CMON"));
+        // Retained movement is supplied to catch both an unsupported Force
+        // and an invented universal cancel. This test does not model native
+        // sale radio0x17's later scatter/mission behavior.
+        entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+        entity.drive_locomotion = Some(crate::sim::components::DriveLocomotionRuntime {
+            head_to: Some(crate::sim::components::DriveCoord::cell(13, 12, 0)),
+            track: crate::sim::components::TrackProgress {
+                turn_index: 0,
+                cursor: 2,
+                reversed: true,
+                residual: 3,
+            },
+            track_valid: true,
+            ..Default::default()
+        });
+        entity.foot_speed.applied_fraction = crate::util::fixed_math::SimFixed::lit("0.25");
+        entity.foot_speed.cached_current_speed = 7;
         let miner = entity.miner.as_mut().expect("miner component");
         for _ in 0..miner.capacity_bales {
             miner.cargo.push(CargoBale {
@@ -4870,6 +4892,15 @@ fn sell_refinery_interrupts_docked_miner_with_force_track_0x47() {
     sim.production.dock_reservations.try_reserve(100, miner_id);
     sim.production.dock_reservations.link_on_pad(100, miner_id);
 
+    let (position_before, drive_before, speed_before, cargo_before) = {
+        let entity = sim.substrate.entities.get(miner_id).unwrap();
+        (
+            crate::sim::movement::ground_pose::position_world_coord(&entity.position),
+            entity.drive_locomotion.clone(),
+            entity.foot_speed.clone(),
+            entity.miner.as_ref().unwrap().cargo.clone(),
+        )
+    };
     assert!(crate::sim::production::sell_building(&mut sim, &rules, 100));
 
     // Deferred-delete: sell_building enqueues; the end-of-tick P9 flush (invoked
@@ -4888,12 +4919,17 @@ fn sell_refinery_interrupts_docked_miner_with_force_track_0x47() {
     assert_eq!(miner.exit_cell, None);
     assert_eq!(entity.display_type_override, None);
     assert!(entity.movement_target.is_none());
-    let forced = entity
-        .forced_drive_track
-        .as_ref()
-        .expect("sell interrupt must seed forced undock track");
-    assert_eq!(forced.turn_track_index, 0x47);
-    assert_eq!(forced.track.raw_track_index, 15);
+    assert!(
+        !has_bunker_release_track(entity),
+        "refinery on_pad does not authorize bunker Force_Track(0x47)"
+    );
+    assert_eq!(
+        crate::sim::movement::ground_pose::position_world_coord(&entity.position),
+        position_before
+    );
+    assert_eq!(entity.drive_locomotion, drive_before);
+    assert_eq!(entity.foot_speed, speed_before);
+    assert_eq!(miner.cargo, cargo_before);
 }
 
 #[test]
@@ -4944,8 +4980,8 @@ fn sell_refinery_cancels_contact_miner_without_force_track_0x47() {
     assert_eq!(miner.exit_cell, None);
     assert!(entity.movement_target.is_none());
     assert!(
-        entity.forced_drive_track.is_none(),
-        "plain HELLO/contact miners are not physically docked and must not receive Force_Track(0x47)"
+        !has_bunker_release_track(entity),
+        "refinery contacts do not authorize bunker Force_Track(0x47)"
     );
 }
 
@@ -5350,7 +5386,7 @@ fn full_dock_cycle_war_miner() {
         Some(crate::sim::mission::MissionType::Guard),
         "state 4 queued Guard behind the exit move"
     );
-    assert!(entity.forced_drive_track.is_none());
+    assert!(!has_bunker_release_track(entity));
 
     let m = entity.miner.as_ref().expect("miner");
     // After Departing → SearchOre, with no ore on the map the miner falls
@@ -8693,10 +8729,7 @@ fn stop_does_not_force_guard_on_a_non_miner() {
         0,
         0,
         owner_id,
-        Health {
-            current: 300,
-            max: 300,
-        },
+        Health { current: 300 },
         type_id,
         EntityCategory::Unit,
         0,
@@ -8767,10 +8800,7 @@ fn occupy_refinery(sim: &mut Simulation, refinery_sid: u64, occupant_sid: u64, o
         0,
         0,
         owner_id,
-        Health {
-            current: 600,
-            max: 600,
-        },
+        Health { current: 600 },
         type_id,
         EntityCategory::Unit,
         0,
@@ -9137,8 +9167,7 @@ fn miner_rules_with_refinery_art() -> RuleSet {
          SpawnFrames=1\n\
          Lifetime=200\n",
     );
-    let mut rules = RuleSet::from_ini(&ini).expect("miner rules with refinery art");
-    let art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
+    let art_ini = IniFile::from_str(
         "[GAREFN]\n\
          SpecialAnim=GAREFNOR\n\
          [GAREFNOR]\n\
@@ -9146,7 +9175,13 @@ fn miner_rules_with_refinery_art() -> RuleSet {
          LoopStart=0\n\
          LoopEnd=200\n\
          Rate=100\n",
-    ));
+    );
+    let mut registry_ini = ini.clone();
+    registry_ini.merge(&IniFile::from_str("[Animations]\n0=GAREFNOR\n"));
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&registry_ini, &art_ini)
+        .expect("miner rules with refinery art");
+    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&art_ini);
+    art.bind_anim_frame_count_for_test("GAREFNOR", 400);
     rules.merge_art_data(&art);
     rules
 }
@@ -9217,9 +9252,9 @@ fn trace_unload_presentation(
                 .entities
                 .get(2)
                 .expect("refinery")
-                .building_anim_overlays
-                .as_ref()
-                .is_some_and(|o| o.anims.iter().any(|a| a.anim_type == special)),
+                .building_anim_slots[10]
+                .and_then(|id| sim.anim(id))
+                .is_some_and(|anim| anim.type_id == special),
         );
     }
     trace
@@ -9481,9 +9516,7 @@ fn damaged_refinery_ore_only_unload_smokes_twice_without_special_anim() {
     let miner_id = spawn_queued_unload_miner(&mut sim, &[(ResourceType::Ore, 25); 5]);
     {
         let refinery = sim.substrate.entities.get_mut(2).expect("refinery");
-        refinery.health.max = 1000;
-        refinery.health.current =
-            u16::try_from(rules.general.condition_yellow_x1000).expect("ratio fits");
+        refinery.health.current = rules.object("GAREFN").expect("refinery type").strength / 2;
     }
 
     let trace = trace_unload_presentation(&mut sim, &rules, 60);
@@ -9506,14 +9539,13 @@ fn damaged_refinery_ore_only_unload_smokes_twice_without_special_anim() {
     assert!(get_miner(&sim, miner_id).cargo.is_empty(), "cargo drained");
 }
 
-/// `BuildingClass::ReceiveDamage @ 0x00442230` result-4 arm → `UndockUnit @
-/// 0x004593A0` (0x004424EA): a refinery killed by damage while a miner is on
-/// the pad releases the docked miner THAT frame — the `+0x2E4` link and the
-/// contact go, the remaining cargo stays aboard (no deposit), and the miner is
-/// pushed off along the `0x47` `Force_Track`. Before this landed the miner
-/// only noticed at its next slot-drain gate.
+/// Keep damage-transaction coverage of VERA's existing eager contact/reset
+/// adapter, without treating its timing as native parity. Native4424A2 gates
+/// Force release4593A0 on reciprocal bunker+2E4; refinery contacts/on_pad do
+/// not satisfy it. Native death's pointer-expiry/Limbo and contact-loss Unload
+/// scheduling remain separate unfinished work.
 #[test]
-fn refinery_destroyed_by_damage_undocks_the_unloading_miner_same_tick() {
+fn refinery_damage_adapter_preserves_unloading_miner_motion_and_cargo() {
     use crate::sim::combat::EntityDamageEvent;
     use crate::sim::house_state::HouseState;
 
@@ -9548,6 +9580,10 @@ fn refinery_destroyed_by_damage_undocks_the_unloading_miner_same_tick() {
             .entities
             .get_mut(miner_id)
             .expect("miner entity");
+        entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+        entity.drive_locomotion = Some(Default::default());
+        entity.foot_speed.applied_fraction = crate::util::fixed_math::SimFixed::lit("0.25");
+        entity.foot_speed.cached_current_speed = 7;
         let miner = entity.miner.as_mut().expect("miner component");
         for _ in 0..4 {
             miner.cargo.push(CargoBale {
@@ -9563,6 +9599,15 @@ fn refinery_destroyed_by_damage_undocks_the_unloading_miner_same_tick() {
     sim.production.dock_reservations.try_reserve(2, miner_id);
     sim.production.dock_reservations.link_on_pad(2, miner_id);
     let credits_before = credits_for_owner(&sim, "Americans");
+    let (position_before, drive_before, speed_before, cargo_before) = {
+        let entity = sim.substrate.entities.get(miner_id).unwrap();
+        (
+            crate::sim::movement::ground_pose::position_world_coord(&entity.position),
+            entity.drive_locomotion.clone(),
+            entity.foot_speed.clone(),
+            entity.miner.as_ref().unwrap().cargo.clone(),
+        )
+    };
 
     // Kill the refinery through the damage transaction (not a sale).
     let warhead = sim.interner.intern("KILLWH");
@@ -9582,7 +9627,10 @@ fn refinery_destroyed_by_damage_undocks_the_unloading_miner_same_tick() {
         .get(miner_id)
         .expect("miner survives");
     let miner = miner_entity.miner.as_ref().expect("miner component");
-    assert_eq!(miner.reserved_refinery, None, "+0x2E4 link cleared");
+    assert_eq!(
+        miner.reserved_refinery, None,
+        "refinery reservation cleared"
+    );
     assert_eq!(miner.dock_phase, RefineryDockPhase::Approach);
     assert!(!miner.unload_active, "no deposit continues");
     assert_eq!(miner.cargo.len(), 4, "remaining cargo stays aboard");
@@ -9595,9 +9643,16 @@ fn refinery_destroyed_by_damage_undocks_the_unloading_miner_same_tick() {
             && !sim.production.dock_reservations.is_on_pad(2, miner_id)
     );
     assert!(
-        miner_entity.forced_drive_track.is_some(),
-        "UndockUnit Head_To(0x47) push-off track installed"
+        !has_bunker_release_track(miner_entity),
+        "refinery loss does not authorize bunker Force_Track(0x47)"
     );
+    assert_eq!(
+        crate::sim::movement::ground_pose::position_world_coord(&miner_entity.position),
+        position_before
+    );
+    assert_eq!(miner_entity.drive_locomotion, drive_before);
+    assert_eq!(miner_entity.foot_speed, speed_before);
+    assert_eq!(miner.cargo, cargo_before);
     assert_eq!(
         credits_for_owner(&sim, "Americans"),
         credits_before,

@@ -1,0 +1,418 @@
+{
+  "blockage_path_delay": [
+    {
+      "initial": 60,
+      "output": 60,
+      "raw": null
+    },
+    {
+      "initial": 60,
+      "output": 0,
+      "raw": ""
+    },
+    {
+      "initial": 60,
+      "output": 0,
+      "raw": "0"
+    },
+    {
+      "initial": 60,
+      "output": -1,
+      "raw": "-1"
+    },
+    {
+      "initial": 60,
+      "output": 65535,
+      "raw": "65535"
+    },
+    {
+      "initial": 60,
+      "output": 65536,
+      "raw": "65536"
+    },
+    {
+      "initial": 60,
+      "output": -2147483648,
+      "raw": "2147483648"
+    },
+    {
+      "initial": 60,
+      "output": -1,
+      "raw": "4294967295"
+    },
+    {
+      "initial": 60,
+      "output": 0,
+      "raw": "4294967296"
+    },
+    {
+      "initial": 60,
+      "output": -1,
+      "raw": "$FFFFFFFF"
+    },
+    {
+      "initial": 60,
+      "output": -1,
+      "raw": "FFFFFFFFh"
+    },
+    {
+      "initial": 60,
+      "output": 0,
+      "raw": "junk"
+    },
+    {
+      "initial": -7,
+      "output": -7,
+      "raw": null
+    },
+    {
+      "initial": -7,
+      "output": 0,
+      "raw": ""
+    },
+    {
+      "initial": -7,
+      "output": 0,
+      "raw": "0"
+    },
+    {
+      "initial": -7,
+      "output": -1,
+      "raw": "-1"
+    },
+    {
+      "initial": -7,
+      "output": 65535,
+      "raw": "65535"
+    },
+    {
+      "initial": -7,
+      "output": 65536,
+      "raw": "65536"
+    },
+    {
+      "initial": -7,
+      "output": -2147483648,
+      "raw": "2147483648"
+    },
+    {
+      "initial": -7,
+      "output": -1,
+      "raw": "4294967295"
+    },
+    {
+      "initial": -7,
+      "output": 0,
+      "raw": "4294967296"
+    },
+    {
+      "initial": -7,
+      "output": -1,
+      "raw": "$FFFFFFFF"
+    },
+    {
+      "initial": -7,
+      "output": -1,
+      "raw": "FFFFFFFFh"
+    },
+    {
+      "initial": -7,
+      "output": 0,
+      "raw": "junk"
+    }
+  ],
+  "conversion_sites": [
+    "004B2850",
+    "004B3A65",
+    "004D4022",
+    "00516696",
+    "005168DC",
+    "005B0286",
+    "005B0CAE",
+    "006A1EA0",
+    "006A30B4",
+    "0075AF6F",
+    "0075B98C"
+  ],
+  "conversions": [
+    {
+      "bits": "0000000000000000",
+      "ticks": 0
+    },
+    {
+      "bits": "8000000000000000",
+      "ticks": 0
+    },
+    {
+      "bits": "3f90624dd2f1a9fc",
+      "ticks": 14
+    },
+    {
+      "bits": "3f847ae147ae147b",
+      "ticks": 9
+    },
+    {
+      "bits": "bf847ae147ae147b",
+      "ticks": -9
+    },
+    {
+      "bits": "7ff8000000000001",
+      "ticks": 0
+    },
+    {
+      "bits": "7ff0000000000000",
+      "ticks": 0
+    },
+    {
+      "bits": "fff0000000000000",
+      "ticks": 0
+    },
+    {
+      "bits": "41323456789abcde",
+      "ticks": 1073741823
+    },
+    {
+      "bits": "c1323456789abcde",
+      "ticks": -1073741823
+    },
+    {
+      "bits": "7fefffffffffffff",
+      "ticks": 0
+    }
+  ],
+  "defaults": {
+    "blockage": 60,
+    "path_bits": "3f90624dd2f1a9fc"
+  },
+  "path_delay": [
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "3f90624dd2f1a9fc",
+      "raw": null,
+      "ticks": 14
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "381073b480000000",
+      "raw": "",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "0000000000000000",
+      "raw": "0",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "8000000000000000",
+      "raw": "-0",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "3f847ae140000000",
+      "raw": "0.01",
+      "ticks": 8
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "3f90624de0000000",
+      "raw": "0.016",
+      "ticks": 14
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "3fb99999a0000000",
+      "raw": "0.1",
+      "ticks": 90
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "3f52345680000000",
+      "raw": "0.0011111111111111",
+      "ticks": 1
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "bf847ae140000000",
+      "raw": "-0.01",
+      "ticks": -8
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "3f847ae147ae147b",
+      "raw": "1%",
+      "ticks": 9
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "bf847ae147ae147b",
+      "raw": "-1%",
+      "ticks": -9
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "3fd0000000000000",
+      "raw": "0.25junk",
+      "ticks": 225
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "3f50624de0000000",
+      "raw": "1e-3",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "41e0000000000000",
+      "raw": "2147483648",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "c1e0000000000000",
+      "raw": "-2147483649",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "46293e5940000000",
+      "raw": "1e30",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "381073b480000000",
+      "raw": "nan",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "381073b480000000",
+      "raw": "inf",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "381073b480000000",
+      "raw": "junk",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "3fb999999999999a",
+      "raw": null,
+      "ticks": 90
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "381073b480000000",
+      "raw": "",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "0000000000000000",
+      "raw": "0",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "8000000000000000",
+      "raw": "-0",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "3f847ae140000000",
+      "raw": "0.01",
+      "ticks": 8
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "3f90624de0000000",
+      "raw": "0.016",
+      "ticks": 14
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "3fb99999a0000000",
+      "raw": "0.1",
+      "ticks": 90
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "3f52345680000000",
+      "raw": "0.0011111111111111",
+      "ticks": 1
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "bf847ae140000000",
+      "raw": "-0.01",
+      "ticks": -8
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "3f847ae147ae147b",
+      "raw": "1%",
+      "ticks": 9
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "bf847ae147ae147b",
+      "raw": "-1%",
+      "ticks": -9
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "3fd0000000000000",
+      "raw": "0.25junk",
+      "ticks": 225
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "3f50624de0000000",
+      "raw": "1e-3",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "41e0000000000000",
+      "raw": "2147483648",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "c1e0000000000000",
+      "raw": "-2147483649",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "46293e5940000000",
+      "raw": "1e30",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "381073b480000000",
+      "raw": "nan",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "381073b480000000",
+      "raw": "inf",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "381073b480000000",
+      "raw": "junk",
+      "ticks": 0
+    }
+  ],
+  "schema_version": 1
+}

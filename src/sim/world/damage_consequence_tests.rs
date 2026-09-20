@@ -49,7 +49,6 @@ fn consequence_world() -> (Simulation, u64, u64) {
     ] {
         let mut entity = GameEntity::test_default(id, kind, owner, rx, 5);
         entity.health.current = hp;
-        entity.health.max = hp;
         sim.substrate.entities.insert(entity);
     }
     sim.interner = crate::sim::intern::test_interner();

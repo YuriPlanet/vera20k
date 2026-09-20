@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original46494B..46499D growth branch and465E70 vector resize/copy; supplied parsed new count and previous count. Not complete Rules/ART caller.",
+  "assumptions": [
+    "Prior count may be smaller than allocated capacity after an earlier shrink.",
+    "Mapped prefix guard observes original out-of-bounds write for previous=-1; this is evidence of invalid native memory access, not an admitted portable coordinate value."
+  ],
+  "substitutions": [
+    "7C8E17 allocation and7C8B3D free use deterministic scratch heap; gameplay copy/zero loops unchanged."
+  ],
+  "entry_points": {
+    "growth": "0x0046494B",
+    "resize": "0x00465E70"
+  },
+  "payload_sha256": "c388cb13346ac98b603625284a1c350e5d531aed4e8387b6d970cbb3a012d72e"
+}

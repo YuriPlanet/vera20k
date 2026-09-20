@@ -2870,10 +2870,7 @@ mod tests {
             0,
             0,
             InternedId::from_index(0),
-            Health {
-                current: 10,
-                max: 10,
-            },
+            Health { current: 10 },
             InternedId::from_index(1),
             EntityCategory::Structure,
             0,
@@ -2945,10 +2942,7 @@ mod tests {
                 0,
                 0,
                 InternedId::from_index(0),
-                Health {
-                    current: 10,
-                    max: 10,
-                },
+                Health { current: 10 },
                 InternedId::from_index(stable_id as u32),
                 category,
                 0,

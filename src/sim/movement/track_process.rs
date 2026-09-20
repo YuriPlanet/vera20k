@@ -23,13 +23,15 @@ pub(crate) enum TrackFamily {
     Ship,
 }
 
-/// Owned handoff from the once-per-visit speed calculation to the world host.
+/// Owned admission handoff to the world TrackProcess entry.
 /// No path snapshot or entity borrow crosses a synchronous owner receiver.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TrackInvocation {
     pub entity_id: u64,
     pub family: TrackFamily,
-    pub fresh_budget: i32,
+    /// Fresh ProcessMovement acceptance owes Apply1 before the paid loop.
+    /// This synchronous handoff never crosses a frame or snapshot boundary.
+    pub apply_fresh_occupation: bool,
 }
 
 impl TrackFamily {

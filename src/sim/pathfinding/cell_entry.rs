@@ -152,18 +152,19 @@
 //!   (scatter) where retail yields 2 (wait) or 7. Frequency: constant in
 //!   infantry-heavy play. Downstream risk: the counter has to be threaded
 //!   through the walk, which is the one structural change on this list.
-//! - **Code 1 is the wrong producer.** VERA emits `Crushable` (code 1) for a
-//!   successful crush; gamemd returns **0** for a crush on the Unit latch path
-//!   and 2 when a vehicle also occupies the cell. Code 1 comes from an unrelated
-//!   `+0x220 == 2` test in the non-allied branch — where the base is **not** the
-//!   occupant but the return value of `FUN_0040DD20()`, and both the receiver's
-//!   type and the field's meaning are UNCHECKED. Trigger: any crush. Player effect: **none today** — movement
-//!   groups `Clear | Crushable` at the same call site. Frequency: n/a while the
-//!   cost table is unwired. Downstream risk: the moment `0x0081870C` is wired,
-//!   code 1 costs 1000× where code 0 costs 1×, so every crushable cell becomes a
-//!   near-wall to the search. The crush-latch comment on
-//!   [`classify_occupied_cell_with_layers_and_ignored`] is correct for
-//!   `UnitClass` and **false for Infantry**, which has no crush latch at all.
+//! - **Mixed crush/vehicle occupation uses the native tail.** The semantic
+//!   `Crushable` payload now maps to code0: Unit73FB67 sets the latch without
+//!   raising the accumulator, and73FD37 returns0. Admission leaves killing to
+//!   PerCell. With the independent vehicle bit set,73FCF6..73FD23 instead
+//!   queries GetUnit and IsCrushableBy, returning2 unless that vehicle is also
+//!   crushable. The runtime wrapper reads the selected raw plane and queries
+//!   the first GROUND-list Unit, including self/allied entries. The supplied
+//!   post-walk continuation is compared in `cell_entry_crush_tail_tests.rs`.
+//!   The preceding latch producer still uses `bump_crush`'s recorded capability,
+//!   target-category and frame-independent eligibility approximations; this is
+//!   not complete Unit CanEnter parity.
+//!   Native code1 comes from the unrelated non-allied +220 branch. The Unit
+//!   latch must not be generalized to Infantry, which has no such latch.
 //! - **`MovementRestrictedTo=`** (`UnitTypeClass+0xDFC`, Unit only): when set,
 //!   the cell's land type must equal it. LandType 10 (Tunnel) is exempt from the
 //!   equality test but carries its own rule — `g_IsometricTileTypeClass_Array`
@@ -221,7 +222,7 @@ use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::bump_crush;
 use crate::sim::movement::locomotor::MovementLayer;
-use crate::sim::occupancy::{CellOccupationGrid, OccupancyGrid};
+use crate::sim::occupancy::{CellOccupationGrid, OccupancyGrid, RawCellOccupationGrid};
 
 // ---------------------------------------------------------------------------
 // Result enums
@@ -236,7 +237,8 @@ use crate::sim::occupancy::{CellOccupationGrid, OccupancyGrid};
 pub enum CellEntryResult {
     /// Code 0: Cell is passable. Enter freely.
     Clear,
-    /// Code 1: Cell contains crushable occupants. Crush and enter.
+    /// Code 0 with crushable occupants. Admission does not kill them; the
+    /// Unit PerCell receiver owns crushing after movement reaches the cell.
     Crushable { victims: Vec<u64> },
     /// Code 2: Blocked by a moving friendly unit. Wait, then repath.
     TemporaryBlock { blocker_id: u64 },
@@ -245,11 +247,11 @@ pub enum CellEntryResult {
     TemporaryOccupation,
     /// Code 3: Allied building/scatter-required soft block.
     ScatterRequired { blocker_id: Option<u64> },
-    /// Code 4: Friendly wall/overlay soft block.
-    ///
-    /// **No producer.** VERA does not classify wall overlays at cell entry; see
-    /// the module header for the native arm and its residual.
+    /// Code 4: Friendly wall/overlay soft block, targeting the queried cell.
     FriendlyWall,
+    /// Code 5: Enemy or unowned wall, targeting the queried cell rather than
+    /// inventing an object-list blocker identity.
+    EnemyWall,
     /// Code 5: Enemy unit occupying. Attack blocker while waiting.
     OccupiedEnemy { blocker_id: u64 },
     /// Code 6: Friendly stationary non-building occupant.
@@ -262,11 +264,13 @@ impl CellEntryResult {
     pub fn yr_code(&self) -> u8 {
         match self {
             Self::Clear => 0,
-            Self::Crushable { .. } => 1,
+            // Unit73FB67 sets the crush latch without raising the code;
+            // its clear tail73FD37 returns0. Native code1 is unrelated.
+            Self::Crushable { .. } => 0,
             Self::TemporaryBlock { .. } | Self::TemporaryOccupation => 2,
             Self::ScatterRequired { .. } => 3,
             Self::FriendlyWall => 4,
-            Self::OccupiedEnemy { .. } => 5,
+            Self::EnemyWall | Self::OccupiedEnemy { .. } => 5,
             Self::FriendlyStationary { .. } => 6,
             Self::Impassable => 7,
         }
@@ -1314,6 +1318,7 @@ pub fn classify_occupied_cell_with_layers_and_ignored(
         interner,
         None,
         &mut false,
+        false,
     )
 }
 
@@ -1336,6 +1341,7 @@ fn classify_occupied_cell_with_slave_query(
     interner: &crate::sim::intern::StringInterner,
     slave_query: Option<&crate::sim::slave_deposit::SlaveDepositQuery<'_>>,
     slave_cleared_vehicle: &mut bool,
+    native_unit_tail: bool,
 ) -> CellEntryResult {
     let _ = mover_bypass_grid;
     // --- Crush candidates ---
@@ -1344,14 +1350,24 @@ fn classify_occupied_cell_with_slave_query(
     // raised the running code above 0. An occupant the mover can crush does not
     // contribute a code; one it cannot crush raises the code like any blocker.
     let ally_gate = bump_crush::CrushAllyGate::new(mover_owner, alliances, interner);
-    let victims = bump_crush::collect_crush_victims(
-        target,
-        occupancy,
-        layers.object_list_layer,
-        crush_capability,
-        entities,
-        ally_gate,
-    );
+    // Infantry's native predicate has no Unit crush latch. The missing-mover
+    // allowance is for the older frame-independent planning API; live runtime
+    // callers supply their mover and the raw occupation wrapper below.
+    let victims = if entities
+        .get(mover_id)
+        .is_none_or(|mover| mover.category == EntityCategory::Unit)
+    {
+        bump_crush::collect_crush_victims(
+            target,
+            occupancy,
+            layers.object_list_layer,
+            crush_capability,
+            entities,
+            ally_gate,
+        )
+    } else {
+        Vec::new()
+    };
     let crushable: BTreeSet<u64> = victims.iter().copied().collect();
 
     // --- Walk the WHOLE selected cell list, worst occupant wins ---
@@ -1437,7 +1453,7 @@ fn classify_occupied_cell_with_slave_query(
         // backstop, not a modelled rule. Downstream risk: it converts any future
         // occupancy desync from a silent inconsistency into a visible refused
         // order, which is arguably the safer failure but is not parity.
-        if ignored_blockers.is_some() {
+        if native_unit_tail || ignored_blockers.is_some() {
             return apply_overrides(CellEntryResult::Clear, mover_locomotor);
         }
         return apply_overrides(CellEntryResult::Impassable, mover_locomotor);
@@ -1445,14 +1461,15 @@ fn classify_occupied_cell_with_slave_query(
 
     if worst == CellEntryResult::Clear
         && !victims.is_empty()
-        && bump_crush::cell_passable_after_crush(
-            target,
-            occupancy,
-            layers.occupancy_bits_layer,
-            crush_capability,
-            entities,
-            ally_gate,
-        )
+        && (native_unit_tail
+            || bump_crush::cell_passable_after_crush(
+                target,
+                occupancy,
+                layers.occupancy_bits_layer,
+                crush_capability,
+                entities,
+                ally_gate,
+            ))
     {
         return apply_overrides(CellEntryResult::Crushable { victims }, mover_locomotor);
     }
@@ -1475,6 +1492,8 @@ pub(crate) fn classify_occupied_cell_with_layers_and_ignored_and_occupation(
     ignored_blockers: Option<&BTreeSet<u64>>,
     occupancy: &OccupancyGrid,
     cell_occupation: &CellOccupationGrid,
+    raw_cell_occupation: &RawCellOccupationGrid,
+    current_frame: u32,
     entities: &EntityStore,
     alliances: &HouseAllianceMap,
     interner: &crate::sim::intern::StringInterner,
@@ -1490,6 +1509,8 @@ pub(crate) fn classify_occupied_cell_with_layers_and_ignored_and_occupation(
         ignored_blockers,
         occupancy,
         cell_occupation,
+        raw_cell_occupation,
+        current_frame,
         entities,
         alliances,
         interner,
@@ -1509,12 +1530,17 @@ pub(crate) fn classify_occupied_cell_with_occupation_and_slave_query(
     ignored_blockers: Option<&BTreeSet<u64>>,
     occupancy: &OccupancyGrid,
     cell_occupation: &CellOccupationGrid,
+    raw_cell_occupation: &RawCellOccupationGrid,
+    current_frame: u32,
     entities: &EntityStore,
     alliances: &HouseAllianceMap,
     interner: &crate::sim::intern::StringInterner,
     slave_query: Option<&crate::sim::slave_deposit::SlaveDepositQuery<'_>>,
 ) -> CellEntryResult {
     let mut slave_cleared_vehicle = false;
+    let native_unit_tail = entities
+        .get(mover_id)
+        .is_some_and(|mover| mover.category == EntityCategory::Unit);
     let result = classify_occupied_cell_with_slave_query(
         target,
         layers,
@@ -1530,7 +1556,48 @@ pub(crate) fn classify_occupied_cell_with_occupation_and_slave_query(
         interner,
         slave_query,
         &mut slave_cleared_vehicle,
+        native_unit_tail,
     );
+    if native_unit_tail {
+        // Unit73FC24 preserves every nonzero accumulated code. With a crush
+        // latch,73FCF6 only consults vehicle bit5, then GetUnit(false) on the
+        // GROUND list. There is no self/ignored-ID filter in that lookup and
+        // no owner attribution in the raw byte. Object walk and bit plane are
+        // intentionally independent. See tools/spatial_oracle/cell_entry_crush_tail.
+        if result.yr_code() != 0 || slave_cleared_vehicle {
+            return result;
+        }
+        let raw = match layers.occupancy_bits_layer {
+            MovementLayer::Ground => raw_cell_occupation.ground_bits(target.0, target.1),
+            MovementLayer::Bridge => raw_cell_occupation.deck_bits(target.0, target.1),
+            _ => 0,
+        };
+        if raw & 0x20 == 0 {
+            return result;
+        }
+        if matches!(result, CellEntryResult::Crushable { .. })
+            && occupancy.get(target.0, target.1).is_some_and(|cell| {
+                cell.iter_layer(MovementLayer::Ground)
+                    .filter_map(|occupant| entities.get(occupant.entity_id))
+                    .find(|entity| entity.category == EntityCategory::Unit)
+                    .is_some_and(|unit| {
+                        unit_tail_is_crushable_by(
+                            unit,
+                            crush_capability,
+                            houses::is_allied_with(
+                                alliances,
+                                mover_owner,
+                                interner.resolve(unit.owner()),
+                            ),
+                            current_frame,
+                        )
+                    })
+            })
+        {
+            return result;
+        }
+        return apply_overrides(CellEntryResult::TemporaryOccupation, mover_locomotor);
+    }
     if !slave_cleared_vehicle
         && matches!(result, CellEntryResult::Clear | CellEntryResult::Impassable)
         && cell_occupation.occupied_by_other(
@@ -1545,6 +1612,32 @@ pub(crate) fn classify_occupied_cell_with_occupation_and_slave_query(
         result
     }
 }
+
+/// The Unit-target subset of Object::IsCrushableBy5F6CD0, reached by the
+/// post-latch GetUnit(false) exception at73FD17. The caller has already supplied
+/// a latch; this leaf does not retest Crusher/ability or apply kills. Both native
+/// arms test mover-house alliance and the target's +160 invulnerability slot.
+/// A rejected Omni arm falls through to ordinary Crushable, which does not
+/// read OmniCrushResistant or the mover's regular-crusher flag.
+fn unit_tail_is_crushable_by(
+    unit: &GameEntity,
+    capability: bump_crush::CrushCapability,
+    mover_considers_target_allied: bool,
+    current_frame: u32,
+) -> bool {
+    debug_assert_eq!(unit.category, EntityCategory::Unit);
+    let target = bump_crush::CrushTarget::from_entity(unit, current_frame);
+    // Live Unit entities carry Techno abstract flag1. Deploy crush immunity
+    // is written only by Infantry deploy; it is always clear on this subset.
+    ((capability.omni_crusher && !target.omni_crush_resistant)
+        || (target.crushable && !target.deploy_crush_immune))
+        && !mover_considers_target_allied
+        && !target.iron_curtained
+}
+
+#[cfg(test)]
+#[path = "cell_entry_crush_tail_tests.rs"]
+mod crush_tail_tests;
 
 /// First blocker entity in the selected layer's cell list.
 ///
@@ -2260,7 +2353,7 @@ mod tests {
     #[test]
     fn cell_entry_result_yr_codes_match_verified_table() {
         assert_eq!(CellEntryResult::Clear.yr_code(), 0);
-        assert_eq!(CellEntryResult::Crushable { victims: vec![1] }.yr_code(), 1);
+        assert_eq!(CellEntryResult::Crushable { victims: vec![1] }.yr_code(), 0);
         assert_eq!(
             CellEntryResult::TemporaryBlock { blocker_id: 1 }.yr_code(),
             2

@@ -1,0 +1,8486 @@
+[
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "004B357F",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 0,
+      "family": "drive",
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "004B357F",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 0,
+      "family": "drive",
+      "stage": "first",
+      "train": true
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "redraw_response",
+    "boundary_address": "004B394D",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 1
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 1,
+      "family": "drive",
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "004B357F",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 1
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 1,
+      "family": "drive",
+      "stage": "first",
+      "train": true
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code2_blocked_delay_response",
+    "boundary_address": "004B3656",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 2,
+      "family": "drive",
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 2
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "004B357F",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 2,
+      "family": "drive",
+      "stage": "first",
+      "train": true
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "gate_response",
+    "boundary_address": "004B35EC",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 3
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 3,
+      "family": "drive",
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 3
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "004B357F",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 3
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 3,
+      "family": "drive",
+      "stage": "first",
+      "train": true
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "wall_override_response",
+    "boundary_address": "004B3AD3",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 4,
+      "family": "drive",
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 4
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "004B357F",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 4,
+      "family": "drive",
+      "stage": "first",
+      "train": true
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "wall_override_response",
+    "boundary_address": "004B3AD3",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 5,
+      "family": "drive",
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 5
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "004B357F",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 5,
+      "family": "drive",
+      "stage": "first",
+      "train": true
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "scatter_response",
+    "boundary_address": "004B36FD",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 6
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 6,
+      "family": "drive",
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 6
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "004B357F",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 6
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 6,
+      "family": "drive",
+      "stage": "first",
+      "train": true
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "other_blocked_response",
+    "boundary_address": "004B3AA1",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 7
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 7,
+      "family": "drive",
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 7
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "other_blocked_response",
+    "boundary_address": "004B3AA1",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 7
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 7,
+      "family": "drive",
+      "stage": "first",
+      "train": true
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 7
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "wall_override_response",
+    "boundary_address": "004B3AD3",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 4,
+      "crusher": true,
+      "family": "drive",
+      "first_overlay": -1,
+      "second_overlay": 0,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 4
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "004B357F",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 4,
+      "crusher": true,
+      "family": "drive",
+      "first_overlay": 0,
+      "second_overlay": -1,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "wall_override_response",
+    "boundary_address": "004B3AD3",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 4,
+      "crusher": true,
+      "family": "drive",
+      "first_overlay": 1,
+      "second_overlay": 0,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 4
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "wall_override_response",
+    "boundary_address": "004B3AD3",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 5,
+      "crusher": true,
+      "family": "drive",
+      "first_overlay": -1,
+      "second_overlay": 0,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 5
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "004B357F",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 5,
+      "crusher": true,
+      "family": "drive",
+      "first_overlay": 0,
+      "second_overlay": -1,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "wall_override_response",
+    "boundary_address": "004B3AD3",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 5,
+      "crusher": true,
+      "family": "drive",
+      "first_overlay": 1,
+      "second_overlay": 0,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 5
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "004B45CB",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      }
+    ],
+    "input": {
+      "code": 0,
+      "family": "drive",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "004B45CB",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      }
+    ],
+    "input": {
+      "code": 0,
+      "family": "drive",
+      "stage": "second",
+      "train": true
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "redraw_response",
+    "boundary_address": "004B444A",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 1
+      }
+    ],
+    "input": {
+      "code": 1,
+      "family": "drive",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "004B45CB",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 1
+      }
+    ],
+    "input": {
+      "code": 1,
+      "family": "drive",
+      "stage": "second",
+      "train": true
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "recursive_process_movement",
+    "boundary_address": "004B2630",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      }
+    ],
+    "input": {
+      "code": 2,
+      "family": "drive",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120",
+      "004B4219"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "recursive_arguments": [
+      2882339125,
+      1,
+      1
+    ],
+    "saved_effective_code": 2
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "004B45CB",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      }
+    ],
+    "input": {
+      "code": 2,
+      "family": "drive",
+      "stage": "second",
+      "train": true
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "gate_response",
+    "boundary_address": "004B419B",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 3
+      }
+    ],
+    "input": {
+      "code": 3,
+      "family": "drive",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 3
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "004B45CB",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 3
+      }
+    ],
+    "input": {
+      "code": 3,
+      "family": "drive",
+      "stage": "second",
+      "train": true
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "clear_track_then_retry_or_stop",
+    "boundary_address": "004B41B3",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      }
+    ],
+    "input": {
+      "code": 4,
+      "family": "drive",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 4
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "004B45CB",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      }
+    ],
+    "input": {
+      "code": 4,
+      "family": "drive",
+      "stage": "second",
+      "train": true
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "clear_track_then_retry_or_stop",
+    "boundary_address": "004B41B3",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      }
+    ],
+    "input": {
+      "code": 5,
+      "family": "drive",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 5
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "004B45CB",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      }
+    ],
+    "input": {
+      "code": 5,
+      "family": "drive",
+      "stage": "second",
+      "train": true
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "scatter_response",
+    "boundary_address": "004B4231",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 6
+      }
+    ],
+    "input": {
+      "code": 6,
+      "family": "drive",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 6
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "004B45CB",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 6
+      }
+    ],
+    "input": {
+      "code": 6,
+      "family": "drive",
+      "stage": "second",
+      "train": true
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code7_retry_or_stop",
+    "boundary_address": "004B4519",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 7
+      }
+    ],
+    "input": {
+      "code": 7,
+      "family": "drive",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 7
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code7_retry_or_stop",
+    "boundary_address": "004B4519",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 7
+      }
+    ],
+    "input": {
+      "code": 7,
+      "family": "drive",
+      "stage": "second",
+      "train": true
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 7
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "004B45CB",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      }
+    ],
+    "input": {
+      "code": 4,
+      "crusher": true,
+      "family": "drive",
+      "first_overlay": -1,
+      "second_overlay": 0,
+      "stage": "second"
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "clear_track_then_retry_or_stop",
+    "boundary_address": "004B41B3",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      }
+    ],
+    "input": {
+      "code": 4,
+      "crusher": true,
+      "family": "drive",
+      "first_overlay": 0,
+      "second_overlay": -1,
+      "stage": "second"
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 4
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "004B45CB",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      }
+    ],
+    "input": {
+      "code": 4,
+      "crusher": true,
+      "family": "drive",
+      "first_overlay": 1,
+      "second_overlay": 0,
+      "stage": "second"
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "004B45CB",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      }
+    ],
+    "input": {
+      "code": 5,
+      "crusher": true,
+      "family": "drive",
+      "first_overlay": -1,
+      "second_overlay": 0,
+      "stage": "second"
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "clear_track_then_retry_or_stop",
+    "boundary_address": "004B41B3",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      }
+    ],
+    "input": {
+      "code": 5,
+      "crusher": true,
+      "family": "drive",
+      "first_overlay": 0,
+      "second_overlay": -1,
+      "stage": "second"
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 5
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "004B45CB",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      }
+    ],
+    "input": {
+      "code": 5,
+      "crusher": true,
+      "family": "drive",
+      "first_overlay": 1,
+      "second_overlay": 0,
+      "stage": "second"
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "004B357F",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 0
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 0
+      }
+    ],
+    "input": {
+      "code": 0,
+      "family": "drive",
+      "mark_return": 0,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "004B357F",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 7
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 7
+      }
+    ],
+    "input": {
+      "code": 0,
+      "family": "drive",
+      "mark_return": 7,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code2_blocked_delay_response",
+    "boundary_address": "004B3656",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 0
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 0
+      }
+    ],
+    "input": {
+      "code": 2,
+      "family": "drive",
+      "mark_return": 0,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 2
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code2_blocked_delay_response",
+    "boundary_address": "004B3656",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 7
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 7
+      }
+    ],
+    "input": {
+      "code": 2,
+      "family": "drive",
+      "mark_return": 7,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "004B34AE",
+      "004B34C0",
+      "004B34D1"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 2
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "owner_not_alive",
+    "boundary_address": "004B3A4D",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      }
+    ],
+    "input": {
+      "alive": false,
+      "code": 0,
+      "family": "drive",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "owner_not_alive",
+    "boundary_address": "004B3A4D",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      }
+    ],
+    "input": {
+      "alive": false,
+      "code": 2,
+      "family": "drive",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "004B410B",
+      "004B4120"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 2
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_not_accepted",
+    "boundary_address": "004B1F48",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      }
+    ],
+    "input": {
+      "code": 0,
+      "family": "drive",
+      "passive": false,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "004B1C3E"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_eligible_after_unit_passive_gate",
+    "boundary_address": "004B1C78",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      }
+    ],
+    "input": {
+      "code": 0,
+      "family": "drive",
+      "passive": true,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "004B1C3E"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code1_response",
+    "boundary_address": "004B1E52",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 1
+      }
+    ],
+    "input": {
+      "code": 1,
+      "family": "drive",
+      "passive": false,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "004B1C3E"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code1_response",
+    "boundary_address": "004B1E52",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 1
+      }
+    ],
+    "input": {
+      "code": 1,
+      "family": "drive",
+      "passive": true,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "004B1C3E"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_not_accepted",
+    "boundary_address": "004B1F48",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      }
+    ],
+    "input": {
+      "code": 2,
+      "family": "drive",
+      "passive": false,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "004B1C3E"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_eligible_after_unit_passive_gate",
+    "boundary_address": "004B1C78",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      }
+    ],
+    "input": {
+      "code": 2,
+      "family": "drive",
+      "passive": true,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "004B1C3E"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code3_response",
+    "boundary_address": "004B1E6D",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 3
+      }
+    ],
+    "input": {
+      "code": 3,
+      "family": "drive",
+      "passive": false,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "004B1C3E"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code3_response",
+    "boundary_address": "004B1E6D",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 3
+      }
+    ],
+    "input": {
+      "code": 3,
+      "family": "drive",
+      "passive": true,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "004B1C3E"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_not_accepted",
+    "boundary_address": "004B1F48",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      }
+    ],
+    "input": {
+      "code": 4,
+      "family": "drive",
+      "passive": false,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "004B1C3E"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_not_accepted",
+    "boundary_address": "004B1F48",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      }
+    ],
+    "input": {
+      "code": 4,
+      "family": "drive",
+      "passive": true,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "004B1C3E"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_not_accepted",
+    "boundary_address": "004B1F48",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      }
+    ],
+    "input": {
+      "code": 5,
+      "family": "drive",
+      "passive": false,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "004B1C3E"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_not_accepted",
+    "boundary_address": "004B1F48",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      }
+    ],
+    "input": {
+      "code": 5,
+      "family": "drive",
+      "passive": true,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "004B1C3E"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code6_response",
+    "boundary_address": "004B1EC0",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 6
+      }
+    ],
+    "input": {
+      "code": 6,
+      "family": "drive",
+      "passive": false,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "004B1C3E"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code6_response",
+    "boundary_address": "004B1EC0",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 6
+      }
+    ],
+    "input": {
+      "code": 6,
+      "family": "drive",
+      "passive": true,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "004B1C3E"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_not_accepted",
+    "boundary_address": "004B1F48",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 7
+      }
+    ],
+    "input": {
+      "code": 7,
+      "family": "drive",
+      "passive": false,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "004B1C3E"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_not_accepted",
+    "boundary_address": "004B1F48",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 7
+      }
+    ],
+    "input": {
+      "code": 7,
+      "family": "drive",
+      "passive": true,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "004B1C3E"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_second_direction_overlay_checks",
+    "boundary_address": "004B3F93",
+    "callbacks": [],
+    "input": {
+      "family": "drive",
+      "first_direction": 1,
+      "recursive_flag": 0,
+      "second_direction": -1,
+      "stage": "recursive_normalization"
+    },
+    "observed_calls": [],
+    "original_code_unchanged": true,
+    "selected_second_direction": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_second_direction_overlay_checks",
+    "boundary_address": "004B3F93",
+    "callbacks": [],
+    "input": {
+      "family": "drive",
+      "first_direction": 1,
+      "recursive_flag": 1,
+      "second_direction": -1,
+      "stage": "recursive_normalization"
+    },
+    "observed_calls": [],
+    "original_code_unchanged": true,
+    "selected_second_direction": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_second_direction_overlay_checks",
+    "boundary_address": "004B3F93",
+    "callbacks": [],
+    "input": {
+      "family": "drive",
+      "first_direction": 1,
+      "recursive_flag": 0,
+      "second_direction": 1,
+      "stage": "recursive_normalization"
+    },
+    "observed_calls": [],
+    "original_code_unchanged": true,
+    "selected_second_direction": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_second_direction_overlay_checks",
+    "boundary_address": "004B3F93",
+    "callbacks": [],
+    "input": {
+      "family": "drive",
+      "first_direction": 1,
+      "recursive_flag": 1,
+      "second_direction": 1,
+      "stage": "recursive_normalization"
+    },
+    "observed_calls": [],
+    "original_code_unchanged": true,
+    "selected_second_direction": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_second_direction_overlay_checks",
+    "boundary_address": "004B3F93",
+    "callbacks": [],
+    "input": {
+      "family": "drive",
+      "first_direction": 1,
+      "recursive_flag": 0,
+      "second_direction": 2,
+      "stage": "recursive_normalization"
+    },
+    "observed_calls": [],
+    "original_code_unchanged": true,
+    "selected_second_direction": 2
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_second_direction_overlay_checks",
+    "boundary_address": "004B3F93",
+    "callbacks": [],
+    "input": {
+      "family": "drive",
+      "first_direction": 1,
+      "recursive_flag": 1,
+      "second_direction": 2,
+      "stage": "recursive_normalization"
+    },
+    "observed_calls": [],
+    "original_code_unchanged": true,
+    "selected_second_direction": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_second_direction_overlay_checks",
+    "boundary_address": "004B3F93",
+    "callbacks": [],
+    "input": {
+      "family": "drive",
+      "first_direction": 1,
+      "recursive_flag": 0,
+      "second_direction": 8,
+      "stage": "recursive_normalization"
+    },
+    "observed_calls": [],
+    "original_code_unchanged": true,
+    "selected_second_direction": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_second_direction_overlay_checks",
+    "boundary_address": "004B3F93",
+    "callbacks": [],
+    "input": {
+      "family": "drive",
+      "first_direction": 1,
+      "recursive_flag": 1,
+      "second_direction": 8,
+      "stage": "recursive_normalization"
+    },
+    "observed_calls": [],
+    "original_code_unchanged": true,
+    "selected_second_direction": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "006A2BCE",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 0,
+      "family": "ship",
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "006A2BCE",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 0,
+      "family": "ship",
+      "stage": "first",
+      "train": true
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "redraw_response",
+    "boundary_address": "006A2F9C",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 1
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 1,
+      "family": "ship",
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "006A2BCE",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 1
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 1,
+      "family": "ship",
+      "stage": "first",
+      "train": true
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code2_blocked_delay_response",
+    "boundary_address": "006A2CA5",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 2,
+      "family": "ship",
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 2
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "006A2BCE",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 2,
+      "family": "ship",
+      "stage": "first",
+      "train": true
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "gate_response",
+    "boundary_address": "006A2C3B",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 3
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 3,
+      "family": "ship",
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 3
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "006A2BCE",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 3
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 3,
+      "family": "ship",
+      "stage": "first",
+      "train": true
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "wall_override_response",
+    "boundary_address": "006A3122",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 4,
+      "family": "ship",
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 4
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "006A2BCE",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 4,
+      "family": "ship",
+      "stage": "first",
+      "train": true
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "wall_override_response",
+    "boundary_address": "006A3122",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 5,
+      "family": "ship",
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 5
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "006A2BCE",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 5,
+      "family": "ship",
+      "stage": "first",
+      "train": true
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "scatter_response",
+    "boundary_address": "006A2D4C",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 6
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 6,
+      "family": "ship",
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 6
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "006A2BCE",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 6
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 6,
+      "family": "ship",
+      "stage": "first",
+      "train": true
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "other_blocked_response",
+    "boundary_address": "006A30F0",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 7
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 7,
+      "family": "ship",
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 7
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "other_blocked_response",
+    "boundary_address": "006A30F0",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 7
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 7,
+      "family": "ship",
+      "stage": "first",
+      "train": true
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 7
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "wall_override_response",
+    "boundary_address": "006A3122",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 4,
+      "crusher": true,
+      "family": "ship",
+      "first_overlay": -1,
+      "second_overlay": 0,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 4
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "006A2BCE",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 4,
+      "crusher": true,
+      "family": "ship",
+      "first_overlay": 0,
+      "second_overlay": -1,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "wall_override_response",
+    "boundary_address": "006A3122",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 4,
+      "crusher": true,
+      "family": "ship",
+      "first_overlay": 1,
+      "second_overlay": 0,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 4
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "wall_override_response",
+    "boundary_address": "006A3122",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 5,
+      "crusher": true,
+      "family": "ship",
+      "first_overlay": -1,
+      "second_overlay": 0,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 5
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "006A2BCE",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 5,
+      "crusher": true,
+      "family": "ship",
+      "first_overlay": 0,
+      "second_overlay": -1,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "wall_override_response",
+    "boundary_address": "006A3122",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 3735928559
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 3735928559
+      }
+    ],
+    "input": {
+      "code": 5,
+      "crusher": true,
+      "family": "ship",
+      "first_overlay": 1,
+      "second_overlay": 0,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 5
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "006A3BF7",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      }
+    ],
+    "input": {
+      "code": 0,
+      "family": "ship",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "006A3BF7",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      }
+    ],
+    "input": {
+      "code": 0,
+      "family": "ship",
+      "stage": "second",
+      "train": true
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "redraw_response",
+    "boundary_address": "006A3A76",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 1
+      }
+    ],
+    "input": {
+      "code": 1,
+      "family": "ship",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "006A3BF7",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 1
+      }
+    ],
+    "input": {
+      "code": 1,
+      "family": "ship",
+      "stage": "second",
+      "train": true
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "recursive_process_movement",
+    "boundary_address": "006A1C80",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      }
+    ],
+    "input": {
+      "code": 2,
+      "family": "ship",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C",
+      "006A3845"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "recursive_arguments": [
+      2882339125,
+      1,
+      1
+    ],
+    "saved_effective_code": 2
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "006A3BF7",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      }
+    ],
+    "input": {
+      "code": 2,
+      "family": "ship",
+      "stage": "second",
+      "train": true
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "gate_response",
+    "boundary_address": "006A37C7",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 3
+      }
+    ],
+    "input": {
+      "code": 3,
+      "family": "ship",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 3
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "006A3BF7",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 3
+      }
+    ],
+    "input": {
+      "code": 3,
+      "family": "ship",
+      "stage": "second",
+      "train": true
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "clear_track_then_retry_or_stop",
+    "boundary_address": "006A37DF",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      }
+    ],
+    "input": {
+      "code": 4,
+      "family": "ship",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 4
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "006A3BF7",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      }
+    ],
+    "input": {
+      "code": 4,
+      "family": "ship",
+      "stage": "second",
+      "train": true
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "clear_track_then_retry_or_stop",
+    "boundary_address": "006A37DF",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      }
+    ],
+    "input": {
+      "code": 5,
+      "family": "ship",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 5
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "006A3BF7",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      }
+    ],
+    "input": {
+      "code": 5,
+      "family": "ship",
+      "stage": "second",
+      "train": true
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "scatter_response",
+    "boundary_address": "006A385D",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 6
+      }
+    ],
+    "input": {
+      "code": 6,
+      "family": "ship",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 6
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "006A3BF7",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 6
+      }
+    ],
+    "input": {
+      "code": 6,
+      "family": "ship",
+      "stage": "second",
+      "train": true
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code7_retry_or_stop",
+    "boundary_address": "006A3B45",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 7
+      }
+    ],
+    "input": {
+      "code": 7,
+      "family": "ship",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 7
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code7_retry_or_stop",
+    "boundary_address": "006A3B45",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 7
+      }
+    ],
+    "input": {
+      "code": 7,
+      "family": "ship",
+      "stage": "second",
+      "train": true
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 7
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "006A3BF7",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      }
+    ],
+    "input": {
+      "code": 4,
+      "crusher": true,
+      "family": "ship",
+      "first_overlay": -1,
+      "second_overlay": 0,
+      "stage": "second"
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "clear_track_then_retry_or_stop",
+    "boundary_address": "006A37DF",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      }
+    ],
+    "input": {
+      "code": 4,
+      "crusher": true,
+      "family": "ship",
+      "first_overlay": 0,
+      "second_overlay": -1,
+      "stage": "second"
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 4
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "006A3BF7",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      }
+    ],
+    "input": {
+      "code": 4,
+      "crusher": true,
+      "family": "ship",
+      "first_overlay": 1,
+      "second_overlay": 0,
+      "stage": "second"
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "006A3BF7",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      }
+    ],
+    "input": {
+      "code": 5,
+      "crusher": true,
+      "family": "ship",
+      "first_overlay": -1,
+      "second_overlay": 0,
+      "stage": "second"
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "clear_track_then_retry_or_stop",
+    "boundary_address": "006A37DF",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      }
+    ],
+    "input": {
+      "code": 5,
+      "crusher": true,
+      "family": "ship",
+      "first_overlay": 0,
+      "second_overlay": -1,
+      "stage": "second"
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 5
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_two_node_shift",
+    "boundary_address": "006A3BF7",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      }
+    ],
+    "input": {
+      "code": 5,
+      "crusher": true,
+      "family": "ship",
+      "first_overlay": 1,
+      "second_overlay": 0,
+      "stage": "second"
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "006A2BCE",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 0
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 0
+      }
+    ],
+    "input": {
+      "code": 0,
+      "family": "ship",
+      "mark_return": 0,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "accepted_before_terrain",
+    "boundary_address": "006A2BCE",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 7
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 7
+      }
+    ],
+    "input": {
+      "code": 0,
+      "family": "ship",
+      "mark_return": 7,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code2_blocked_delay_response",
+    "boundary_address": "006A2CA5",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 0
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 0
+      }
+    ],
+    "input": {
+      "code": 2,
+      "family": "ship",
+      "mark_return": 0,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 2
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 0
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code2_blocked_delay_response",
+    "boundary_address": "006A2CA5",
+    "callbacks": [
+      {
+        "callback": "mark",
+        "mode": 0,
+        "supplied_return": 7
+      },
+      {
+        "arguments": [
+          "first_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      },
+      {
+        "callback": "mark",
+        "mode": 1,
+        "supplied_return": 7
+      }
+    ],
+    "input": {
+      "code": 2,
+      "family": "ship",
+      "mark_return": 7,
+      "stage": "first"
+    },
+    "observed_calls": [
+      "006A2AFD",
+      "006A2B0F",
+      "006A2B20"
+    ],
+    "original_code_unchanged": true,
+    "saved_effective_code": 2
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "owner_not_alive",
+    "boundary_address": "006A309C",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      }
+    ],
+    "input": {
+      "alive": false,
+      "code": 0,
+      "family": "ship",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 0
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "owner_not_alive",
+    "boundary_address": "006A309C",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          1,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      }
+    ],
+    "input": {
+      "alive": false,
+      "code": 2,
+      "family": "ship",
+      "stage": "second"
+    },
+    "observed_calls": [
+      "006A3736",
+      "006A374C"
+    ],
+    "original_code_unchanged": true,
+    "produced_second_candidate": [
+      {
+        "candidate_xyz": [
+          2944,
+          2176,
+          312
+        ],
+        "saved_cell": [
+          11,
+          8
+        ]
+      }
+    ],
+    "saved_effective_code": 2
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_not_accepted",
+    "boundary_address": "006A158B",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      }
+    ],
+    "input": {
+      "code": 0,
+      "family": "ship",
+      "passive": false,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "006A1288"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_eligible_after_unit_passive_gate",
+    "boundary_address": "006A12C2",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 0
+      }
+    ],
+    "input": {
+      "code": 0,
+      "family": "ship",
+      "passive": true,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "006A1288"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code1_response",
+    "boundary_address": "006A1495",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 1
+      }
+    ],
+    "input": {
+      "code": 1,
+      "family": "ship",
+      "passive": false,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "006A1288"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code1_response",
+    "boundary_address": "006A1495",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 1
+      }
+    ],
+    "input": {
+      "code": 1,
+      "family": "ship",
+      "passive": true,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "006A1288"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_not_accepted",
+    "boundary_address": "006A158B",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      }
+    ],
+    "input": {
+      "code": 2,
+      "family": "ship",
+      "passive": false,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "006A1288"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_eligible_after_unit_passive_gate",
+    "boundary_address": "006A12C2",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 2
+      }
+    ],
+    "input": {
+      "code": 2,
+      "family": "ship",
+      "passive": true,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "006A1288"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code3_response",
+    "boundary_address": "006A14B0",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 3
+      }
+    ],
+    "input": {
+      "code": 3,
+      "family": "ship",
+      "passive": false,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "006A1288"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code3_response",
+    "boundary_address": "006A14B0",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 3
+      }
+    ],
+    "input": {
+      "code": 3,
+      "family": "ship",
+      "passive": true,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "006A1288"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_not_accepted",
+    "boundary_address": "006A158B",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      }
+    ],
+    "input": {
+      "code": 4,
+      "family": "ship",
+      "passive": false,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "006A1288"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_not_accepted",
+    "boundary_address": "006A158B",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 4
+      }
+    ],
+    "input": {
+      "code": 4,
+      "family": "ship",
+      "passive": true,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "006A1288"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_not_accepted",
+    "boundary_address": "006A158B",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      }
+    ],
+    "input": {
+      "code": 5,
+      "family": "ship",
+      "passive": false,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "006A1288"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_not_accepted",
+    "boundary_address": "006A158B",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 5
+      }
+    ],
+    "input": {
+      "code": 5,
+      "family": "ship",
+      "passive": true,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "006A1288"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code6_response",
+    "boundary_address": "006A1503",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 6
+      }
+    ],
+    "input": {
+      "code": 6,
+      "family": "ship",
+      "passive": false,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "006A1288"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "code6_response",
+    "boundary_address": "006A1503",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 6
+      }
+    ],
+    "input": {
+      "code": 6,
+      "family": "ship",
+      "passive": true,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "006A1288"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_not_accepted",
+    "boundary_address": "006A158B",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 7
+      }
+    ],
+    "input": {
+      "code": 7,
+      "family": "ship",
+      "passive": false,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "006A1288"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "chain_not_accepted",
+    "boundary_address": "006A158B",
+    "callbacks": [
+      {
+        "arguments": [
+          "second_candidate",
+          2,
+          3,
+          0,
+          1
+        ],
+        "callback": "can_enter",
+        "supplied_return": 7
+      }
+    ],
+    "input": {
+      "code": 7,
+      "family": "ship",
+      "passive": true,
+      "stage": "chain"
+    },
+    "observed_calls": [
+      "006A1288"
+    ],
+    "original_code_unchanged": true
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_second_direction_overlay_checks",
+    "boundary_address": "006A35E2",
+    "callbacks": [],
+    "input": {
+      "family": "ship",
+      "first_direction": 1,
+      "recursive_flag": 0,
+      "second_direction": -1,
+      "stage": "recursive_normalization"
+    },
+    "observed_calls": [],
+    "original_code_unchanged": true,
+    "selected_second_direction": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_second_direction_overlay_checks",
+    "boundary_address": "006A35E2",
+    "callbacks": [],
+    "input": {
+      "family": "ship",
+      "first_direction": 1,
+      "recursive_flag": 1,
+      "second_direction": -1,
+      "stage": "recursive_normalization"
+    },
+    "observed_calls": [],
+    "original_code_unchanged": true,
+    "selected_second_direction": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_second_direction_overlay_checks",
+    "boundary_address": "006A35E2",
+    "callbacks": [],
+    "input": {
+      "family": "ship",
+      "first_direction": 1,
+      "recursive_flag": 0,
+      "second_direction": 1,
+      "stage": "recursive_normalization"
+    },
+    "observed_calls": [],
+    "original_code_unchanged": true,
+    "selected_second_direction": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_second_direction_overlay_checks",
+    "boundary_address": "006A35E2",
+    "callbacks": [],
+    "input": {
+      "family": "ship",
+      "first_direction": 1,
+      "recursive_flag": 1,
+      "second_direction": 1,
+      "stage": "recursive_normalization"
+    },
+    "observed_calls": [],
+    "original_code_unchanged": true,
+    "selected_second_direction": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_second_direction_overlay_checks",
+    "boundary_address": "006A35E2",
+    "callbacks": [],
+    "input": {
+      "family": "ship",
+      "first_direction": 1,
+      "recursive_flag": 0,
+      "second_direction": 2,
+      "stage": "recursive_normalization"
+    },
+    "observed_calls": [],
+    "original_code_unchanged": true,
+    "selected_second_direction": 2
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_second_direction_overlay_checks",
+    "boundary_address": "006A35E2",
+    "callbacks": [],
+    "input": {
+      "family": "ship",
+      "first_direction": 1,
+      "recursive_flag": 1,
+      "second_direction": 2,
+      "stage": "recursive_normalization"
+    },
+    "observed_calls": [],
+    "original_code_unchanged": true,
+    "selected_second_direction": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_second_direction_overlay_checks",
+    "boundary_address": "006A35E2",
+    "callbacks": [],
+    "input": {
+      "family": "ship",
+      "first_direction": 1,
+      "recursive_flag": 0,
+      "second_direction": 8,
+      "stage": "recursive_normalization"
+    },
+    "observed_calls": [],
+    "original_code_unchanged": true,
+    "selected_second_direction": 1
+  },
+  {
+    "after": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "before": {
+      "cursor": 3,
+      "head": [
+        2176,
+        2432,
+        312
+      ],
+      "residual": 123,
+      "selector": 17,
+      "valid": 1
+    },
+    "boundary": "before_second_direction_overlay_checks",
+    "boundary_address": "006A35E2",
+    "callbacks": [],
+    "input": {
+      "family": "ship",
+      "first_direction": 1,
+      "recursive_flag": 1,
+      "second_direction": 8,
+      "stage": "recursive_normalization"
+    },
+    "observed_calls": [],
+    "original_code_unchanged": true,
+    "selected_second_direction": 1
+  }
+]

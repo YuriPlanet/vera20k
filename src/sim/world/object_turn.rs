@@ -29,6 +29,10 @@ pub(super) fn shp_vehicle_counter_admitted(tube_active_at_entry: bool) -> bool {
 #[path = "track_object_turn_tests.rs"]
 mod track_object_turn_tests;
 
+#[cfg(test)]
+#[path = "forced_track_object_turn_tests.rs"]
+mod forced_track_object_turn_tests;
+
 #[derive(Default)]
 pub(super) struct LiveObjectPassOutcome {
     pub movement: movement::MovementTickStats,
@@ -41,7 +45,7 @@ pub(super) struct LiveObjectPassOutcome {
 pub(super) struct GroundLocomotorOutcome {
     pub(super) movement: movement::MovementTickStats,
     pub(super) bridge_state_changed: bool,
-    ordinary_track_owned: bool,
+    track_owned: bool,
 }
 
 #[derive(Default)]
@@ -53,6 +57,20 @@ struct ObjectTurnOutcome {
 }
 
 impl Simulation {
+    /// Component-based movement fixtures enter the same Process corridor as
+    /// live object turns. This exposes no alternate physics or callback loop.
+    #[cfg(test)]
+    pub(crate) fn process_ground_locomotor_for_test(
+        &mut self,
+        id: u64,
+        rules: Option<&RuleSet>,
+        grid: Option<&PathGrid>,
+        registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    ) -> Result<movement::MovementTickStats, super::FrameAdvanceError> {
+        self.process_ground_locomotor_one(id, rules, grid, registry)
+            .map(|outcome| outcome.movement)
+    }
+
     /// The ordinary ground locomotor Process corridor, without Object/Techno AI.
     /// Infantry Scatter51D478 calls the active locomotor synchronously; its
     /// PerCell and boundary receivers must finish before Scatter returns.
@@ -63,9 +81,70 @@ impl Simulation {
         path_grid: Option<&PathGrid>,
         overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     ) -> Result<GroundLocomotorOutcome, super::FrameAdvanceError> {
+        let timing = movement::MovementConfig::from_rules(
+            self.session.binary_frame,
+            self.close_enough,
+            rules,
+        );
+        self.process_ground_locomotor_with_config(
+            stable_id,
+            rules,
+            path_grid,
+            overlay_registry,
+            timing,
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn process_ground_locomotor_with_config_for_test(
+        &mut self,
+        stable_id: u64,
+        rules: Option<&RuleSet>,
+        path_grid: Option<&PathGrid>,
+        overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+        timing: movement::MovementConfig,
+    ) -> Result<movement::MovementTickStats, super::FrameAdvanceError> {
+        self.process_ground_locomotor_with_config(
+            stable_id,
+            rules,
+            path_grid,
+            overlay_registry,
+            timing,
+        )
+        .map(|outcome| outcome.movement)
+    }
+
+    fn process_ground_locomotor_with_config(
+        &mut self,
+        stable_id: u64,
+        rules: Option<&RuleSet>,
+        path_grid: Option<&PathGrid>,
+        overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+        timing: movement::MovementConfig,
+    ) -> Result<GroundLocomotorOutcome, super::FrameAdvanceError> {
         let sim = self;
         let one = [stable_id];
         let mut outcome = GroundLocomotorOutcome::default();
+        // Drive4B050B..0557 / Ship69FC1B..FC67 samples the containing
+        // cell slope before any active-track, destination or turn return.
+        // Entry-active Tube owns its whole visit and does not call Process.
+        if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
+            && entity.low_bridge_tube_state.is_none()
+            && let Some(slope) = sim.resolved_terrain.as_ref().and_then(|terrain| {
+                terrain
+                    .cell(entity.position.rx, entity.position.ry)
+                    .map(|cell| cell.slope_type)
+            })
+        {
+            movement::slope_transition::sample_process_entry(
+                entity,
+                slope,
+                sim.session.binary_frame,
+            );
+        }
+        if !sim.process_track_turn(stable_id, rules, path_grid) {
+            return Ok(outcome);
+        }
         let mut pending_movement = {
             let current_grid = sim.path_grid_snapshot();
             movement::movement_tick::begin_movement_with_grids_scoped(
@@ -88,18 +167,20 @@ impl Simulation {
                 sim.playfield_bounds,
                 &sim.terrain_speed_config,
                 sim.close_enough,
-                sim.path_delay_ticks,
-                sim.blockage_path_delay_ticks,
+                timing.path_delay_ticks,
+                timing.blockage_path_delay_ticks,
                 &mut sim.interner,
                 rules,
                 Some(&sim.type_handles),
-                &mut sim.sound_events,
-                &mut sim.pending_lifecycle_requests,
-                true,
-                true,
                 Some(&sim.production.slave_bindings),
                 &mut sim.movement_pass_cache,
             )
+            .map_err(|cause| super::FrameAdvanceError {
+                tick: sim.session.tick,
+                binary_frame: sim.session.binary_frame,
+                entity_id: stable_id,
+                cause,
+            })?
         };
         if let Some(request) = pending_movement.take_walk_path_request() {
             let resumed = sim
@@ -132,8 +213,8 @@ impl Simulation {
                     sim.playfield_bounds,
                     &sim.terrain_speed_config,
                     sim.close_enough,
-                    sim.path_delay_ticks,
-                    sim.blockage_path_delay_ticks,
+                    timing.path_delay_ticks,
+                    timing.blockage_path_delay_ticks,
                     &mut sim.interner,
                     rules,
                     Some(&sim.type_handles),
@@ -141,14 +222,27 @@ impl Simulation {
                 );
             }
         }
-        outcome.ordinary_track_owned = pending_movement
+        if let Some(invocation) = pending_movement
             .take_native_track()
-            .map(|invocation| {
-                let moved =
-                    sim.run_ordinary_track_process(invocation, rules, path_grid, overlay_registry);
-                pending_movement.record_track_movement(moved);
+            // Ordinary Process reloads Object+90 after the fresh receiver.
+            .filter(|invocation| {
+                sim.substrate
+                    .entities
+                    .get(invocation.entity_id)
+                    .is_some_and(|entity| entity.lifecycle.object_alive)
             })
-            .is_some();
+        {
+            let moved = sim
+                .run_track_process(invocation, rules, path_grid, overlay_registry)
+                .map_err(|cause| super::FrameAdvanceError {
+                    tick: sim.session.tick,
+                    binary_frame: sim.session.binary_frame,
+                    entity_id: stable_id,
+                    cause,
+                })?;
+            pending_movement.record_track_movement(moved);
+            outcome.track_owned = true;
+        }
         if let Some((id, head)) = pending_movement.take_walk_per_cell() {
             outcome.bridge_state_changed |=
                 sim.run_completed_walk_step(id, head, rules, path_grid, overlay_registry)?;
@@ -174,7 +268,6 @@ impl Simulation {
                 rules,
                 &mut sim.sound_events,
                 &mut sim.pending_lifecycle_requests,
-                true,
             ));
         Ok(outcome)
     }
@@ -249,39 +342,24 @@ impl Simulation {
         {
             outcome.destroyed_structure = true;
         }
-        if sim
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_none_or(|entity| entity.dying)
-        {
+        if sim.substrate.entities.get(stable_id).is_none_or(|entity| {
+            entity.dying
+                || (!tube_active_at_entry
+                    && matches!(
+                        entity.category,
+                        EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+                    )
+                    && !entity.lifecycle.object_alive)
+        }) {
+            // Foot4DA53E..548 reloads Object+90 after TechnoAI and returns
+            // before locomotor Process when false. Health and the Rust dying
+            // state are independent: even Process's slope prelude must wait
+            // until this live owner admission succeeds. Entry-active Tube AI
+            // bypasses Foot AI and therefore does not reach this predicate.
+            // Evidence: tools/spatial_oracle/foot_enter_idle, foot_ai_reset rows.
             return Ok(outcome);
         }
 
-        if !tube_active_at_entry
-            && sim
-                .substrate
-                .entities
-                .get(stable_id)
-                .is_some_and(|e| e.low_bridge_tube_state.is_none())
-            && let Some(rules) = rules
-        {
-            crate::sim::mcv_deploy::drive_process_prelude(sim, stable_id, rules);
-            if sim
-                .substrate
-                .entities
-                .get(stable_id)
-                .is_none_or(|e| e.dying)
-            {
-                return Ok(outcome);
-            }
-        }
-        // Drive endpoint PerCellProcess(2) precedes FootStop's NavCom clear.
-        // A non-null pre-Process NavCom makes Deploy return without mutation;
-        // preserve that ordering when the movement adapter clears it internally.
-        let mcv_retry_after_track = sim.substrate.entities.get(stable_id).is_some_and(|e| {
-            e.mcv_deploy_pending && e.navigation.nav_com.is_none() && e.drive_track.is_some()
-        });
         if !tube_active_at_entry {
             sim.refresh_high_flying_sight_before_process(stable_id, rules, path_grid);
         }
@@ -301,9 +379,18 @@ impl Simulation {
         let one = [stable_id];
         let ground =
             sim.process_ground_locomotor_one(stable_id, rules, path_grid, overlay_registry)?;
-        let ordinary_track_owned = ground.ordinary_track_owned;
+        let track_owned = ground.track_owned;
         outcome.movement.merge(ground.movement);
         outcome.bridge_state_changed |= ground.bridge_state_changed;
+        // Synchronous turn/arrival callbacks may convert or remove the owner.
+        if sim
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_none_or(|e| e.dying || !e.lifecycle.object_alive)
+        {
+            return Ok(outcome);
+        }
 
         // FootClass advances the SHP Unit body counter immediately after
         // this object's locomotor Process, against the still-current
@@ -373,6 +460,7 @@ impl Simulation {
                 &mut sim.substrate.occupancy,
                 &one,
                 sim.session.tick,
+                sim.resolved_terrain.as_ref(),
                 Some(&mut teleport_visuals),
             );
         } else {
@@ -381,6 +469,7 @@ impl Simulation {
                 &mut sim.substrate.occupancy,
                 &one,
                 sim.session.tick,
+                sim.resolved_terrain.as_ref(),
                 None,
             );
         }
@@ -412,7 +501,7 @@ impl Simulation {
             .entities
             .get(stable_id)
             .map(|entity| (entity.position.rx, entity.position.ry));
-        if !ordinary_track_owned
+        if !track_owned
             && !walk_process_owned
             && let Some(rules) = rules
         {
@@ -428,9 +517,7 @@ impl Simulation {
             // outside clear at 0x00719A99; it must not flow through the
             // ordinary promote-only per-cell writer.
             sim.clear_entity_playfield_membership_after_teleport(stable_id);
-        } else if !ordinary_track_owned
-            && !walk_process_owned
-            && cell_before_movement != cell_after_movement
+        } else if !track_owned && !walk_process_owned && cell_before_movement != cell_after_movement
         {
             // `FootClass::PerCellProcess @ 0x004D85D0` runs the `Sensors=`
             // neighbour scan on its cell-enter arm, after the sensor
@@ -458,17 +545,6 @@ impl Simulation {
         debug_assert!(lifecycle_requests.is_empty());
         sim.pending_lifecycle_requests = lifecycle_requests;
 
-        if !ordinary_track_owned
-            && mcv_retry_after_track
-            && sim
-                .substrate
-                .entities
-                .get(stable_id)
-                .is_some_and(|e| e.drive_track.is_none())
-            && let Some(rules) = rules
-        {
-            crate::sim::mcv_deploy::per_cell_process(sim, stable_id, rules);
-        }
         sim.tick_move_sound_after_process(stable_id, before_movement, rules);
         sim.object_ai_post_movement_promote_one(stable_id, rules);
         Ok(outcome)

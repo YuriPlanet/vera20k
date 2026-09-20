@@ -358,10 +358,7 @@ mod tests {
             0,
             0,
             InternedId::from_index(0),
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             InternedId::from_index(0),
             EntityCategory::Unit,
             0,

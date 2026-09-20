@@ -26,12 +26,9 @@ fn ff_rules() -> RuleSet {
     RuleSet::from_ini(&ini).expect("ff_rules should parse")
 }
 
-fn make_unit(id: u64, type_ref: &str, rx: u16, ry: u16, hp: u16) -> GameEntity {
+fn make_unit(id: u64, type_ref: &str, rx: u16, ry: u16, hp: i32) -> GameEntity {
     let mut e = GameEntity::test_default(id, type_ref, "Americans", rx, ry);
-    e.health = Health {
-        current: hp,
-        max: hp,
-    };
+    e.health = Health { current: hp };
     e
 }
 

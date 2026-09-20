@@ -216,10 +216,7 @@ mod tests {
             0,
             0,
             interner.intern(owner),
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             interner.intern("E1"),
             EntityCategory::Unit,
             0,

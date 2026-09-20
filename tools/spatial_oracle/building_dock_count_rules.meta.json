@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original BuildingType46492E..46494B signed NumberOfDocks read and Building43BCBD..43BCCD contact capacity gate; not array allocation or full Rules pass lifetime.",
+  "assumptions": [
+    "Cached TEST INI index uses native CRC and supplied raw input.",
+    "Current type count supplied as reader default; contact constructor is stopped before allocation."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "count_reader": "0x0046492E",
+    "integer_reader": "0x005276D0",
+    "contact_capacity": "0x0043BCBD"
+  },
+  "payload_sha256": "db4a2fdb07d32749f6eb35f97ef512763873a7ed682bdb7b7414060e4b8f9e27"
+}

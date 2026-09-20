@@ -169,7 +169,7 @@ impl Simulation {
         actor
             .navigation
             .path_runtime
-            .start_movement(frame, self.path_delay_ticks, true);
+            .start_movement(frame, rules.general.path_delay_ticks());
         actor.navigation.path_replay.clear_live_head();
         let admitted = self.walk_path_zone_precheck(id, request.destination, rules)?;
         if !admitted {
@@ -195,7 +195,7 @@ impl Simulation {
                     .ok_or("retired Walk core receiver")?
                     .navigation
                     .path_runtime
-                    .start_movement(frame, self.path_delay_ticks, true);
+                    .start_movement(frame, rules.general.path_delay_ticks());
                 self.run_infantry_failed_path_receiver(id, rules, registry)?;
                 self.finish_walk_find_path_failure(id, goal, rules)?;
                 self.finish_failed_walk_process(id, rules, registry)?;
@@ -223,7 +223,7 @@ impl Simulation {
         if self.path_grid.is_none() && fallback.is_none() {
             return Err("Walk core requires PathGrid; no native failure inferred".into());
         }
-        self.walk_mark_remove(id, Some(rules), fallback, registry);
+        self.foot_mark_remove(id, Some(rules), fallback, registry);
         let searched = {
             let grid = self.path_grid_snapshot();
             let grid = grid.as_deref().or(fallback);
@@ -265,13 +265,13 @@ impl Simulation {
         };
         //4D3EAC restores Mark1 before inspecting the core result. Also restore
         //on unavailable Rust prerequisites, without inventing native failure.
-        self.walk_mark_put(id, Some(rules), fallback, registry);
+        self.foot_mark_put(id, Some(rules), fallback, registry);
         let actor = self
             .substrate
             .entities
             .get_mut(id)
             .ok_or("retired Walk core receiver")?;
-        actor.navigation.path_runtime.start_movement(frame, 0, true);
+        actor.navigation.path_runtime.start_movement(frame, 0);
         match searched {
             Ok((path, layers)) => {
                 if path.len() < 2 {
@@ -903,7 +903,7 @@ impl Simulation {
         if destination == (0, 0) {
             return Ok(false);
         }
-        let source = self.infantry_navigation_coordinate(id)?;
+        let source = self.foot_navigation_coordinate(id)?;
         //4DA1D0: stock Infantry +3D4 has no positive producer (all writers
         //target Aircraft), and IsTrain+C94 is absent from the admitted stock
         //types. Do not infer either from airborne/locomotor state.

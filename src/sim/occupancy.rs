@@ -1400,8 +1400,10 @@ impl CellOccupancy {
 
     /// Snapshot one selected native Cell object list before callbacks mutate it.
     /// Native: `CellClass::Scatter_Objects` @ `0x00481670` re-reads `+0xE4`/`+0xE8`,
-    /// collects up to ten objects into an array, then dispatches `+0x174` over
-    /// that saved order. There is no `CellClass::ScatterContent` in this
+    /// snapshots all objects in an array, then dispatches `+0x174` over that
+    /// saved order. Native481727..33 grows capacity by ten via40CE50; the
+    /// allocation sets owned+0D at40CED5, permitting subsequent growth.
+    /// Ten is not a recipient cap. There is no `CellClass::ScatterContent` in this
     /// program — the name this comment used to carry was invented.
     pub fn snapshot_layer(&self, layer: MovementLayer) -> Vec<u64> {
         self.iter_layer(layer)

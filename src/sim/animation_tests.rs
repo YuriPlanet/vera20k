@@ -782,10 +782,7 @@ fn make_infantry_entity(id: u64, facing: u8, interner: &mut StringInterner) -> G
         0,
         facing,
         interner.intern("Americans"),
-        Health {
-            current: 100,
-            max: 100,
-        },
+        Health { current: 100 },
         interner.intern("E1"),
         EntityCategory::Infantry,
         0,

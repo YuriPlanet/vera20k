@@ -1,0 +1,9124 @@
+[
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "running",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "running",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "expired",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "zero_rate_running_timer",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 0,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "zero_rate_running_timer",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 0,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "negative_rate_running_timer",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": -1,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "negative_rate_running_timer",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": -1,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "paused_nonzero",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": -1
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "paused_nonzero",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": -1
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "paused_zero",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 0,
+      "frame": 101,
+      "rate": 16,
+      "start": -1
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "paused_zero",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 0,
+      "frame": 101,
+      "rate": 16,
+      "start": -1
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "zero_duration",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 0,
+      "frame": 100,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "zero_duration",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 0,
+      "frame": 100,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "future_anchor",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 99,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "future_anchor",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 99,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "signed_frame_wrap",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 2147483648,
+      "rate": 16,
+      "start": 2147483647
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "signed_frame_wrap",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 2147483648,
+      "rate": 16,
+      "start": 2147483647
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "equal_angles_running_timer",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "desired": 0,
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "equal_angles_running_timer",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "desired": 0,
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 0,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 0,
+        "falling": 0,
+        "latch": 0,
+        "limbo": 0
+      },
+      "callback_return": 0,
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08CE"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 0,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 0,
+        "falling": 0,
+        "latch": 1,
+        "limbo": 0
+      },
+      "callback_return": 3735928559,
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08CE"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 0,
+          "falling": 1,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 0,
+        "falling": 1,
+        "latch": 0,
+        "limbo": 0
+      },
+      "callback_return": 0,
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08CE"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 1,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 0,
+          "falling": 1,
+          "latch": 1,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 0,
+        "falling": 1,
+        "latch": 1,
+        "limbo": 0
+      },
+      "callback_return": 3735928559,
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08CE"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 0,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 1
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 0,
+        "falling": 0,
+        "latch": 0,
+        "limbo": 1
+      },
+      "callback_return": 0,
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08CE"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 0,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 1
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 0,
+        "falling": 0,
+        "latch": 1,
+        "limbo": 1
+      },
+      "callback_return": 3735928559,
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08CE"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 0,
+          "falling": 1,
+          "latch": 0,
+          "limbo": 1
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 0,
+        "falling": 1,
+        "latch": 0,
+        "limbo": 1
+      },
+      "callback_return": 0,
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08CE"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 1,
+      "latch": 1,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 0,
+          "falling": 1,
+          "latch": 1,
+          "limbo": 1
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 0,
+        "falling": 1,
+        "latch": 1,
+        "limbo": 1
+      },
+      "callback_return": 3735928559,
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08CE"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 1,
+        "falling": 0,
+        "latch": 0,
+        "limbo": 0
+      },
+      "callback_return": 0,
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 1,
+        "falling": 0,
+        "latch": 1,
+        "limbo": 0
+      },
+      "callback_return": 3735928559,
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 1,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 1,
+        "falling": 1,
+        "latch": 0,
+        "limbo": 0
+      },
+      "callback_return": 0,
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08CE"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 1,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 1,
+          "latch": 1,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 1,
+        "falling": 1,
+        "latch": 1,
+        "limbo": 0
+      },
+      "callback_return": 3735928559,
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08CE"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 1
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 1,
+        "falling": 0,
+        "latch": 0,
+        "limbo": 1
+      },
+      "callback_return": 0,
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08CE"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 1
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 1,
+        "falling": 0,
+        "latch": 1,
+        "limbo": 1
+      },
+      "callback_return": 3735928559,
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08CE"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 1,
+          "latch": 0,
+          "limbo": 1
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 1,
+        "falling": 1,
+        "latch": 0,
+        "limbo": 1
+      },
+      "callback_return": 0,
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08CE"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 1,
+      "latch": 1,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 1,
+          "latch": 1,
+          "limbo": 1
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 1,
+        "falling": 1,
+        "latch": 1,
+        "limbo": 1
+      },
+      "callback_return": 3735928559,
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08CE"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 0,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 0,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "initial_life": {
+        "alive": 0,
+        "falling": 0,
+        "limbo": 0
+      },
+      "latch": 0,
+      "profile": "expired",
+      "stage": "without_latch_guards"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 0,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 0,
+          "falling": 1,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "initial_life": {
+        "alive": 0,
+        "falling": 1,
+        "limbo": 0
+      },
+      "latch": 0,
+      "profile": "expired",
+      "stage": "without_latch_guards"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 0,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 1
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 0,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 1
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "initial_life": {
+        "alive": 0,
+        "falling": 0,
+        "limbo": 1
+      },
+      "latch": 0,
+      "profile": "expired",
+      "stage": "without_latch_guards"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 0,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 1
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 0,
+          "falling": 1,
+          "latch": 0,
+          "limbo": 1
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "initial_life": {
+        "alive": 0,
+        "falling": 1,
+        "limbo": 1
+      },
+      "latch": 0,
+      "profile": "expired",
+      "stage": "without_latch_guards"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "initial_life": {
+        "alive": 1,
+        "falling": 0,
+        "limbo": 0
+      },
+      "latch": 0,
+      "profile": "expired",
+      "stage": "without_latch_guards"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 1,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "initial_life": {
+        "alive": 1,
+        "falling": 1,
+        "limbo": 0
+      },
+      "latch": 0,
+      "profile": "expired",
+      "stage": "without_latch_guards"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 1
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 1
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "initial_life": {
+        "alive": 1,
+        "falling": 0,
+        "limbo": 1
+      },
+      "latch": 0,
+      "profile": "expired",
+      "stage": "without_latch_guards"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 1
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 1,
+          "latch": 0,
+          "limbo": 1
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "initial_life": {
+        "alive": 1,
+        "falling": 1,
+        "limbo": 1
+      },
+      "latch": 0,
+      "profile": "expired",
+      "stage": "without_latch_guards"
+    },
+    "observed_calls": [
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "running",
+      "selector": -1,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "running",
+      "selector": -1,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "expired",
+      "selector": -1,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "selector": -1,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "running",
+      "selector": -1,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "running",
+      "selector": -1,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "expired",
+      "selector": -1,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "selector": -1,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "running",
+      "selector": 0,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "running",
+      "selector": 0,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "expired",
+      "selector": 0,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "selector": 0,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "active_track_dispatch",
+    "boundary_address": "004B0F20",
+    "events": [],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "running",
+      "selector": 0,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0576",
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null,
+    "track_argument": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "active_track_dispatch",
+    "boundary_address": "004B0F20",
+    "events": [],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "running",
+      "selector": 0,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0576",
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null,
+    "track_argument": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "active_track_dispatch",
+    "boundary_address": "004B0F20",
+    "events": [],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "expired",
+      "selector": 0,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0576",
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null,
+    "track_argument": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "active_track_dispatch",
+    "boundary_address": "004B0F20",
+    "events": [],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "selector": 0,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0576",
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null,
+    "track_argument": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "running",
+      "selector": -2,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "running",
+      "selector": -2,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0775",
+      "004B077B",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "expired",
+      "selector": -2,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "004B08D1",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "selector": -2,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0775",
+      "004B077B",
+      "004C9480",
+      "004B0896",
+      "004B089B",
+      "004B08A4",
+      "20005000",
+      "004B08AA",
+      "004B08D1"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "active_track_dispatch",
+    "boundary_address": "004B0F20",
+    "events": [],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "running",
+      "selector": -2,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0576",
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null,
+    "track_argument": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "active_track_dispatch",
+    "boundary_address": "004B0F20",
+    "events": [],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "running",
+      "selector": -2,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0576",
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null,
+    "track_argument": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "active_track_dispatch",
+    "boundary_address": "004B0F20",
+    "events": [],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 0,
+      "profile": "expired",
+      "selector": -2,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0576",
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null,
+    "track_argument": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "active_track_dispatch",
+    "boundary_address": "004B0F20",
+    "events": [],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "drive",
+      "latch": 1,
+      "profile": "expired",
+      "selector": -2,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "004B055A",
+      "004B0576",
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null,
+    "track_argument": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "running",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "running",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "expired",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "zero_rate_running_timer",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 0,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "zero_rate_running_timer",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 0,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "negative_rate_running_timer",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": -1,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "negative_rate_running_timer",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": -1,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "paused_nonzero",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": -1
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "paused_nonzero",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": -1
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "paused_zero",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 0,
+      "frame": 101,
+      "rate": 16,
+      "start": -1
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "paused_zero",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 0,
+      "frame": 101,
+      "rate": 16,
+      "start": -1
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "zero_duration",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 0,
+      "frame": 100,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "zero_duration",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 0,
+      "frame": 100,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "future_anchor",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 99,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "future_anchor",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 99,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "signed_frame_wrap",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 2147483648,
+      "rate": 16,
+      "start": 2147483647
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "signed_frame_wrap",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 2147483648,
+      "rate": 16,
+      "start": 2147483647
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "equal_angles_running_timer",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "desired": 0,
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "equal_angles_running_timer",
+      "stage": "sampler"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "desired": 0,
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 0,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 0,
+        "falling": 0,
+        "latch": 0,
+        "limbo": 0
+      },
+      "callback_return": 0,
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF95"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 0,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 0,
+        "falling": 0,
+        "latch": 1,
+        "limbo": 0
+      },
+      "callback_return": 3735928559,
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF95"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 0,
+          "falling": 1,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 0,
+        "falling": 1,
+        "latch": 0,
+        "limbo": 0
+      },
+      "callback_return": 0,
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF95"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 1,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 0,
+          "falling": 1,
+          "latch": 1,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 0,
+        "falling": 1,
+        "latch": 1,
+        "limbo": 0
+      },
+      "callback_return": 3735928559,
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF95"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 0,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 1
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 0,
+        "falling": 0,
+        "latch": 0,
+        "limbo": 1
+      },
+      "callback_return": 0,
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF95"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 0,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 1
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 0,
+        "falling": 0,
+        "latch": 1,
+        "limbo": 1
+      },
+      "callback_return": 3735928559,
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF95"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 0,
+          "falling": 1,
+          "latch": 0,
+          "limbo": 1
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 0,
+        "falling": 1,
+        "latch": 0,
+        "limbo": 1
+      },
+      "callback_return": 0,
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF95"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 1,
+      "latch": 1,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 0,
+          "falling": 1,
+          "latch": 1,
+          "limbo": 1
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 0,
+        "falling": 1,
+        "latch": 1,
+        "limbo": 1
+      },
+      "callback_return": 3735928559,
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF95"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 1,
+        "falling": 0,
+        "latch": 0,
+        "limbo": 0
+      },
+      "callback_return": 0,
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 1,
+        "falling": 0,
+        "latch": 1,
+        "limbo": 0
+      },
+      "callback_return": 3735928559,
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 1,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 1,
+        "falling": 1,
+        "latch": 0,
+        "limbo": 0
+      },
+      "callback_return": 0,
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF95"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 1,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 1,
+          "latch": 1,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 1,
+        "falling": 1,
+        "latch": 1,
+        "limbo": 0
+      },
+      "callback_return": 3735928559,
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF95"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 1
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 1,
+        "falling": 0,
+        "latch": 0,
+        "limbo": 1
+      },
+      "callback_return": 0,
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF95"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 1
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 1,
+        "falling": 0,
+        "latch": 1,
+        "limbo": 1
+      },
+      "callback_return": 3735928559,
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF95"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 1,
+          "latch": 0,
+          "limbo": 1
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 1,
+        "falling": 1,
+        "latch": 0,
+        "limbo": 1
+      },
+      "callback_return": 0,
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF95"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 1,
+      "latch": 1,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "guarded_original_return",
+    "boundary_address": "30000000",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 1,
+          "latch": 1,
+          "limbo": 1
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "callback_after": {
+        "alive": 1,
+        "falling": 1,
+        "latch": 1,
+        "limbo": 1
+      },
+      "callback_return": 3735928559,
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "stage": "completion"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF95"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": 0
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 0,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 0,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "initial_life": {
+        "alive": 0,
+        "falling": 0,
+        "limbo": 0
+      },
+      "latch": 0,
+      "profile": "expired",
+      "stage": "without_latch_guards"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 0,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 0,
+          "falling": 1,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "initial_life": {
+        "alive": 0,
+        "falling": 1,
+        "limbo": 0
+      },
+      "latch": 0,
+      "profile": "expired",
+      "stage": "without_latch_guards"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 0,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 1
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 0,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 1
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "initial_life": {
+        "alive": 0,
+        "falling": 0,
+        "limbo": 1
+      },
+      "latch": 0,
+      "profile": "expired",
+      "stage": "without_latch_guards"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 0,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 0,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 1
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 0,
+          "falling": 1,
+          "latch": 0,
+          "limbo": 1
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "initial_life": {
+        "alive": 0,
+        "falling": 1,
+        "limbo": 1
+      },
+      "latch": 0,
+      "profile": "expired",
+      "stage": "without_latch_guards"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "initial_life": {
+        "alive": 1,
+        "falling": 0,
+        "limbo": 0
+      },
+      "latch": 0,
+      "profile": "expired",
+      "stage": "without_latch_guards"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 1,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "initial_life": {
+        "alive": 1,
+        "falling": 1,
+        "limbo": 0
+      },
+      "latch": 0,
+      "profile": "expired",
+      "stage": "without_latch_guards"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 1
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 1
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "initial_life": {
+        "alive": 1,
+        "falling": 0,
+        "limbo": 1
+      },
+      "latch": 0,
+      "profile": "expired",
+      "stage": "without_latch_guards"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 1
+    },
+    "before": {
+      "alive": 1,
+      "falling": 1,
+      "latch": 0,
+      "limbo": 1
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 1,
+          "latch": 0,
+          "limbo": 1
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "initial_life": {
+        "alive": 1,
+        "falling": 1,
+        "limbo": 1
+      },
+      "latch": 0,
+      "profile": "expired",
+      "stage": "without_latch_guards"
+    },
+    "observed_calls": [
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "running",
+      "selector": -1,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "running",
+      "selector": -1,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "expired",
+      "selector": -1,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "selector": -1,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "running",
+      "selector": -1,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "running",
+      "selector": -1,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "expired",
+      "selector": -1,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "selector": -1,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "running",
+      "selector": 0,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "running",
+      "selector": 0,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "expired",
+      "selector": 0,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "selector": 0,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "active_track_dispatch",
+    "boundary_address": "006A05F0",
+    "events": [],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "running",
+      "selector": 0,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FC86",
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null,
+    "track_argument": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "active_track_dispatch",
+    "boundary_address": "006A05F0",
+    "events": [],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "running",
+      "selector": 0,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FC86",
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null,
+    "track_argument": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "active_track_dispatch",
+    "boundary_address": "006A05F0",
+    "events": [],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "expired",
+      "selector": 0,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FC86",
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null,
+    "track_argument": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "active_track_dispatch",
+    "boundary_address": "006A05F0",
+    "events": [],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "selector": 0,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FC86",
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null,
+    "track_argument": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "running",
+      "selector": -2,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 1
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 1
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "running",
+      "selector": -2,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FE22",
+      "0069FE28",
+      "004C9480"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "expired",
+      "selector": -2,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "before_mission_precheck",
+    "boundary_address": "0069FF98",
+    "events": [
+      {
+        "event": "sample_live_turn",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 1,
+          "limbo": 0
+        }
+      },
+      {
+        "event": "sample_return",
+        "value": 0
+      },
+      {
+        "event": "latch_write",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "event": "completion_callback",
+        "reason": 0,
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        },
+        "supplied_return": 3735928559
+      },
+      {
+        "event": "post_callback_guards",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0
+        }
+      }
+    ],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "selector": -2,
+      "stage": "active_gate",
+      "track_valid": 0
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FE22",
+      "0069FE28",
+      "004C9480",
+      "0069FF5D",
+      "0069FF62",
+      "0069FF6B",
+      "20005000",
+      "0069FF71",
+      "0069FF98"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "active_track_dispatch",
+    "boundary_address": "006A05F0",
+    "events": [],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "running",
+      "selector": -2,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FC86",
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null,
+    "track_argument": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "active_track_dispatch",
+    "boundary_address": "006A05F0",
+    "events": [],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "running",
+      "selector": -2,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FC86",
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 101,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null,
+    "track_argument": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0
+    },
+    "boundary": "active_track_dispatch",
+    "boundary_address": "006A05F0",
+    "events": [],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 0,
+      "profile": "expired",
+      "selector": -2,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FC86",
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null,
+    "track_argument": 0
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 1,
+      "limbo": 0
+    },
+    "boundary": "active_track_dispatch",
+    "boundary_address": "006A05F0",
+    "events": [],
+    "facing_sampler_read_only": true,
+    "input": {
+      "family": "ship",
+      "latch": 1,
+      "profile": "expired",
+      "selector": -2,
+      "stage": "active_gate",
+      "track_valid": 1
+    },
+    "observed_calls": [
+      "0069FC6A",
+      "0069FC86",
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "profile": {
+      "duration": 4,
+      "frame": 104,
+      "rate": 16,
+      "start": 100
+    },
+    "returned_al": null,
+    "track_argument": 0
+  }
+]

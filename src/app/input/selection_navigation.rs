@@ -46,11 +46,16 @@ pub(crate) fn reset_for_world_replacement(input: &mut crate::app::input::state::
 }
 
 /// 5F5DD0 uses inclusive red/yellow thresholds and live type Strength.
-fn health_category(current: u16, maximum: u16, red: f64, yellow: f64) -> u8 {
-    let ratio = f64::from(current) / f64::from(maximum);
-    if current > 0 && ratio <= red {
+fn health_category(current: i32, strength: i32, red: f64, yellow: f64) -> u8 {
+    use crate::util::native_x87::MaskedX87Ordering::Greater;
+    let health = crate::sim::components::Health { current };
+    // Object5F5DD0: all three TEST AH,41 comparisons include unordered;
+    // only the first red branch also requires signed actual > 0.
+    // Original whole-function outputs: health_ratio_predicates.json.
+    let above_red = health.compare_ratio(strength, red) == Greater;
+    if current > 0 && !above_red {
         0
-    } else if ratio > red && ratio <= yellow {
+    } else if above_red && health.compare_ratio(strength, yellow) != Greater {
         1
     } else {
         2
@@ -103,10 +108,7 @@ pub(super) fn execute_health_navigation(state: &mut AppState) {
         Vec::new()
     };
     let (red, yellow) = state.rules().map_or((0.25, 0.5), |rules| {
-        (
-            f64::from(rules.general.condition_red),
-            f64::from(rules.general.condition_yellow),
-        )
+        (rules.general.condition_red, rules.general.condition_yellow)
     });
     state
         .match_state
@@ -124,8 +126,13 @@ pub(super) fn execute_health_navigation(state: &mut AppState) {
             .copied()
             .filter(|id| {
                 sim.entities().get(*id).is_some_and(|entity| {
-                    health_category(entity.health.current, entity.health.max, red, yellow)
-                        == category
+                    state
+                        .rules()
+                        .and_then(|rules| rules.object(sim.interner.resolve(entity.type_ref())))
+                        .is_some_and(|obj| {
+                            health_category(entity.health.current, obj.strength, red, yellow)
+                                == category
+                        })
                 })
             })
             .collect(),
@@ -148,7 +155,12 @@ pub(super) fn execute_health_navigation(state: &mut AppState) {
     let sim = &state.match_state.sim_runtime.as_ref().unwrap().simulation;
     let mixed = selected.iter().any(|id| {
         sim.entities().get(*id).is_some_and(|entity| {
-            health_category(entity.health.current, entity.health.max, red, yellow) != category
+            state
+                .rules()
+                .and_then(|rules| rules.object(sim.interner.resolve(entity.type_ref())))
+                .is_some_and(|obj| {
+                    health_category(entity.health.current, obj.strength, red, yellow) != category
+                })
         })
     });
     let label = localized(
@@ -224,6 +236,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn original_health_ratio_corpus_matches_navigation_category() {
+        for row in crate::sim::health_ratio_fixture::rows() {
+            assert_eq!(
+                health_category(
+                    row.input.current,
+                    row.input.strength,
+                    row.input.red(),
+                    row.input.yellow()
+                ),
+                row.output.navigation_category,
+                "{row:?}"
+            );
+        }
+    }
+
+    #[test]
     fn cycles_retained_selection_and_restarts_after_other_selection() {
         let mut nav = HealthNavigation::default();
         nav.prepare(false, vec![8, 3, 7], vec![99]);
@@ -246,6 +274,15 @@ mod tests {
             .map(|hp| health_category(hp, 100, 0.25, 0.5))
             .collect();
         assert_eq!(bands, [2, 0, 0, 1, 1, 2, 2]);
+    }
+
+    #[test]
+    fn health_bands_keep_signed_actual_and_live_strength_width() {
+        assert_eq!(health_category(70_000, 100_000, 0.25, 0.5), 2);
+        assert_eq!(health_category(70_000, 200_000, 0.25, 0.5), 1);
+        assert_eq!(health_category(70_000, 400_000, 0.25, 0.5), 0);
+        assert_eq!(health_category(-1, 100_000, 0.25, 0.5), 2);
+        assert_eq!(health_category(i32::MAX, i32::MAX, 0.25, 0.5), 2);
     }
 
     #[test]

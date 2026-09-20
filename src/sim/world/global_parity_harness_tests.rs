@@ -159,6 +159,13 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
     0x1CE8_1848_7043_6163,
 );
 
+// Immutable pre167 receipt from5777c115. Its active detached curve cannot be
+// reconstructed after the authority migration. These constants and comments
+// describe that historical execution; they are not current-state projections.
+// Keep the receipt distinct from the current full-hash and absolute RNG gates.
+#[allow(dead_code)]
+#[rustfmt::skip]
+mod schema166_receipt {
 /// Committed final-hash baseline. Captured from the first green run. Re-baselines
 /// at most once per behavior-bearing change, with a one-line documented reason.
 /// Baselined for Slice 8 (initial commit of the global parity harness).
@@ -647,6 +654,13 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_FOOT_PATH_RUNTIME_V160: u64 = 0xADC6_8CA2_21
 // the owner-excluded probe asserted below equals main 595e3a88's value for
 // this fixture (receipt .local/harness-repin-20260915/owner-probe.txt).
 const GLOBAL_HARNESS_FINAL_HASH: u64 = 0xA26C_6393_4D59_667C;
+const GLOBAL_RAW_OWNER_EXCLUDED_V161_HASH: u64 = 0xEFB3_B35E_D792_E94B;
+const GLOBAL_PRE_SUSTAINED_SIGHT_V142_HASH: u64 = 0x4E6E_0CFE_23A8_03A7;
+}
+
+// Schema171: fresh-turn admission/residual clearing and retained-owner hashes.
+// See TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md, PR415 causal attribution.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 11150992376934496020;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -831,6 +845,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     seed_scenario(&mut rec, &rules, &heights, &overlays);
     let mut log = ReplayLog::new(ReplayHeader {
         version: 1,
+        pixel_conversion_bounds: rec.session.pixel_conversion_bounds,
         tick_hz: 15,
         seed: HARNESS_SEED,
         map_name: "global_parity_harness".to_string(),
@@ -848,6 +863,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     // a draw routed to the wrong stream when a compensating error exists;
     // per-stream checkpoints catch misrouting directly.
     let mut recorded_streams: Vec<(u64, u64, u64, u64)> = Vec::new();
+    let mut first_uncommitted_frame = None;
     for tick in 0..HARNESS_TICKS {
         let due = due_commands(&rec, &script, tick);
         let result = rec.advance_tick(
@@ -858,6 +874,10 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
             Some(&overlays),
             HARNESS_TICK_MS,
         );
+
+        if !result.frame_committed {
+            first_uncommitted_frame.get_or_insert(tick);
+        }
 
         if rec
             .substrate
@@ -950,9 +970,56 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     let (_, final_scen, final_main, final_mapgen) =
         *recorded_streams.last().expect("final checkpoint recorded");
     let final_hash = *replayed.last().expect("at least one tick recorded");
+    // Bounded full08 causal probe: no AnimRuntime pause fold or legacy gap
+    // sample occurs in this fixture. Omit ONLY the newly inserted replay-array
+    // fold and Building operational/stuff markers; keep current state intact.
+    assert_eq!(
+        rep.substrate.anims.len(),
+        0,
+        "power hash probe excludes Anim layouts"
+    );
+    assert!(
+        rep.substrate
+            .entities
+            .values()
+            .all(|e| e.gap_generator == Default::default())
+    );
+    assert!(
+        rep.power_states
+            .values()
+            .all(|s| !s.has_drained_power_source)
+    );
+    assert!(
+        rep.substrate
+            .entities
+            .values()
+            .all(|e| e.building_storage == Default::default()
+                && e.aircraft_ammo.is_none()
+                && e.aircraft_mission.is_none()),
+        "power composition probe has no storage or aircraft state"
+    );
+    assert!(
+        rep.production.airfield_docks.is_empty(),
+        "power composition probe has no dock reservation registry"
+    );
+    let before_power_hash =
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::BeforeBuildingPowerIntegration);
+    println!(
+        "[global power composition] current={final_hash:016X} before_power={before_power_hash:016X}"
+    );
+    assert_eq!(
+        before_power_hash, 10935192780293401891,
+        "full08 projection moved: investigate behavior or another hash owner; do not rebaseline"
+    );
+
+    println!(
+        "[schema168 global] pre168={:016X}",
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(168))
+    );
     println!(
         "[global parity] final_hash={final_hash:016X} \
-         streams={final_scen:016X},{final_main:016X},{final_mapgen:016X}"
+         streams={final_scen:016X},{final_main:016X},{final_mapgen:016X} \
+         first_uncommitted_frame={first_uncommitted_frame:?}"
     );
     assert_eq!(
         (final_scen, final_main, final_mapgen),
@@ -965,71 +1032,84 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
          total-hash baseline is a misroute, never a re-baseline."
     );
 
-    assert_eq!(
-        rep.state_hash_without_raw_infantry_owners_v161_probe(),
-        0xEFB3_B35E_D792_E94B,
-        "raw infantry owner-excluded projection changed beyond the House-index re-encoding"
+    // Schema166 and older final projections folded an independently mutable
+    // detached curve. The archived receipt above cannot be regenerated from
+    // an active retained class. Current full-hash, actual replay, terminal
+    // coverage, miner engagement and unchanged absolute RNG pins remain gates.
+    for id in rep.substrate.entities.keys_sorted() {
+        let entity = rep.substrate.entities.get(id).unwrap();
+        println!(
+            "[global owner] id={id} cell=({},{}) sub=({},{}) health={} mission={:?} queued={:?} nav={:?} path={:?} drive={:?} speed={:?}",
+            entity.position.rx,
+            entity.position.ry,
+            entity.position.sub_x,
+            entity.position.sub_y,
+            entity.health.current,
+            entity.mission.current(),
+            entity.mission.queued(),
+            entity.navigation.nav_com,
+            entity.movement_target.as_ref().map(|target| (
+                target.next_index,
+                target.path.len(),
+                target.final_goal
+            )),
+            entity.drive_locomotion,
+            entity.foot_speed,
+        );
+    }
+    // The 600-frame boundary lands on an intermediate track retirement.
+    // A retained destination must resume on the next Process visits, even
+    // though the completed path adapter and track head have been cleared.
+    // This is a production continuation regression, not a native scenario golden.
+    let continuation_start = {
+        let tank = rep
+            .substrate
+            .entities
+            .get(4)
+            .expect("retasked tank survives");
+        assert!(tank.navigation.pending_arrival_clear);
+        assert!(tank.movement_target.is_none());
+        assert_eq!(
+            tank.navigation.nav_com,
+            Some(crate::sim::components::NavTargetRef::Cell { rx: 8, ry: 8 }),
+        );
+        crate::sim::movement::ground_pose::position_world_xy(&tank.position)
+    };
+    let mut continuation_admitted = false;
+    for _ in 0..16 {
+        let tick = rep.advance_tick(
+            &[],
+            Some(&rules),
+            &heights,
+            Some(&grid),
+            Some(&overlays),
+            HARNESS_TICK_MS,
+        );
+        assert!(
+            tick.frame_committed,
+            "retained destination continuation must commit"
+        );
+        let tank = rep
+            .substrate
+            .entities
+            .get(4)
+            .expect("continuing tank survives");
+        continuation_admitted |= tank.drive_locomotion.as_ref().is_some_and(|drive| {
+            drive.track.turn_index >= 0 && drive.track_valid && drive.head_to.is_some()
+        });
+    }
+    let continuation_end = crate::sim::movement::ground_pose::position_world_xy(
+        &rep.substrate.entities.get(4).unwrap().position,
     );
-    assert_eq!(
-        rep.state_hash_without_sustained_gap_sight_v142(),
-        0x4E6E_0CFE_23A8_03A7,
-        "committed pre-v142 global projection changed"
+    assert!(
+        continuation_admitted,
+        "pending arrival must produce another live track"
     );
-    let pre_lifecycle_hash = rep.state_hash_before_lifecycle_v28_and_mission_v29();
-    let pre_mission_hash = rep.state_hash_without_mission_v29();
-    let pre_base_plan_hash = rep.state_hash_without_base_plan_v110();
-    let pre_crate_authority_hash = rep.state_hash_without_crate_authority_v114();
-    let pre_wall_runtime_hash = rep.state_hash_without_wall_runtime_v115();
-    let pre_disguise_detect_hash = rep.state_hash_without_disguise_detect_v117();
-    let pre_credit_income_hash = rep.state_hash_without_credit_income_v135();
-    assert_eq!(
-        rep.state_hash_without_infantry_terminal_v136(),
-        GLOBAL_HARNESS_PRE_INFANTRY_TERMINAL_V136_HASH,
-        "committed pre-v136 global projection changed"
+    assert!(
+        continuation_end[0] < continuation_start[0],
+        "retained westbound destination must advance after intermediate retirement",
     );
-    println!(
-        "[global parity] probes=pre-v28:{pre_lifecycle_hash:016X},pre-v29:{pre_mission_hash:016X},pre-v110:{pre_base_plan_hash:016X},pre-v114:{pre_crate_authority_hash:016X},pre-v115:{pre_wall_runtime_hash:016X},pre-v117:{pre_disguise_detect_hash:016X},pre-v135:{pre_credit_income_hash:016X}"
-    );
-    assert_eq!(
-        pre_credit_income_hash, GLOBAL_HARNESS_PRE_CREDIT_INCOME_V135_HASH,
-        "committed pre-v135 projection changed"
-    );
-    assert_eq!(
-        pre_lifecycle_hash, GLOBAL_HARNESS_PRE_LIFECYCLE_V28_HASH,
-        "committed pre-v28/pre-v29 projection changed"
-    );
-    assert_eq!(
-        pre_mission_hash, GLOBAL_HARNESS_PRE_MISSION_V29_HASH,
-        "committed pre-v29 projection changed; trace any behavior or composition drift"
-    );
-    assert_eq!(
-        pre_base_plan_hash, GLOBAL_HARNESS_PRE_BASE_PLAN_V110_HASH,
-        "committed pre-v110 projection changed"
-    );
-    assert_eq!(
-        pre_crate_authority_hash, GLOBAL_HARNESS_PRE_CRATE_AUTHORITY_V114_HASH,
-        "committed pre-v114 projection changed"
-    );
-    assert_eq!(
-        pre_wall_runtime_hash, GLOBAL_HARNESS_PRE_WALL_RUNTIME_V115_HASH,
-        "committed pre-v115 projection changed"
-    );
-    assert_eq!(
-        pre_disguise_detect_hash, GLOBAL_HARNESS_PRE_DISGUISE_DETECT_V117_HASH,
-        "committed pre-v117 projection changed"
-    );
-    let pre_membership_hash = rep.state_hash_without_cell_membership_v159();
-    println!("[schema159] pre159={pre_membership_hash:016X} current={final_hash:016X}");
-    assert_eq!(
-        pre_membership_hash, GLOBAL_HARNESS_FINAL_HASH_PRE_CELL_MEMBERSHIP_V159,
-        "immediately preceding main hash changed beyond schema159 composition"
-    );
-    let pre_foot_runtime_hash = rep.state_hash_without_foot_path_runtime_v160();
-    println!("[schema160] pre160={pre_foot_runtime_hash:016X} current={final_hash:016X}");
-    assert_eq!(
-        pre_foot_runtime_hash, GLOBAL_HARNESS_FINAL_HASH_PRE_FOOT_PATH_RUNTIME_V160,
-        "immediately preceding main hash changed beyond schema160 composition"
-    );
+
     assert_eq!(
         final_hash, GLOBAL_HARNESS_FINAL_HASH,
         "committed global-harness baseline drifted. Do not copy the observed value: \
@@ -1194,7 +1274,134 @@ fn dense_converging_setup() -> (
 // 2026-09-13: unpaid fresh budget0 retains current XY instead of eagerly
 // publishing point0. First native-adjudicated divergence is tick2 (128 vs139);
 // see docs/research/TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md.
-const POSITION_FINGERPRINT: u64 = 0x864F_F9C4_2481_072F;
+// 2026-09-20: destination commands no longer turn/admit ahead of fresh Process.
+// All6000 rows were compared with passing bd5928e6: east column unchanged;
+// west column exactly one tick later. Native4B3408 calls Do_Turn then returns
+// before admission evenROT0. Independent review accepted this Rust regression
+// re-pin; it is not a native whole-scenario golden. Same-frame facing repair
+// changed no XY. See TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md for scope/evidence.
+const POSITION_FINGERPRINT: u64 = 0xF66D_01F2_23C5_B07F;
+
+#[test]
+fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
+    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/drive_fresh_turn.json"
+    ))
+    .unwrap();
+    for rot in [0, 5] {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=6\nROT={rot}\n\
+             Locomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\n"
+        )))
+        .unwrap();
+        let mut sim = Simulation::with_seed(DENSE_SEED);
+        let heights = BTreeMap::new();
+        let grid = PathGrid::new(64, 64);
+        sim.spawn_from_map(
+            &[unit("Americans", "MTNK", 40, 5, EntityCategory::Unit)],
+            Some(&rules),
+            &heights,
+        );
+        let owner = sim.interner.get("Americans").unwrap();
+        let native = rows
+            .iter()
+            .find(|row| {
+                row["input"]["initial"] == 0x4000
+                    && row["input"]["direction"] == 6
+                    && row["input"]["rate"] == rot * 256
+            })
+            .unwrap();
+        for tick in 1..=3 {
+            let due = if tick == 2 {
+                vec![CommandEnvelope::new(
+                    owner,
+                    tick,
+                    Command::Move {
+                        entity_id: 1,
+                        target_rx: 25,
+                        target_ry: 5,
+                        queue: false,
+                        group_id: None,
+                    },
+                )]
+            } else {
+                Vec::new()
+            };
+            sim.advance_tick(
+                &due,
+                Some(&rules),
+                &heights,
+                Some(&grid),
+                None,
+                HARNESS_TICK_MS,
+            );
+        }
+        let entity = sim.substrate.entities.get(1).unwrap();
+        let call = &native["calls"][0];
+        assert_eq!(
+            u64::from(entity.facing),
+            call["sampled_after"].as_u64().unwrap() >> 8,
+            "ROT={rot}: same-frame native sample"
+        );
+        let drive = entity.drive_locomotion.as_ref().unwrap();
+        assert_eq!(
+            drive.track.turn_index, -1,
+            "turn must return before admission"
+        );
+        assert!(drive.head_to.is_none());
+        if rot > 0 {
+            assert_eq!(
+                u64::from(
+                    entity
+                        .body_facing
+                        .as_ref()
+                        .unwrap()
+                        .current(sim.session.binary_frame - 1)
+                ),
+                call["sampled_after"].as_u64().unwrap(),
+                "full16-bit native sample, before the next binary frame"
+            );
+            assert_eq!(
+                entity.body_facing.as_ref().unwrap().timer_start_frame(),
+                Some(call["timer_start"].as_u64().unwrap() as u32)
+            );
+        }
+        // Native load resets Scenario to Seed0 and retains process streams.
+        // Equalize only that documented load effect before comparing the
+        // movement-state round trip and its continued full-world hashes.
+        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 1, 0, "Fresh turn", 0);
+        let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+            .unwrap()
+            .sim;
+        restored.retain_in_scenario_process_state_from(&sim);
+        restored.restore_after_snapshot_load().unwrap();
+        for tick in 4..=35 {
+            for world in [&mut sim, &mut restored] {
+                world.advance_tick(
+                    &[],
+                    Some(&rules),
+                    &heights,
+                    Some(&grid),
+                    None,
+                    HARNESS_TICK_MS,
+                );
+            }
+            assert_eq!(
+                sim.state_hash(),
+                restored.state_hash(),
+                "ROT={rot}, tick={tick}"
+            );
+            if tick == 4 {
+                let entity = sim.substrate.entities.get(1).unwrap();
+                assert_eq!(
+                    entity.drive_locomotion.as_ref().unwrap().head_to.is_some(),
+                    rot == 0
+                );
+            }
+        }
+    }
+}
 
 #[test]
 fn s2_dense_scenario_position_fingerprint_stable() {

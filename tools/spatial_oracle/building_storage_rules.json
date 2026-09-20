@@ -1,0 +1,38 @@
+[
+  {
+    "output": false,
+    "raw": null
+  },
+  {
+    "output": false,
+    "raw": ""
+  },
+  {
+    "output": true,
+    "raw": "yes"
+  },
+  {
+    "output": false,
+    "raw": "no"
+  },
+  {
+    "output": true,
+    "raw": "true"
+  },
+  {
+    "output": false,
+    "raw": "false"
+  },
+  {
+    "output": true,
+    "raw": "1"
+  },
+  {
+    "output": false,
+    "raw": "0"
+  },
+  {
+    "output": false,
+    "raw": "junk"
+  }
+]

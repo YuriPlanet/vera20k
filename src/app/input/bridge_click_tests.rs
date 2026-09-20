@@ -94,10 +94,7 @@ fn commandable_movers() -> (Simulation, crate::sim::intern::InternedId, [u64; 2]
             0,
             0,
             owner,
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             type_ref,
             category,
             0,

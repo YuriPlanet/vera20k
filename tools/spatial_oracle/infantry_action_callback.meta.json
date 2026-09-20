@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Whole DoAction zero-health synchronous failed-path action and Stop callback; bounded supplied current-cell admission result.",
+  "assumptions": [
+    "Original action51D6F0, failed-path51DAF0, WalkStop75ADA0 and pending521B40 code/vtables remain unchanged. Original Map565730 resolves supplied Cell10,10 and original Facing/current-bridge query execute.",
+    "Current-cell Infantry CanEnter virtual body result is supplied0/1/2; collision/occupation/type producers of that result are outside this fixture.",
+    "Type/House/sequence/locomotor inputs and OS-interlocked support inherit infantry_deploy_action. Original Scenario RNG executes; full state captured.",
+    "Health0 contrasts with signed health-1/+1. Ordinary movement zone, no carry/airborne/falling remaps and no sequence sound entries."
+  ],
+  "substitutions": [
+    "Infantry virtual CanEnter body0051BF90: return supplied EAX and original five-argument stack cleanup; original callable bytes/vtable unchanged"
+  ],
+  "entry_points": {
+    "do_action": "0x0051D6F0",
+    "failed_path": "0x0051DAF0",
+    "walk_stop": "0x0075ADA0"
+  },
+  "original_failed_path": {
+    "start": "0051DAF0",
+    "end_exclusive": "0051DBCF",
+    "hex": "83ec10568bf18b86c406000083f81b740f83f81c740a83f81d740583f81e750a8b066a006a006a1ceb248a86db06000084c074128b166a006a006a028bceff9258050000eb108b066a006a006a008bceff9058050000538d4c240857518d8e88030000e878b8faff8b388d969c0000008b1e6a018b026a00c1ef0c8b4a0447d1ef8b5208894c241c8bce83e7078944241889542420e876830d00508d44241c5750b9e8f78700e8957b0400508bceff93ac0100005f5b85c075128bce8886dc060000e8097afbff5e83c410c38bcec686dc06000001e8f679fbff5e83c410c3",
+    "sha256": "4979481917e66d1d87b8db6be231de30e8495a3b5c11a21919f5e2e2747ee95d"
+  },
+  "payload_sha256": "525a74860c4f7688d7f90581d244bc80c508f5e28aac47d43421fef0be5911e8"
+}

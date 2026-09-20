@@ -219,6 +219,7 @@ pub fn process_rocket_state(
 ) -> SpecialMovementOutcome {
     let dt = native_movement_frame_fraction();
     let before = rocket.phase;
+    let altitude_before = rocket.altitude;
 
     match rocket.phase {
         RocketPhase::Ignition => {
@@ -278,6 +279,7 @@ pub fn process_rocket_state(
         }
     }
 
+    super::foot_coordinate::publish_altitude_change(position, altitude_before, rocket.altitude);
     if rocket.phase != before {
         rocket.phase_frames = 0;
     }
@@ -307,6 +309,14 @@ pub fn tick_rocket_movement(
         let Some(entity) = entities.get_mut(id) else {
             continue;
         };
+        // External process state belongs to the active Rocket instance. A
+        // suspended Rocket must neither move the owner nor replace Teleport's
+        // active payload image while its interface is in the piggyback slot.
+        if entity.locomotor.as_ref().is_some_and(|loco| {
+            loco.active_kind() != crate::rules::locomotor_type::LocomotorKind::Rocket
+        }) {
+            continue;
+        }
         let (outcome, phase_change) = {
             let Some(rocket) = entity.rocket_state.as_mut() else {
                 continue;

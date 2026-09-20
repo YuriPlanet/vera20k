@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Drive fresh-heading exact16 gate, original virtual Do_Turn, Facing setter and same/next-frame sampled publication",
+  "assumptions": [
+    "Interior entry4B3408 supplies resolved first path direction EBX, class EBP, native local interface pointer and original saved-register frame. Earlier mission/pathfinding/active-turn gates are excluded",
+    "PrimaryFacing+388 begins stationary with equal origin/destination, paused zero-duration timer and supplied signed native rate. Negative rate is a raw-state boundary, not a rules-produced rate claim",
+    "Two calls retain native Facing state at frames2/3. Re-entering the interior gate while rotating is diagnostic, not proof the full outer Process reaches it then",
+    "Aligned stops before4B345B, so CanEnter, terrain, track installation and movement are excluded. Mismatch executes original RET0xC and records AL1",
+    "120 rows cross eight initial16-bit angles, three path directions and five rates (240 gate calls). Current4C93D0 executes before/after each call; this establishes facing publication separately from track admission"
+  ],
+  "substitutions": [
+    "None. Original Drive ILocomotion vtable+4C, Do_Turn4B0EF0, Facing::Set4C9220 and Current4C93D0 execute unchanged. Hooks only observe addresses"
+  ],
+  "entry_points": {
+    "fresh_heading_gate": "0x004B3408",
+    "aligned_before_admission": "0x004B345B",
+    "drive_do_turn": "0x004B0EF0",
+    "facing_set": "0x004C9220",
+    "facing_current": "0x004C93D0"
+  },
+  "original_code_range_sha256": {
+    "004B3408..004B345B": "c41936bc34957f84af50c4bf4e0168c670a872af0a3eae4f020048c1bcfcb802",
+    "004B0EF0..004B0F12": "10a6521d43b87e784164c886c82b87b6b6309726372ed325225e6b285a44f3e5",
+    "004C9220..004C92FF": "5e6b2e56a5b614e1103f11edf8343beb4fc4c2e751760af18d6f404c41bbda03",
+    "004C93D0..004C9480": "a9a8140262fdf1db6bf9b8743aaaceccec40a2e33ef6bf0326c85cd47cfdda07"
+  },
+  "payload_sha256": "bd0cd23561ebd363d837b20b17cafd9e0958b5463ca3e6ab55146f1ce43b4780"
+}

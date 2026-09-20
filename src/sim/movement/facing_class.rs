@@ -4,9 +4,8 @@
 //! frame: `current(frame) = current - (diff / step_size) * remaining`, where
 //! `step_size = abs(diff) / rot_per_frame` and `remaining = duration - elapsed`.
 //! The per-step rate spreads the full signed arc evenly across the rotation's
-//! frame count, so elapsed=0 lands exactly on `prev` even when the arc is not a
-//! whole multiple of `rot_per_frame` (the remainder is absorbed into the rate,
-//! not dropped). Setting a new target snapshots the current animated value into
+//! frame count using integer division; elapsed=0 can differ slightly from `prev`
+//! when the arc is not divisible by the frame count. Setting a new target snapshots the current animated value into
 //! `prev` so rotations retarget smoothly without snap-back.
 //!
 //! Verified against gamemd.exe — see
@@ -113,8 +112,9 @@ impl FacingClass {
         // Per-step is the full signed arc spread evenly across the rotation's
         // frame count (`diff / step_size`, integer-truncated toward zero), not a
         // fixed `rot_per_frame`. When abs(diff) is not an exact multiple of
-        // rot_per_frame, this absorbs the remainder into the rate so elapsed=0
-        // lands exactly on `prev` instead of `prev + (diff % rot_per_frame)`.
+        // rot_per_frame, the second division can leave a sub-byte remainder:
+        // 0x4000 -> 0xC000 at ROT5 samples 0x3FEE at elapsed0, not 0x4000.
+        // Original sample: tools/spatial_oracle/drive_fresh_turn.json.
         let per_step: i32 = (diff as i32) / (step_size as i32);
         let delta = per_step.wrapping_mul(remaining);
         i32::from(self.current).wrapping_sub(delta) as u16

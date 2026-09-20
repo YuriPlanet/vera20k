@@ -2,6 +2,135 @@
 
 use super::*;
 
+#[test]
+fn anim_art_read_receipt_distinguishes_live_sweep_from_late_allocation() {
+    // ReadTypeData 0x00679A5D..0x00679A82 reloads the live Anim count, then
+    // proceeds to Techno readers; AudioVisual runs still later in Process.
+    let root = IniFile::from_str(
+        "[Animations]\n0=ROOT\n1=MISSING\n2=EMPTY\n\
+         [General]\nDamageFireTypes=EARLY\n\
+         [VehicleTypes]\n0=UNIT\n[UNIT]\nExplosion=LATE\n\
+         [AudioVisual]\nSmoke=AFTER\n",
+    );
+    let art = IniFile::from_str(
+        "[ROOT]\nNext=CHILD\n[CHILD]\nTrailerAnim=TAIL\n\
+         [TAIL]\nRate=1\n[EARLY]\nRate=1\n[LATE]\nRate=1\n\
+         [AFTER]\nRate=1\n[EMPTY]\n",
+    );
+    let mut layers = RulesLayerStack::new(root);
+    let first = layers.process_with_fixed_art(&art).unwrap();
+    assert_eq!(
+        first.anim_type_art_read_states().collect::<Vec<_>>(),
+        vec![
+            ("ROOT", true),
+            ("MISSING", false),
+            ("EMPTY", false),
+            ("EARLY", true),
+            ("CHILD", true),
+            ("TAIL", true),
+            ("LATE", false),
+            ("AFTER", false),
+        ],
+    );
+    assert!(
+        first
+            .ini()
+            .section("Animations")
+            .unwrap()
+            .get_values()
+            .contains(&"LATE")
+    );
+    assert!(
+        art.section("LATE").is_some(),
+        "ART presence is not a read receipt"
+    );
+    assert!(
+        art.section("EMPTY").is_none(),
+        "native lexical loading drops empty sections"
+    );
+
+    layers.push(RulesLayerKind::Scenario, IniFile::empty());
+    let next = layers.process_with_fixed_art(&art).unwrap();
+    assert_eq!(
+        next.anim_type_art_read_states().collect::<Vec<_>>(),
+        vec![
+            ("ROOT", true),
+            ("MISSING", false),
+            ("EMPTY", false),
+            ("EARLY", true),
+            ("CHILD", true),
+            ("TAIL", true),
+            ("LATE", true),
+            ("AFTER", true),
+        ],
+    );
+    assert_eq!(
+        first.native_type_construction_trace().events(),
+        next.native_type_construction_trace().events(),
+        "body reads do not spend new constructor IDs",
+    );
+}
+
+#[test]
+fn anim_art_read_receipt_survives_handoff_and_follows_registry_reset() {
+    let root = IniFile::from_str("[Animations]\n0=READ\n1=MISSING\n");
+    let art = IniFile::from_str("[READ]\nRate=1\n");
+    let processed = RulesLayerStack::new(root)
+        .process_with_fixed_art(&art)
+        .unwrap();
+    let (_, receipt) = processed.into_ini_and_native_type_construction_trace();
+    let state = receipt.into_registry_state_discarding_events();
+    assert_eq!(
+        state.anim_type_art_read_states().collect::<Vec<_>>(),
+        vec![("READ", true), ("MISSING", false)],
+    );
+    let continued = RulesLayerStack::new(IniFile::empty())
+        .process_with_fixed_art_and_registry_state(&art, state)
+        .unwrap();
+    assert_eq!(
+        continued.anim_type_art_read_states().collect::<Vec<_>>(),
+        vec![("READ", true), ("MISSING", false)],
+    );
+    assert!(
+        continued
+            .native_type_construction_trace()
+            .events()
+            .is_empty()
+    );
+    let (_, receipt) = continued.into_ini_and_native_type_construction_trace();
+    let reset = receipt
+        .into_registry_state_discarding_events()
+        .destructive_reset();
+    assert_eq!(reset.anim_type_art_read_states().count(), 0);
+    let after_reset = RulesLayerStack::new(IniFile::empty())
+        .process_with_fixed_art_and_registry_state(&art, reset)
+        .unwrap();
+    assert_eq!(after_reset.anim_type_art_read_states().count(), 0);
+}
+
+#[test]
+fn anim_art_read_receipt_preserves_stored_identity_and_duplicate_slots() {
+    let root = IniFile::from_str(
+        "[General]\nDamageFireTypes=FIRST, SPACED,ABCDEFGHIJKLMNOPQRSTUVWXY,ABCDEFGHIJKLMNOPQRSTUVWXY\n",
+    );
+    let art = IniFile::from_str(
+        "[FIRST]\nRate=1\n[ SPACED]\nRate=1\n[ABCDEFGHIJKLMNOPQRSTUVWX]\nRate=1\n",
+    );
+    let processed = RulesLayerStack::new(root)
+        .process_with_fixed_art(&art)
+        .unwrap();
+    assert_eq!(
+        processed.anim_type_art_read_states().collect::<Vec<_>>(),
+        vec![
+            ("FIRST", true),
+            (" SPACED", true),
+            ("ABCDEFGHIJKLMNOPQRSTUVWX", true),
+            ("ABCDEFGHIJKLMNOPQRSTUVWX", true),
+        ],
+        "the receipt is ordered per type, not a trimmed or deduplicated root set",
+    );
+}
+
 fn process_ini_passes(root: IniFile, later: IniFile) -> ProcessedRulesLayers {
     let mut layers = RulesLayerStack::new(root);
     layers.push(RulesLayerKind::Scenario, later);

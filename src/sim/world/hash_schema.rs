@@ -1,11 +1,23 @@
 //! Historical projections of the deterministic Rust hash stream.
 //!
-//! These policies preserve the existing provenance probes; they do not promise
+//! All policies use the current signed health fold (schema 169). The retired
+//! cached maximum cannot be reconstructed from live Strength: old arbitrary
+//! entity maxima are lost. Thus pre-169 projections exclude selected features,
+//! but cannot reproduce old hash streams or certify their golden values.
+//! These policies preserve feature-exclusion probes; they do not promise
 //! snapshot loading compatibility or native parity for arbitrary versions.
+//! Pre-167 projections assume the retired detached track options were absent
+//! in the original fixture. Retained active-track evidence rejects that bounded
+//! projection: an obsolete cursor/geometry copy cannot be reconstructed from
+//! the current authority. Callers must establish the original fixture's state;
+//! this policy cannot detect an arbitrary stale copy in an old snapshot.
 
 #[derive(Clone, Copy)]
 pub(super) enum HashSchema {
     Current,
+    /// Bounded full08 diagnostic: old Building slot fold, before power state.
+    #[cfg(test)]
+    BeforeBuildingPowerIntegration,
     #[cfg(test)]
     Before(u16),
     /// Test-only provenance probe: the `Before` composition with the raw
@@ -23,7 +35,9 @@ pub(super) enum HashFeature {
     Mission = 29,
     MasterFrame = 43,
     EntityAnimation = 44,
-    BuildingAnimOverlays = 45,
+    /// Reserved historical positional bit; obsolete overlay state no longer exists.
+    #[allow(dead_code)]
+    RetiredBuildingAnimOverlays = 45,
     TerminalScore = 46,
     PlayfieldAuthority = 47,
     TechnoPlayfield = 87,
@@ -51,6 +65,11 @@ pub(super) enum HashFeature {
     CellMembership = 159,
     FootPathRuntime = 160,
     BridgeLocomotorAndDummy = 161,
+    #[cfg(test)]
+    TrackAuthority = 167,
+    EstimatedHealth = 168,
+    AircraftDockState = 170,
+    AnimationAuthority = 171,
 }
 
 impl HashSchema {
@@ -58,15 +77,30 @@ impl HashSchema {
         match self {
             Self::Current => true,
             #[cfg(test)]
+            Self::BeforeBuildingPowerIntegration => !matches!(
+                _feature,
+                HashFeature::AircraftDockState | HashFeature::AnimationAuthority
+            ),
+            #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {
                 (_feature as u16) < version
             }
         }
     }
 
+    pub(super) const fn includes_building_power_integration(self) -> bool {
+        #[cfg(test)]
+        if matches!(self, Self::BeforeBuildingPowerIntegration) {
+            return false;
+        }
+        true
+    }
+
     pub(super) const fn includes_raw_infantry_owners(self) -> bool {
         match self {
             Self::Current => true,
+            #[cfg(test)]
+            Self::BeforeBuildingPowerIntegration => true,
             #[cfg(test)]
             Self::Before(_) => true,
             #[cfg(test)]
@@ -80,6 +114,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn detached_track_absence_projection_ends_at_schema167() {
+        assert!(!HashSchema::Before(167).includes(HashFeature::TrackAuthority));
+        assert!(
+            !HashSchema::BeforeWithoutRawInfantryOwners(161).includes(HashFeature::TrackAuthority)
+        );
+        assert!(HashSchema::Before(168).includes(HashFeature::TrackAuthority));
+        assert!(HashSchema::Current.includes(HashFeature::TrackAuthority));
+    }
+
+    #[test]
     fn historical_policies_preserve_original_positional_masks() {
         // Frozen from the 25-argument calls before this refactor (main c1983f56).
         // Bit positions retain the original parameter order; expected masks
@@ -89,7 +133,7 @@ mod tests {
             HashFeature::Mission,
             HashFeature::MasterFrame,
             HashFeature::EntityAnimation,
-            HashFeature::BuildingAnimOverlays,
+            HashFeature::RetiredBuildingAnimOverlays,
             HashFeature::TerminalScore,
             HashFeature::PlayfieldAuthority,
             HashFeature::TechnoPlayfield,

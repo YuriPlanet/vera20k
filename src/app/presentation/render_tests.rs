@@ -1,9 +1,9 @@
 use super::HoverTargetKind;
+use crate::app::input::dispatch::CLICK_SELECT_RADIUS;
 use crate::app::input::entity_pick::{
     compute_box_selection_snapshot, compute_click_selection_snapshot, hover_target_at_point,
     pick_enemy_target_stable_id,
 };
-use crate::app::input::dispatch::CLICK_SELECT_RADIUS;
 use crate::app::presentation::sidebar_render::sync_targeting_mode;
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseAllianceMap;
@@ -27,10 +27,7 @@ fn spawn_mobile(store: &mut EntityStore, sid: u64, rx: u16, ry: u16, owner: &str
         0,
         0,
         test_intern(owner),
-        Health {
-            current: 100,
-            max: 100,
-        },
+        Health { current: 100 },
         test_intern("E1"),
         EntityCategory::Unit,
         0,
@@ -181,10 +178,7 @@ fn test_box_additive_adds_only_and_excludes_structures() {
         0,
         0,
         test_intern("Americans"),
-        Health {
-            current: 100,
-            max: 100,
-        },
+        Health { current: 100 },
         test_intern("GAPOWR"),
         EntityCategory::Structure,
         0,
@@ -302,10 +296,7 @@ fn spawn_structure(
         0,
         0,
         test_intern(owner),
-        Health {
-            current: 100,
-            max: 100,
-        },
+        Health { current: 100 },
         test_intern(type_id),
         EntityCategory::Structure,
         0,
@@ -450,10 +441,7 @@ fn test_box_selection_excludes_selectable_no_types() {
         0,
         0,
         test_intern("Americans"),
-        Health {
-            current: 100,
-            max: 100,
-        },
+        Health { current: 100 },
         test_intern("PDPLANE"),
         EntityCategory::Aircraft,
         0,
@@ -549,10 +537,7 @@ fn test_click_selection_allows_visible_allied_units_for_local_owner() {
         0,
         0,
         test_intern("British"),
-        Health {
-            current: 100,
-            max: 100,
-        },
+        Health { current: 100 },
         test_intern("E1"),
         EntityCategory::Unit,
         0,
@@ -600,10 +585,7 @@ fn test_pick_enemy_target_ignores_hidden_entities() {
         0,
         0,
         soviet_id,
-        Health {
-            current: 100,
-            max: 100,
-        },
+        Health { current: 100 },
         e1_id,
         EntityCategory::Unit,
         0,
@@ -629,10 +611,7 @@ fn test_pick_enemy_target_ignores_hidden_entities() {
         0,
         0,
         soviet_id,
-        Health {
-            current: 100,
-            max: 100,
-        },
+        Health { current: 100 },
         e1_id,
         EntityCategory::Unit,
         0,
@@ -671,10 +650,7 @@ fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
         0,
         0,
         americans_id,
-        Health {
-            current: 100,
-            max: 100,
-        },
+        Health { current: 100 },
         gapowr_id,
         EntityCategory::Structure,
         0,
@@ -692,10 +668,7 @@ fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
         0,
         0,
         soviet_id,
-        Health {
-            current: 100,
-            max: 100,
-        },
+        Health { current: 100 },
         e1_id,
         EntityCategory::Unit,
         0,

@@ -6,7 +6,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::DestroyedGarrisonBuilding;
-use crate::sim::components::{Health, Position};
+use crate::sim::components::Position;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionType;
 use crate::sim::movement;
@@ -36,23 +36,12 @@ const SCATTER_DIRECTION_OFFSETS: [(i16, i16); 8] = [
     (-1, -1),
 ];
 
-/// Health as integer percentage (0–100).
-fn health_percent(current: u16, max: u16) -> u32 {
-    if max == 0 {
-        return 100;
-    }
-    ((current as u32) * 100 / max as u32).min(100)
-}
-
-fn sell_refund_for_building(
-    obj: &crate::rules::object_type::ObjectType,
-    health: Option<Health>,
-) -> i32 {
-    let hp_pct: u32 = health
-        .map(|hp| health_percent(hp.current, hp.max))
-        .unwrap_or(100);
-    // refund = cost * sell% * health% / 10000
-    (obj.cost.max(0) as u64 * SELL_REFUND_PERCENT as u64 * hp_pct as u64 / 10000) as i32
+/// Building sale invokes Techno70ADA0 -> Type711F60, then credits the result
+/// directly (44A1A3..B0 / 44A215..222). Neither refund body reads health.
+/// VERA's fixed 50%/nonnegative-cost adapter still omits native RefundPercent,
+/// Soylent and owner/type cost modifiers; this is not full refund parity.
+fn sell_refund_for_building(obj: &crate::rules::object_type::ObjectType) -> i32 {
+    obj.cost.max(0) / (100 / SELL_REFUND_PERCENT as i32)
 }
 
 /// Survivor divisor for the given owner's side, from `[General]` INI keys.
@@ -74,20 +63,19 @@ fn survivor_divisor_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) ->
 
 /// Compute survivor count using the RA2 formula: sell_refund / SurvivorDivisor.
 ///
-/// The original engine divides the health-scaled sell refund by a per-side
-/// divisor from `[General]`. Buildings at 0 HP produce no survivors. The
-/// `Crewed=yes` flag must be set.
+/// VERA divides its refund adapter by a per-side divisor from `[General]`.
+/// The native survivor admission/count path remains separately unverified.
+/// The `Crewed=yes` flag must be set.
 fn sell_survivor_limit(
     sim: &Simulation,
     obj: &crate::rules::object_type::ObjectType,
-    health: Option<Health>,
     rules: &RuleSet,
     owner: &str,
 ) -> usize {
     if !obj.crewed {
         return 0;
     }
-    let refund = sell_refund_for_building(obj, health);
+    let refund = sell_refund_for_building(obj);
     if refund <= 0 {
         return 0;
     }
@@ -157,12 +145,11 @@ fn eject_sell_survivors(
     owner: &str,
     building_type: &crate::rules::object_type::ObjectType,
     building_pos: Position,
-    health: Option<Health>,
 ) -> usize {
     let Some(infantry_type) = sell_survivor_type(sim, rules, owner) else {
         return 0;
     };
-    let survivor_limit = sell_survivor_limit(sim, building_type, health, rules, owner);
+    let survivor_limit = sell_survivor_limit(sim, building_type, rules, owner);
     if survivor_limit == 0 {
         return 0;
     }
@@ -420,10 +407,8 @@ fn sellbuilding_direct_scatter_handoff(
     }
 
     if let Some(dest) = dest {
-        let timing = movement::DestinationTiming::new(
-            sim.session.binary_frame,
-            sim.blockage_path_delay_ticks,
-        );
+        let timing =
+            movement::DestinationTiming::from_rules(sim.session.binary_frame, rules.into());
         let _ = movement::issue_direct_move(
             &mut sim.substrate.entities,
             passenger_id,
@@ -742,7 +727,7 @@ pub(crate) fn eject_red_hp_garrison(
 /// the SellBuilding-style helper, then the building is removed/refunded.
 /// Revert-to-civilian belongs to empty-garrison reconciliation, not player sell.
 pub fn sell_building(sim: &mut Simulation, rules: &RuleSet, stable_id: u64) -> bool {
-    let (owner_name, type_id, position, health) = {
+    let (owner_name, type_id, position) = {
         let Some(entity) = sim.substrate.entities.get(stable_id) else {
             return false;
         };
@@ -753,22 +738,23 @@ pub fn sell_building(sim: &mut Simulation, rules: &RuleSet, stable_id: u64) -> b
             sim.interner.resolve(entity.owner()).to_string(),
             sim.interner.resolve(entity.type_ref()).to_string(),
             entity.position.clone(),
-            Some(entity.health),
         )
     };
     let Some(obj) = rules.object(&type_id) else {
         return false;
     };
 
-    let refund = sell_refund_for_building(obj, health);
-    let ejected = eject_sell_survivors(sim, rules, &owner_name, obj, position, health);
+    let refund = sell_refund_for_building(obj);
+    let ejected = eject_sell_survivors(sim, rules, &owner_name, obj, position);
     // Eject garrison occupants alive before removing the building (gamemd SellBuilding).
     let garrison_ejected = eject_garrison_occupants(sim, rules, stable_id);
-    let interrupted_miners =
-        crate::sim::miner::interrupt_refinery_docked_miners(sim, rules, stable_id);
-    // Eject a bunkered unit before the bunker is removed (gamemd UndockUnit: place
-    // at the building cell, no sound/anim/Move). Must precede uninit so the unit
-    // is revealed/placed before the despawn safety net would clear the link.
+    // Existing VERA contact/reset adapter. Native sale separately broadcasts
+    // radio0x17 at44AB68; its miner scatter/mission receiver is still incomplete.
+    let interrupted_miners = crate::sim::miner::interrupt_refinery_docked_miners(sim, stable_id);
+    // This reciprocal bunker link is distinct from refinery contacts/on_pad.
+    // Native44AAB0 ->4593A0 uses Power_On, Force_Track, a separate owner-speed
+    // setter, link clear and radio BREAK. The current reveal/place adapter
+    // below still awaits that release-order migration; run it before uninit.
     if sim
         .substrate
         .entities
@@ -801,7 +787,7 @@ pub fn sell_building(sim: &mut Simulation, rules: &RuleSet, stable_id: u64) -> b
             .push(SimSoundEvent::StructureSold { owner: owner_id });
     }
     log::info!(
-        "Building {} sold by {}: refunded {} credits, ejected {} crew + {} garrison, undocked {} miners",
+        "Building {} sold by {}: refunded {} credits, ejected {} crew + {} garrison, interrupted {} miners",
         type_id,
         owner_name,
         refund,
@@ -813,7 +799,16 @@ pub fn sell_building(sim: &mut Simulation, rules: &RuleSet, stable_id: u64) -> b
 }
 
 /// Toggle repair mode on a building. If already repairing, stop. Otherwise start.
-pub fn toggle_repair(sim: &mut Simulation, stable_id: u64) -> bool {
+pub fn toggle_repair(sim: &mut Simulation, rules: &RuleSet, stable_id: u64) -> bool {
+    let Some(strength) = sim
+        .substrate
+        .entities
+        .get(stable_id)
+        .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+        .map(|obj| obj.strength)
+    else {
+        return false;
+    };
     let Some(entity) = sim.substrate.entities.get_mut(stable_id) else {
         return false;
     };
@@ -831,7 +826,7 @@ pub fn toggle_repair(sim: &mut Simulation, stable_id: u64) -> bool {
         // (`0x004470A4 CALL 0x0050B6F0`) gets the sidebar flash and
         // `PlayEVA("EVA_Repairing")` (`0x004470B7`). The app applies the
         // local-owner half.
-        if entity.health.current != entity.health.max {
+        if entity.health.current != strength {
             let owner = entity.owner();
             sim.sound_events.push(SimSoundEvent::Repairing { owner });
         }
@@ -842,7 +837,7 @@ pub fn toggle_repair(sim: &mut Simulation, stable_id: u64) -> bool {
 /// Repair cost: 25% of building cost spread across all HP.
 const REPAIR_COST_PERCENT: u32 = 25;
 /// HP healed per sim tick (at 15 Hz this is ~60 HP/sec).
-const REPAIR_HP_PER_TICK: u16 = 4;
+const REPAIR_HP_PER_TICK: i32 = 4;
 
 /// Run the `WasAttackedByEnemy` consumer from
 /// `BuildingClass::UpdateRepairAndPower @ 0x00450630` in stable building order.
@@ -861,12 +856,18 @@ fn tick_ai_low_credit_sell_decisions(sim: &mut Simulation, rules: &RuleSet) {
 
     for stable_id in building_ids {
         let Some((owner, eligible_building)) =
-            sim.substrate.entities.get(stable_id).map(|entity| {
+            sim.substrate.entities.get(stable_id).and_then(|entity| {
                 let mission = entity.mission.current().known();
-                let below_red = entity.health.max != 0
-                    && f64::from(entity.health.current) / f64::from(entity.health.max)
-                        < f64::from(rules.general.condition_red);
-                (
+                let strength = sim.object_type(entity.type_ref(), rules)?.strength;
+                // 4507F7..450805 tests x87 C0: less and unordered both sell.
+                let below_red = matches!(
+                    entity
+                        .health
+                        .compare_ratio(strength, rules.general.condition_red),
+                    crate::util::native_x87::MaskedX87Ordering::Less
+                        | crate::util::native_x87::MaskedX87Ordering::Unordered
+                );
+                Some((
                     entity.owner(),
                     entity.is_active()
                         && !entity.lifecycle.in_limbo
@@ -876,7 +877,7 @@ fn tick_ai_low_credit_sell_decisions(sim: &mut Simulation, rules: &RuleSet) {
                             Some(MissionType::Selling | MissionType::Construction)
                         )
                         && below_red,
-                )
+                ))
             })
         else {
             continue;
@@ -916,57 +917,55 @@ pub fn tick_repairs(sim: &mut Simulation, rules: &RuleSet) {
     // repair tick for the same building.
     tick_ai_low_credit_sell_decisions(sim, rules);
     // Collect snapshot of repairing structures.
-    let actions: Vec<(u64, String, String, u16, u16)> = sim
+    let actions: Vec<(u64, String, i32, i32, i32)> = sim
         .substrate
         .entities
         .values()
-        .filter(|e| {
-            // A Dying building corpse (destroyed this tick, awaiting the end-of-
-            // tick drain) must not be auto-repaired — no credits spent on a dead
-            // building.
-            !e.dying
-                && e.repairing
-                && e.category == EntityCategory::Structure
-                && e.health.current < e.health.max
+        .filter(|entity| {
+            !entity.dying && entity.repairing && entity.category == EntityCategory::Structure
         })
-        .map(|e| {
-            (
-                e.stable_id(),
-                sim.interner.resolve(e.owner()).to_string(),
-                sim.interner.resolve(e.type_ref()).to_string(),
-                e.health.current,
-                e.health.max,
-            )
+        .filter_map(|entity| {
+            let obj = sim.object_type(entity.type_ref(), rules)?;
+            Some((
+                entity.stable_id(),
+                sim.interner.resolve(entity.owner()).to_string(),
+                entity.health.current,
+                obj.strength,
+                obj.cost,
+            ))
         })
         .collect();
     let mut stop_repairing: Vec<u64> = Vec::new();
-    for (stable_id, owner, type_id, current_hp, max_hp) in actions {
-        let cost_per_hp: i32 = rules
-            .object(&type_id)
-            .map(|obj| {
-                // total_repair_cost = cost * 25 / 100, then / max_hp (ceiling division)
-                let total_repair_cost: u32 = obj.cost.max(0) as u32 * REPAIR_COST_PERCENT / 100;
-                total_repair_cost.div_ceil(max_hp.max(1) as u32).max(1) as i32
-            })
-            .unwrap_or(1);
-        let credits = credits_for_owner(sim, &owner);
-        if credits < cost_per_hp {
+    for (stable_id, owner, current_hp, strength, cost) in actions {
+        // Existing VERA cost/cadence adapter, not native type vslots B0/B4.
+        // Widen before multiplication; the final per-HP amount fits signed32.
+        let total_repair_cost = i64::from(cost.max(0)) * i64::from(REPAIR_COST_PERCENT) / 100;
+        let divisor = i64::from(strength.max(1));
+        let cost_per_hp = i32::try_from(((total_repair_cost + divisor - 1) / divisor).max(1))
+            .expect("25 percent of signed positive cost fits i32");
+        if credits_for_owner(sim, &owner) < cost_per_hp {
             stop_repairing.push(stable_id);
             continue;
         }
-        let heal = REPAIR_HP_PER_TICK.min(max_hp - current_hp);
-        if heal == 0 {
-            stop_repairing.push(stable_id);
-            continue;
-        }
-        *credits_entry_for_owner(sim, &owner) -= cost_per_hp * heal as i32;
+        // Preserve the adapter's reduced charge for the last partial step;
+        // actual/estimated health receive the full native-style ADD separately.
+        let billed_hp = i32::try_from(
+            (i64::from(strength) - i64::from(current_hp)).clamp(1, i64::from(REPAIR_HP_PER_TICK)),
+        )
+        .expect("bounded repair charge");
+        *credits_entry_for_owner(sim, &owner) -= cost_per_hp * billed_hp;
         if let Some(entity) = sim.substrate.entities.get_mut(stable_id) {
-            entity.health.current = (entity.health.current + heal).min(entity.health.max);
-            entity.refresh_building_damage_state_gate(rules.general.condition_yellow_x1000);
-            if entity.health.current >= entity.health.max {
+            entity.health.current = entity.health.current.wrapping_add(REPAIR_HP_PER_TICK);
+            entity.estimated_health.add_repair(REPAIR_HP_PER_TICK);
+            // Building4508A8..CD: independent ADDs, then signed actual >= Strength.
+            if entity.health.current >= strength {
+                entity.health.current = strength;
+                entity.estimated_health.reset(strength);
                 stop_repairing.push(stable_id);
             }
         }
+        sim.refresh_building_damage_state(stable_id, rules);
+        sim.retire_damage_smoke_after_heal(stable_id, rules);
     }
     for stable_id in stop_repairing {
         if let Some(entity) = sim.substrate.entities.get_mut(stable_id) {
@@ -986,7 +985,11 @@ mod tests {
     use crate::sim::occupancy::CellListInsertion;
 
     fn garrison_edge_rules() -> RuleSet {
-        let ini = IniFile::from_str(
+        garrison_edge_rules_with_strength(400)
+    }
+
+    fn garrison_edge_rules_with_strength(strength: i32) -> RuleSet {
+        let ini = IniFile::from_str(&format!(
             "[InfantryTypes]\n\
              0=E1\n\
              [VehicleTypes]\n\
@@ -1007,25 +1010,29 @@ mod tests {
              [CAGAS01]\n\
              Name=GasStation\n\
              Cost=400\n\
-             Strength=400\n\
+             Strength={strength}\n\
              Armor=wood\n\
              Foundation=2x2\n\
              CanBeOccupied=yes\n\
              CanOccupyFire=yes\n\
              MaxNumberOccupants=5\n",
-        );
+        ));
         RuleSet::from_ini(&ini).expect("garrison edge rules should parse")
     }
 
     fn repair_damage_state_rules() -> RuleSet {
-        let ini = IniFile::from_str(
+        repair_damage_state_rules_with_strength(100)
+    }
+
+    fn repair_damage_state_rules_with_strength(strength: i32) -> RuleSet {
+        let ini = IniFile::from_str(&format!(
             "[InfantryTypes]\n\
              [VehicleTypes]\n\
              [AircraftTypes]\n\
              [BuildingTypes]\n0=GAPOWR\n\n\
-             [GAPOWR]\nStrength=100\nArmor=wood\nCost=800\n\n\
+             [GAPOWR]\nStrength={strength}\nArmor=wood\nCost=800\n\n\
              [AudioVisual]\nConditionYellow=50%\n",
-        );
+        ));
         RuleSet::from_ini(&ini).expect("repair damage-state rules should parse")
     }
 
@@ -1102,7 +1109,64 @@ mod tests {
     }
 
     #[test]
-    fn building_repair_crossing_above_condition_yellow_clears_building_damage_state() {
+    fn building_repair_preserves_signed_adds_and_live_strength() {
+        for (strength, actual, estimate, expected_actual, expected_estimate, repairing) in [
+            (100_000, 70_000, -20, 70_004, -16, true),
+            (
+                i32::MAX,
+                i32::MAX - 1,
+                i32::MAX - 2,
+                i32::MIN + 2,
+                i32::MIN + 1,
+                true,
+            ),
+            (-10, -20, -50, -16, -46, true),
+            (-10, -12, -50, -10, -10, false),
+            (100, 100, -50, 100, 100, false),
+        ] {
+            let rules = repair_damage_state_rules_with_strength(strength);
+            let mut sim = Simulation::new();
+            insert_structure(&mut sim, 1, "GAPOWR", "Americans");
+            let building = sim.substrate.entities.get_mut(1).unwrap();
+            building.health.current = actual;
+            building.estimated_health =
+                crate::sim::estimated_health::EstimatedHealth::from_raw(estimate);
+            building.repairing = true;
+            tick_repairs(&mut sim, &rules);
+            let building = sim.substrate.entities.get(1).unwrap();
+            assert_eq!(
+                (
+                    building.health.current,
+                    building.estimated_health.get(),
+                    building.repairing
+                ),
+                (expected_actual, expected_estimate, repairing),
+                "strength={strength} actual={actual}"
+            );
+        }
+    }
+
+    #[test]
+    fn selling_refund_does_not_scale_with_signed_health_or_strength() {
+        for (actual, strength) in [
+            (0, 0),
+            (-1, -10),
+            (1, 100),
+            (70_000, 100_000),
+            (i32::MAX, i32::MIN),
+        ] {
+            let rules = garrison_edge_rules_with_strength(strength);
+            let mut sim = Simulation::new();
+            insert_captured_player_owned_garrison(&mut sim, 10, 11);
+            sim.substrate.entities.get_mut(10).unwrap().health.current = actual;
+            let before = credits_for_owner(&sim, "Americans");
+            assert!(sell_building(&mut sim, &rules, 10));
+            assert_eq!(credits_for_owner(&sim, "Americans") - before, 200);
+        }
+    }
+
+    #[test]
+    fn building_repair_crosses_live_condition_yellow_and_resets_only_on_completion() {
         let rules = repair_damage_state_rules();
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
@@ -1114,10 +1178,7 @@ mod tests {
             0,
             0,
             owner,
-            Health {
-                current: 49,
-                max: 100,
-            },
+            Health { current: 49 },
             type_ref,
             EntityCategory::Structure,
             0,
@@ -1125,7 +1186,7 @@ mod tests {
             false,
         );
         building.repairing = true;
-        building.building_damage_state_active = true;
+        building.estimated_health = crate::sim::estimated_health::EstimatedHealth::from_raw(-20);
         sim.substrate.entities.insert(building);
 
         tick_repairs(&mut sim, &rules);
@@ -1136,7 +1197,22 @@ mod tests {
             .get(1)
             .expect("building should remain");
         assert_eq!(building.health.current, 53);
-        assert!(!building.building_damage_state_active);
+        assert_eq!(building.estimated_health.get(), -16);
+        assert_eq!(
+            building.health.compare_ratio(
+                rules.object("GAPOWR").unwrap().strength,
+                rules.general.condition_yellow
+            ),
+            crate::util::native_x87::MaskedX87Ordering::Greater
+        );
+
+        let building = sim.substrate.entities.get_mut(1).unwrap();
+        building.health.current = 99;
+        building.estimated_health = crate::sim::estimated_health::EstimatedHealth::from_raw(-20);
+        tick_repairs(&mut sim, &rules);
+        let building = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(building.health.current, 100);
+        assert_eq!(building.estimated_health.get(), 100);
     }
 
     fn insert_captured_player_owned_garrison(
@@ -1637,21 +1713,16 @@ mod tests {
     /// flag to end up ON and `Health != Type.Strength`.
     #[test]
     fn repair_toggle_announces_only_when_switching_on_a_damaged_building() {
+        let rules = repair_damage_state_rules();
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
         insert_structure(&mut sim, 1, "GAPOWR", "Americans");
         insert_structure(&mut sim, 2, "GAPOWR", "Americans");
         {
             let damaged = sim.substrate.entities.get_mut(1).expect("damaged plant");
-            damaged.health = Health {
-                current: 40,
-                max: 100,
-            };
+            damaged.health = Health { current: 40 };
             let intact = sim.substrate.entities.get_mut(2).expect("intact plant");
-            intact.health = Health {
-                current: 100,
-                max: 100,
-            };
+            intact.health = Health { current: 100 };
         }
         let repairing = |sim: &Simulation| {
             sim.sound_events
@@ -1662,15 +1733,15 @@ mod tests {
                 .count()
         };
 
-        assert!(toggle_repair(&mut sim, 1));
+        assert!(toggle_repair(&mut sim, &rules, 1));
         assert_eq!(
             repairing(&sim),
             1,
             "switching repair on a damaged building speaks"
         );
-        assert!(toggle_repair(&mut sim, 1));
+        assert!(toggle_repair(&mut sim, &rules, 1));
         assert_eq!(repairing(&sim), 1, "switching it off is silent");
-        assert!(toggle_repair(&mut sim, 2));
+        assert!(toggle_repair(&mut sim, &rules, 2));
         assert_eq!(repairing(&sim), 1, "a building at full strength is silent");
     }
 }

@@ -43,6 +43,7 @@ use crate::map::tube_facts::{NativeTubeCellIndex, TubeFact, TubeId};
 use crate::map::tubes::NativeMapTubeReceipt;
 use crate::rules::terrain_object_type::TerrainObjectType;
 use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainClass, TerrainRules};
+use crate::util::pixel_conversion::PixelConversionBounds;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{
     Arc,
@@ -485,6 +486,7 @@ pub(crate) struct LoadCellRecalcState<'a> {
     metadata_cache: HashMap<TileKey, TileMetadata>,
     warned_unknown_land_types: HashSet<u8>,
     terrain_anim_latched: Vec<bool>,
+    pixel_conversion_bounds: PixelConversionBounds,
 }
 
 impl<'a> LoadCellRecalcState<'a> {
@@ -497,6 +499,7 @@ impl<'a> LoadCellRecalcState<'a> {
         lat_enabled: bool,
         cliff_back_impassability: u8,
         cell_count: usize,
+        pixel_conversion_bounds: PixelConversionBounds,
     ) -> Self {
         let lat_config = lat_enabled
             .then(|| lat::parse_lat_config(&theater_data.ini_data, &theater_data.lookup));
@@ -517,6 +520,7 @@ impl<'a> LoadCellRecalcState<'a> {
             metadata_cache: HashMap::new(),
             warned_unknown_land_types: HashSet::new(),
             terrain_anim_latched: vec![false; cell_count],
+            pixel_conversion_bounds,
         }
     }
 
@@ -538,6 +542,7 @@ impl<'a> LoadCellRecalcState<'a> {
             metadata_cache: HashMap::new(),
             warned_unknown_land_types: HashSet::new(),
             terrain_anim_latched: vec![false; cell_count],
+            pixel_conversion_bounds: PixelConversionBounds::default(),
         }
     }
 
@@ -644,6 +649,7 @@ impl<'a> LoadCellRecalcState<'a> {
             metadata_cache: HashMap::new(),
             warned_unknown_land_types: HashSet::new(),
             terrain_anim_latched: Vec::new(),
+            pixel_conversion_bounds: PixelConversionBounds::default(),
         }
     }
 
@@ -758,22 +764,6 @@ pub(crate) struct LoadCellRecalcOutcome {
 const LEPTONS_PER_CELL: i32 = crate::util::lepton::LEPTONS_PER_CELL_I32;
 /// Cell-centre offset used by the tile-animation spawn coordinate.
 const CELL_CENTRE_LEPTONS: i32 = LEPTONS_PER_CELL / 2;
-
-/// Numerator of the exact screen-pixel → world-lepton scale used by the
-/// tactical pixel-to-world transform, over `PIXEL_TO_LEPTON_DENOMINATOR`.
-///
-/// The native matrix row is `[ +s, 2s, 0, 0 ]` / `[ -s, 2s, 0, 0 ]` where `s` is
-/// the single-precision constant `4.2667` — an authored decimal approximation of
-/// 256/60, i.e. leptons per cell over the isometric diamond half-width in
-/// pixels. The `Y` coefficient is exactly `2s` (same mantissa, exponent + 1),
-/// so both output axes reduce to `s * k` for an integer `k` and the whole
-/// transform is exact rational arithmetic followed by one truncation.
-///
-/// Working in integers rather than `f32` keeps this off the float path; the
-/// equivalence over the reachable offset range is pinned by
-/// `gsi_13_04_tile_anim_offset_matches_native_float_transform`.
-const PIXEL_TO_LEPTON_NUMERATOR: i64 = 4_473_959;
-const PIXEL_TO_LEPTON_DENOMINATOR: i64 = 1_048_576;
 
 /// Live contents of MapClass's one process-global fallback `CellClass`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1726,21 +1716,6 @@ fn refresh_runtime_bridge_projection(cell: &mut ResolvedTerrainCell, structural_
     }
 }
 
-/// Convert a `Tile%02dXOffset` / `YOffset` screen-pixel pair into the world
-/// lepton offset the animation spawn adds to the cell centre.
-///
-/// The native helper bails out to a zero coordinate when either offset is at or
-/// beyond the tactical viewport extent; every stock offset is under 64 pixels,
-/// so that guard is unreachable here and is deliberately not reproduced.
-/// Truncation is toward zero, matching the native float-to-long conversion.
-pub fn tile_anim_pixel_offset_to_leptons(x_offset: i32, y_offset: i32) -> (i32, i32) {
-    let scale =
-        |k: i64| -> i32 { ((PIXEL_TO_LEPTON_NUMERATOR * k) / PIXEL_TO_LEPTON_DENOMINATOR) as i32 };
-    let px = i64::from(x_offset);
-    let py = i64::from(y_offset);
-    (scale(px + 2 * py), scale(2 * py - px))
-}
-
 #[derive(Debug, Clone)]
 struct PristineTmpHeader {
     subtiles: Vec<(i32, bool)>,
@@ -2544,8 +2519,9 @@ impl ResolvedTerrainGrid {
                     && let Some(anim) = theater.lookup.tile_anim(tile_id)
                     && anim.attaches_to == i32::from(animation_sub_tile)
                 {
-                    let (offset_x, offset_y) =
-                        tile_anim_pixel_offset_to_leptons(anim.x_offset, anim.y_offset);
+                    let (offset_x, offset_y) = state
+                        .pixel_conversion_bounds
+                        .offset_to_leptons(anim.x_offset, anim.y_offset);
                     let cell = &self.cells[index];
                     anim_request = Some(TerrainTileAnimation {
                         rx: cell.rx,
@@ -3843,6 +3819,7 @@ impl ResolvedTerrainGrid {
             None,
             None,
             None,
+            PixelConversionBounds::default(),
         )
     }
 
@@ -3864,6 +3841,7 @@ impl ResolvedTerrainGrid {
             None,
             None,
             None,
+            PixelConversionBounds::default(),
         )
     }
 
@@ -3894,6 +3872,7 @@ impl ResolvedTerrainGrid {
             Some(scenario_fill_ranged),
             Some(variant_selector),
             None,
+            PixelConversionBounds::default(),
         )
     }
 
@@ -3915,6 +3894,7 @@ impl ResolvedTerrainGrid {
         variant_selector: &mut TileVariantSelectionContext<'_, '_>,
         shared_cell_dummy: SharedCellDummy,
         overlay_load_source: OverlayLoadSource,
+        pixel_conversion_bounds: PixelConversionBounds,
     ) -> Self {
         Self::build_inner(
             map,
@@ -3930,6 +3910,7 @@ impl ResolvedTerrainGrid {
             Some(scenario_fill_ranged),
             Some(variant_selector),
             Some(shared_cell_dummy),
+            pixel_conversion_bounds,
         )
     }
 
@@ -3964,6 +3945,7 @@ impl ResolvedTerrainGrid {
             Some(scenario_fill_ranged),
             Some(variant_selector),
             Some(shared_cell_dummy),
+            PixelConversionBounds::default(),
         ))
     }
 
@@ -3981,6 +3963,7 @@ impl ResolvedTerrainGrid {
         mut scenario_fill_ranged: Option<&mut dyn FnMut(u32, u32) -> u32>,
         mut variant_selector: Option<&mut TileVariantSelectionContext<'_, '_>>,
         shared_cell_dummy: Option<SharedCellDummy>,
+        pixel_conversion_bounds: PixelConversionBounds,
     ) -> Self {
         let shared_cell_dummy = shared_cell_dummy.unwrap_or_default();
         let clear_tile_id = theater_data
@@ -4294,18 +4277,18 @@ impl ResolvedTerrainGrid {
                         theater_data.and_then(|td| td.lookup.tile_anim(presentation_tile_id))
                     {
                         if anim.attaches_to == i32::from(presentation_sub_tile) {
-                            let (offset_x, offset_y) =
-                                tile_anim_pixel_offset_to_leptons(anim.x_offset, anim.y_offset);
+                            let (offset_x, offset_y) = pixel_conversion_bounds
+                                .offset_to_leptons(anim.x_offset, anim.y_offset);
                             tile_animations.push(TerrainTileAnimation {
                                 rx,
                                 ry,
                                 anim_name: anim.anim_name.clone(),
                                 world_x: offset_x
-                                    + i32::from(rx) * LEPTONS_PER_CELL
-                                    + CELL_CENTRE_LEPTONS,
+                                    .wrapping_add(i32::from(rx).wrapping_mul(LEPTONS_PER_CELL))
+                                    .wrapping_add(CELL_CENTRE_LEPTONS),
                                 world_y: offset_y
-                                    + i32::from(ry) * LEPTONS_PER_CELL
-                                    + CELL_CENTRE_LEPTONS,
+                                    .wrapping_add(i32::from(ry).wrapping_mul(LEPTONS_PER_CELL))
+                                    .wrapping_add(CELL_CENTRE_LEPTONS),
                                 world_z: i32::from(level as i8)
                                     * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
                                 z_adjust: anim.z_adjust,
@@ -7496,6 +7479,7 @@ mod tests {
                 &mut selector,
                 SharedCellDummy::fresh(),
                 OverlayLoadSource::Authored,
+                PixelConversionBounds::default(),
             );
             let metrics = (
                 selector.generated_table(),
@@ -7630,6 +7614,7 @@ mod tests {
             None,
             None,
             None,
+            PixelConversionBounds::default(),
         );
         assert_eq!(pending_lat.cell(5, 5).unwrap().final_tile_index, 5);
 
@@ -7652,6 +7637,7 @@ mod tests {
             None,
             None,
             None,
+            PixelConversionBounds::default(),
         );
         let cliff_cell = pending_cliff.cell(1, 1).unwrap();
         assert_eq!(cliff_cell.land_type, LandType::Clear.as_index());
@@ -7704,6 +7690,7 @@ mod tests {
                 &mut selector,
                 dummy.clone(),
                 OverlayLoadSource::Authored,
+                PixelConversionBounds::default(),
             )
         };
 
@@ -7763,6 +7750,7 @@ mod tests {
             None,
             None,
             None,
+            PixelConversionBounds::default(),
         );
         let generated = ResolvedTerrainGrid::build_inner(
             &map,
@@ -7778,6 +7766,7 @@ mod tests {
             None,
             None,
             None,
+            PixelConversionBounds::default(),
         );
 
         assert!(
@@ -8218,6 +8207,7 @@ mod tests {
             false,
             0,
             grid.cells.len(),
+            PixelConversionBounds::default(),
         );
         let mut effects = LoadRecalcTestEffects {
             tube_allocation: Some(AutomaticTubeAllocation::Allocated {
@@ -9357,6 +9347,7 @@ SnowOccupationBits=0
             None,
             None,
             None,
+            PixelConversionBounds::default(),
         );
         let temperate_tree = temperate.cell(0, 0).unwrap();
         assert_eq!(temperate_tree.terrain_object_occupation, Some(4));
@@ -9383,6 +9374,7 @@ SnowOccupationBits=0
             None,
             None,
             None,
+            PixelConversionBounds::default(),
         );
         let snow_tree = snow.cell(0, 0).unwrap();
         assert_eq!(snow_tree.terrain_object_occupation, Some(7));
@@ -10077,6 +10069,7 @@ NoUseTileLandType=no
             false,
             0,
             1,
+            PixelConversionBounds::default(),
         );
 
         let outcome = grid
@@ -10126,6 +10119,7 @@ NoUseTileLandType=no
             false,
             0,
             1,
+            PixelConversionBounds::default(),
         );
         let outcome = sparse
             .recalc_authored_load_cell(
@@ -10238,6 +10232,7 @@ NoUseTileLandType=no
             false,
             2,
             sparse.cells.len(),
+            PixelConversionBounds::default(),
         );
         sparse
             .recalc_authored_load_cell(
@@ -10718,6 +10713,109 @@ Tile03ZAdjust=-10
     }
 
     #[test]
+    fn tile_anim_live_and_eager_use_bounds_and_wrapping_world_adds() {
+        let tmp = gsi_04_02_last_tiles_tmp_bytes(0, [1, 2, 3], [4, 5, 6]);
+        let (_directory, assets) = gsi_04_04_asset_manager_with_loose_tmp("wf01.tem", &tmp);
+        let terrain_rules = TerrainRules::from_ini(&IniFile::from_str(""));
+        let registry = OverlayTypeRegistry::from_ini(&IniFile::from_str(""), None);
+        // Bounds are match inputs. Rejection zeroes only the offset; the Anim
+        // still attaches at the cell centre. Negative offsets have no lower guard.
+        for (x, y, bounds, expected) in [
+            (
+                -30,
+                59,
+                PixelConversionBounds {
+                    width: 1,
+                    height: 59,
+                },
+                (128, 128),
+            ),
+            (
+                -30,
+                59,
+                PixelConversionBounds {
+                    width: 1,
+                    height: 60,
+                },
+                (503, 759),
+            ),
+            (
+                -30,
+                59,
+                PixelConversionBounds {
+                    width: -30,
+                    height: 60,
+                },
+                (128, 128),
+            ),
+            // Deterministic rational policy, then signed32 wrapping world add.
+            (
+                -503_312_600,
+                0,
+                PixelConversionBounds::default(),
+                (-2_147_483_637, -2_147_483_403),
+            ),
+        ] {
+            let mut theater = theater_with_tile_anims();
+            let ini = format!(
+                "[TileSet0000]\nTilesInSet=4\nFileName=wf\nSetName=Waterfalls\n[Waterfalls]\nTile01Anim=WA01X\nTile01XOffset={x}\nTile01YOffset={y}\nTile01AttachesTo=0\n"
+            );
+            theater.lookup = theater::parse_tileset_ini(ini.as_bytes(), "tem").unwrap();
+            let map = make_map(vec![anim_cell(0, 0, 0, 0, 0)], Vec::new(), Vec::new());
+            let eager = ResolvedTerrainGrid::build_inner(
+                &map,
+                Some(&theater),
+                Some(&assets),
+                Some(&terrain_rules),
+                Some(&registry),
+                None,
+                false,
+                0,
+                OverlayLoadSource::Authored,
+                TerrainBuildProjection::EagerCompatibility,
+                None,
+                None,
+                None,
+                bounds,
+            );
+            assert_eq!(eager.tile_animations().len(), 1);
+            let eager_anim = &eager.tile_animations()[0];
+            assert_eq!(
+                (eager_anim.world_x, eager_anim.world_y),
+                expected,
+                "eager {x},{y} {bounds:?}"
+            );
+            let mut live = ResolvedTerrainGrid::from_cells(1, 1, vec![make_test_cell(0, 0)]);
+            let mut state = LoadCellRecalcState::for_authored_load(
+                &map,
+                &theater,
+                &assets,
+                &terrain_rules,
+                &registry,
+                false,
+                0,
+                1,
+                bounds,
+            );
+            let mut effects = LoadRecalcTestEffects::default();
+            live.recalc_authored_load_cell(
+                &mut state,
+                0,
+                FinalizedOverlayCell::default(),
+                &mut effects,
+            )
+            .unwrap();
+            assert_eq!(effects.requests.len(), 1);
+            let live_anim = &effects.requests[0];
+            assert_eq!(
+                (live_anim.world_x, live_anim.world_y),
+                expected,
+                "live {x},{y} {bounds:?}"
+            );
+        }
+    }
+
+    #[test]
     fn authored_load_recalc_latches_tile_anim_only_after_synchronous_success() {
         let theater = theater_with_tile_anims();
         let tmp = gsi_04_02_last_tiles_tmp_bytes(0, [1, 2, 3], [4, 5, 6]);
@@ -10736,6 +10834,7 @@ Tile03ZAdjust=-10
             false,
             0,
             grid.cells.len(),
+            PixelConversionBounds::default(),
         );
         let mut effects = LoadRecalcTestEffects {
             fail: true,
@@ -10830,7 +10929,7 @@ Tile03ZAdjust=-10
                 let reference_x = (S * px as f32 + S2 * py as f32).trunc() as i32;
                 let reference_y = (S2 * py as f32 - S * px as f32).trunc() as i32;
                 assert_eq!(
-                    tile_anim_pixel_offset_to_leptons(px, py),
+                    PixelConversionBounds::default().offset_to_leptons(px, py),
                     (reference_x, reference_y),
                     "pixel offset ({px}, {py})"
                 );
@@ -10870,7 +10969,7 @@ Tile03ZAdjust=-10
         let map = make_map(vec![anim_cell(2, 3, 0, 0, 5)], Vec::new(), Vec::new());
         let grid = ResolvedTerrainGrid::build(&map, Some(&theater), None, None, None, false, 0);
         let anim = &grid.tile_animations()[0];
-        let (offset_x, offset_y) = tile_anim_pixel_offset_to_leptons(-30, 59);
+        let (offset_x, offset_y) = PixelConversionBounds::default().offset_to_leptons(-30, 59);
         assert_eq!(anim.world_x, offset_x + 2 * 256 + 128);
         assert_eq!(anim.world_y, offset_y + 3 * 256 + 128);
         assert_eq!(

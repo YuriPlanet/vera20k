@@ -131,7 +131,7 @@ pub(super) fn production_modifier_rules() -> RuleSet {
              Power=-20\n\
              Factory=UnitType\n\
              [GAPOWR]\n\
-             Power=200\n",
+             Strength=1000\nPower=200\n",
     );
     RuleSet::from_ini(&ini).expect("production modifier rules should parse")
 }
@@ -557,10 +557,7 @@ pub(super) fn spawn_structure(
         0,
         0,
         owner_id,
-        Health {
-            current: 1000,
-            max: 1000,
-        },
+        Health { current: 1000 },
         type_id_interned,
         crate::map::entities::EntityCategory::Structure,
         0,
@@ -606,14 +603,8 @@ pub(super) fn arm_build_via(
         cost,
     );
     if started {
-        super::construct_active_factory_fixture(
-            sim,
-            rules,
-            oid,
-            queue_category,
-            tid,
-        )
-        .expect("test production type must construct at StartProduction");
+        super::construct_active_factory_fixture(sim, rules, oid, queue_category, tid)
+            .expect("test production type must construct at StartProduction");
     }
 }
 
@@ -1395,10 +1386,7 @@ fn naval_empty_fnpc_reuses_pending_identity_and_accounts_completion_once() {
     let held = sim.substrate.entities.get(held_id).unwrap();
     assert!(held.lifecycle.in_limbo && !held.lifecycle.cell_marked);
     assert_eq!(sim.substrate.entities.len(), entity_count_before);
-    assert_eq!(
-        sim.houses[&americans].owned_unit_count,
-        owned_units_before
-    );
+    assert_eq!(sim.houses[&americans].owned_unit_count, owned_units_before);
     assert_eq!(
         sim.houses[&americans].stats.built, 1,
         "completion is accounted before the refused delivery"
@@ -1425,8 +1413,7 @@ fn naval_empty_fnpc_reuses_pending_identity_and_accounts_completion_once() {
     assert_eq!(retained_dummy.snapshot().coord, (0, 0));
     assert_eq!(sim.substrate.entities.len(), entity_count_before);
     assert_eq!(
-        sim.houses[&americans].owned_unit_count,
-        owned_units_before,
+        sim.houses[&americans].owned_unit_count, owned_units_before,
         "sentinel retry must not account for a second Unit"
     );
     assert_eq!(

@@ -1,4 +1,4 @@
-//! Complete accepted cell arrivals for ordinary crossings and Drive track jumps.
+//! Complete accepted cell arrivals for nontrack ground crossings.
 //!
 //! VERA-internal ownership boundary, gamemd equivalent UNCHECKED. Preserve the
 //! represented crossing order: fresh serialized list stamp, list relink,
@@ -48,13 +48,6 @@ impl CellArrival<'_> {
             loco.layer = next_layer;
         }
         self.finish(next_layer);
-    }
-
-    /// Track jumps have already committed the path layer during bridge
-    /// resolution, before publishing the cell-list transition.
-    pub(super) fn track_jump(mut self, active_layer: MovementLayer) {
-        self.relink();
-        self.finish(active_layer);
     }
 
     fn relink(&mut self) {

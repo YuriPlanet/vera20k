@@ -332,10 +332,7 @@ fn spawn_inert_dock_instance(sim: &mut Simulation) {
         0,
         0,
         owner_id,
-        crate::sim::components::Health {
-            current: 900,
-            max: 900,
-        },
+        crate::sim::components::Health { current: 900 },
         type_id,
         crate::map::entities::EntityCategory::Structure,
         0,
@@ -482,14 +479,12 @@ fn assert_command_state(
     // (saved locomotor_head_coordinates corpus; production coverage in track_head_tests).
     let expected_head = DriveCoord::cell(START.0, START.1 - 1, 0);
     assert_eq!(drive.head_to, Some(expected_head));
-    let curve = entity.drive_track.as_ref().expect("accepted first curve");
     assert_eq!(
-        (
-            curve.head_offset_x + i32::from(entity.position.rx) * 256,
-            curve.head_offset_y + i32::from(entity.position.ry) * 256
-        ),
-        (expected_head.x, expected_head.y),
+        drive.track.turn_index, 0,
+        "accepted northbound straight track"
     );
+    assert!(drive.track.cursor >= 0);
+    assert!(!drive.track.reversed);
     assert_eq!(
         entity.navigation.path_replay.directions.len(),
         movement.path.len().saturating_sub(1),

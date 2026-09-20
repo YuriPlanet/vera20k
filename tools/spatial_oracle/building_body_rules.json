@@ -1,0 +1,1129 @@
+{
+  "buildup": [
+    {
+      "count": null,
+      "gate": false,
+      "output": [
+        0,
+        1,
+        0
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": null,
+      "gate": true,
+      "output": [
+        0,
+        1,
+        0
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": null,
+      "gate": true,
+      "output": [
+        0,
+        1,
+        0
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": -1
+    },
+    {
+      "count": null,
+      "gate": true,
+      "output": [
+        0,
+        1,
+        0
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 2147483647
+    },
+    {
+      "count": 0,
+      "gate": false,
+      "output": [
+        0,
+        0,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": 0,
+      "gate": true,
+      "output": [
+        0,
+        10,
+        26
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": 0,
+      "gate": true,
+      "output": [
+        0,
+        0,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": -1
+    },
+    {
+      "count": 0,
+      "gate": true,
+      "output": [
+        0,
+        -2147483648,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 2147483647
+    },
+    {
+      "count": 1,
+      "gate": false,
+      "output": [
+        0,
+        0,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": 1,
+      "gate": true,
+      "output": [
+        0,
+        10,
+        26
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": 1,
+      "gate": true,
+      "output": [
+        0,
+        0,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": -1
+    },
+    {
+      "count": 1,
+      "gate": true,
+      "output": [
+        0,
+        -2147483648,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 2147483647
+    },
+    {
+      "count": 2,
+      "gate": false,
+      "output": [
+        0,
+        1,
+        269
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": 2,
+      "gate": true,
+      "output": [
+        0,
+        10,
+        26
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": 2,
+      "gate": true,
+      "output": [
+        0,
+        0,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": -1
+    },
+    {
+      "count": 2,
+      "gate": true,
+      "output": [
+        0,
+        -2147483648,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 2147483647
+    },
+    {
+      "count": 23,
+      "gate": false,
+      "output": [
+        0,
+        11,
+        24
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": 23,
+      "gate": true,
+      "output": [
+        0,
+        10,
+        26
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": 23,
+      "gate": true,
+      "output": [
+        0,
+        0,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": -1
+    },
+    {
+      "count": 23,
+      "gate": true,
+      "output": [
+        0,
+        -2147483648,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 2147483647
+    },
+    {
+      "count": 24,
+      "gate": false,
+      "output": [
+        0,
+        12,
+        22
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": 24,
+      "gate": true,
+      "output": [
+        0,
+        10,
+        26
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": 24,
+      "gate": true,
+      "output": [
+        0,
+        0,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": -1
+    },
+    {
+      "count": 24,
+      "gate": true,
+      "output": [
+        0,
+        -2147483648,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 2147483647
+    },
+    {
+      "count": 32767,
+      "gate": false,
+      "output": [
+        0,
+        16383,
+        0
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": 32767,
+      "gate": true,
+      "output": [
+        0,
+        10,
+        26
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": 32767,
+      "gate": true,
+      "output": [
+        0,
+        0,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": -1
+    },
+    {
+      "count": 32767,
+      "gate": true,
+      "output": [
+        0,
+        -2147483648,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 2147483647
+    },
+    {
+      "count": 32768,
+      "gate": false,
+      "output": [
+        0,
+        -16384,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": 32768,
+      "gate": true,
+      "output": [
+        0,
+        10,
+        26
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": 32768,
+      "gate": true,
+      "output": [
+        0,
+        0,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": -1
+    },
+    {
+      "count": 32768,
+      "gate": true,
+      "output": [
+        0,
+        -2147483648,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 2147483647
+    },
+    {
+      "count": 65535,
+      "gate": false,
+      "output": [
+        0,
+        0,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": 65535,
+      "gate": true,
+      "output": [
+        0,
+        10,
+        26
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 9
+    },
+    {
+      "count": 65535,
+      "gate": true,
+      "output": [
+        0,
+        0,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": -1
+    },
+    {
+      "count": 65535,
+      "gate": true,
+      "output": [
+        0,
+        -2147483648,
+        1
+      ],
+      "speed_bits": "3fd3333333333333",
+      "stages": 2147483647
+    }
+  ],
+  "firestorm_wall": [
+    {
+      "output": false,
+      "raw": null
+    },
+    {
+      "output": false,
+      "raw": ""
+    },
+    {
+      "output": true,
+      "raw": "yes"
+    },
+    {
+      "output": false,
+      "raw": "no"
+    },
+    {
+      "output": true,
+      "raw": "true"
+    },
+    {
+      "output": false,
+      "raw": "false"
+    },
+    {
+      "output": true,
+      "raw": "1"
+    },
+    {
+      "output": false,
+      "raw": "0"
+    },
+    {
+      "output": false,
+      "raw": "junk"
+    }
+  ],
+  "gate_stages": [
+    {
+      "output": 9,
+      "raw": null
+    },
+    {
+      "output": 0,
+      "raw": ""
+    },
+    {
+      "output": 9,
+      "raw": "9"
+    },
+    {
+      "output": -1,
+      "raw": "-1"
+    },
+    {
+      "output": -2147483648,
+      "raw": "2147483648"
+    },
+    {
+      "output": -1,
+      "raw": "4294967295"
+    },
+    {
+      "output": -1,
+      "raw": "$FFFFFFFF"
+    },
+    {
+      "output": 65535,
+      "raw": "65535"
+    },
+    {
+      "output": 0,
+      "raw": "junk"
+    }
+  ],
+  "schema_version": 1,
+  "triples": [
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        0,
+        1,
+        0
+      ],
+      "raw": null
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        0,
+        1,
+        0
+      ],
+      "raw": ""
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        2,
+        3
+      ],
+      "raw": "1,2,3"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        -4,
+        -5,
+        -6
+      ],
+      "raw": "-4,-5,-6"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        -2147483648,
+        -1,
+        0
+      ],
+      "raw": "2147483648,4294967295,4294967296"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        -1,
+        1,
+        0
+      ],
+      "raw": "99999999999999999999999999999999999999999999999999999999999999999999,2,3"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        1,
+        0
+      ],
+      "raw": "1"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        1,
+        0
+      ],
+      "raw": "1,"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        1,
+        0
+      ],
+      "raw": "1,,3"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        2,
+        0
+      ],
+      "raw": "1,2x,3"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        1,
+        0
+      ],
+      "raw": "1 ,2,3"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        2,
+        3
+      ],
+      "raw": "1, 2, 3"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        0,
+        1,
+        0
+      ],
+      "raw": "+,-1,2"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        0,
+        1,
+        0
+      ],
+      "raw": "x,2,3"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        0,
+        0
+      ],
+      "raw": "1,0x10,3"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        -2,
+        3
+      ],
+      "raw": "1,\t-2,3"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        1,
+        0
+      ],
+      "raw": "1,\u001f2,3"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        2,
+        3
+      ],
+      "raw": "1,2,3junk"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        2,
+        3
+      ],
+      "raw": "1,2,3,4"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        0,
+        1,
+        0
+      ],
+      "raw": "\"1,2,3\""
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        2,
+        3
+      ],
+      "raw": " 1,2,3 "
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        1,
+        0
+      ],
+      "raw": "                                                              1,2,3"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        2,
+        3
+      ],
+      "raw": "\u000b1,2,3"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        2,
+        3
+      ],
+      "raw": "1,\u000b2,3"
+    },
+    {
+      "initial": [
+        0,
+        1,
+        0
+      ],
+      "output": [
+        1,
+        2,
+        3
+      ],
+      "raw": "1,\f2,3"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        7,
+        -9,
+        11
+      ],
+      "raw": null
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        7,
+        -9,
+        11
+      ],
+      "raw": ""
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        2,
+        3
+      ],
+      "raw": "1,2,3"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        -4,
+        -5,
+        -6
+      ],
+      "raw": "-4,-5,-6"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        -2147483648,
+        -1,
+        0
+      ],
+      "raw": "2147483648,4294967295,4294967296"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        -1,
+        -9,
+        11
+      ],
+      "raw": "99999999999999999999999999999999999999999999999999999999999999999999,2,3"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        -9,
+        11
+      ],
+      "raw": "1"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        -9,
+        11
+      ],
+      "raw": "1,"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        -9,
+        11
+      ],
+      "raw": "1,,3"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        2,
+        11
+      ],
+      "raw": "1,2x,3"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        -9,
+        11
+      ],
+      "raw": "1 ,2,3"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        2,
+        3
+      ],
+      "raw": "1, 2, 3"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        7,
+        -9,
+        11
+      ],
+      "raw": "+,-1,2"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        7,
+        -9,
+        11
+      ],
+      "raw": "x,2,3"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        0,
+        11
+      ],
+      "raw": "1,0x10,3"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        -2,
+        3
+      ],
+      "raw": "1,\t-2,3"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        -9,
+        11
+      ],
+      "raw": "1,\u001f2,3"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        2,
+        3
+      ],
+      "raw": "1,2,3junk"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        2,
+        3
+      ],
+      "raw": "1,2,3,4"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        7,
+        -9,
+        11
+      ],
+      "raw": "\"1,2,3\""
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        2,
+        3
+      ],
+      "raw": " 1,2,3 "
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        -9,
+        11
+      ],
+      "raw": "                                                              1,2,3"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        2,
+        3
+      ],
+      "raw": "\u000b1,2,3"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        2,
+        3
+      ],
+      "raw": "1,\u000b2,3"
+    },
+    {
+      "initial": [
+        7,
+        -9,
+        11
+      ],
+      "output": [
+        1,
+        2,
+        3
+      ],
+      "raw": "1,\f2,3"
+    }
+  ]
+}

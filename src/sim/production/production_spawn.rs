@@ -1658,7 +1658,7 @@ pub fn find_helipad_for_aircraft(
         if !obj.helipad && !obj.unit_reload {
             continue;
         }
-        let max_slots = obj.number_of_docks.max(1);
+        let max_slots = obj.dock_contact_capacity();
         if !sim
             .production
             .airfield_docks

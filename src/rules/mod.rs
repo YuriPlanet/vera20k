@@ -57,3 +57,6 @@ pub mod tiberium_type;
 pub mod voxel_anim_type;
 pub mod warhead_type;
 pub mod weapon_type;
+
+#[cfg(test)]
+mod path_delay_rules_tests;

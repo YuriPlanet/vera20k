@@ -284,7 +284,12 @@ pub(crate) fn draw_debug_panel(ctx: &egui::Context, state: &AppState) {
                             cat_str,
                             sim.interner.resolve(entity.owner()),
                             entity.health.current,
-                            entity.health.max,
+                            state
+                                .rules()
+                                .and_then(
+                                    |rules| rules.object(sim.interner.resolve(entity.type_ref()))
+                                )
+                                .map_or_else(|| "?".to_owned(), |obj| obj.strength.to_string()),
                         ));
                     }
                 }

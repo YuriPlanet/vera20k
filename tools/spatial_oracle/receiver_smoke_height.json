@@ -1,0 +1,1730 @@
+[
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -9,
+      "slope": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -9
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -9,
+      "slope": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -9
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -9,
+      "slope": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 407
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -9,
+      "slope": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 407
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 1,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 1,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 1,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 1,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -9,
+      "slope": 1,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -9
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -9,
+      "slope": 1,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -9
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 1,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 1,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 1,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 1,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -9,
+      "slope": 1,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 407
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -9,
+      "slope": 1,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 407
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 4,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 4,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 4,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 4,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -9,
+      "slope": 4,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -9
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -9,
+      "slope": 4,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -9
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 4,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 4,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 4,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 4,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -9,
+      "slope": 4,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 407
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -9,
+      "slope": 4,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 407
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 17,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 17,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 17,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 17,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -9,
+      "slope": 17,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -9
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -9,
+      "slope": 17,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -9
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 17,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 17,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 17,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 17,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -9,
+      "slope": 17,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 407
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -9,
+      "slope": 17,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 407
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -9,
+      "slope": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -9
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -9,
+      "slope": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -9
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -9,
+      "slope": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 407
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -9,
+      "slope": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 407
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 1,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 1,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 1,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 1,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -9,
+      "slope": 1,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -9
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -9,
+      "slope": 1,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -9
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 1,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 1,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 1,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 1,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -9,
+      "slope": 1,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 407
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -9,
+      "slope": 1,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 407
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 4,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 4,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 4,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 4,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -9,
+      "slope": 4,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -9
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -9,
+      "slope": 4,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -9
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 4,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 4,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 4,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 4,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -9,
+      "slope": 4,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 407
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -9,
+      "slope": 4,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 407
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 17,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 17,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 17,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 17,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -9,
+      "slope": 17,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -9
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -9,
+      "slope": 17,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -9
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 17,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 17,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "height": -11,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 17,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 17,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "height": -10,
+      "spawn_admitted": false
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -9,
+      "slope": 17,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 407
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  },
+  {
+    "input": {
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -9,
+      "slope": 17,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 407
+    },
+    "output": {
+      "height": -9,
+      "spawn_admitted": true
+    }
+  }
+]

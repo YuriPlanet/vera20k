@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "BuildingType46499D..464A47 offset loop over a supplied retained 300-slot allocation, across sequential count/key passes. No allocation, Image selection or complete Rules layering claim.",
+  "assumptions": [
+    "Supplied post-resize count/vector; native sprintf, cached INI lookup, ReadCoord and slot writes execute.",
+    "Single-key ART fixture per pass; omitted keys use original per-slot defaults.",
+    "Valid triples and empty/absent values only; malformed stack-dependent partial scans are covered separately."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "offset_loop": "0x0046499D",
+    "read_coord": "0x00529CA0"
+  },
+  "payload_sha256": "f2923118b7d00233a439f08066335c212eed220266950f0b405e9868c25fd718"
+}

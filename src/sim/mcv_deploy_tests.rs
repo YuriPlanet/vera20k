@@ -72,13 +72,11 @@ fn finish(sim: &mut Simulation, rules: &RuleSet, id: u64) -> usize {
             &e.position,
             &e.navigation,
             &e.drive_locomotion,
-            &e.drive_track,
             &e.movement_target,
             &e.body_facing,
             e.facing,
             e.facing_target,
             e.mcv_deploy_pending,
-            e.mcv_drive_was_rotating,
             &e.mission,
             &e.foot_speed
         ))
@@ -341,12 +339,6 @@ fn continuation_result_and_rotation_edge_match_original_blocks() {
             "{row}"
         );
     }
-    for row in v["turn_completion"].as_array().unwrap() {
-        let mut previous = row["previous"].as_bool().unwrap();
-        let callback = rotation_completed(&mut previous, row["rotating"].as_bool().unwrap());
-        assert_eq!(callback, row["callback_zero"].as_bool().unwrap(), "{row}");
-        assert_eq!(previous, row["out_previous"].as_bool().unwrap(), "{row}");
-    }
 }
 
 #[test]
@@ -410,42 +402,50 @@ fn active_track_and_same_cell_destination_preserve_the_rotation_latch() {
     let (mut sim, rules, id) = fixture("AMCV", 128, 5, 4);
     let e = sim.substrate.entities.get_mut(id).unwrap();
     e.mcv_deploy_pending = true;
-    e.mcv_drive_was_rotating = true;
     let drive = e.drive_locomotion.get_or_insert_with(Default::default);
+    drive.turn_latched = true;
     drive.track.turn_index = 3;
     drive.track_valid = true;
     assert!(
-        e.drive_track.is_none(),
-        "native progress owns the active gate"
+        drive.head_to.is_none(),
+        "the native +63/selector gate is independent of Head_To"
     );
-    drive_process_prelude(&mut sim, id, &rules);
+    sim.process_ground_locomotor_for_test(id, Some(&rules), None, None)
+        .unwrap();
     assert!(
         sim.substrate
             .entities
             .get(id)
             .unwrap()
-            .mcv_drive_was_rotating
+            .drive_locomotion
+            .as_ref()
+            .unwrap()
+            .turn_latched
     );
     assert_eq!(yards(&sim), 0);
     let e = sim.substrate.entities.get_mut(id).unwrap();
     e.drive_locomotion.as_mut().unwrap().track_valid = false;
     e.navigation.nav_com = Some(crate::sim::components::NavTargetRef::cell(20, 22));
-    drive_process_prelude(&mut sim, id, &rules);
+    sim.process_ground_locomotor_for_test(id, Some(&rules), None, None)
+        .unwrap();
     assert!(
         sim.substrate
             .entities
             .get(id)
             .unwrap()
-            .mcv_drive_was_rotating
+            .drive_locomotion
+            .as_ref()
+            .unwrap()
+            .turn_latched
     );
     assert_eq!(yards(&sim), 0);
     let e = sim.substrate.entities.get_mut(id).unwrap();
     e.navigation.nav_com = None;
-    // Retained legacy geometry cannot override cleared +63 authority.
-    e.drive_track =
-        crate::sim::movement::drive_track::begin_drive_track_with_head_offset(1, 0, 128, -128, 0);
-    assert!(e.drive_track.is_some());
-    drive_process_prelude(&mut sim, id, &rules);
+    // A retained selector alone cannot override the cleared +63 authority.
+    assert_eq!(e.drive_locomotion.as_ref().unwrap().track.turn_index, 3);
+    assert!(!e.drive_locomotion.as_ref().unwrap().track_valid);
+    sim.process_ground_locomotor_for_test(id, Some(&rules), None, None)
+        .unwrap();
     assert_eq!(yards(&sim), 1);
 }
 

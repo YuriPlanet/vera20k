@@ -4,13 +4,11 @@
 //! pointing to a `[ConSequence]` section that defines the SHP frame layout for every
 //! animation: stand, walk, fire, idle, die, crawl, prone, etc.
 //!
-//! Format per key: `Walk=8,6,6` means start_frame=8, frames_per_facing=6, facings=6.
+//! Format per key: `Walk=8,6,6` means start=8, count=6, facing stride=6.
 //! An optional 4th field is a facing direction hint: `Idle1=56,15,0,S` (face South).
 //!
-//! There are 41 unique sequence definitions in artmd.ini. Each infantry type can have
-//! different frame counts, facing counts, and animation ranges. Without parsing these,
-//! all infantry share a single hardcoded layout which breaks for non-standard units
-//! (Brute has 10 facings, Rocketeer has Fly/Hover, Tanya has Swim, etc.).
+//! Each InfantryType owns 42 signed action records. Sequence section names are
+//! arbitrary, and partial reads retain fields from an earlier rules pass.
 //!
 //! ## Dependency rules
 //! - Part of rules/ — depends only on rules/ini_parser.
@@ -216,7 +214,7 @@ const NORMALIZED_ACTIONS: [u8; 6] = [0x09, 0x0A, 0x12, 0x13, 0x17, 0x20];
 /// native default is -1; the optional fourth INI token replaces it with 0..=7.
 /// Retail provenance: `InfantryTypeClass` constructor @ `0x005236A0` and
 /// `ReadSequenceData` @ `0x00523D00`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum FacingHint {
     N,
     NE,
@@ -229,19 +227,77 @@ pub enum FacingHint {
 }
 
 /// One animation entry parsed from an INI value like `"8,6,6"` or `"56,15,0,S"`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct InfantrySequenceEntry {
     /// First SHP frame index for this animation.
-    pub start_frame: u16,
+    pub start_frame: i32,
     /// Number of animation frames per facing direction.
-    pub frames_per_facing: u16,
-    /// Number of facing directions in the INI (0 = non-directional, 6 = standard, 8, 10...).
-    pub facings: u8,
+    pub frames_per_facing: i32,
+    /// Native signed frame stride between facing slots (not a facing count).
+    pub facings: i32,
     /// Optional facing direction hint for non-directional animations.
     pub facing_hint: Option<FacingHint>,
 }
 
-/// All animation entries from one `[*Sequence]` section, keyed by INI key name (uppercase).
+impl Default for InfantrySequenceEntry {
+    fn default() -> Self {
+        // InfantryType constructor52392C..523970, all42 records.
+        Self {
+            start_frame: 0,
+            frames_per_facing: 0,
+            facings: 0,
+            facing_hint: None,
+        }
+    }
+}
+
+/// Original action-name table8255C8..825670. Guard is its own action1.
+pub(crate) const NATIVE_SEQUENCE_NAMES: [&str; 42] = [
+    "Ready",
+    "Guard",
+    "Prone",
+    "Walk",
+    "FireUp",
+    "Down",
+    "Crawl",
+    "Up",
+    "FireProne",
+    "Idle1",
+    "Idle2",
+    "Die1",
+    "Die2",
+    "Die3",
+    "Die4",
+    "Die5",
+    "Tread",
+    "Swim",
+    "WetIdle1",
+    "WetIdle2",
+    "WetDie1",
+    "WetDie2",
+    "WetAttack",
+    "Hover",
+    "Fly",
+    "Tumble",
+    "FireFly",
+    "Deploy",
+    "Deployed",
+    "DeployedFire",
+    "DeployedIdle",
+    "Undeploy",
+    "Cheer",
+    "Paradrop",
+    "AirDeathStart",
+    "AirDeathFalling",
+    "AirDeathFinish",
+    "Panic",
+    "Shovel",
+    "Carry",
+    "SecondaryFire",
+    "SecondaryProne",
+];
+
+/// All animation entries from one section, keyed by INI key name (uppercase).
 #[derive(Debug, Clone)]
 pub struct InfantrySequenceDef {
     /// Animation entries keyed by uppercase INI key (e.g., "WALK", "FIREUP", "IDLE1").
@@ -253,34 +309,52 @@ pub type InfantrySequenceRegistry = HashMap<String, InfantrySequenceDef>;
 
 /// Parse a single sequence value string like `"8,6,6"` or `"56,15,0,S"`.
 ///
-/// Returns `None` if the format is invalid or cannot be parsed.
+/// Returns `None` for an empty ReadString result. Partial conversions retain
+/// constructor values; malformed nonempty input still returns that record.
 pub fn parse_sequence_value(value: &str) -> Option<InfantrySequenceEntry> {
-    let parts: Vec<&str> = value.split(',').map(|s| s.trim()).collect();
-    if parts.len() < 3 {
+    let value = crate::rules::ini_value::truncate_bytes(value, 31);
+    if crate::rules::ini_value::strtrim_ascii(value).is_empty() {
         return None;
     }
+    let mut record = InfantrySequenceEntry::default();
+    read_sequence_value(value, &mut record);
+    Some(record)
+}
 
-    let start_frame: u16 = parts[0].parse::<u16>().ok()?;
-    let frames_per_facing: u16 = parts[1].parse::<u16>().ok()?;
-    let facings: u8 = parts[2].parse::<u8>().ok()?;
-
-    let facing_hint: Option<FacingHint> = if parts.len() >= 4 {
-        parse_facing_hint(parts[3])
-    } else {
-        None
-    };
-
-    Some(InfantrySequenceEntry {
-        start_frame,
-        frames_per_facing,
-        facings,
-        facing_hint,
-    })
+/// Original523D00 partial sscanf retains every field whose conversion fails.
+/// ReadString's31-byte copy occurs before trimming; literal commas skip no
+/// whitespace. Corpus: tools/spatial_oracle/infantry_sequence_rules.
+fn read_sequence_value(value: &str, record: &mut InfantrySequenceEntry) {
+    let value = crate::rules::ini_value::truncate_bytes(value, 31);
+    let mut bytes = crate::rules::ini_value::strtrim_ascii(value).as_bytes();
+    for slot in [
+        &mut record.start_frame,
+        &mut record.frames_per_facing,
+        &mut record.facings,
+    ] {
+        let Some(value) = crate::rules::ini_value::scan_decimal_i32(&mut bytes) else {
+            return;
+        };
+        *slot = value;
+        if bytes.first() != Some(&b',') {
+            return;
+        }
+        bytes = &bytes[1..];
+    }
+    let token = bytes
+        .split(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 11 | 12))
+        .find(|token| !token.is_empty())
+        .unwrap_or_default();
+    if let Ok(token) = std::str::from_utf8(token)
+        && let Some(hint) = parse_facing_hint(token)
+    {
+        record.facing_hint = Some(hint);
+    }
 }
 
 /// Parse a facing direction hint string (e.g., "S", "NE", "W").
 fn parse_facing_hint(s: &str) -> Option<FacingHint> {
-    match s.to_uppercase().as_str() {
+    match s {
         "N" => Some(FacingHint::N),
         "NE" => Some(FacingHint::NE),
         "E" => Some(FacingHint::E),
@@ -307,21 +381,14 @@ fn completion_facing(hint: Option<FacingHint>) -> Option<u8> {
     }
 }
 
-/// Suffix used to identify sequence definition sections in art.ini.
-const SEQUENCE_SUFFIX: &str = "sequence";
-
 /// Parse all infantry sequence definition sections from art.ini.
 ///
-/// Scans for any section whose name ends with "Sequence" (case-insensitive)
-/// and parses each key-value pair as an animation entry.
+/// Section names are arbitrary. Only references bound by an Infantry type's
+/// Sequence key become type data; the table reads exactly42 named actions.
 pub fn parse_infantry_sequence_registry(ini: &IniFile) -> InfantrySequenceRegistry {
     let mut registry: InfantrySequenceRegistry = HashMap::new();
 
     for section_name in ini.section_names() {
-        if !section_name.to_ascii_lowercase().ends_with(SEQUENCE_SUFFIX) {
-            continue;
-        }
-
         let section = match ini.section(section_name) {
             Some(s) => s,
             None => continue,
@@ -329,16 +396,21 @@ pub fn parse_infantry_sequence_registry(ini: &IniFile) -> InfantrySequenceRegist
 
         let mut entries: HashMap<String, InfantrySequenceEntry> = HashMap::new();
 
-        for key in section.keys() {
+        for key in NATIVE_SEQUENCE_NAMES {
             let value = match section.get(key) {
                 Some(v) => v,
                 None => continue,
             };
 
-            // Skip non-sequence keys (e.g., sound-related keys that don't follow the format).
-            if let Some(entry) = parse_sequence_value(value) {
-                entries.insert(key.to_uppercase(), entry);
+            let mut entry = InfantrySequenceEntry::default();
+            if let Some(values) = section.projected_values(key) {
+                for value in values {
+                    read_sequence_value(value, &mut entry);
+                }
+            } else {
+                read_sequence_value(value, &mut entry);
             }
+            entries.insert(key.to_ascii_uppercase(), entry);
         }
 
         if !entries.is_empty() {
@@ -508,15 +580,25 @@ const INFANTRY_FACINGS: u8 = 8;
 /// (standard infantry). For non-directional sequences (multiplier=0), facings=1.
 pub fn build_sequence_set(def: &InfantrySequenceDef) -> SequenceSet {
     let mut set: SequenceSet = SequenceSet::new();
+    // One signed bank supplies gameplay admission/completion. The generic
+    // SequenceDef map below is a derived projection for existing SHP consumers.
+    set.set_infantry_actions(
+        NATIVE_SEQUENCE_NAMES
+            .iter()
+            .map(|name| {
+                def.entries
+                    .get(&name.to_ascii_uppercase())
+                    .copied()
+                    .unwrap_or_default()
+            })
+            .collect(),
+    );
     let mut entries: Vec<(&String, &InfantrySequenceEntry)> = def.entries.iter().collect();
     entries.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
 
     for (key, entry) in entries {
-        // READY and GUARD are aliases for action slot 0. Stock ART gives them
-        // identical values. For differing mod values, prefer READY explicitly
-        // instead of letting HashMap iteration choose authoritative timing.
-        // Exact native precedence for that non-stock conflict remains UNCHECKED.
-        if key == "GUARD" && def.entries.contains_key("READY") {
+        // Stand projects Ready0. Guard1 remains independent in the signed bank.
+        if key == "GUARD" {
             continue;
         }
         let kind: SequenceKind = match sequence_kind_from_ini_key(key) {
@@ -532,18 +614,28 @@ pub fn build_sequence_set(def: &InfantrySequenceDef) -> SequenceSet {
         // INI 3rd field is FacingMultiplier (stride), not facing count.
         // Multiplier=0 → non-directional (facings=1).
         // Multiplier>0 → directional with 8 infantry facings.
+        // The existing generic SHP interface represents u16 asset indices.
+        // It must never narrow the signed bank used by gameplay. Wider/negative
+        // native draw selection remains a separate presentation migration.
+        let (Ok(start_frame), Ok(frame_count), Ok(stride)) = (
+            u16::try_from(entry.start_frame),
+            u16::try_from(entry.frames_per_facing),
+            u16::try_from(entry.facings),
+        ) else {
+            continue;
+        };
         let (facings, facing_multiplier): (u8, u16) = if entry.facings == 0 {
             (1, 0)
         } else {
-            (INFANTRY_FACINGS, entry.facings as u16)
+            (INFANTRY_FACINGS, stride)
         };
 
         let (frame_delay, normalized) = action_timing(kind);
         set.insert(
             kind,
             SequenceDef {
-                start_frame: entry.start_frame,
-                frame_count: entry.frames_per_facing,
+                start_frame,
+                frame_count,
                 facings,
                 facing_multiplier,
                 frame_delay,

@@ -643,10 +643,7 @@ mod tests {
             0,
             0,
             owner,
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             intern::test_intern("E1"),
             EntityCategory::Infantry,
             0,
@@ -719,10 +716,7 @@ mod tests {
             0,
             0,
             a,
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             intern::test_intern("E1"),
             EntityCategory::Infantry,
             0,

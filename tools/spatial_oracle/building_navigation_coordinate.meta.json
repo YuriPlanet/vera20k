@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Building447E90 virtual navigation query, original447B20 approach dispatch,447AC0 foundation center and65AD90 sparse contacts. Supplied typed state, not parser/producer/docking mission parity.",
+  "assumptions": [
+    "Original Building/BuildingType and Unit, Building, Anim requester vtables; attached Anim calls original owner Building+48. Immutable native foundation dimension arrays retained. Supplied physical XYZ, signed dock count, declared offset array and sparse radio slots.",
+    "Original x87 atan2/ftol path for bunker directional approach, FPCW0E7F. Current/requester do not move during read. Refineries and shipyards only reach approach special branches when one of Helipad/UnitRepair/Bunker dispatch flags is also present."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "navigation": "0x00447E90",
+    "approach": "0x00447B20",
+    "center": "0x00447AC0",
+    "contact_index": "0x0065AD90"
+  },
+  "payload_sha256": "817639dbeadeb3dbb6d39ad3a07e527d5839118bd5a29f7749ee567b0d2d2dad"
+}

@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Complete live Foot getter and original Drive/Ship speed prefixes through retry mask/residual addition",
+  "assumptions": [
+    "Supplied Unit/UnitType/House memory with original vtables; house binary32, crate/rules/applied binary64 and FASTER arrays/rank are explicit inputs",
+    "Startup x87 chop53 and ftol control0E7F, flat level2 cells/104 height and structural bridge416 globals are supplied; lifecycle/map/rules parsing are excluded",
+    "Prefix admits selector and valid state, sets class destination and retained target independently; linked-member chain is empty",
+    "Sinking/crush bytes are supplied; flag producers, world callbacks, ProcessMovement target publication and later paid points are outside coverage",
+    "Finite normal/zero numeric inputs and signed64-convertible products; NaN/infinity/subnormal/ftol invalid cases excluded"
+  ],
+  "substitutions": [
+    "No instruction patches, custom vtables or hooks replacing return values/control flow; observations only"
+  ],
+  "entry_points": {
+    "drive_prefix": "0x004B0F20",
+    "ship_prefix": "0x006A05F0",
+    "foot_getter": "0x004DB1A0",
+    "house_bonus": "0x0050C050",
+    "ability": "0x0070D0D0",
+    "setter": "0x004D3710",
+    "ftol": "0x007C5F00",
+    "drive_stop_after_budget": "0x004B1297",
+    "ship_stop_after_budget": "0x006A095F"
+  },
+  "payload_sha256": "eeef89eebe188ef3057ef683ba4fa56269df8d61d8d429c61bc4de9ee26272ce"
+}

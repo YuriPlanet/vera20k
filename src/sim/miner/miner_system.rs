@@ -402,7 +402,7 @@ mod gsi_04_03b_tests {
     }
 
     #[test]
-    fn gsi_04_05_sequential_miner_helper_reserves_head_without_reconcile() {
+    fn gsi_04_05_sequential_miner_process_reserves_head_before_next_order() {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("AMERICANS");
         let type_ref = sim.interner.intern("HARV");
@@ -414,7 +414,10 @@ mod gsi_04_03b_tests {
             miner.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
             miner.drive_locomotion = Some(Default::default());
             sim.substrate.entities.insert(miner);
-            sim.add_entity_occupancy(entity_id);
+            assert!(matches!(
+                sim.reveal(entity_id),
+                crate::sim::world::RevealOutcome::Revealed { .. }
+            ));
         }
 
         let grid = PathGrid::new(5, 5);
@@ -428,6 +431,20 @@ mod gsi_04_03b_tests {
             SimFixed::from_num(128),
             None,
         );
+        assert!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .drive_locomotion
+                .as_ref()
+                .unwrap()
+                .head_to
+                .is_none(),
+            "the helper issues an order; Process owns head admission"
+        );
+        sim.process_ground_locomotor_for_test(1, None, Some(&grid), None)
+            .expect("the first miner Process commits its head reservation");
 
         assert_eq!(
             sim.substrate
@@ -454,6 +471,8 @@ mod gsi_04_03b_tests {
             SimFixed::from_num(128),
             None,
         );
+        sim.process_ground_locomotor_for_test(2, None, Some(&grid), None)
+            .expect("the second miner Process observes the existing reservation");
 
         let second = sim.substrate.entities.get(2).expect("second miner");
         assert_ne!(
@@ -463,7 +482,7 @@ mod gsi_04_03b_tests {
                 .and_then(|drive| drive.occupation_head_to)
                 .map(|head| (head.rx, head.ry)),
             Some(shared_head),
-            "the second production miner helper must observe the first head mark immediately"
+            "the second miner must observe the first Process head mark immediately"
         );
         assert_ne!(
             second
@@ -471,7 +490,15 @@ mod gsi_04_03b_tests {
                 .as_ref()
                 .and_then(|movement| movement.final_goal),
             Some(shared_head),
-            "contention must be resolved before any movement-tick reconciliation"
+            "the next miner order must observe the preceding Process reservation"
+        );
+        assert!(sim.substrate.occupancy.contains_entity(1, 2, 1));
+        assert!(sim.substrate.occupancy.contains_entity(3, 2, 2));
+        assert_eq!(
+            sim.substrate
+                .occupancy
+                .count_on_layer(2, 2, MovementLayer::Ground),
+            0
         );
     }
 }
@@ -744,15 +771,10 @@ pub(super) fn process_miner_with_resource_authority(
     snap: &mut MinerSnapshot,
     resource_authority: ResourceQueryAuthority,
 ) {
-    if sim
-        .substrate
-        .entities
-        .get(snap.entity_id)
-        .is_some_and(|entity| entity.forced_drive_track.is_some())
-    {
-        return;
-    }
-
+    // Mission_Harvest73E5E0 reaches its dock/type gates and state switch even
+    // while Drive retains a track. The state's non-null NavCom branch owns
+    // the still-driving Rate/RNG epilogue73EF77; a generic track guard here
+    // would suppress that dispatch and advance the scenario stream wrongly.
     // `UnitClass::Mission_Harvest @ 0x0073E5E0` preamble (decompiled
     // 2026-09-05): after the non-harvester (`return 0x1C2`) and slave-host
     // exits, the handler walks the type's `Dock=` list (`Type+0x3EC`, count
@@ -2279,7 +2301,7 @@ fn find_docking_bay(
             let Some(obj) = rules.object_case_insensitive(e_type) else {
                 continue;
             };
-            let capacity = usize::from(obj.number_of_docks.max(1));
+            let capacity = obj.dock_contact_capacity() as usize;
             if !wide
                 && !sim
                     .production
@@ -2471,7 +2493,7 @@ fn refinery_dock_capacity_for_sid(
         return None;
     }
     sim.object_type(entity.type_ref(), rules)
-        .map(|o| o.number_of_docks.max(1) as usize)
+        .map(|o| o.dock_contact_capacity() as usize)
         .or(Some(1))
 }
 
@@ -2891,10 +2913,7 @@ fn issue_stock_miner_drive_move_with_overlay_registry(
         Some(&blocker_neighbor_counts),
         sim.playfield_bounds,
         Some(&mut sim.substrate.cell_occupation),
-        crate::sim::movement::DestinationTiming::new(
-            sim.session.binary_frame,
-            sim.blockage_path_delay_ticks,
-        ),
+        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, rules.into()),
     );
     if !issued {
         if let Some(snapshot) = activation_snapshot
@@ -2971,9 +2990,9 @@ pub(crate) fn issue_move_if_idle(
             Some(&blocker_neighbor_counts),
             sim.playfield_bounds,
             Some(&mut sim.substrate.cell_occupation),
-            crate::sim::movement::DestinationTiming::new(
+            crate::sim::movement::DestinationTiming::from_rules(
                 sim.session.binary_frame,
-                sim.blockage_path_delay_ticks,
+                rules.into(),
             ),
         );
     }
@@ -3157,10 +3176,7 @@ mod harvest_scan_dispatch_tests {
             0,
             0,
             owner,
-            Health {
-                current: 900,
-                max: 900,
-            },
+            Health { current: 900 },
             type_ref,
             EntityCategory::Structure,
             0,
@@ -3196,10 +3212,7 @@ mod harvest_scan_dispatch_tests {
             0,
             0,
             owner,
-            Health {
-                current: 600,
-                max: 600,
-            },
+            Health { current: 600 },
             type_ref,
             EntityCategory::Unit,
             0,
@@ -3695,10 +3708,7 @@ mod harvest_scan_dispatch_tests {
             0,
             0,
             owner,
-            Health {
-                current: 300,
-                max: 300,
-            },
+            Health { current: 300 },
             type_ref,
             EntityCategory::Unit,
             0,

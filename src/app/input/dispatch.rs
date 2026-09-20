@@ -73,17 +73,28 @@ pub(crate) fn handle_mouse_input(
             state.match_state.input.tactical_mouse.right_held = false;
             state.match_state.input.tactical_mouse.release();
         }
-        if state.match_state.match_presentation.in_game_menu == crate::ui::pause_menu::InGameMenuState::Sound {
-            crate::app::input::sound::mouse(state,button,pressed);
+        if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::Sound
+        {
+            crate::app::input::sound::mouse(state, button, pressed);
             return;
         }
-        if state.match_state.match_presentation.in_game_menu == crate::ui::pause_menu::InGameMenuState::AbortConfirm {
+        if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::AbortConfirm
+        {
             crate::app::input::abort::mouse(state, button, pressed);
             return;
         }
-        if matches!(state.match_state.match_presentation.in_game_menu, crate::ui::pause_menu::InGameMenuState::SavedGame(_)) {
-            if button == MouseButton::Left { crate::app::App::saved_game_mouse(state, pressed); }
-        } else if state.match_state.match_presentation.in_game_menu == crate::ui::pause_menu::InGameMenuState::Menu {
+        if matches!(
+            state.match_state.match_presentation.in_game_menu,
+            crate::ui::pause_menu::InGameMenuState::SavedGame(_)
+        ) {
+            if button == MouseButton::Left {
+                crate::app::App::saved_game_mouse(state, pressed);
+            }
+        } else if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::Menu
+        {
             crate::app::input::pause_menu::mouse(state, button, pressed);
         } else {
             crate::app::input::in_game_options::in_game_options_mouse(state, button, pressed);
@@ -675,17 +686,26 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     // cadence applies on close, KD-8) and swallow the move so it can't begin a
     // selection drag or camera pan behind the overlay.
     if state.match_state.paused {
-        if state.match_state.match_presentation.in_game_menu == crate::ui::pause_menu::InGameMenuState::Sound {
+        if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::Sound
+        {
             crate::app::input::sound::cursor_moved(state);
             return;
         }
-        if state.match_state.match_presentation.in_game_menu == crate::ui::pause_menu::InGameMenuState::AbortConfirm {
+        if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::AbortConfirm
+        {
             crate::app::input::abort::cursor_moved(state);
             return;
         }
-        if matches!(state.match_state.match_presentation.in_game_menu, crate::ui::pause_menu::InGameMenuState::SavedGame(_)) {
+        if matches!(
+            state.match_state.match_presentation.in_game_menu,
+            crate::ui::pause_menu::InGameMenuState::SavedGame(_)
+        ) {
             crate::app::App::update_saved_game_browser(state, true);
-        } else if state.match_state.match_presentation.in_game_menu == crate::ui::pause_menu::InGameMenuState::Menu {
+        } else if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::Menu
+        {
             crate::app::input::pause_menu::cursor_moved(state);
         } else {
             crate::app::input::in_game_options::in_game_options_drag(state);
@@ -838,10 +858,7 @@ mod item83_click_route_tests {
                 0,
                 0,
                 owner,
-                Health {
-                    current: 100,
-                    max: 100,
-                },
+                Health { current: 100 },
                 type_ref,
                 EntityCategory::Unit,
                 0,
@@ -1465,7 +1482,8 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::HealthNav => selection_navigation::execute_health_navigation(state),
         HotkeyCommand::CursorCheat => {
             // 537EF0: flag only; the next mouse move refreshes the tooltip.
-            state.match_state.input.cursor_coordinates = !state.match_state.input.cursor_coordinates;
+            state.match_state.input.cursor_coordinates =
+                !state.match_state.input.cursor_coordinates;
         }
         HotkeyCommand::StopObject => queue_stop_for_selected(state),
         HotkeyCommand::DeployObject => queue_deploy_undeploy_for_selected(state),
@@ -2027,7 +2045,9 @@ pub(crate) fn reconcile_selection_order_after_sim(state: &mut AppState) {
     };
     // 733160 removes expired objects from the retained navigation snapshot.
     state.match_state.input.health_navigation.retain(|id| {
-        sim.entities().get(*id).is_some_and(|entity| entity.lifecycle.object_alive)
+        sim.entities()
+            .get(*id)
+            .is_some_and(|entity| entity.lifecycle.object_alive)
     });
     if state.match_state.input.selection_order_pending {
         let before_retain = state.match_state.input.selection_order.len();
@@ -2247,10 +2267,7 @@ mod item83_selection_order_tests {
                     0,
                     0,
                     owner,
-                    Health {
-                        current: 100,
-                        max: 100,
-                    },
+                    Health { current: 100 },
                     type_ref,
                     EntityCategory::Infantry,
                     0,

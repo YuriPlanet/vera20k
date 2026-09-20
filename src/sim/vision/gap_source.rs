@@ -8,8 +8,6 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct GapGeneratorRuntime {
-    /// Building+6C8: last operational result sampled by43FB20.
-    pub last_operational: bool,
     ///269/26C belong to each represented native local player's client. A
     ///single viewer's SpySat bracket can change them before Building6C8.
     pub viewers: BTreeMap<InternedId, GapDeposit>,

@@ -160,6 +160,7 @@ fn recalc_pristine_metadata_and_level_override_match_original_instructions() {
             flag("lat"),
             0,
             grid.cells.len(),
+            crate::util::pixel_conversion::PixelConversionBounds::default(),
         );
         let overlay = if flag("early") {
             FinalizedOverlayCell::from_parts(0, 0)

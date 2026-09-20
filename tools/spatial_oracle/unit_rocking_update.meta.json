@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "1028 complete original Techno RockingUpdate70B570 executions with real Unit GetType/UnitType; native binary32 retained state, ordinary/special branches, write ordering and self-damage call arguments",
+  "assumptions": [
+    "Pinned original70B570..70BCA9, original Unit vtable7F5C70, getters6F3270/741490 and all13 numeric constants execute/read unchanged. Each row checks their integrity plus preservation of unrelated owner/type/rules fields, callee-saved registers and thiscall stack balance",
+    "Each row starts with a fresh supplied Techno/Unit-shaped owner, live Type Strength/BalloonHover, Rules FallBackCoefficient/C4Warhead and direct-rocker link nullness. Type getters execute original instructions; only the link predicate is exercised, not peer lifetime or reciprocal linkage",
+    "x87 FPCW0E7F supplies the normal startup 53-bit/chop contract. Raw float32 input/output bits and original write instructions are retained. Expected values are generated only by original execution, with no Python arithmetic implementation or current Rust result involved",
+    "Normal cases cross both axes, signed angle/velocity/zero, linked/unlinked state, pre-angle range gates and eight fallback patterns. Adjacent binary32 values cover epsilon, pi/4, pi/2 and strict pi damage thresholds; exact f64 epsilon equality cannot be represented in retained f32 state",
+    "Dedicated rows distinguish the sideways unrounded sum cap from the forward stored/reloaded sum cap, cap zero stores followed by damping reloads, large sign crossings, and Foot flag&4 plus truthy crush flag. Output checkpoints are observed native instructions, not predicted branches",
+    "Numeric cases include signed subnormals, minimum normals, adjacent damping/overlay-step floats, maximum finite velocities/fallback and both axes active. Finite input is the covered domain; NaN/infinity input, arithmetic fault delivery and all possible bit patterns are excluded",
+    "Crash rows cover BalloonHover0/1/255, both axes integration and asymmetric clamps including values beyond normal death threshold. Sinking rows cover eight facing sectors and rounding boundaries, signed/tiny angles and limit equality/adjacency. Sinking is simultaneously supplied with crash to check native precedence",
+    "Normal threshold rows vary live Type Strength17/271 and stub return0/4. The original caller copies Strength and calls the original Unit ReceiveDamage slot with distance0, Rules C4Warhead, no source object/house, ignore_defenses1 and arg6false. Damage body, lifecycle effects and the subsequent Techno AI ObjectAlive guard are excluded",
+    "Full AI scheduling/eligibility gate6F9E10, loaded voxel state, all angle/velocity/flag/link producers, save/hash, render transforms/cache, actual facing evolution, damage lifecycle and Rust integration are excluded. Samples establish only the supplied states; no whole-mechanism or retail-reachability certification is claimed"
+  ],
+  "substitutions": [
+    "Facing4C93D0: assert ECX=owner+388 and original output buffer/return address, write supplied raw facing DWORD, return buffer with RET4 semantics. Original sector rounding and sinking arithmetic execute; facing interpolation/timer receiver is excluded",
+    "ReceiveDamage737C90: reached through untouched Unit vtable+16C; assert original return and seven arguments, record live copied Strength and pre-call rocking state, return supplied EAX with RET1C semantics. No damage, owner writes, callbacks or ObjectAlive changes are supplied"
+  ],
+  "entry_points": {
+    "entry": "0x0070B570",
+    "original_last_ret": "0x0070BCA9",
+    "unit_vtable": "0x007F5C70",
+    "get_type": "0x006F3270",
+    "unit_type": "0x00741490",
+    "facing": "0x004C93D0",
+    "receive_damage": "0x00737C90",
+    "damage_call": "0x0070BC9E"
+  },
+  "x87_control_word": "0E7F",
+  "required_owner_store_sites": [
+    "0070B619",
+    "0070B631",
+    "0070B659",
+    "0070B66B",
+    "0070B6A4",
+    "0070B6CB",
+    "0070B6E0",
+    "0070B6F4",
+    "0070B75F",
+    "0070B78B",
+    "0070B7C1",
+    "0070B7CB",
+    "0070B812",
+    "0070B82D",
+    "0070B844",
+    "0070B874",
+    "0070B8AA",
+    "0070B8C5",
+    "0070B8ED",
+    "0070B905",
+    "0070B919",
+    "0070B921",
+    "0070B957",
+    "0070B95D",
+    "0070B9F7",
+    "0070BA49",
+    "0070BA85",
+    "0070BA8B",
+    "0070BAD2",
+    "0070BAED",
+    "0070BB17",
+    "0070BB32",
+    "0070BB49",
+    "0070BB7F",
+    "0070BBAD",
+    "0070BBC5",
+    "0070BBD9",
+    "0070BBE1",
+    "0070BC17",
+    "0070BC1D"
+  ],
+  "numeric_constants": {
+    "007EC0B0": {
+      "size": 8,
+      "bits": "3ef4f8b588e368f1"
+    },
+    "007F4E78": {
+      "size": 8,
+      "bits": "bef4f8b588e368f1"
+    },
+    "007E1748": {
+      "size": 4,
+      "bits": "00000000"
+    },
+    "007E897C": {
+      "size": 4,
+      "bits": "3fc90fdb"
+    },
+    "007E8980": {
+      "size": 4,
+      "bits": "bfc90fdb"
+    },
+    "007EF8F8": {
+      "size": 4,
+      "bits": "3f490fdb"
+    },
+    "007F4E74": {
+      "size": 4,
+      "bits": "bf490fdb"
+    },
+    "007F4E64": {
+      "size": 4,
+      "bits": "3ea0d97c"
+    },
+    "007F4E60": {
+      "size": 4,
+      "bits": "40490fdb"
+    },
+    "007F4E5C": {
+      "size": 4,
+      "bits": "c0490fdb"
+    },
+    "007F4E70": {
+      "size": 4,
+      "bits": "3b03126f"
+    },
+    "007F4E68": {
+      "size": 8,
+      "bits": "3f747ae158000000"
+    },
+    "007E3808": {
+      "size": 8,
+      "bits": "3f847ae147ae147b"
+    }
+  },
+  "original_code_range_sha256": {
+    "0070B570..0070BCAA": "dfdbe5a812de8812968e078ace511482ded9fa730dbfa40700565c74c2e2154b",
+    "006F3270..006F3278": "b7655f4aae69b7187b779cdc966f345e6a878c6ce4f756b676a079015b791f42",
+    "00741490..00741497": "8b3b8079858d27e0a2380dbf780c211a99983f17c0b4c448ea6f3209d7858320"
+  },
+  "payload_sha256": "d9ad3962291792545bfac93a163d35fbca9712bd198b232a0e921c9c6aa3d44b"
+}

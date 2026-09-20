@@ -48,6 +48,7 @@ const FIRST_HIT_FEAR: u16 = 100;
 const FEAR_LATCH_CEILING: u16 = 99;
 const REPEATED_RED_ADD: u16 = 50;
 const REPEATED_YELLOW_ADD: u16 = 25;
+#[cfg(test)]
 const REPEATED_GREEN_ADD: u16 = 12;
 const PRONE_THRESHOLD: u16 = 50;
 const VETERAN_LEVEL: u16 = 100;
@@ -83,10 +84,10 @@ pub fn apply_panic_force(obj: &ObjectType, entity: &mut GameEntity) {
 pub fn apply_fear_from_damage(
     obj: &ObjectType,
     entity: &mut GameEntity,
-    damage_landed: u16,
+    damage_landed: i32,
     damager_present: bool,
-    condition_red_x1000: i64,
-    condition_yellow_x1000: i64,
+    condition_red_ratio: f64,
+    condition_yellow_ratio: f64,
 ) {
     if damage_landed == 0 || entity.health.current == 0 || is_fear_application_blocked(obj, entity)
     {
@@ -109,29 +110,32 @@ pub fn apply_fear_from_damage(
     }
 
     let add = repeated_fear_add(
-        entity.health.current,
-        entity.health.max,
-        condition_red_x1000,
-        condition_yellow_x1000,
+        entity.health.ratio(obj.strength),
+        condition_red_ratio,
+        condition_yellow_ratio,
     );
     infantry.fear_level = infantry.fear_level.saturating_add(add).min(MAX_FEAR);
 }
 
 fn repeated_fear_add(
-    current_health: u16,
-    max_health: u16,
-    condition_red_x1000: i64,
-    condition_yellow_x1000: i64,
+    ratio: crate::util::native_x87::MaskedX87Value,
+    condition_red_ratio: f64,
+    condition_yellow_ratio: f64,
 ) -> u16 {
-    let max = max_health.max(1) as i64;
-    let current = current_health as i64 * 1000;
-    if current <= max * condition_red_x1000 {
-        REPEATED_RED_ADD
-    } else if current <= max * condition_yellow_x1000 {
+    use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
+    // Infantry518CEC..518D29: independent Greater predicates. Unordered
+    // retains50 at the red compare and skips the yellow halving.
+    let red = X87::load_f64(NativeF64Bits::from_bits(condition_red_ratio.to_bits()));
+    let yellow = X87::load_f64(NativeF64Bits::from_bits(condition_yellow_ratio.to_bits()));
+    let mut add = if X87::compare(ratio, red) == MaskedX87Ordering::Greater {
         REPEATED_YELLOW_ADD
     } else {
-        REPEATED_GREEN_ADD
+        REPEATED_RED_ADD
+    };
+    if X87::compare(ratio, yellow) == MaskedX87Ordering::Greater {
+        add /= 2;
     }
+    add
 }
 
 /// Whether this infantryman is under way, in the sense the fear handler tests.
@@ -528,7 +532,7 @@ mod tests {
     /// Stand-in logic vector for the single-entity idle fixtures.
     const ORDER: [u64; 1] = [1];
 
-    fn infantry(hp: u16) -> GameEntity {
+    fn infantry(hp: i32) -> GameEntity {
         let mut e = GameEntity::new_at_frame_zero_for_test(
             1,
             0,
@@ -536,10 +540,7 @@ mod tests {
             0,
             0,
             test_intern("Test"),
-            Health {
-                current: hp,
-                max: 100,
-            },
+            Health { current: hp },
             test_intern("E1"),
             EntityCategory::Infantry,
             0,
@@ -554,17 +555,36 @@ mod tests {
     }
 
     #[test]
+    fn wide_damage_and_live_signed_strength_reach_native_fear_ladder() {
+        let mut obj = infantry_obj("", false);
+        let mut entity = infantry(100);
+        obj.strength = 100;
+        apply_fear_from_damage(&obj, &mut entity, 65536, true, 0.25, 0.5);
+        assert_eq!(entity.infantry.as_ref().unwrap().fear_level, 100);
+        obj.strength = -100;
+        apply_fear_from_damage(&obj, &mut entity, 65536, false, 0.25, 0.5);
+        assert_eq!(entity.infantry.as_ref().unwrap().fear_level, 150);
+        obj.strength = 400;
+        apply_fear_from_damage(&obj, &mut entity, 65536, false, 0.25, 0.5);
+        assert_eq!(entity.infantry.as_ref().unwrap().fear_level, 200);
+        // Both comparisons execute; reversed thresholds are not an else-if ladder.
+        obj.strength = 100;
+        apply_fear_from_damage(&obj, &mut entity, 65536, false, 2.0, 0.5);
+        assert_eq!(entity.infantry.as_ref().unwrap().fear_level, 225);
+    }
+
+    #[test]
     fn first_hit_and_fraidycat_set_fear() {
         let rules = rules_for("");
         let obj = rules.object("E1").unwrap();
         let mut e = infantry(90);
-        apply_fear_from_damage(obj, &mut e, 10, true, 250, 500);
+        apply_fear_from_damage(obj, &mut e, 10, true, 0.25, 0.5);
         assert_eq!(e.infantry.unwrap().fear_level, FIRST_HIT_FEAR);
 
         let rules = rules_for("Fraidycat=yes\n");
         let obj = rules.object("E1").unwrap();
         let mut e = infantry(90);
-        apply_fear_from_damage(obj, &mut e, 10, true, 250, 500);
+        apply_fear_from_damage(obj, &mut e, 10, true, 0.25, 0.5);
         assert_eq!(e.infantry.unwrap().fear_level, MAX_FEAR);
     }
 
@@ -579,7 +599,7 @@ mod tests {
         for start in [1u16, 40, FEAR_LATCH_CEILING] {
             let mut e = infantry(90);
             e.infantry.as_mut().unwrap().fear_level = start;
-            apply_fear_from_damage(obj, &mut e, 10, true, 250, 500);
+            apply_fear_from_damage(obj, &mut e, 10, true, 0.25, 0.5);
             assert_eq!(
                 e.infantry.unwrap().fear_level,
                 FIRST_HIT_FEAR,
@@ -591,7 +611,7 @@ mod tests {
         let obj = rules.object("E1").unwrap();
         let mut e = infantry(90);
         e.infantry.as_mut().unwrap().fear_level = 40;
-        apply_fear_from_damage(obj, &mut e, 10, true, 250, 500);
+        apply_fear_from_damage(obj, &mut e, 10, true, 0.25, 0.5);
         assert_eq!(e.infantry.unwrap().fear_level, MAX_FEAR);
     }
 
@@ -603,7 +623,7 @@ mod tests {
         let obj = rules.object("E1").unwrap();
         let mut e = infantry(100);
         e.infantry.as_mut().unwrap().fear_level = FEAR_LATCH_CEILING + 1;
-        apply_fear_from_damage(obj, &mut e, 10, true, 250, 500);
+        apply_fear_from_damage(obj, &mut e, 10, true, 0.25, 0.5);
         assert_eq!(
             e.infantry.unwrap().fear_level,
             FEAR_LATCH_CEILING + 1 + REPEATED_GREEN_ADD
@@ -678,12 +698,12 @@ mod tests {
         for (hp, expected) in [(80, 112), (50, 125), (25, 150)] {
             let mut e = infantry(hp);
             e.infantry.as_mut().unwrap().fear_level = 100;
-            apply_fear_from_damage(obj, &mut e, 1, true, 250, 500);
+            apply_fear_from_damage(obj, &mut e, 1, true, 0.25, 0.5);
             assert_eq!(e.infantry.unwrap().fear_level, expected);
         }
         let mut e = infantry(25);
         e.infantry.as_mut().unwrap().fear_level = 290;
-        apply_fear_from_damage(obj, &mut e, 1, true, 250, 500);
+        apply_fear_from_damage(obj, &mut e, 1, true, 0.25, 0.5);
         assert_eq!(e.infantry.unwrap().fear_level, MAX_FEAR);
     }
 
@@ -692,7 +712,7 @@ mod tests {
         let rules = rules_for("Fearless=yes\n");
         let obj = rules.object("E1").unwrap();
         let mut e = infantry(90);
-        apply_fear_from_damage(obj, &mut e, 1, true, 250, 500);
+        apply_fear_from_damage(obj, &mut e, 1, true, 0.25, 0.5);
         apply_panic_force(obj, &mut e);
         assert_eq!(e.infantry.unwrap().fear_level, 0);
 
@@ -700,7 +720,7 @@ mod tests {
         let obj = rules.object("E1").unwrap();
         let mut e = infantry(90);
         e.veterancy = 100;
-        apply_fear_from_damage(obj, &mut e, 1, true, 250, 500);
+        apply_fear_from_damage(obj, &mut e, 1, true, 0.25, 0.5);
         assert_eq!(e.infantry.unwrap().fear_level, 0);
 
         let rules = rules_for("EliteAbilities=FEARLESS\n");

@@ -35,10 +35,25 @@ const PIP_STEP_Y: f32 = 2.0;
 /// NOTE: Phobos `Height * 12` is for bracket EXTENT (vertical span), NOT z_screen.
 const PIP_HEIGHT_FACTOR: f32 = 15.0;
 
+/// Health-pip display clamp. This ratio never feeds simulation or command gates.
+fn display_health_ratio(current: i32, strength: i32) -> f32 {
+    if strength == 0 {
+        0.0
+    } else {
+        (current as f32 / strength as f32).clamp(0.0, 1.0)
+    }
+}
+
 /// Get INI-driven health condition thresholds, falling back to RA2 defaults.
 fn condition_thresholds(state: &AppState) -> (f32, f32) {
-    state.rules()
-        .map(|r| (r.general.condition_yellow, r.general.condition_red))
+    state
+        .rules()
+        .map(|r| {
+            (
+                r.general.condition_yellow as f32,
+                r.general.condition_red as f32,
+            )
+        })
         .unwrap_or((0.5, 0.25))
 }
 
@@ -52,10 +67,17 @@ fn health_bar_hover_target(
     state: &AppState,
     local_owner: Option<&str>,
 ) -> Option<(u64, HoverTargetKind)> {
-    let sim = state.match_state.sim_runtime.as_ref().map(|rt| &rt.simulation)?;
+    let sim = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|rt| &rt.simulation)?;
     let local_owner = local_owner?;
-    let (world_x, world_y) =
-        crate::app::match_runtime::sim_tick::screen_point_to_world(state, state.match_state.input.cursor_x, state.match_state.input.cursor_y);
+    let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
+        state,
+        state.match_state.input.cursor_x,
+        state.match_state.input.cursor_y,
+    );
     let hover = crate::app::input::entity_pick::hover_target_at_point(
         sim,
         world_x,
@@ -64,7 +86,12 @@ fn health_bar_hover_target(
         state.match_state.sandbox_full_visibility,
         state.rules(),
         &state.height_map(),
-        Some(&state.match_state.match_presentation.tactical_bridge_inverse_map),
+        Some(
+            &state
+                .match_state
+                .match_presentation
+                .tactical_bridge_inverse_map,
+        ),
     )?;
     match hover.kind {
         HoverTargetKind::FriendlyStructure
@@ -159,7 +186,14 @@ pub(crate) fn build_building_status_instances(
     sw: f32,
     sh: f32,
 ) -> Vec<SpriteInstance> {
-    let (Some(sim), Some(overlay)) = (state.match_state.sim_runtime.as_ref().map(|rt| &rt.simulation), &state.match_state.match_presentation.selection_overlay) else {
+    let (Some(sim), Some(overlay)) = (
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        &state.match_state.match_presentation.selection_overlay,
+    ) else {
         return Vec::new();
     };
     let local_owner = preferred_local_owner_name(state);
@@ -211,15 +245,16 @@ pub(crate) fn build_building_status_instances(
                 if img.is_empty() { o.id.as_str() } else { img }
             })
             .unwrap_or(type_str);
-        let art_height: f32 = state.rules()
+        let art_height: f32 = state
+            .rules()
             .and_then(|rules| rules.art_registry.get(art_key))
             .map(|entry| entry.height as f32)
             .unwrap_or(2.0);
-        let ratio: f32 = if health.max == 0 {
-            0.0
-        } else {
-            (health.current as f32 / health.max as f32).clamp(0.0, 1.0)
+        let Some(strength) = obj.map(|obj| obj.strength) else {
+            // A health display needs the live type; no saved maximum fallback.
+            continue;
         };
+        let ratio = display_health_ratio(health.current, strength);
         let depth: f32 = 0.0006;
 
         // Pip count: floor(H * 7.5) — from original (screen1.y - screen2.y) / 2.
@@ -353,7 +388,14 @@ pub(crate) fn build_occupant_pip_instances(
     sw: f32,
     sh: f32,
 ) -> Vec<SpriteInstance> {
-    let (Some(sim), Some(overlay)) = (state.match_state.sim_runtime.as_ref().map(|rt| &rt.simulation), &state.match_state.match_presentation.selection_overlay) else {
+    let (Some(sim), Some(overlay)) = (
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        &state.match_state.match_presentation.selection_overlay,
+    ) else {
         return Vec::new();
     };
     let has_tex = overlay.occupant_pip_texture().is_some();
@@ -547,7 +589,14 @@ pub(crate) fn build_unit_status_bg_instances(
     sw: f32,
     sh: f32,
 ) -> Vec<SpriteInstance> {
-    let (Some(sim), Some(overlay)) = (state.match_state.sim_runtime.as_ref().map(|rt| &rt.simulation), &state.match_state.match_presentation.selection_overlay) else {
+    let (Some(sim), Some(overlay)) = (
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        &state.match_state.match_presentation.selection_overlay,
+    ) else {
         return Vec::new();
     };
     if overlay.pipbrd_texture().is_none() {
@@ -596,7 +645,8 @@ pub(crate) fn build_unit_status_bg_instances(
                 overlay.pipbrd_vehicle_uv().1,
             )
         };
-        let bracket_delta: f32 = state.rules()
+        let bracket_delta: f32 = state
+            .rules()
             .and_then(|r| r.object(sim.interner.resolve(e.type_ref())))
             .map(|obj| obj.pixel_selection_bracket_delta as f32)
             .unwrap_or(0.0);
@@ -637,7 +687,14 @@ pub(crate) fn build_unit_status_fill_instances(
     sw: f32,
     sh: f32,
 ) -> Vec<SpriteInstance> {
-    let (Some(sim), Some(overlay)) = (state.match_state.sim_runtime.as_ref().map(|rt| &rt.simulation), &state.match_state.match_presentation.selection_overlay) else {
+    let (Some(sim), Some(overlay)) = (
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        &state.match_state.match_presentation.selection_overlay,
+    ) else {
         return Vec::new();
     };
     let local_owner = preferred_local_owner_name(state);
@@ -671,11 +728,13 @@ pub(crate) fn build_unit_status_fill_instances(
         // Already the drawn position, height lift included, so the bar tracks
         // the sprite for airborne units without repeating the lift here.
         let (sx, sy) = crate::app::presentation::instances::interpolated_screen_position_entity(e);
-        let ratio: f32 = if health.max == 0 {
-            0.0
-        } else {
-            (health.current as f32 / health.max as f32).clamp(0.0, 1.0)
+        let Some(obj) = state
+            .rules()
+            .and_then(|rules| rules.object(sim.interner.resolve(e.type_ref())))
+        else {
+            continue;
         };
+        let ratio = display_health_ratio(health.current, obj.strength);
 
         let is_infantry: bool = e.category == EntityCategory::Infantry;
         let num_pips: u32 = if is_infantry {
@@ -683,10 +742,7 @@ pub(crate) fn build_unit_status_fill_instances(
         } else {
             UNIT_PIPS_VEHICLE
         };
-        let bracket_delta: f32 = state.rules()
-            .and_then(|r| r.object(sim.interner.resolve(e.type_ref())))
-            .map(|obj| obj.pixel_selection_bracket_delta as f32)
-            .unwrap_or(0.0);
+        let bracket_delta: f32 = obj.pixel_selection_bracket_delta as f32;
         let (pip_off_x, pip_off_y) = overlay.pip_offset(is_infantry);
         let (pip_start_x, pip_start_y) = (sx + pip_off_x, sy + bracket_delta + pip_off_y);
         // Filled pip count: floor(ratio * maxPips), clamped to [1, maxPips].
@@ -787,7 +843,14 @@ const CARGO_PIP_STEP_X: f32 = 4.0;
 /// Empty slots shown as variant 0. Start at (sx - 15 + canvas_adj_x, sy + 10 + canvas_adj_y),
 /// step (+4, 0) per pip. Draw order: gem pips first, then ore pips, then empty slots.
 pub(crate) fn build_cargo_pip_instances(state: &AppState, sw: f32, sh: f32) -> Vec<SpriteInstance> {
-    let (Some(sim), Some(overlay)) = (state.match_state.sim_runtime.as_ref().map(|rt| &rt.simulation), &state.match_state.match_presentation.selection_overlay) else {
+    let (Some(sim), Some(overlay)) = (
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        &state.match_state.match_presentation.selection_overlay,
+    ) else {
         return Vec::new();
     };
     let Some(_tib_tex) = overlay.tiberium_pip_texture() else {
@@ -812,7 +875,8 @@ pub(crate) fn build_cargo_pip_instances(state: &AppState, sw: f32, sh: f32) -> V
         if !e.selected {
             continue;
         }
-        let obj = state.rules()
+        let obj = state
+            .rules()
             .and_then(|r| r.object(sim.interner.resolve(e.type_ref())));
         let is_tiberium_scale = obj
             .map(|o| o.pip_scale == crate::rules::object_type::PipScale::Tiberium)
@@ -947,7 +1011,14 @@ pub(crate) fn build_building_radius_ring_instances(
     sw: f32,
     sh: f32,
 ) -> Vec<SpriteInstance> {
-    let (Some(sim), Some(rules)) = (state.match_state.sim_runtime.as_ref().map(|rt| &rt.simulation), state.rules().map(|r| r)) else {
+    let (Some(sim), Some(rules)) = (
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        state.rules().map(|r| r),
+    ) else {
         return Vec::new();
     };
     let local_owner = preferred_local_owner_name(state);
@@ -1099,7 +1170,11 @@ fn health_pip_variant(ratio: f32, condition_yellow: f32, condition_red: f32) -> 
 /// The id travels with the sequence because the animation phase is keyed on it —
 /// changing shape restarts the sequence at frame 0.
 fn active_cursor_sequence(state: &AppState) -> Option<(CursorId, &SoftwareCursorSequence)> {
-    let cursor = state.match_state.match_presentation.software_cursor.as_ref()?;
+    let cursor = state
+        .match_state
+        .match_presentation
+        .software_cursor
+        .as_ref()?;
     let id: CursorId = current_cursor_feedback_kind(state)
         .and_then(cursor_id_for_feedback)
         .unwrap_or(CursorId::Default);
@@ -1122,8 +1197,10 @@ pub(crate) fn build_software_cursor_instances(state: &AppState) -> Vec<SpriteIns
     // Note: cursor_x/y are in screen space; camera offset is NOT applied (cursor is UI).
     vec![SpriteInstance {
         position: [
-            state.match_state.input.cursor_x + state.match_state.input.camera_x - sequence.hotspot[0],
-            state.match_state.input.cursor_y + state.match_state.input.camera_y - sequence.hotspot[1],
+            state.match_state.input.cursor_x + state.match_state.input.camera_x
+                - sequence.hotspot[0],
+            state.match_state.input.cursor_y + state.match_state.input.camera_y
+                - sequence.hotspot[1],
         ],
         size: [frame.width, frame.height],
         uv_origin: [0.0, 0.0],
@@ -1175,6 +1252,15 @@ pub(crate) fn health_fill_color(ratio: f32, condition_yellow: f32, condition_red
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn health_pips_clamp_signed_actual_without_narrowing_live_strength() {
+        assert_eq!(super::display_health_ratio(70_000, 140_000), 0.5);
+        assert_eq!(super::display_health_ratio(70_000, 280_000), 0.25);
+        assert_eq!(super::display_health_ratio(-1, 100_000), 0.0);
+        assert_eq!(super::display_health_ratio(150_000, 100_000), 1.0);
+        assert_eq!(super::display_health_ratio(100, 0), 0.0);
+    }
+
     use super::*;
 
     /// A selected object draws both halves — bracket and pips.

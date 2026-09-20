@@ -26,7 +26,8 @@
 //! - **`ObjectClass::Receive_Radio(0x22)` 0x005F5320**: health ratio ≥
 //!   `Rules+0x16F8` ⇒ 10 else 1. `Rules+0x16F8` is not an INI key:
 //!   `RulesClass::ReadAudioVisual` 0x0066B323/0x0066B32D stores the double 1.0
-//!   unconditionally, so "repaired" ⇔ `hp >= max_hp`.
+//!   unconditionally. Completion tests ordered ratio >= 1, including signed
+//!   Strength and masked division by zero; unordered does not complete.
 //! - **Reply 10 to the waiter**: `Mission_Enter` 0x004D92D0 sends BREAK and
 //!   calls `Enter_Idle_Mode` (+0x484 = 0x00738970 → Guard for a plain unit).
 //! - **Release of a repaired occupant** is the building's repair mission
@@ -49,6 +50,7 @@
 //! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
 
 use crate::rules::ruleset::RuleSet;
+use crate::sim::components::Health;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::mission::timer::MissionTimer;
@@ -129,7 +131,7 @@ const ENTER_RETRY_JITTER_MAX_FRAMES: u32 = 2;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RepairResponse {
     /// A repair step fired: heal `heal` HP and deduct `cost` credits.
-    Roger { heal: u16, cost: i32 },
+    Roger { heal: i32, cost: i32 },
     /// Not enough credits for this step. `grace` is the incremented no-funds
     /// counter; the caller exits the dock once it reaches [`NO_FUNDS_GRACE_TICKS`].
     InsufficientFunds { grace: u32 },
@@ -149,33 +151,33 @@ impl RepairResponse {
 }
 
 /// Decide one repair-depot service step (the `REPAIR_TICK` trichotomy). Pure
-/// integer math — byte-identical to the inline `Servicing` arm it replaces:
+/// Cost arithmetic retains the existing VERA adapter:
 /// `total = cost * repair_percent / 100`, `cost_per_step = max(1, total *
 /// repair_step / max_hp)`, funded ⇒ `Roger`, unfunded ⇒ `InsufficientFunds`
-/// (grace incremented), already-full ⇒ `RepairComplete`. No clock/RNG/float.
+/// (grace incremented), native ratio already-full ⇒ `RepairComplete`. No clock/RNG.
 /// VERA-internal cost math, gamemd equivalent UNCHECKED (Techno `0x1C` reads
 /// the type vtable `+0xB0/+0xB4`; adjacent lane).
 pub fn repair_tick(
-    hp: u16,
-    max_hp: u16,
+    hp: i32,
+    strength: i32,
     unit_cost: i32,
     repair_percent: u16,
     repair_step: u16,
     credits: i32,
     no_funds_ticks: u32,
 ) -> RepairResponse {
-    if hp >= max_hp {
+    if repair_is_complete(hp, strength) {
         return RepairResponse::RepairComplete;
     }
     let total_repair_cost = (unit_cost as i64 * repair_percent as i64 / 100) as i32;
-    let cost_per_step = if max_hp > 0 {
-        (total_repair_cost as i64 * repair_step as i64 / max_hp as i64).max(1) as i32
+    let cost_per_step = if strength > 0 {
+        (total_repair_cost as i64 * repair_step as i64 / i64::from(strength)).max(1) as i32
     } else {
         1
     };
     if credits >= cost_per_step {
         RepairResponse::Roger {
-            heal: repair_step,
+            heal: i32::from(repair_step),
             cost: cost_per_step,
         }
     } else {
@@ -183,6 +185,16 @@ pub fn repair_tick(
             grace: no_funds_ticks + 1,
         }
     }
+}
+
+/// Object5F5339..537A and Techno6F4DE5..6F4E21 test x87 C0 clear.
+/// Unlike a signed HP >= Strength shortcut, this retains negative/zero divisors.
+fn repair_is_complete(hp: i32, strength: i32) -> bool {
+    matches!(
+        Health { current: hp }.compare_ratio(strength, 1.0),
+        crate::util::native_x87::MaskedX87Ordering::Equal
+            | crate::util::native_x87::MaskedX87Ordering::Greater
+    )
 }
 
 /// Compute the dock cell (center of foundation) for a building.
@@ -312,8 +324,7 @@ fn issue_pad_move(sim: &mut Simulation, rules: &RuleSet, id: u64, target: (u16, 
         .resolve_move_info(id, Some(rules))
         .map(|info| info.speed)
         .unwrap_or_else(|| ra2_speed_to_leptons_per_second(4));
-    let timing =
-        movement::DestinationTiming::new(sim.session.binary_frame, sim.blockage_path_delay_ticks);
+    let timing = movement::DestinationTiming::from_rules(sim.session.binary_frame, rules.into());
     if movement::issue_direct_move(&mut sim.substrate.entities, id, target, speed, timing) {
         if let Some(target) = sim
             .substrate
@@ -378,14 +389,14 @@ fn queue_mission(sim: &mut Simulation, id: u64, mission: MissionType) {
 /// `MissionRepairAndProduce` 0x0044B780 repair tick), untouched here.
 pub(crate) fn mission_enter_dispatch(sim: &mut Simulation, rules: &RuleSet, id: u64) -> i32 {
     let now = sim.session.binary_frame;
-    let Some((dock_building_id, phase, hp, max_hp, owner)) =
+    let Some((dock_building_id, phase, hp, strength, owner)) =
         sim.substrate.entities.get(id).and_then(|unit| {
             let ds = unit.dock_state.as_ref()?;
             Some((
                 ds.dock_building_id,
                 ds.phase,
                 unit.health.current,
-                unit.health.max,
+                sim.object_type(unit.type_ref(), rules)?.strength,
                 unit.owner(),
             ))
         })
@@ -408,7 +419,7 @@ pub(crate) fn mission_enter_dispatch(sim: &mut Simulation, rules: &RuleSet, id: 
         .filter(|depot| depot.health.current > 0 && !depot.dying && depot.owner() == owner)
         .and_then(|depot| sim.object_type(depot.type_ref(), rules))
         .filter(|obj| obj.unit_repair)
-        .map(|obj| usize::from(obj.number_of_docks.max(1)));
+        .map(|obj| obj.dock_contact_capacity() as usize);
 
     if let Some(dock_capacity) = depot_capacity {
         let linked = sim
@@ -416,7 +427,7 @@ pub(crate) fn mission_enter_dispatch(sim: &mut Simulation, rules: &RuleSet, id: 
             .entities
             .get(id)
             .is_some_and(|unit| unit.radio_contacts.contains(dock_building_id));
-        if linked && hp >= max_hp {
+        if linked && repair_is_complete(hp, strength) {
             // 0x0043C824..C842: linked sender whose 0x22 answers 10 (ratio >=
             // 1.0) gets 10 back; Mission_Enter 0x004D92D0 then BREAKs and
             // calls Enter_Idle_Mode(0, 1) at 0x004D92E2 (Guard for a plain
@@ -494,8 +505,8 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
         type_ref: InternedId,
         rx: u16,
         ry: u16,
-        hp: u16,
-        max_hp: u16,
+        hp: i32,
+        strength: i32,
         moving: bool,
         dock_building_id: u64,
         phase: DockPhase,
@@ -516,7 +527,7 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
                 rx: e.position.rx,
                 ry: e.position.ry,
                 hp: e.health.current,
-                max_hp: e.health.max,
+                strength: sim.object_type(e.type_ref(), rules)?.strength,
                 moving: e.movement_target.is_some(),
                 dock_building_id: ds.dock_building_id,
                 phase: ds.phase,
@@ -535,7 +546,9 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
         new_phase: Option<DockPhase>,
         new_timer: Option<u32>,
         new_no_funds: Option<u32>,
-        heal_amount: u16,
+        heal_amount: i32,
+        strength: i32,
+        repair_complete: bool,
         deduct_credits: i32,
         clear_dock: bool,
         clear_movement: bool,
@@ -550,6 +563,8 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
             new_timer: None,
             new_no_funds: None,
             heal_amount: 0,
+            strength: snap.strength,
+            repair_complete: false,
             deduct_credits: 0,
             clear_dock: false,
             clear_movement: false,
@@ -583,7 +598,7 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
                     depot.position.rx,
                     depot.position.ry,
                     obj.foundation.clone(),
-                    usize::from(obj.number_of_docks.max(1)),
+                    obj.dock_contact_capacity() as usize,
                 ))
             });
 
@@ -636,7 +651,7 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
                 }
             }
             DockPhase::Servicing => {
-                if snap.hp >= snap.max_hp {
+                if repair_is_complete(snap.hp, snap.strength) {
                     m.new_phase = Some(DockPhase::ExitDock);
                 } else {
                     let timer = snap.service_timer.saturating_sub(1);
@@ -656,7 +671,7 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
 
                         match repair_tick(
                             snap.hp,
-                            snap.max_hp,
+                            snap.strength,
                             unit_cost,
                             rules.general.repair_percent,
                             rules.general.repair_step,
@@ -667,6 +682,12 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
                                 m.heal_amount = heal;
                                 m.deduct_credits = cost;
                                 m.new_no_funds = Some(0);
+                                // Radio6F4DE5..6F4E21 completes on this same
+                                // repair response and resets both health values.
+                                if repair_is_complete(snap.hp.wrapping_add(heal), snap.strength) {
+                                    m.repair_complete = true;
+                                    m.new_phase = Some(DockPhase::ExitDock);
+                                }
                             }
                             RepairResponse::InsufficientFunds { grace } => {
                                 if grace >= NO_FUNDS_GRACE_TICKS {
@@ -733,10 +754,15 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
         }
 
         if m.heal_amount > 0 {
-            entity.health.current = (entity.health.current + m.heal_amount).min(entity.health.max);
-            // Service depots normally repair units/aircraft; this remains a no-op
-            // for them and protects the gate if a structure ever reaches this path.
-            entity.refresh_building_damage_state_gate(rules.general.condition_yellow_x1000);
+            entity.health.current = entity.health.current.wrapping_add(m.heal_amount);
+            entity.estimated_health.add_repair(m.heal_amount);
+        }
+
+        if m.repair_complete {
+            // Radio6F4E17..21: Strength is written to actual and estimated HP.
+            // Rules+16F8 is the fixed 1.0 completion threshold (66B323/66B32D).
+            entity.health.current = m.strength;
+            entity.estimated_health.reset(m.strength);
         }
 
         if m.deduct_credits > 0 {
@@ -930,7 +956,11 @@ mod tests {
     const DEPOT_RY: u16 = 10;
 
     fn depot_rules() -> RuleSet {
-        let ini = IniFile::from_str(
+        depot_rules_with_strength(300)
+    }
+
+    fn depot_rules_with_strength(strength: i32) -> RuleSet {
+        let ini = IniFile::from_str(&format!(
             "[General]\n\
              RepairPercent=15%\n\
              RepairStep=8\n\
@@ -947,7 +977,7 @@ mod tests {
              [MTNK]\n\
              Name=Grizzly\n\
              Cost=700\n\
-             Strength=300\n\
+             Strength={strength}\n\
              Speed=6\n\
              [HARV]\n\
              Name=War Miner\n\
@@ -960,7 +990,7 @@ mod tests {
              Foundation=3x3\n\
              UnitRepair=yes\n\
              Strength=1000\n",
-        );
+        ));
         RuleSet::from_ini(&ini).expect("depot rules")
     }
 
@@ -971,8 +1001,7 @@ mod tests {
         category: EntityCategory,
         rx: u16,
         ry: u16,
-        hp: u16,
-        max: u16,
+        hp: i32,
     ) {
         let owner_id = sim.interner.intern("Americans");
         let type_id = sim.interner.intern(type_id);
@@ -983,7 +1012,7 @@ mod tests {
             0,
             0,
             owner_id,
-            Health { current: hp, max },
+            Health { current: hp },
             type_id,
             category,
             0,
@@ -1006,7 +1035,6 @@ mod tests {
             DEPOT_RX,
             DEPOT_RY,
             1000,
-            1000,
         );
         for y in DEPOT_RY..DEPOT_RY + 3 {
             for x in DEPOT_RX..DEPOT_RX + 3 {
@@ -1023,7 +1051,7 @@ mod tests {
     }
 
     fn spawn_tank(sim: &mut Simulation, sid: u64, rx: u16, ry: u16) {
-        spawn_entity(sim, sid, "MTNK", EntityCategory::Unit, rx, ry, 100, 300);
+        spawn_entity(sim, sid, "MTNK", EntityCategory::Unit, rx, ry, 100);
     }
 
     fn setup(tank_count: u64) -> (Simulation, RuleSet, PathGrid) {
@@ -1041,6 +1069,97 @@ mod tests {
             spawn_tank(&mut sim, 1 + i, 14 + i as u16, 11);
         }
         (sim, rules, PathGrid::new(64, 64))
+    }
+
+    #[test]
+    fn depot_completion_preserves_signed_and_masked_ratio_domain() {
+        for (hp, strength, complete) in [
+            (70_000, 100_000, false),
+            (100_000, 70_000, true),
+            (-20, -10, true),
+            (-5, -10, false),
+            (1, 0, true),
+            (-1, 0, false),
+            (0, 0, false),
+        ] {
+            assert_eq!(
+                repair_is_complete(hp, strength),
+                complete,
+                "{hp}/{strength}"
+            );
+            assert_eq!(
+                matches!(
+                    repair_tick(hp, strength, 100, 15, 8, 10_000, 0),
+                    RepairResponse::RepairComplete
+                ),
+                complete
+            );
+        }
+    }
+
+    #[test]
+    fn depot_service_wraps_both_independent_signed_health_values() {
+        let (mut sim, _, grid) = setup(1);
+        let rules = depot_rules_with_strength(i32::MAX);
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        unit.health.current = i32::MAX - 1;
+        unit.estimated_health =
+            crate::sim::estimated_health::EstimatedHealth::from_raw(i32::MAX - 2);
+        let mut dock = DockState::approach(DEPOT);
+        dock.phase = DockPhase::Servicing;
+        unit.dock_state = Some(dock);
+        tick_building_docks(&mut sim, &rules, Some(&grid));
+        let unit = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(unit.health.current, i32::MIN + 6);
+        assert_eq!(unit.estimated_health.get(), i32::MIN + 5);
+        assert_eq!(
+            unit.dock_state.as_ref().unwrap().phase,
+            DockPhase::Servicing
+        );
+    }
+
+    #[test]
+    fn depot_service_adds_reservations_and_resets_them_on_completion() {
+        let (mut sim, rules, grid) = setup(1);
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        let mut dock = DockState::approach(DEPOT);
+        dock.phase = DockPhase::Servicing;
+        unit.dock_state = Some(dock);
+        unit.estimated_health = crate::sim::estimated_health::EstimatedHealth::from_raw(-20);
+
+        tick_building_docks(&mut sim, &rules, Some(&grid));
+        let unit = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(unit.health.current, 108);
+        assert_eq!(unit.estimated_health.get(), -12);
+        assert_eq!(
+            unit.dock_state.as_ref().unwrap().phase,
+            DockPhase::Servicing
+        );
+
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        unit.health.current = 299;
+        unit.estimated_health = crate::sim::estimated_health::EstimatedHealth::from_raw(-20);
+        unit.dock_state.as_mut().unwrap().service_timer = 0;
+        tick_building_docks(&mut sim, &rules, Some(&grid));
+        let unit = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(unit.health.current, 300);
+        assert_eq!(unit.estimated_health.get(), 300);
+        assert_eq!(unit.dock_state.as_ref().unwrap().phase, DockPhase::ExitDock);
+
+        // Already-full admission bypasses the repair receiver entirely.
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        unit.estimated_health = crate::sim::estimated_health::EstimatedHealth::from_raw(-20);
+        unit.dock_state.as_mut().unwrap().phase = DockPhase::Servicing;
+        tick_building_docks(&mut sim, &rules, Some(&grid));
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .estimated_health
+                .get(),
+            -20
+        );
     }
 
     fn order_repair(sim: &mut Simulation, rules: &RuleSet, grid: &PathGrid, tank: u64) -> bool {
@@ -1409,7 +1528,7 @@ mod tests {
     }
 
     fn spawn_damaged_miner(sim: &mut Simulation, sid: u64, rx: u16, ry: u16) {
-        spawn_entity(sim, sid, "HARV", EntityCategory::Unit, rx, ry, 100, 600);
+        spawn_entity(sim, sid, "HARV", EntityCategory::Unit, rx, ry, 100);
         let e = sim.substrate.entities.get_mut(sid).unwrap();
         e.miner = Some(crate::sim::miner::Miner::new(
             crate::sim::miner::MinerKind::War,
@@ -1638,7 +1757,7 @@ mod tests {
                 let owner_id = sim.interner.intern("Americans");
                 sim.houses.get_mut(&owner_id).unwrap().is_human = true;
             }
-            spawn_entity(&mut sim, 1, "MTNK", EntityCategory::Unit, 14, 11, 300, 300);
+            spawn_entity(&mut sim, 1, "MTNK", EntityCategory::Unit, 14, 11, 300);
             {
                 let unit = sim.substrate.entities.get_mut(1).unwrap();
                 unit.miner = Some(Miner::new(MinerKind::War, &MinerConfig::default(), 0));

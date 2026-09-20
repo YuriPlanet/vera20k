@@ -1,0 +1,8642 @@
+[
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimPowered",
+    "output": false,
+    "raw": null,
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimPowered",
+    "output": false,
+    "raw": "",
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimPowered",
+    "output": false,
+    "raw": "junk",
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimPowered",
+    "output": true,
+    "raw": null,
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimPowered",
+    "output": true,
+    "raw": "",
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimPowered",
+    "output": true,
+    "raw": "junk",
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimPoweredLight",
+    "output": false,
+    "raw": null,
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimPoweredLight",
+    "output": false,
+    "raw": "",
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimPoweredLight",
+    "output": false,
+    "raw": "junk",
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimPoweredLight",
+    "output": true,
+    "raw": null,
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimPoweredLight",
+    "output": true,
+    "raw": "",
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 3
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimPoweredLight",
+    "output": true,
+    "raw": "junk",
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimPoweredEffect",
+    "output": false,
+    "raw": null,
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimPoweredEffect",
+    "output": false,
+    "raw": "",
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimPoweredEffect",
+    "output": false,
+    "raw": "junk",
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimPoweredEffect",
+    "output": true,
+    "raw": null,
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimPoweredEffect",
+    "output": true,
+    "raw": "",
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 3
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimPoweredEffect",
+    "output": true,
+    "raw": "junk",
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": false,
+    "raw": null,
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": false,
+    "raw": "",
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": false,
+    "raw": "junk",
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": true,
+    "raw": null,
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": true,
+    "raw": "",
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 3
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimPoweredSpecial",
+    "output": true,
+    "raw": "junk",
+    "slot": 3
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimTwoPowered",
+    "output": false,
+    "raw": null,
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimTwoPowered",
+    "output": false,
+    "raw": "",
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimTwoPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimTwoPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimTwoPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimTwoPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimTwoPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimTwoPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimTwoPowered",
+    "output": false,
+    "raw": "junk",
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimTwoPowered",
+    "output": true,
+    "raw": null,
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimTwoPowered",
+    "output": true,
+    "raw": "",
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimTwoPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimTwoPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimTwoPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimTwoPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimTwoPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimTwoPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimTwoPowered",
+    "output": true,
+    "raw": "junk",
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": false,
+    "raw": null,
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": false,
+    "raw": "",
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": false,
+    "raw": "junk",
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": true,
+    "raw": null,
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": true,
+    "raw": "",
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 4
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredLight",
+    "output": true,
+    "raw": "junk",
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": false,
+    "raw": null,
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "",
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "junk",
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": true,
+    "raw": null,
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "",
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 4
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "junk",
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": null,
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "",
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "junk",
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": null,
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "",
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 4
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "junk",
+    "slot": 4
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimThreePowered",
+    "output": false,
+    "raw": null,
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimThreePowered",
+    "output": false,
+    "raw": "",
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimThreePowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimThreePowered",
+    "output": false,
+    "raw": "no",
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimThreePowered",
+    "output": true,
+    "raw": "true",
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimThreePowered",
+    "output": false,
+    "raw": "false",
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimThreePowered",
+    "output": true,
+    "raw": "1",
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimThreePowered",
+    "output": false,
+    "raw": "0",
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimThreePowered",
+    "output": false,
+    "raw": "junk",
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimThreePowered",
+    "output": true,
+    "raw": null,
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimThreePowered",
+    "output": true,
+    "raw": "",
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimThreePowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimThreePowered",
+    "output": false,
+    "raw": "no",
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimThreePowered",
+    "output": true,
+    "raw": "true",
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimThreePowered",
+    "output": false,
+    "raw": "false",
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimThreePowered",
+    "output": true,
+    "raw": "1",
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimThreePowered",
+    "output": false,
+    "raw": "0",
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimThreePowered",
+    "output": true,
+    "raw": "junk",
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": false,
+    "raw": null,
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": false,
+    "raw": "",
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": false,
+    "raw": "junk",
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": true,
+    "raw": null,
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": true,
+    "raw": "",
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 5
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredLight",
+    "output": true,
+    "raw": "junk",
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": false,
+    "raw": null,
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": false,
+    "raw": "",
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": false,
+    "raw": "junk",
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": true,
+    "raw": null,
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": true,
+    "raw": "",
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 5
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredEffect",
+    "output": true,
+    "raw": "junk",
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": false,
+    "raw": null,
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "",
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "junk",
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": true,
+    "raw": null,
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "",
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 5
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "junk",
+    "slot": 5
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimFourPowered",
+    "output": false,
+    "raw": null,
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimFourPowered",
+    "output": false,
+    "raw": "",
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimFourPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimFourPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimFourPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimFourPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimFourPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimFourPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "ActiveAnimFourPowered",
+    "output": false,
+    "raw": "junk",
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimFourPowered",
+    "output": true,
+    "raw": null,
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimFourPowered",
+    "output": true,
+    "raw": "",
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimFourPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimFourPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimFourPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimFourPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimFourPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimFourPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "ActiveAnimFourPowered",
+    "output": true,
+    "raw": "junk",
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": false,
+    "raw": null,
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": false,
+    "raw": "",
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": false,
+    "raw": "junk",
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": true,
+    "raw": null,
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": true,
+    "raw": "",
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 6
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredLight",
+    "output": true,
+    "raw": "junk",
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": false,
+    "raw": null,
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": false,
+    "raw": "",
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": false,
+    "raw": "junk",
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": true,
+    "raw": null,
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": true,
+    "raw": "",
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 6
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredEffect",
+    "output": true,
+    "raw": "junk",
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": false,
+    "raw": null,
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "",
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "junk",
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": true,
+    "raw": null,
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "",
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 6
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "ActiveAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "junk",
+    "slot": 6
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimPowered",
+    "output": false,
+    "raw": null,
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimPowered",
+    "output": false,
+    "raw": "",
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimPowered",
+    "output": false,
+    "raw": "junk",
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimPowered",
+    "output": true,
+    "raw": null,
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimPowered",
+    "output": true,
+    "raw": "",
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimPowered",
+    "output": true,
+    "raw": "junk",
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimPoweredLight",
+    "output": false,
+    "raw": null,
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimPoweredLight",
+    "output": false,
+    "raw": "",
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimPoweredLight",
+    "output": false,
+    "raw": "junk",
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimPoweredLight",
+    "output": true,
+    "raw": null,
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimPoweredLight",
+    "output": true,
+    "raw": "",
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 14
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimPoweredLight",
+    "output": true,
+    "raw": "junk",
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimPoweredEffect",
+    "output": false,
+    "raw": null,
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimPoweredEffect",
+    "output": false,
+    "raw": "",
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimPoweredEffect",
+    "output": false,
+    "raw": "junk",
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimPoweredEffect",
+    "output": true,
+    "raw": null,
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimPoweredEffect",
+    "output": true,
+    "raw": "",
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 14
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimPoweredEffect",
+    "output": true,
+    "raw": "junk",
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimPoweredSpecial",
+    "output": false,
+    "raw": null,
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimPoweredSpecial",
+    "output": false,
+    "raw": "",
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimPoweredSpecial",
+    "output": false,
+    "raw": "junk",
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimPoweredSpecial",
+    "output": true,
+    "raw": null,
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimPoweredSpecial",
+    "output": true,
+    "raw": "",
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 14
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimPoweredSpecial",
+    "output": true,
+    "raw": "junk",
+    "slot": 14
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimTwoPowered",
+    "output": false,
+    "raw": null,
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimTwoPowered",
+    "output": false,
+    "raw": "",
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimTwoPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimTwoPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimTwoPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimTwoPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimTwoPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimTwoPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimTwoPowered",
+    "output": false,
+    "raw": "junk",
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimTwoPowered",
+    "output": true,
+    "raw": null,
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimTwoPowered",
+    "output": true,
+    "raw": "",
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimTwoPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimTwoPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimTwoPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimTwoPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimTwoPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimTwoPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimTwoPowered",
+    "output": true,
+    "raw": "junk",
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": false,
+    "raw": null,
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": false,
+    "raw": "",
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": false,
+    "raw": "junk",
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": true,
+    "raw": null,
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": true,
+    "raw": "",
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 15
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredLight",
+    "output": true,
+    "raw": "junk",
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": false,
+    "raw": null,
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "",
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "junk",
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": true,
+    "raw": null,
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "",
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 15
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "junk",
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": null,
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "",
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "junk",
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": null,
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "",
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 15
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "junk",
+    "slot": 15
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimThreePowered",
+    "output": false,
+    "raw": null,
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimThreePowered",
+    "output": false,
+    "raw": "",
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimThreePowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimThreePowered",
+    "output": false,
+    "raw": "no",
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimThreePowered",
+    "output": true,
+    "raw": "true",
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimThreePowered",
+    "output": false,
+    "raw": "false",
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimThreePowered",
+    "output": true,
+    "raw": "1",
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimThreePowered",
+    "output": false,
+    "raw": "0",
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimThreePowered",
+    "output": false,
+    "raw": "junk",
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimThreePowered",
+    "output": true,
+    "raw": null,
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimThreePowered",
+    "output": true,
+    "raw": "",
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimThreePowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimThreePowered",
+    "output": false,
+    "raw": "no",
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimThreePowered",
+    "output": true,
+    "raw": "true",
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimThreePowered",
+    "output": false,
+    "raw": "false",
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimThreePowered",
+    "output": true,
+    "raw": "1",
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimThreePowered",
+    "output": false,
+    "raw": "0",
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimThreePowered",
+    "output": true,
+    "raw": "junk",
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimThreePoweredLight",
+    "output": false,
+    "raw": null,
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimThreePoweredLight",
+    "output": false,
+    "raw": "",
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimThreePoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimThreePoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimThreePoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimThreePoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimThreePoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimThreePoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimThreePoweredLight",
+    "output": false,
+    "raw": "junk",
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimThreePoweredLight",
+    "output": true,
+    "raw": null,
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimThreePoweredLight",
+    "output": true,
+    "raw": "",
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimThreePoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimThreePoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimThreePoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimThreePoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimThreePoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimThreePoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 16
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimThreePoweredLight",
+    "output": true,
+    "raw": "junk",
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": false,
+    "raw": null,
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": false,
+    "raw": "",
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": false,
+    "raw": "junk",
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": true,
+    "raw": null,
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": true,
+    "raw": "",
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 16
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimThreePoweredEffect",
+    "output": true,
+    "raw": "junk",
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": false,
+    "raw": null,
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "",
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "junk",
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": true,
+    "raw": null,
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "",
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 16
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "junk",
+    "slot": 16
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimFourPowered",
+    "output": false,
+    "raw": null,
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimFourPowered",
+    "output": false,
+    "raw": "",
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimFourPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimFourPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimFourPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimFourPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimFourPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimFourPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperAnimFourPowered",
+    "output": false,
+    "raw": "junk",
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimFourPowered",
+    "output": true,
+    "raw": null,
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimFourPowered",
+    "output": true,
+    "raw": "",
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimFourPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimFourPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimFourPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimFourPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimFourPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimFourPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperAnimFourPowered",
+    "output": true,
+    "raw": "junk",
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimFourPoweredLight",
+    "output": false,
+    "raw": null,
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimFourPoweredLight",
+    "output": false,
+    "raw": "",
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimFourPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimFourPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimFourPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimFourPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimFourPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimFourPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperAnimFourPoweredLight",
+    "output": false,
+    "raw": "junk",
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimFourPoweredLight",
+    "output": true,
+    "raw": null,
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimFourPoweredLight",
+    "output": true,
+    "raw": "",
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimFourPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimFourPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimFourPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimFourPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimFourPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimFourPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 17
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperAnimFourPoweredLight",
+    "output": true,
+    "raw": "junk",
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": false,
+    "raw": null,
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": false,
+    "raw": "",
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": false,
+    "raw": "junk",
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": true,
+    "raw": null,
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": true,
+    "raw": "",
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 17
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperAnimFourPoweredEffect",
+    "output": true,
+    "raw": "junk",
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": false,
+    "raw": null,
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "",
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "junk",
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": true,
+    "raw": null,
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "",
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 17
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "junk",
+    "slot": 17
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimPowered",
+    "output": false,
+    "raw": null,
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimPowered",
+    "output": false,
+    "raw": "",
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimPowered",
+    "output": false,
+    "raw": "junk",
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimPowered",
+    "output": true,
+    "raw": null,
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimPowered",
+    "output": true,
+    "raw": "",
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimPowered",
+    "output": true,
+    "raw": "junk",
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimPoweredLight",
+    "output": false,
+    "raw": null,
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimPoweredLight",
+    "output": false,
+    "raw": "",
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimPoweredLight",
+    "output": false,
+    "raw": "junk",
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimPoweredLight",
+    "output": true,
+    "raw": null,
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimPoweredLight",
+    "output": true,
+    "raw": "",
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 10
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimPoweredLight",
+    "output": true,
+    "raw": "junk",
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimPoweredEffect",
+    "output": false,
+    "raw": null,
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimPoweredEffect",
+    "output": false,
+    "raw": "",
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimPoweredEffect",
+    "output": false,
+    "raw": "junk",
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimPoweredEffect",
+    "output": true,
+    "raw": null,
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimPoweredEffect",
+    "output": true,
+    "raw": "",
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 10
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimPoweredEffect",
+    "output": true,
+    "raw": "junk",
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": false,
+    "raw": null,
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": false,
+    "raw": "",
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": false,
+    "raw": "junk",
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": true,
+    "raw": null,
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": true,
+    "raw": "",
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 10
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimPoweredSpecial",
+    "output": true,
+    "raw": "junk",
+    "slot": 10
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimTwoPowered",
+    "output": false,
+    "raw": null,
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimTwoPowered",
+    "output": false,
+    "raw": "",
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimTwoPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimTwoPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimTwoPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimTwoPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimTwoPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimTwoPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimTwoPowered",
+    "output": false,
+    "raw": "junk",
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimTwoPowered",
+    "output": true,
+    "raw": null,
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimTwoPowered",
+    "output": true,
+    "raw": "",
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimTwoPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimTwoPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimTwoPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimTwoPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimTwoPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimTwoPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimTwoPowered",
+    "output": true,
+    "raw": "junk",
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": false,
+    "raw": null,
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": false,
+    "raw": "",
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": false,
+    "raw": "junk",
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": true,
+    "raw": null,
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": true,
+    "raw": "",
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 11
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredLight",
+    "output": true,
+    "raw": "junk",
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": false,
+    "raw": null,
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "",
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "junk",
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": true,
+    "raw": null,
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "",
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 11
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredEffect",
+    "output": true,
+    "raw": "junk",
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": null,
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "",
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "junk",
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": null,
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "",
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 11
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimTwoPoweredSpecial",
+    "output": true,
+    "raw": "junk",
+    "slot": 11
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimThreePowered",
+    "output": false,
+    "raw": null,
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimThreePowered",
+    "output": false,
+    "raw": "",
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimThreePowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimThreePowered",
+    "output": false,
+    "raw": "no",
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimThreePowered",
+    "output": true,
+    "raw": "true",
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimThreePowered",
+    "output": false,
+    "raw": "false",
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimThreePowered",
+    "output": true,
+    "raw": "1",
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimThreePowered",
+    "output": false,
+    "raw": "0",
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimThreePowered",
+    "output": false,
+    "raw": "junk",
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimThreePowered",
+    "output": true,
+    "raw": null,
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimThreePowered",
+    "output": true,
+    "raw": "",
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimThreePowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimThreePowered",
+    "output": false,
+    "raw": "no",
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimThreePowered",
+    "output": true,
+    "raw": "true",
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimThreePowered",
+    "output": false,
+    "raw": "false",
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimThreePowered",
+    "output": true,
+    "raw": "1",
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimThreePowered",
+    "output": false,
+    "raw": "0",
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimThreePowered",
+    "output": true,
+    "raw": "junk",
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": false,
+    "raw": null,
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": false,
+    "raw": "",
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": false,
+    "raw": "junk",
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": true,
+    "raw": null,
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": true,
+    "raw": "",
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 12
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredLight",
+    "output": true,
+    "raw": "junk",
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": false,
+    "raw": null,
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": false,
+    "raw": "",
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": false,
+    "raw": "junk",
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": true,
+    "raw": null,
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": true,
+    "raw": "",
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 12
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredEffect",
+    "output": true,
+    "raw": "junk",
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": false,
+    "raw": null,
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "",
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "junk",
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": true,
+    "raw": null,
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "",
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 12
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimThreePoweredSpecial",
+    "output": true,
+    "raw": "junk",
+    "slot": 12
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimFourPowered",
+    "output": false,
+    "raw": null,
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimFourPowered",
+    "output": false,
+    "raw": "",
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimFourPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimFourPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimFourPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimFourPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimFourPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimFourPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SpecialAnimFourPowered",
+    "output": false,
+    "raw": "junk",
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimFourPowered",
+    "output": true,
+    "raw": null,
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimFourPowered",
+    "output": true,
+    "raw": "",
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimFourPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimFourPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimFourPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimFourPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimFourPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimFourPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SpecialAnimFourPowered",
+    "output": true,
+    "raw": "junk",
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": false,
+    "raw": null,
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": false,
+    "raw": "",
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": false,
+    "raw": "junk",
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": true,
+    "raw": null,
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": true,
+    "raw": "",
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 13
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredLight",
+    "output": true,
+    "raw": "junk",
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": false,
+    "raw": null,
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": false,
+    "raw": "",
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": false,
+    "raw": "junk",
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": true,
+    "raw": null,
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": true,
+    "raw": "",
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 13
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredEffect",
+    "output": true,
+    "raw": "junk",
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": false,
+    "raw": null,
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "",
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "junk",
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": true,
+    "raw": null,
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "",
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 13
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SpecialAnimFourPoweredSpecial",
+    "output": true,
+    "raw": "junk",
+    "slot": 13
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "LowPowerPowered",
+    "output": false,
+    "raw": null,
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "LowPowerPowered",
+    "output": false,
+    "raw": "",
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "LowPowerPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "LowPowerPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "LowPowerPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "LowPowerPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "LowPowerPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "LowPowerPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "LowPowerPowered",
+    "output": false,
+    "raw": "junk",
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "LowPowerPowered",
+    "output": true,
+    "raw": null,
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "LowPowerPowered",
+    "output": true,
+    "raw": "",
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "LowPowerPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "LowPowerPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "LowPowerPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "LowPowerPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "LowPowerPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "LowPowerPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "LowPowerPowered",
+    "output": true,
+    "raw": "junk",
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "LowPowerPoweredLight",
+    "output": false,
+    "raw": null,
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "LowPowerPoweredLight",
+    "output": false,
+    "raw": "",
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "LowPowerPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "LowPowerPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "LowPowerPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "LowPowerPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "LowPowerPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "LowPowerPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "LowPowerPoweredLight",
+    "output": false,
+    "raw": "junk",
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "LowPowerPoweredLight",
+    "output": true,
+    "raw": null,
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "LowPowerPoweredLight",
+    "output": true,
+    "raw": "",
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "LowPowerPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "LowPowerPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "LowPowerPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "LowPowerPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "LowPowerPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "LowPowerPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 19
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "LowPowerPoweredLight",
+    "output": true,
+    "raw": "junk",
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "LowPowerPoweredEffect",
+    "output": false,
+    "raw": null,
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "LowPowerPoweredEffect",
+    "output": false,
+    "raw": "",
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "LowPowerPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "LowPowerPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "LowPowerPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "LowPowerPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "LowPowerPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "LowPowerPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "LowPowerPoweredEffect",
+    "output": false,
+    "raw": "junk",
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "LowPowerPoweredEffect",
+    "output": true,
+    "raw": null,
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "LowPowerPoweredEffect",
+    "output": true,
+    "raw": "",
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "LowPowerPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "LowPowerPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "LowPowerPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "LowPowerPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "LowPowerPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "LowPowerPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 19
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "LowPowerPoweredEffect",
+    "output": true,
+    "raw": "junk",
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "LowPowerPoweredSpecial",
+    "output": false,
+    "raw": null,
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "LowPowerPoweredSpecial",
+    "output": false,
+    "raw": "",
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "LowPowerPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "LowPowerPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "LowPowerPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "LowPowerPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "LowPowerPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "LowPowerPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "LowPowerPoweredSpecial",
+    "output": false,
+    "raw": "junk",
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "LowPowerPoweredSpecial",
+    "output": true,
+    "raw": null,
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "LowPowerPoweredSpecial",
+    "output": true,
+    "raw": "",
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "LowPowerPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "LowPowerPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "LowPowerPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "LowPowerPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "LowPowerPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "LowPowerPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 19
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "LowPowerPoweredSpecial",
+    "output": true,
+    "raw": "junk",
+    "slot": 19
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperLowPowerPowered",
+    "output": false,
+    "raw": null,
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperLowPowerPowered",
+    "output": false,
+    "raw": "",
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperLowPowerPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperLowPowerPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperLowPowerPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperLowPowerPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperLowPowerPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperLowPowerPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "SuperLowPowerPowered",
+    "output": false,
+    "raw": "junk",
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperLowPowerPowered",
+    "output": true,
+    "raw": null,
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperLowPowerPowered",
+    "output": true,
+    "raw": "",
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperLowPowerPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperLowPowerPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperLowPowerPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperLowPowerPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperLowPowerPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperLowPowerPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "SuperLowPowerPowered",
+    "output": true,
+    "raw": "junk",
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperLowPowerPoweredLight",
+    "output": false,
+    "raw": null,
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperLowPowerPoweredLight",
+    "output": false,
+    "raw": "",
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperLowPowerPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperLowPowerPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperLowPowerPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperLowPowerPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperLowPowerPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperLowPowerPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "SuperLowPowerPoweredLight",
+    "output": false,
+    "raw": "junk",
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperLowPowerPoweredLight",
+    "output": true,
+    "raw": null,
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperLowPowerPoweredLight",
+    "output": true,
+    "raw": "",
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperLowPowerPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperLowPowerPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperLowPowerPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperLowPowerPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperLowPowerPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperLowPowerPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 20
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "SuperLowPowerPoweredLight",
+    "output": true,
+    "raw": "junk",
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": false,
+    "raw": null,
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": false,
+    "raw": "",
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": false,
+    "raw": "junk",
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": true,
+    "raw": null,
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": true,
+    "raw": "",
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 20
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "SuperLowPowerPoweredEffect",
+    "output": true,
+    "raw": "junk",
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": false,
+    "raw": null,
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": false,
+    "raw": "",
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": false,
+    "raw": "junk",
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": true,
+    "raw": null,
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": true,
+    "raw": "",
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 20
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "SuperLowPowerPoweredSpecial",
+    "output": true,
+    "raw": "junk",
+    "slot": 20
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "IdleAnimPowered",
+    "output": false,
+    "raw": null,
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "IdleAnimPowered",
+    "output": false,
+    "raw": "",
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "IdleAnimPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "IdleAnimPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "IdleAnimPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "IdleAnimPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "IdleAnimPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "IdleAnimPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": false,
+    "name": "IdleAnimPowered",
+    "output": false,
+    "raw": "junk",
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "IdleAnimPowered",
+    "output": true,
+    "raw": null,
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "IdleAnimPowered",
+    "output": true,
+    "raw": "",
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "IdleAnimPowered",
+    "output": true,
+    "raw": "yes",
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "IdleAnimPowered",
+    "output": false,
+    "raw": "no",
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "IdleAnimPowered",
+    "output": true,
+    "raw": "true",
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "IdleAnimPowered",
+    "output": false,
+    "raw": "false",
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "IdleAnimPowered",
+    "output": true,
+    "raw": "1",
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "IdleAnimPowered",
+    "output": false,
+    "raw": "0",
+    "slot": 18
+  },
+  {
+    "flag": 0,
+    "initial": true,
+    "name": "IdleAnimPowered",
+    "output": true,
+    "raw": "junk",
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "IdleAnimPoweredLight",
+    "output": false,
+    "raw": null,
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "IdleAnimPoweredLight",
+    "output": false,
+    "raw": "",
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "IdleAnimPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "IdleAnimPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "IdleAnimPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "IdleAnimPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "IdleAnimPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "IdleAnimPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": false,
+    "name": "IdleAnimPoweredLight",
+    "output": false,
+    "raw": "junk",
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "IdleAnimPoweredLight",
+    "output": true,
+    "raw": null,
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "IdleAnimPoweredLight",
+    "output": true,
+    "raw": "",
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "IdleAnimPoweredLight",
+    "output": true,
+    "raw": "yes",
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "IdleAnimPoweredLight",
+    "output": false,
+    "raw": "no",
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "IdleAnimPoweredLight",
+    "output": true,
+    "raw": "true",
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "IdleAnimPoweredLight",
+    "output": false,
+    "raw": "false",
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "IdleAnimPoweredLight",
+    "output": true,
+    "raw": "1",
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "IdleAnimPoweredLight",
+    "output": false,
+    "raw": "0",
+    "slot": 18
+  },
+  {
+    "flag": 1,
+    "initial": true,
+    "name": "IdleAnimPoweredLight",
+    "output": true,
+    "raw": "junk",
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "IdleAnimPoweredEffect",
+    "output": false,
+    "raw": null,
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "IdleAnimPoweredEffect",
+    "output": false,
+    "raw": "",
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "IdleAnimPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "IdleAnimPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "IdleAnimPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "IdleAnimPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "IdleAnimPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "IdleAnimPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": false,
+    "name": "IdleAnimPoweredEffect",
+    "output": false,
+    "raw": "junk",
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "IdleAnimPoweredEffect",
+    "output": true,
+    "raw": null,
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "IdleAnimPoweredEffect",
+    "output": true,
+    "raw": "",
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "IdleAnimPoweredEffect",
+    "output": true,
+    "raw": "yes",
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "IdleAnimPoweredEffect",
+    "output": false,
+    "raw": "no",
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "IdleAnimPoweredEffect",
+    "output": true,
+    "raw": "true",
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "IdleAnimPoweredEffect",
+    "output": false,
+    "raw": "false",
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "IdleAnimPoweredEffect",
+    "output": true,
+    "raw": "1",
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "IdleAnimPoweredEffect",
+    "output": false,
+    "raw": "0",
+    "slot": 18
+  },
+  {
+    "flag": 2,
+    "initial": true,
+    "name": "IdleAnimPoweredEffect",
+    "output": true,
+    "raw": "junk",
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "IdleAnimPoweredSpecial",
+    "output": false,
+    "raw": null,
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "IdleAnimPoweredSpecial",
+    "output": false,
+    "raw": "",
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "IdleAnimPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "IdleAnimPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "IdleAnimPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "IdleAnimPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "IdleAnimPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "IdleAnimPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": false,
+    "name": "IdleAnimPoweredSpecial",
+    "output": false,
+    "raw": "junk",
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "IdleAnimPoweredSpecial",
+    "output": true,
+    "raw": null,
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "IdleAnimPoweredSpecial",
+    "output": true,
+    "raw": "",
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "IdleAnimPoweredSpecial",
+    "output": true,
+    "raw": "yes",
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "IdleAnimPoweredSpecial",
+    "output": false,
+    "raw": "no",
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "IdleAnimPoweredSpecial",
+    "output": true,
+    "raw": "true",
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "IdleAnimPoweredSpecial",
+    "output": false,
+    "raw": "false",
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "IdleAnimPoweredSpecial",
+    "output": true,
+    "raw": "1",
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "IdleAnimPoweredSpecial",
+    "output": false,
+    "raw": "0",
+    "slot": 18
+  },
+  {
+    "flag": 3,
+    "initial": true,
+    "name": "IdleAnimPoweredSpecial",
+    "output": true,
+    "raw": "junk",
+    "slot": 18
+  }
+]

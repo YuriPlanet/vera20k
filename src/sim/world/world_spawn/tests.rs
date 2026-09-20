@@ -901,7 +901,6 @@ fn techno_constructor_routes_preserve_components_and_authored_overrides() {
             let entity = sim.substrate.entities.get(id).unwrap();
             assert!(entity.debug_log.is_some(), "{type_id} route {route}");
             assert!(entity.dont_score);
-            assert_eq!(entity.health.max, 200);
             assert_eq!(entity.health.current, if route == 0 { 100 } else { 200 });
             assert_eq!(entity.veterancy, if route == 0 { 2 } else { 0 });
             assert_eq!(entity.lifecycle.in_limbo, route == 2);
@@ -1026,10 +1025,7 @@ fn techno_constructor_diagnostic_path_is_simulation_owned_and_draws_once() {
         0,
         0,
         owner,
-        Health {
-            current: 1000,
-            max: 1000,
-        },
+        Health { current: 1000 },
         type_ref,
         EntityCategory::Structure,
         0,
@@ -1593,4 +1589,169 @@ fn techno_constructor_failed_reveal_keeps_one_draw_and_reuses_identity() {
         0x1357
     );
     assert_eq!(sim.scenario_rng.logical_state(), before_restore);
+}
+
+fn signed_health_rules(strength: i32) -> RuleSet {
+    RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[VehicleTypes]\n0=UNIT\n[AircraftTypes]\n0=AIR\n[InfantryTypes]\n0=INF\n[BuildingTypes]\n0=BLD\n\
+         [UNIT]\nStrength={strength}\nSpeed=4\n[AIR]\nStrength={strength}\nSpeed=4\n\
+         [INF]\nStrength={strength}\nSpeed=4\n[BLD]\nStrength={strength}\nFoundation=1x1\n"
+    ))).unwrap()
+}
+
+fn native_health_class(kind: &str) -> (EntityCategory, &'static str) {
+    match kind {
+        "unit" => (EntityCategory::Unit, "UNIT"),
+        "aircraft" => (EntityCategory::Aircraft, "AIR"),
+        "infantry" => (EntityCategory::Infantry, "INF"),
+        "building" => (EntityCategory::Structure, "BLD"),
+        other => panic!("unknown native class {other}"),
+    }
+}
+
+#[test]
+fn signed_constructor_and_authored_health_consume_original_corpus() {
+    let corpus: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/spatial_oracle/object_health.json"
+    ))
+    .unwrap();
+    assert_eq!(corpus["constructors"].as_array().unwrap().len(), 32);
+    assert_eq!(corpus["map_health"].as_array().unwrap().len(), 416);
+    for row in corpus["constructors"].as_array().unwrap() {
+        let input = &row["input"];
+        let (category, name) = native_health_class(input["kind"].as_str().unwrap());
+        let strength = input["strength"].as_i64().unwrap() as i32;
+        let rules = signed_health_rules(strength);
+        let mut sim = Simulation::with_seed(7);
+        let entity = sim
+            .construct_runtime_techno(
+                name,
+                "Americans",
+                6,
+                5,
+                0,
+                0,
+                &rules,
+                TechnoConstructorInit::FreshScenario,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(entity.category, category);
+        assert_eq!(
+            entity.health.current,
+            row["output"]["actual"].as_i64().unwrap() as i32,
+            "{row}"
+        );
+        assert_eq!(
+            entity.estimated_health.get(),
+            row["output"]["estimated"].as_i64().unwrap() as i32,
+            "{row}"
+        );
+    }
+    for row in corpus["map_health"].as_array().unwrap() {
+        let input = &row["input"];
+        let (category, _) = native_health_class(input["kind"].as_str().unwrap());
+        assert_eq!(
+            authored_health::authored_health(
+                category,
+                input["authored"].as_i64().unwrap() as i32,
+                input["strength"].as_i64().unwrap() as i32
+            ),
+            row["output"]["actual"].as_i64().unwrap() as i32,
+            "{row}"
+        );
+    }
+}
+
+#[test]
+fn map_admission_uses_class_health_and_rejects_unresolved_types() {
+    let corpus: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/spatial_oracle/object_health.json"
+    ))
+    .unwrap();
+    for row in corpus["map_health"].as_array().unwrap() {
+        let input = &row["input"];
+        let strength = input["strength"].as_i64().unwrap() as i32;
+        if ![100, 65536].contains(&strength) {
+            continue;
+        }
+        let rules = signed_health_rules(strength);
+        let (category, name) = native_health_class(input["kind"].as_str().unwrap());
+        let mut sim = Simulation::with_seed(9);
+        let mut placement = map_entity(name, category, (6, 5));
+        placement.health = input["authored"].as_i64().unwrap() as i32;
+        assert_eq!(
+            sim.spawn_from_map(&[placement], Some(&rules), &BTreeMap::new()),
+            1,
+            "{row}"
+        );
+        let entity = sim.substrate.entities.values().next().unwrap();
+        assert_eq!(
+            entity.health.current,
+            row["output"]["actual"].as_i64().unwrap() as i32,
+            "{row}"
+        );
+        assert_eq!(
+            entity.estimated_health.get(),
+            row["output"]["estimated"].as_i64().unwrap() as i32,
+            "{row}"
+        );
+    }
+    let rules = signed_health_rules(100);
+    for kind in ["unit", "aircraft", "infantry", "building"] {
+        let (category, _) = native_health_class(kind);
+        let mut sim = Simulation::with_seed(9);
+        let before = sim.scenario_rng.logical_state();
+        let missing = map_entity("MISSING", category, (6, 5));
+        let wrong_class = map_entity(
+            if category == EntityCategory::Unit {
+                "BLD"
+            } else {
+                "UNIT"
+            },
+            category,
+            (6, 5),
+        );
+        assert_eq!(
+            sim.spawn_from_map(&[missing, wrong_class], Some(&rules), &BTreeMap::new()),
+            0
+        );
+        assert_eq!(sim.scenario_rng.logical_state(), before);
+        assert!(sim.substrate.entities.is_empty());
+    }
+}
+
+#[test]
+fn rejected_authored_unlimbo_preserves_mobile_constructor_but_building_has_authored_health() {
+    let rules = signed_health_rules(100_000);
+    for kind in ["unit", "aircraft", "infantry", "building"] {
+        let (category, name) = native_health_class(kind);
+        let mut sim = Simulation::with_seed(9);
+        install_constructor_test_playfield(&mut sim);
+        let entity = sim
+            .construct_runtime_techno(
+                name,
+                "Americans",
+                1,
+                1,
+                0,
+                0,
+                &rules,
+                TechnoConstructorInit::FreshScenario,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(entity.health.current, 100_000);
+        let (id, outcome) = sim.unlimbo_authored_techno(entity, 128, Some(&rules), None);
+        assert!(!matches!(outcome, RevealOutcome::Revealed { .. }), "{kind}");
+        let rejected = sim.substrate.entities.get(id).unwrap();
+        let expected = if category == EntityCategory::Structure {
+            50_000
+        } else {
+            100_000
+        };
+        assert_eq!(rejected.health.current, expected, "{kind}");
+        assert_eq!(rejected.estimated_health.get(), expected, "{kind}");
+        assert!(rejected.lifecycle.in_limbo);
+    }
 }

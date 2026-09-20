@@ -140,9 +140,9 @@ fn slave_master_admission_reaches_head_selection_in_the_same_object_turn() {
             slave,
             (16, 15),
             SimFixed::from_num(150),
-            crate::sim::movement::DestinationTiming::new(
+            crate::sim::movement::DestinationTiming::from_rules(
                 sim.session.binary_frame,
-                sim.blockage_path_delay_ticks,
+                Some(&rules)
             ),
         ));
         sim.mission_assign_exact(
@@ -872,10 +872,7 @@ fn ready_engineer(
         id,
         (16, 15),
         crate::util::fixed_math::SimFixed::from_num(61),
-        crate::sim::movement::DestinationTiming::new(
-            sim.session.binary_frame,
-            sim.blockage_path_delay_ticks,
-        ),
+        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, Some(&rules)),
     ));
     sim.mission_assign_exact(
         id,
@@ -1444,6 +1441,7 @@ fn walk_stop_and_retarget_finish_a_same_cell_committed_head() {
 #[test]
 fn walk_completion_uses_retained_destination_and_exact_height_tolerance() {
     use crate::sim::components::{DriveCoord, NavTargetRef};
+    use crate::sim::timer::CdTimer;
     //75BE6F reads live class fields after PerCell. A changed destination remains
     //authoritative even when the old A* adapter reports its last node complete.
     for (dest, survives) in [
@@ -1472,7 +1470,9 @@ fn walk_completion_uses_retained_destination_and_exact_height_tolerance() {
             false,
         ),
     ] {
-        let (mut sim, rules, registry) = fixture();
+        let (mut sim, mut rules, registry) = fixture();
+        rules.general.blockage_path_delay_ticks = 65536;
+        sim.session.binary_frame = 123;
         let id = sim
             .spawn_object("ENGINEER", "Americans", 15, 15, 0, &rules, &BTreeMap::new())
             .unwrap();
@@ -1491,6 +1491,10 @@ fn walk_completion_uses_retained_destination_and_exact_height_tolerance() {
             .unwrap()
             .set_walk_destination(Some(dest));
         e.locomotor.as_mut().unwrap().set_step_head(Some(head));
+        e.navigation.path_runtime.start_movement(50, 5);
+        e.navigation.path_runtime.start_blocked(40, 6);
+        e.navigation.path_runtime.path_blocked = true;
+        e.navigation.path_runtime.retries_left = 0x8000_0001;
         // Supplied exhausted paid-head adapter, as the object-turn suspension
         // exposes it to the real PerCell completion owner.
         e.movement_target = Some(crate::sim::components::MovementTarget {
@@ -1504,6 +1508,24 @@ fn walk_completion_uses_retained_destination_and_exact_height_tolerance() {
             .expect("fixture frame must complete");
         let e = sim.substrate.entities.get(id).unwrap();
         assert_eq!(e.navigation.nav_com.is_some(), survives);
+        assert!(!e.navigation.path_runtime.path_blocked);
+        assert_eq!(e.navigation.path_runtime.retries_left, 0x8000_0001);
+        assert_eq!(
+            e.navigation.path_runtime.movement_timer,
+            if survives {
+                CdTimer::from_raw(50, 5)
+            } else {
+                CdTimer::from_raw(123, 0)
+            },
+        );
+        assert_eq!(
+            e.navigation.path_runtime.blocked_timer,
+            if survives {
+                CdTimer::from_raw(40, 6)
+            } else {
+                CdTimer::from_raw(123, 65536)
+            },
+        );
         assert_eq!(
             e.locomotor.as_ref().unwrap().walk_destination().is_some(),
             survives
@@ -1670,7 +1692,7 @@ fn hut_queries_pending_uninit_and_active_tube_exit_before_other_gates() {
         target: DriveCoord::cell(7, 8, 999),
     });
     e.locomotor = None;
-    let coord = sim.infantry_navigation_coordinate(id).unwrap();
+    let coord = sim.foot_navigation_coordinate(id).unwrap();
     assert_eq!(
         serde_json::json!([coord.x, coord.y, coord.z]),
         rows[11]["output"]["coordinates"][0]
@@ -1692,12 +1714,12 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
             &sim.substrate.entities.get(rocketeer).unwrap().position,
         );
         assert_eq!(
-            sim.infantry_navigation_coordinate(rocketeer).unwrap(),
+            sim.foot_navigation_coordinate(rocketeer).unwrap(),
             current
         );
         if ordered {
-            // This fresh air adapter retains its old default-allocation reset
-            // during the Foot owner migration; it is not a Jumpjet timer oracle.
+            // Infantry's accepted Foot setter4D96C2..9707 runs after Jumpjet
+            // MoveTo: reset timers/latch while preserving the retry dword.
             sim.substrate
                 .entities
                 .get_mut(rocketeer)
@@ -1732,7 +1754,18 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
                     .unwrap()
                     .navigation
                     .path_runtime,
-                crate::sim::components::FootPathRuntime::default()
+                crate::sim::components::FootPathRuntime {
+                    movement_timer: crate::sim::timer::CdTimer::started(
+                        sim.session.binary_frame as i32,
+                        0
+                    ),
+                    blocked_timer: crate::sim::timer::CdTimer::started(
+                        sim.session.binary_frame as i32,
+                        60
+                    ),
+                    path_blocked: false,
+                    retries_left: 256,
+                }
             );
             let state = sim
                 .substrate
@@ -1781,7 +1814,7 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
             .jumpjet_runtime()
             .unwrap()
             .clone();
-        let coordinate = sim.infantry_navigation_coordinate(rocketeer).unwrap();
+        let coordinate = sim.foot_navigation_coordinate(rocketeer).unwrap();
         // Map assets are deliberately skipped by the snapshot envelope.
         // Supply the same map-load grid and run the production restore owners
         // before resuming repair; this fixture has no wall contributions.
@@ -1806,7 +1839,7 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
             .restore_map_authority_after_snapshot_load(&rules, &registry)
             .unwrap();
         assert_eq!(
-            restored.infantry_navigation_coordinate(rocketeer).unwrap(),
+            restored.foot_navigation_coordinate(rocketeer).unwrap(),
             coordinate
         );
         assert_eq!(
@@ -2013,6 +2046,7 @@ fn jumpjet_stop_command_keeps_native_moving_and_selected_coordinate() {
         &mut sim.substrate.entities,
         &[id],
         sim.session.tick,
+        sim.resolved_terrain.as_ref(),
     );
     let before = sim
         .substrate
@@ -2072,7 +2106,7 @@ fn failed_jumpjet_stop_stock_fatal_receiver_precedes_cache_retirement() {
         rows[0]["output"], rows[1]["output"],
         "original alias/copied fatal core controls"
     );
-    for row in [&rows[0], &rows[2]] {
+    for row in [&rows[0], &rows[2], &rows[3], &rows[4]] {
         let (mut sim, mut rules, registry) = fixture();
         rules.bridge_warheads.c4_name = "Super".into();
         let id = sim
@@ -2092,7 +2126,7 @@ fn failed_jumpjet_stop_stock_fatal_receiver_precedes_cache_retirement() {
             }
         }
         let e = sim.substrate.entities.get_mut(id).unwrap();
-        e.health.current = row["input"]["health"].as_u64().unwrap() as u16;
+        e.health.current = i32::try_from(row["input"]["health"].as_i64().unwrap()).unwrap();
         *e.locomotor.as_mut().unwrap().jumpjet_runtime_mut().unwrap() = JumpjetRuntime {
             destination: DriveCoord {
                 x: 2752,
@@ -2107,8 +2141,8 @@ fn failed_jumpjet_stop_stock_fatal_receiver_precedes_cache_retirement() {
         let e = sim.substrate.entities.get(id).unwrap();
         let state = e.locomotor.as_ref().unwrap().jumpjet_runtime().unwrap();
         assert_eq!(
-            u64::from(e.health.current),
-            row["output"]["health"].as_u64().unwrap()
+            i64::from(e.health.current),
+            row["output"]["health"].as_i64().unwrap()
         );
         assert_eq!(
             json!([
@@ -2132,7 +2166,8 @@ fn failed_jumpjet_stop_stock_fatal_receiver_precedes_cache_retirement() {
                 "native HP0 precedes callback and cache clear"
             );
         } else {
-            assert!(!e.dying, "zero-health Stop never dispatches damage");
+            assert!(!e.dying, "nonpositive-health Stop never dispatches damage");
+            assert!(row["output"]["damage_trace"].as_array().unwrap().is_empty());
         }
     }
 }

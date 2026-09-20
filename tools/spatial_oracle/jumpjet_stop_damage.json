@@ -137,5 +137,63 @@
         "phase": 1
       }
     }
+  },
+  {
+    "input": {
+      "copy_control": false,
+      "health": -1
+    },
+    "output": {
+      "damage_trace": [],
+      "health": -1,
+      "state": {
+        "destination": [
+          2752,
+          2752,
+          208
+        ],
+        "foot": [
+          2752,
+          2752,
+          208
+        ],
+        "getter": [
+          2752,
+          2752,
+          208
+        ],
+        "moving": true,
+        "phase": 1
+      }
+    }
+  },
+  {
+    "input": {
+      "copy_control": false,
+      "health": -2147483648
+    },
+    "output": {
+      "damage_trace": [],
+      "health": -2147483648,
+      "state": {
+        "destination": [
+          2752,
+          2752,
+          208
+        ],
+        "foot": [
+          2752,
+          2752,
+          208
+        ],
+        "getter": [
+          2752,
+          2752,
+          208
+        ],
+        "moving": true,
+        "phase": 1
+      }
+    }
   }
 ]

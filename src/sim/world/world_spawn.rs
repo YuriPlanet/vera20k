@@ -6,6 +6,7 @@
 //!
 //! Dependency rules: same as sim/ (depends on rules/, map/; never render/ui/audio/net).
 
+mod authored_health;
 mod construction;
 
 use std::collections::BTreeMap;
@@ -388,23 +389,17 @@ impl Simulation {
                     .unwrap_or(0)
             });
 
-            let max_health: u16 = rules
-                .and_then(|r| r.object(&map_ent.type_id))
-                .map(|obj| obj.strength as u16)
-                .unwrap_or(map_ent.health);
-
+            // Typed production admission has already resolved the class type.
+            // Rules-less construction remains an explicit diagnostic seam, using
+            // the supplied health directly rather than inventing a type maximum.
             let health = Health {
-                current: if max_health > 0 {
-                    // map_ent.health is 0-256 where 256 = 100%. Convert to absolute HP.
-                    ((map_ent.health as u32 * max_health as u32) / 256) as u16
-                } else {
-                    map_ent.health
-                },
-                max: if max_health > 0 {
-                    max_health
-                } else {
-                    map_ent.health
-                },
+                current: rules
+                    .map(|rules| {
+                        authored_health::map_object_type(map_ent.category, &map_ent.type_id, rules)
+                            .expect("resolved map type")
+                            .strength
+                    })
+                    .unwrap_or(map_ent.health),
             };
 
             let uses_voxel_default: bool = match map_ent.category {
@@ -413,14 +408,15 @@ impl Simulation {
             };
             let uses_voxel: bool = rules
                 .and_then(|rules| {
-                    rules
-                        .object(&map_ent.type_id)
+                    authored_health::map_object_type(map_ent.category, &map_ent.type_id, rules)
                         .map(|object| object_uses_voxel(&map_ent.type_id, object, rules))
                 })
                 .unwrap_or(uses_voxel_default);
 
             let sight_range = rules
-                .and_then(|r| r.object(&map_ent.type_id))
+                .and_then(|r| {
+                    authored_health::map_object_type(map_ent.category, &map_ent.type_id, r)
+                })
                 .map(|obj| (obj.sight.max(0) as u16).min(MAX_SIGHT_RANGE))
                 .unwrap_or_else(|| Self::default_vision_range_for_category(map_ent.category));
 
@@ -474,7 +470,9 @@ impl Simulation {
 
             self.install_techno_components(
                 &mut ge,
-                rules.and_then(|rules| rules.object(&map_ent.type_id)),
+                rules.and_then(|rules| {
+                    authored_health::map_object_type(map_ent.category, &map_ent.type_id, rules)
+                }),
                 rules,
                 construction::ComponentOrigin::Authored {
                     sub_cell: map_ent.sub_cell,
@@ -482,7 +480,7 @@ impl Simulation {
                 },
             );
             let (stable_id, outcome) =
-                self.unlimbo_after_constructor_managers(ge, rules, overlay_registry);
+                self.unlimbo_authored_techno(ge, map_ent.health, rules, overlay_registry);
             if !matches!(outcome, RevealOutcome::Revealed { .. }) {
                 self.discard_constructed_limbo(stable_id);
                 continue;
@@ -493,6 +491,9 @@ impl Simulation {
                 self.add_building_sensor_array_if_powered(stable_id, ruleset);
             }
             self.commit_map_placement_mission(stable_id, map_ent.mission);
+            if let Some(rules) = rules {
+                self.finish_authored_building_enable(stable_id, rules);
+            }
             count += 1;
 
             if map_ent.category == EntityCategory::Structure
@@ -545,16 +546,8 @@ impl Simulation {
         rules: Option<&RuleSet>,
         require_owner: bool,
     ) -> bool {
-        let type_resolves = rules.map_or(true, |rules| {
-            rules.object(&map_ent.type_id).is_some_and(|object| {
-                matches!(
-                    (map_ent.category, object.category),
-                    (EntityCategory::Unit, ObjectCategory::Vehicle)
-                        | (EntityCategory::Aircraft, ObjectCategory::Aircraft)
-                        | (EntityCategory::Infantry, ObjectCategory::Infantry)
-                        | (EntityCategory::Structure, ObjectCategory::Building)
-                )
-            })
+        let type_resolves = rules.is_none_or(|rules| {
+            authored_health::map_object_type(map_ent.category, &map_ent.type_id, rules).is_some()
         });
         let owner_resolves = (!require_owner && self.houses.is_empty())
             || crate::sim::house_state::house_state_for_owner(
@@ -1201,7 +1194,16 @@ impl Simulation {
         rules: Option<&RuleSet>,
         overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     ) -> (u64, RevealOutcome) {
-        let mut position = RevealPosition {
+        let (stable_id, position) = self.store_with_constructor_managers(ge, rules);
+        self.unlimbo_constructed_parent(stable_id, position, rules, overlay_registry)
+    }
+
+    fn store_with_constructor_managers(
+        &mut self,
+        ge: GameEntity,
+        rules: Option<&RuleSet>,
+    ) -> (u64, RevealPosition) {
+        let position = RevealPosition {
             rx: ge.position.rx,
             ry: ge.position.ry,
             z: ge.position.z,
@@ -1213,6 +1215,16 @@ impl Simulation {
             self.commit_constructor_owned_techno_children(stable_id, rules);
             self.register_house_base_building(stable_id, rules);
         }
+        (stable_id, position)
+    }
+
+    fn unlimbo_constructed_parent(
+        &mut self,
+        stable_id: u64,
+        mut position: RevealPosition,
+        rules: Option<&RuleSet>,
+        overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    ) -> (u64, RevealOutcome) {
         let placement = rules.map_or(PlacementEvidence::EvaluateMark, |rules| {
             self.constructor_unlimbo_placement(
                 stable_id,
@@ -1249,6 +1261,7 @@ impl Simulation {
         if matches!(outcome, RevealOutcome::Revealed { .. }) {
             if let Some(rules) = rules {
                 self.allocate_building_light(stable_id, rules);
+                self.initialize_completed_building_anims(stable_id, rules);
             }
         }
         (stable_id, outcome)
@@ -1626,27 +1639,58 @@ impl Simulation {
             }
         }
 
+        // Native73992B..953 scales actual HP by live source/destination type
+        // Strength and resets Object+70; signed storage retains the full result.
+        let Some(converted_health) = self.substrate.entities.get(stable_id).and_then(|source| {
+            Some(crate::sim::conversion_health::ConversionHealth::capture(
+                source,
+                self.object_type(source.type_ref(), rules)?,
+                rules.object(&yard_type)?,
+                crate::sim::conversion_health::ConversionKind::Unit,
+            ))
+        }) else {
+            return false;
+        };
+
         // Native reaches the bounded post-deploy transaction only after the
         // target Building was created successfully. Keep the source MCV live
         // until target Unlimbo commits so a late placement rejection is atomic.
         let owner_str = self.interner.resolve(owner_id).to_string();
-        let Some(new_sid) =
-            self.spawn_object_at_height(&yard_type, &owner_str, rx, ry, 0, z, rules)
+        let Some(mut destination) = self
+            .construct_runtime_techno(
+                &yard_type,
+                &owner_str,
+                rx,
+                ry,
+                0,
+                z,
+                rules,
+                TechnoConstructorInit::FreshScenario,
+            )
+            .expect("fresh Techno constructor initialization cannot fail")
         else {
             return false;
         };
-
+        // Conversion and construction admission precede Unlimbo's completed-
+        // slot initialization. Otherwise full-health animations consume IDs/RNG
+        // here and ActuallyPlaced suppresses the real completion callback.
+        converted_health.apply(&mut destination);
+        destination.selected = was_selected;
+        destination.building_up = Some(BuildingUp {
+            elapsed_ticks: 0,
+            total_ticks: 30,
+        });
+        let (new_sid, outcome) =
+            self.unlimbo_after_constructor_managers(destination, Some(rules), None);
+        if !matches!(outcome, RevealOutcome::Revealed { .. }) {
+            self.discard_constructed_limbo(new_sid);
+            return false;
+        }
+        self.initialize_cloak_after_unlimbo(new_sid, rules);
+        self.add_unit_sensor_after_unlimbo(new_sid, rules);
+        self.commit_spawn_harvest_mission(new_sid);
         self.mission_spawned_entities = true;
         self.uninit_with_rules(stable_id, rules);
-
-        // Set selected and building-up state on the new entity.
-        if let Some(ge) = self.substrate.entities.get_mut(new_sid) {
-            ge.selected = was_selected;
-            ge.building_up = Some(BuildingUp {
-                elapsed_ticks: 0,
-                total_ticks: 30,
-            });
-        }
 
         if let Some((country_name, side_index, difficulty, tech_level, _)) = recalc_context {
             // The new Building's committed north-west anchor is the native

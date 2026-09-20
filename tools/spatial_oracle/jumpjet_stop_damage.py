@@ -46,18 +46,18 @@ class StopDamage(Jumpjet):
             u.reg_write(UC_X86_REG_ESP,self.damage_sp);self.ret(28,4)
         else:super().observe(u,address,size,data)
     def execute_stop(self):
-        health=self.read32(OWNER+0x6c)
+        health=struct.unpack('<i',self.uc.mem_read(OWNER+0x6c,4))[0]
         self.call(0x54b4d0,0,[LOCO+4])
         if health>0:assert {0x5f54c2,0x5f550d,0x5f55ea,0x54b6bc}<=self.required,self.required
         else:assert not self.damage_trace
-        return dict(health=self.read32(OWNER+0x6c),state=self.snapshot(),damage_trace=self.damage_trace)
+        return dict(health=struct.unpack('<i',self.uc.mem_read(OWNER+0x6c,4))[0],state=self.snapshot(),damage_trace=self.damage_trace)
 
 def generate():
-    return [dict(input=dict(health=health,copy_control=copy),output=StopDamage(health,copy).execute_stop()) for health,copy in [(100,False),(100,True),(0,False)]]
+    return [dict(input=dict(health=health,copy_control=copy),output=StopDamage(health,copy).execute_stop()) for health,copy in [(100,False),(100,True),(0,False),(-1,False),(-2147483648,False)]]
 
 if __name__=='__main__':
     finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=lambda:provenance(
-        scope='Original Jumpjet54B4D0 failed Stop caller and Object5F5390 fatal Health arithmetic before callbacks; positive-health alias/copy controls and zero-health early return.',
+        scope='Original Jumpjet54B4D0 failed Stop caller and Object5F5390 fatal Health arithmetic before callbacks; positive-health alias/copy controls and signed nonpositive-health early return.',
         entry_points={'stop':0x54b4d0,'object_damage_core':0x5f5390,'before_fatal_callbacks':0x5f55ea},
-        assumptions=['Runtime outside ScenarioInit A8E7AC0; Infantry RTTI15; FNPC returns NullCell; constructor owner plus moving1/phase1/retained destination supplied; positive Health100 or Health0; ignore_defenses and prevent_escape are captured from original Stop.'],
+        assumptions=['Runtime outside ScenarioInit A8E7AC0; Infantry RTTI15; FNPC returns NullCell; constructor owner plus moving1/phase1/retained destination supplied; Health100,0,-1,MIN; ignore_defenses and prevent_escape are captured from original Stop.'],
         substitutions=['FNPC/owner getters as jumpjet_coordinates; concrete Infantry/Foot/Techno prelude replaced by Object entry; post-core fatal callbacks return4, so callback/lifecycle parity is not claimed.']))

@@ -494,7 +494,16 @@ use crate::sim::world::Simulation;
 // v164 adds the per-cell AltObject air slots (CellClass+0xE0), the authority
 // that keeps one hovering Jumpjet per cell.
 // 165 -> 166: remove the duplicate HouseState credit balance; Economy owns cash.
-const SNAPSHOT_VERSION: u32 = 166;
+// 166 -> 167: remove ordinary/forced geometry records; retained class track owns progress.
+// Drive/Ship also own valid/turn-latched bytes; retire the MCV-only entity latch.
+// 167 -> 168: retain signed Object+70 targeting reservations independently of HP.
+// 168 -> 169 replaces cached u16 HP/max with signed actual Object health.
+// The Health width is unchanged but its meaning differs. Building ART retains
+// its native damaged-state latch and saves its 21 owned Anim slot references.
+// 169 -> 170: aircraft dock indices widen from u8 to u32; save only reservation
+// slots and rebuild their reverse lookup, rejecting duplicate occupants on load.
+// 170 -> 171: save shared pixel-conversion bounds and retained HasEngineer.
+const SNAPSHOT_VERSION: u32 = 171;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -584,6 +593,24 @@ pub enum SnapshotError {
 /// Structural failures found before a deserialized simulation is admitted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SnapshotRestoreError {
+    #[error("non-Building entity {owner_id} retains animation slot {slot}")]
+    InvalidBuildingAnimSlotOwner { owner_id: u64, slot: u8 },
+    #[error("Building {owner_id} slot {slot} references missing AnimStore object {anim_id}")]
+    MissingBuildingSlotAnim {
+        owner_id: u64,
+        slot: u8,
+        anim_id: u64,
+    },
+    #[error(
+        "animation {anim_id} belongs to both Building {first_owner} slot {first_slot} and Building {second_owner} slot {second_slot}"
+    )]
+    DuplicateBuildingSlotAnim {
+        anim_id: u64,
+        first_owner: u64,
+        first_slot: u8,
+        second_owner: u64,
+        second_slot: u8,
+    },
     #[error("invalid saved Cell list: {reason}")]
     InvalidCellMembership { reason: String },
     #[error("saved current house {owner} is absent from the HouseClass registry")]
@@ -1085,6 +1112,37 @@ fn restore_object_references(
         .iter()
         .map(|(&id, _)| id)
         .collect();
+
+    // Building saved+55C slots swizzle to distinct owned Anim objects. Validate
+    // before weak-pointer cleanup or reverse-index mutation. Anim+CC may remain
+    // null, and a deferred Destroy is still a physically present valid target.
+    let mut claimed_slots = BTreeMap::new();
+    for (owner_id, entity) in sim.substrate.entities.iter_sorted() {
+        for (slot, anim_id) in entity.building_anim_slots.iter().enumerate() {
+            let Some(anim_id) = *anim_id else { continue };
+            let slot = slot as u8;
+            if entity.category != crate::map::entities::EntityCategory::Structure {
+                return Err(SnapshotRestoreError::InvalidBuildingAnimSlotOwner { owner_id, slot });
+            }
+            if !anim_ids.contains(&anim_id) {
+                return Err(SnapshotRestoreError::MissingBuildingSlotAnim {
+                    owner_id,
+                    slot,
+                    anim_id,
+                });
+            }
+            if let Some((first_owner, first_slot)) = claimed_slots.insert(anim_id, (owner_id, slot))
+            {
+                return Err(SnapshotRestoreError::DuplicateBuildingSlotAnim {
+                    anim_id,
+                    first_owner,
+                    first_slot,
+                    second_owner: owner_id,
+                    second_slot: slot,
+                });
+            }
+        }
+    }
 
     // Swizzle::Apply has no unmatched-reference recovery path. Validate the
     // complete modeled pointer graph before mutating even weak references or
@@ -1754,6 +1812,7 @@ impl Simulation {
                 .start(self.session.binary_frame as i32, 0);
         }
         self.rebuild_logic_membership();
+        self.rebuild_building_anim_slot_indices();
         self.substrate
             .occupancy
             .restore_memberships(&self.substrate.entities)
@@ -2218,10 +2277,7 @@ mod tests {
                 0,
                 0,
                 owner,
-                Health {
-                    current: 100,
-                    max: 100,
-                },
+                Health { current: 100 },
                 type_ref,
                 EntityCategory::Unit,
                 0,
@@ -3343,12 +3399,133 @@ mod tests {
         // 162 -> 163: Jumpjet linked type block and flight fields.
         // 164 -> 165: DriveTrackState::before_first_point, inserted mid-record.
         // 165 -> 166: Economy owns the sole house credit balance.
-        assert_eq!(super::SNAPSHOT_VERSION, 166);
+        // 170 -> 171: shared animation bounds and retained HasEngineer.
+        assert_eq!(super::SNAPSHOT_VERSION, 171);
+    }
+
+    #[test]
+    fn dock_indices_above_byte_range_survive_restore_and_release() {
+        use crate::sim::aircraft::AircraftMission;
+        use crate::sim::docking::aircraft_dock::AircraftAmmo;
+        use crate::sim::game_entity::GameEntity;
+        let mut sim = Simulation::new();
+        let type_id = sim.intern("PAD");
+        let owner = sim.intern("Americans");
+        for id in 1..=301 {
+            assert_eq!(sim.allocate_stable_id(), id);
+            let mut entity = GameEntity::test_default(id, "PAD", "Americans", 0, 0);
+            entity.type_ref = type_id;
+            entity.owner = owner;
+            if id > 1 {
+                let pad = sim
+                    .production
+                    .airfield_docks
+                    .try_reserve(1, id, 300)
+                    .unwrap();
+                assert_eq!(u64::from(pad), id - 2);
+                entity.aircraft_mission = Some(AircraftMission::DockedIdle {
+                    airfield_id: 1,
+                    pad_index: pad,
+                });
+                let mut ammo = AircraftAmmo::new(3);
+                ammo.target_airfield = Some(1);
+                ammo.target_pad = Some(pad);
+                entity.aircraft_ammo = Some(ammo);
+            }
+            sim.substrate.entities.insert(entity);
+        }
+        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        let before = sim.state_hash();
+        let bytes = GameSnapshot::save(&sim, 0, 0, "wide-dock-indices", 0);
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        assert_eq!(restored.state_hash(), before);
+        let aircraft = restored.substrate.entities.get(301).unwrap();
+        assert!(matches!(
+            aircraft.aircraft_mission,
+            Some(AircraftMission::DockedIdle {
+                airfield_id: 1,
+                pad_index: 299
+            })
+        ));
+        assert_eq!(
+            aircraft.aircraft_ammo.as_ref().unwrap().target_pad,
+            Some(299)
+        );
+        assert_eq!(
+            restored.production.airfield_docks.pad_for(301),
+            Some((1, 299))
+        );
+        restored.production.airfield_docks.release(301);
+        assert_eq!(
+            restored.production.airfield_docks.pad_for(300),
+            Some((1, 298))
+        );
+        assert_eq!(
+            restored.production.airfield_docks.try_reserve(1, 301, 300),
+            Some(299)
+        );
+    }
+
+    #[test]
+    fn signed_actual_and_estimated_health_survive_save_restore_independently() {
+        for (actual, estimated) in [(-7, 100_000), (100_000, -19), (i32::MIN, i32::MAX)] {
+            let mut sim = Simulation::new();
+            assert_eq!(sim.allocate_stable_id(), 1);
+            let mut entity =
+                crate::sim::game_entity::GameEntity::test_default(1, "SIGNED", "Americans", 0, 0);
+            entity.type_ref = sim.intern("SIGNED");
+            entity.owner = sim.intern("Americans");
+            entity.health.current = actual;
+            entity.estimated_health =
+                crate::sim::estimated_health::EstimatedHealth::from_raw(estimated);
+            sim.substrate.entities.insert(entity);
+            // Native load resets Scenario RNG to seed zero; isolate the health
+            // roundtrip from that intentional load transition.
+            sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+            let before = sim.state_hash();
+            let bytes = GameSnapshot::save(&sim, 0, 0, "signed-health", 0);
+            let mut restored = GameSnapshot::load(&bytes)
+                .expect("signed health schema")
+                .sim;
+            restored
+                .restore_after_snapshot_load()
+                .expect("restore signed health");
+            let entity = restored.substrate.entities.get(1).unwrap();
+            assert_eq!(
+                (entity.health.current, entity.estimated_health.get()),
+                (actual, estimated)
+            );
+            assert_eq!(restored.state_hash(), before);
+            restored
+                .substrate
+                .entities
+                .get_mut(1)
+                .unwrap()
+                .health
+                .current = actual.wrapping_add(1);
+            assert_ne!(restored.state_hash(), before);
+            restored
+                .substrate
+                .entities
+                .get_mut(1)
+                .unwrap()
+                .health
+                .current = actual;
+            restored
+                .substrate
+                .entities
+                .get_mut(1)
+                .unwrap()
+                .estimated_health =
+                crate::sim::estimated_health::EstimatedHealth::from_raw(estimated.wrapping_add(1));
+            assert_ne!(restored.state_hash(), before);
+        }
     }
 
     #[test]
     fn combined_bridge_membership_history_schema_rejects_separate_layouts() {
-        for version in 153..=163 {
+        for version in 153..=170 {
             let preamble = GameSnapshotPreamble {
                 product_magic: SNAPSHOT_PRODUCT_MAGIC,
                 envelope_version: SNAPSHOT_ENVELOPE_VERSION,
@@ -3357,7 +3534,7 @@ mod tests {
             let bytes = bincode::serialize(&preamble).expect("previous layout header");
             assert!(matches!(
                 GameSnapshot::load(&bytes),
-                Err(SnapshotError::VersionMismatch { expected: 166, found }) if found == version
+                Err(SnapshotError::VersionMismatch { expected: 171, found }) if found == version
             ));
         }
     }
@@ -3847,10 +4024,7 @@ mod tests {
             0,
             0,
             owner,
-            crate::sim::components::Health {
-                current: 1000,
-                max: 1000,
-            },
+            crate::sim::components::Health { current: 1000 },
             type_ref,
             crate::map::entities::EntityCategory::Structure,
             0,
@@ -4002,10 +4176,7 @@ mod tests {
             0,
             0,
             owner,
-            crate::sim::components::Health {
-                current: 750,
-                max: 750,
-            },
+            crate::sim::components::Health { current: 750 },
             type_ref,
             crate::map::entities::EntityCategory::Structure,
             0,
@@ -4271,10 +4442,7 @@ mod tests {
                 0,
                 0,
                 owner,
-                Health {
-                    current: 200,
-                    max: 200,
-                },
+                Health { current: 200 },
                 type_ref,
                 EntityCategory::Unit,
                 0,
@@ -4385,75 +4553,169 @@ mod tests {
     }
 
     #[test]
-    fn building_anim_overlay_roundtrips_with_current_hash_and_version() {
-        use crate::map::entities::EntityCategory;
-        use crate::sim::components::{AnimOverlayState, BuildingAnimOverlays, Health};
-        use crate::sim::game_entity::GameEntity;
+    fn building_anim_slot_restore_rejects_invalid_graph_before_mutation() {
+        for case in 0..5 {
+            let (mut sim, rules, owner) = crate::sim::building_art::slot_test_fixture();
+            let anim = sim
+                .set_building_anim_slot(owner, 3, false, false, 0, &rules)
+                .unwrap();
+            let expected = match case {
+                0 | 1 => {
+                    let target = if case == 0 { 999 } else { owner };
+                    sim.substrate
+                        .entities
+                        .get_mut(owner)
+                        .unwrap()
+                        .building_anim_slots[3] = Some(target);
+                    SnapshotRestoreError::MissingBuildingSlotAnim {
+                        owner_id: owner,
+                        slot: 3,
+                        anim_id: target,
+                    }
+                }
+                2 => {
+                    sim.substrate.entities.get_mut(owner).unwrap().category =
+                        crate::map::entities::EntityCategory::Unit;
+                    SnapshotRestoreError::InvalidBuildingAnimSlotOwner {
+                        owner_id: owner,
+                        slot: 3,
+                    }
+                }
+                3 => {
+                    sim.substrate
+                        .entities
+                        .get_mut(owner)
+                        .unwrap()
+                        .building_anim_slots[4] = Some(anim);
+                    SnapshotRestoreError::DuplicateBuildingSlotAnim {
+                        anim_id: anim,
+                        first_owner: owner,
+                        first_slot: 3,
+                        second_owner: owner,
+                        second_slot: 4,
+                    }
+                }
+                _ => {
+                    let second = sim.allocate_stable_id();
+                    let mut entity = sim.substrate.entities.get(owner).unwrap().clone();
+                    entity.stable_id = second;
+                    sim.substrate.entities.insert(entity);
+                    SnapshotRestoreError::DuplicateBuildingSlotAnim {
+                        anim_id: anim,
+                        first_owner: owner,
+                        first_slot: 3,
+                        second_owner: second,
+                        second_slot: 3,
+                    }
+                }
+            };
+            let before = GameSnapshot::save(&sim, 0, 0, "slot-rejection.map", 0);
+            assert_eq!(
+                sim.restore_after_snapshot_load(),
+                Err(expected),
+                "case {case}"
+            );
+            assert_eq!(
+                GameSnapshot::save(&sim, 0, 0, "slot-rejection.map", 0),
+                before,
+                "restore must reject atomically: {case}"
+            );
+            assert_eq!(sim.anim(anim).unwrap().building_slot, Some((owner, 3)));
+        }
+    }
 
-        let mut sim = Simulation::new();
-        let entity_id = sim.allocate_stable_id();
-        let owner = sim.interner.intern("Allies");
-        let type_ref = sim.interner.intern("GACNST");
-        let anim_type = sim.interner.intern("GACNST_B");
-        let mut entity = GameEntity::new_at_frame_zero_for_test(
-            entity_id,
-            5,
-            5,
-            0,
-            0,
-            owner,
-            Health {
-                current: 1000,
-                max: 1000,
-            },
-            type_ref,
-            EntityCategory::Structure,
-            0,
-            5,
-            false,
+    #[test]
+    fn building_anim_slot_restore_accepts_unattached_deferred_destroy() {
+        let (mut sim, rules, owner) = crate::sim::building_art::slot_test_fixture();
+        let anim = sim
+            .set_building_anim_slot(owner, 3, false, false, 0, &rules)
+            .unwrap();
+        assert!(sim.anim(anim).unwrap().owner_entity.is_none());
+        sim.destroy_anim(anim);
+        assert!(sim.substrate.pending_delete.contains(&anim));
+        assert_eq!(
+            sim.entities().get(owner).unwrap().building_anim_slots[3],
+            Some(anim)
         );
-        entity.building_anim_overlays = Some(BuildingAnimOverlays {
-            anims: vec![AnimOverlayState {
-                anim_type,
-                frame: 5,
-                loop_start: 3,
-                loop_end: 12,
-                rate_logic_frames: 6,
-                elapsed_logic_frames: 2,
-                finished: false,
-            }],
-        });
-        sim.substrate.entities.insert(entity);
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
-        let expected_hash = sim.state_hash();
+        sim.substrate.anims.get_mut(anim).unwrap().building_slot = None;
+        sim.restore_after_snapshot_load().unwrap();
+        assert_eq!(sim.anim(anim).unwrap().building_slot, Some((owner, 3)));
+        assert!(sim.substrate.pending_delete.contains(&anim));
+    }
 
+    #[test]
+    fn building_anim_slots_roundtrip_with_runtime_and_reverse_index() {
+        let (mut sim, rules, id) = crate::sim::building_art::slot_test_fixture();
+        let load_rng = crate::sim::rng::SimRng::new(0).logical_state();
+        let anim = sim
+            .set_building_anim_slot(id, 3, true, false, 0, &rules)
+            .unwrap();
+        sim.substrate
+            .anims
+            .get_mut(anim)
+            .unwrap()
+            .runtime
+            .current_frame = 17;
+        sim.substrate.anims.get_mut(anim).unwrap().runtime.paused = true;
+        let building = sim.substrate.entities.get_mut(id).unwrap();
+        building.building_anim_effect_replay[16] = true;
+        building.building_last_operational = true;
+        building.building_stuff_enabled = false;
+        building.building_storage.amounts = [
+            crate::util::native_x87::NativeF32Bits::from_bits(0x7fc01234),
+            crate::util::native_x87::NativeF32Bits::NEGATIVE_ZERO,
+            crate::util::native_x87::NativeF32Bits::ONE,
+            crate::util::native_x87::NativeF32Bits::from_bits(0xbf800000),
+        ];
+        building.building_storage.refinery_tier = -17;
+        assert_ne!(sim.scenario_rng.logical_state(), load_rng);
         let bytes = GameSnapshot::save(&sim, 1, 2, "building-anim.map", 0);
-        let header = GameSnapshot::read_header(&bytes).expect("current building-overlay header");
-        assert_eq!(header.version, SNAPSHOT_VERSION);
-        let mut restored = GameSnapshot::load(&bytes)
-            .expect("current building-overlay snapshot")
-            .sim;
-        restored
-            .restore_after_snapshot_load()
-            .expect("current building-overlay snapshot restores structurally");
-        let overlays = restored
-            .substrate
-            .entities
-            .get(entity_id)
-            .expect("restored Construction Yard")
-            .building_anim_overlays
-            .as_ref()
-            .expect("restored building overlays");
-        assert_eq!(overlays.anims.len(), 1);
-        let overlay = &overlays.anims[0];
-        assert_eq!(restored.interner.resolve(overlay.anim_type), "GACNST_B");
-        assert_eq!(overlay.frame, 5);
-        assert_eq!(overlay.loop_start, 3);
-        assert_eq!(overlay.loop_end, 12);
-        assert_eq!(overlay.rate_logic_frames, 6);
-        assert_eq!(overlay.elapsed_logic_frames, 2);
-        assert!(!overlay.finished);
-        assert_eq!(restored.state_hash(), expected_hash);
+        // Native Scenario load consumes the saved RNG bytes, then reseeds zero.
+        // The RandomRate constructor draw remains observable before saving;
+        // compare all saved slot/runtime state against the native load state.
+        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        let expected = sim.state_hash();
+        assert_eq!(
+            GameSnapshot::read_header(&bytes).unwrap().version,
+            SNAPSHOT_VERSION
+        );
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        assert_eq!(restored.scenario_rng.logical_state(), load_rng);
+        assert_eq!(
+            restored.entities().get(id).unwrap().building_anim_slots[3],
+            Some(anim)
+        );
+        assert!(
+            restored
+                .entities()
+                .get(id)
+                .unwrap()
+                .building_damage_state_active
+        );
+        assert_eq!(restored.anim(anim).unwrap().runtime.current_frame, 17);
+        assert!(restored.anim(anim).unwrap().runtime.paused);
+        assert!(
+            restored
+                .entities()
+                .get(id)
+                .unwrap()
+                .building_anim_effect_replay[16]
+        );
+        assert!(
+            restored
+                .entities()
+                .get(id)
+                .unwrap()
+                .building_last_operational
+        );
+        assert!(!restored.entities().get(id).unwrap().building_stuff_enabled);
+        assert_eq!(
+            restored.entities().get(id).unwrap().building_storage,
+            sim.entities().get(id).unwrap().building_storage
+        );
+        assert_eq!(restored.anim(anim).unwrap().building_slot, Some((id, 3)));
+        assert_eq!(restored.state_hash(), expected);
     }
 
     #[test]
@@ -4475,10 +4737,7 @@ mod tests {
                 0,
                 0,
                 owner,
-                Health {
-                    current: 100,
-                    max: 100,
-                },
+                Health { current: 100 },
                 type_ref,
                 EntityCategory::Unit,
                 0,
@@ -4555,10 +4814,7 @@ mod tests {
             0,
             0,
             owner,
-            Health {
-                current: 600,
-                max: 600,
-            },
+            Health { current: 600 },
             type_ref,
             EntityCategory::Structure,
             0,
@@ -5440,10 +5696,7 @@ mod tests {
             0,
             0,
             source_owner,
-            Health {
-                current: 600,
-                max: 600,
-            },
+            Health { current: 600 },
             type_ref,
             EntityCategory::Unit,
             0,
@@ -6878,10 +7131,7 @@ mod tests {
             0,
             0,
             owner,
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             type_ref,
             EntityCategory::Unit,
             0,

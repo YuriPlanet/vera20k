@@ -1,0 +1,4418 @@
+[
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 49,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 50,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": 50,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 100,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 51,
+      "queried_height": false,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 0,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 0,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 0,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 1,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 1,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 4,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 4,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -11
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": false,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": -10
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -11,
+      "slope": 17,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 405
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 1,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 0,
+      "xy": [
+        525,
+        795
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  },
+  {
+    "input": {
+      "current": -1,
+      "ground": 0,
+      "level": 3,
+      "on_bridge": true,
+      "relative_height": -10,
+      "slope": 17,
+      "strength": 0,
+      "xy": [
+        759,
+        969
+      ],
+      "z": 406
+    },
+    "output": {
+      "actual": 0,
+      "queried_height": true,
+      "retained_flag": 1,
+      "smoke_done": 0,
+      "smoke_pointer": 536932352
+    }
+  }
+]

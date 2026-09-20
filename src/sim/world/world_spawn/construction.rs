@@ -46,8 +46,9 @@ impl Simulation {
             return Ok(None);
         };
         let health = Health {
-            current: obj.strength.max(1) as u16,
-            max: obj.strength.max(1) as u16,
+            // Native class constructors copy signed type Strength unchanged.
+            // Original copy slices: object_health corpus / constructors.
+            current: obj.strength,
         };
         let category = match obj.category {
             ObjectCategory::Infantry => EntityCategory::Infantry,

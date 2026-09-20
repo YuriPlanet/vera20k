@@ -189,8 +189,7 @@ fn gap_operational_actual_placement_waits_for_build_up_and_next_building_turn() 
             .entities
             .get(id)
             .unwrap()
-            .gap_generator
-            .last_operational
+            .building_last_operational
     );
     assert!(!sim.fog.is_cell_gap_covered(viewer, 12, 10));
     set_ticks_until_completion(&mut sim, id, 1);
@@ -3456,18 +3455,16 @@ fn cancel_last_for_owner_cancels_latest_item_across_categories() {
 }
 
 #[test]
-fn sell_building_refunds_half_current_value_and_ejects_allied_infantry() {
+fn sell_damaged_building_refunds_half_cost_and_ejects_allied_infantry() {
     let mut sim = Simulation::new();
     let rules = sell_rules();
     *super::credits_entry_for_owner(&mut sim, "Americans") = 1000;
 
-    // Use spawn_structure for dual-write, then reduce health for the test.
+    // Native70ADA0 does not scale Refund by actual health. Keep a damaged
+    // building here to exercise that distinction through the sell command.
     spawn_structure(&mut sim, 1, "Americans", "GAPOWR", 20, 20);
     if let Some(ge) = sim.substrate.entities.get_mut(1) {
-        ge.health = Health {
-            current: 375,
-            max: 750,
-        };
+        ge.health = Health { current: 375 };
         ge.mark_live_contact_with(99);
     }
     let mut peer = GameEntity::test_default(99, "MTNK", "Americans", 22, 20);
@@ -3477,7 +3474,7 @@ fn sell_building_refunds_half_current_value_and_ejects_allied_infantry() {
     sim.substrate.entities.insert(peer);
 
     assert!(sell_building(&mut sim, &rules, 1));
-    assert_eq!(credits_for_owner(&sim, "Americans"), 1200);
+    assert_eq!(credits_for_owner(&sim, "Americans"), 1400);
 
     let survivors: Vec<(String, u16, u16)> = sim
         .substrate
@@ -3528,10 +3525,7 @@ fn sell_building_uses_owner_appropriate_survivor_type_and_caps_count() {
 
     spawn_structure(&mut sim, 2, "Russians", "NAHAND", 30, 30);
     if let Some(ge) = sim.substrate.entities.get_mut(2) {
-        ge.health = Health {
-            current: 500,
-            max: 500,
-        };
+        ge.health = Health { current: 500 };
     }
 
     assert!(sell_building(&mut sim, &rules, 2));

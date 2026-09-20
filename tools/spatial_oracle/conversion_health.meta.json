@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original conversion ratio, multiply, ftol and both destination health stores",
+  "assumptions": [
+    "PC53/chop FPCW0E7F; signed dword actual/Strength inputs; native741490/459EE0 type getters and5F5C60 execute unchanged.",
+    "Unit ratio remains in x87. Building ratio explicitly stores binary64 across two original instruction regions. All construction/Unlimbo/intervening callbacks and lifecycle producers are excluded.",
+    "Zero source Strength runs original masked x87 divide-by-zero/invalid and ftol; these edge rows document native behavior rather than asserting production admission.",
+    "No Rust comparison or complete conversion-loop parity is claimed."
+  ],
+  "substitutions": [
+    "Only data-shaped owner/type objects, stack and ambient FPCW are supplied; no callbacks or original instruction patches."
+  ],
+  "entry_points": {
+    "ratio": "0x005F5C60",
+    "unit": "0x0073992B",
+    "building_capture": "0x00449E64",
+    "building_apply": "0x0044A010"
+  },
+  "original_code": {
+    "005F5C60..005F5C80": {
+      "hex": "83ec08db416c8b01dd5c2400ff9088000000db80a0000000dc7c240083c408c3",
+      "sha256": "095a50e9e65fad30ddd3ce677f851db5066fd7a8a020e3b2df16bd35d632b953"
+    },
+    "0073992B..00739956": {
+      "hex": "8bcde82ec3ebff8b8320050000da88a0000000e8bdc5080083f80189436c7f05b80100000089436c894370",
+      "sha256": "61b64c2747097620fee355235439a39ff1f72d1315c4ef70c44ec500d489000c"
+    },
+    "00449E64..00449E74": {
+      "hex": "8bcde8f5bd1a008b55008bcddd5c2424",
+      "sha256": "5b6657e27dfa6b70b65eb004e9da8f322468dd3f71296ac18ea48f6f00ec87e4"
+    },
+    "0044A010..0044A03C": {
+      "hex": "8b138bcbff9288000000db80a0000000dc4c2424e8d7be370083f80189436c7f05b80100000089436c894370",
+      "sha256": "93c6054c23ca9b884baf8c72bbf82372fadec28573d7aa6c7f3872e7834abc32"
+    },
+    "00741490..00741497": {
+      "hex": "8b81c4060000c3",
+      "sha256": "8b3b8079858d27e0a2380dbf780c211a99983f17c0b4c448ea6f3209d7858320"
+    },
+    "00459EE0..00459EE7": {
+      "hex": "8b8120050000c3",
+      "sha256": "e14f94839512c1779785a7c447f5ebab5bc4995dddc9c24e2bc5b22aab8db3d0"
+    },
+    "007C5F00..007C5F2C": {
+      "hex": "83ec0cd93c248d4424048b142481e2ffff00003b15802d8200750bdf388b50048b0083c40cc38b15802d8200",
+      "sha256": "41deea65cb3b09157013420167f759957f8dd9dc99bcbbb725cf34df2836d4d1"
+    }
+  },
+  "payload_sha256": "f90305a83f448114de7f234242cb9cd4d739ebb21159e94aa56a71d081692644"
+}

@@ -136,10 +136,7 @@ fn spawn_type(sim: &mut Simulation, type_id: &str) -> u64 {
         0,
         0,
         owner_id,
-        crate::sim::components::Health {
-            current: 100,
-            max: 100,
-        },
+        crate::sim::components::Health { current: 100 },
         type_id_interned,
         EntityCategory::Unit,
         0,
@@ -400,10 +397,7 @@ fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
         0,
         0,
         owner,
-        Health {
-            current: 100,
-            max: 100,
-        },
+        Health { current: 100 },
         mobile_type,
         EntityCategory::Unit,
         100,
@@ -419,10 +413,7 @@ fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
         0,
         0,
         owner,
-        Health {
-            current: 100,
-            max: 100,
-        },
+        Health { current: 100 },
         building_type,
         EntityCategory::Structure,
         0,
@@ -799,6 +790,7 @@ fn master_frame_save_load_continues_trigger_projectile_and_delete_state() {
         )
         .expect("fixture frame must complete");
     let mut replay_log = ReplayLog::new(ReplayHeader {
+        pixel_conversion_bounds: Default::default(),
         version: 1,
         tick_hz: 15,
         seed: original.session.seed,

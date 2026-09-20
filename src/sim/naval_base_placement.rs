@@ -614,10 +614,7 @@ mod tests {
             0,
             0,
             owner,
-            Health {
-                current: 1000,
-                max: 1000,
-            },
+            Health { current: 1000 },
             type_ref,
             EntityCategory::Structure,
             0,

@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn gsi_04_07_damage_gsi_04_11_mutate_explosion_exact_boundary_and_death_transaction() {
-        fn run(victim_hp: u16) -> (Simulation, Vec<(u16, u16)>, usize, u64) {
+        fn run(victim_hp: i32) -> (Simulation, Vec<(u16, u16)>, usize, u64) {
             let ini = IniFile::from_str(
                 "[InfantryTypes]\n0=BOOMER\n1=BRUTE\n\
                  [VehicleTypes]\n0=TANK\n\
@@ -288,20 +288,14 @@ mod tests {
             infantry.type_ref = sim.interner.intern("BOOMER");
             infantry.category = EntityCategory::Infantry;
             infantry.is_voxel = false;
-            infantry.health = Health {
-                current: victim_hp,
-                max: victim_hp,
-            };
+            infantry.health = Health { current: victim_hp };
             sim.substrate.entities.insert(infantry);
             let _ = sim.reveal(10);
 
             let mut unit = GameEntity::test_default(20, "TANK", "Soviet", 6, 5);
             unit.owner = soviet;
             unit.type_ref = sim.interner.intern("TANK");
-            unit.health = Health {
-                current: victim_hp,
-                max: victim_hp,
-            };
+            unit.health = Health { current: victim_hp };
             sim.substrate.entities.insert(unit);
             let _ = sim.reveal(20);
 
@@ -316,7 +310,7 @@ mod tests {
             (sim, killed, count, rng_state)
         }
 
-        let (fatal, killed, count, fatal_rng) = run(MUTATE_AOE_DAMAGE as u16);
+        let (fatal, killed, count, fatal_rng) = run(MUTATE_AOE_DAMAGE);
         for id in [10, 20] {
             assert!(fatal.substrate.entities.get(id).is_some_and(|entity| {
                 entity.health.current == 0 && entity.dying && !entity.in_logic_vector
@@ -342,7 +336,7 @@ mod tests {
         );
         assert_eq!(fatal_rng, SimRng::new(1).state());
 
-        let (boundary, killed, count, boundary_rng) = run(MUTATE_AOE_DAMAGE as u16 + 1);
+        let (boundary, killed, count, boundary_rng) = run(MUTATE_AOE_DAMAGE + 1);
         assert_eq!((killed, count), (Vec::new(), 0));
         for (id, cell) in [(10, (5, 5)), (20, (6, 5))] {
             assert_eq!(
@@ -390,20 +384,14 @@ mod tests {
         ground.type_ref = type_ref;
         ground.category = EntityCategory::Infantry;
         ground.is_voxel = false;
-        ground.health = Health {
-            current: 100,
-            max: 100,
-        };
+        ground.health = Health { current: 100 };
 
         let mut bridge = GameEntity::test_default(2, "E1", "Soviet", 5, 5);
         bridge.owner = owner;
         bridge.type_ref = type_ref;
         bridge.category = EntityCategory::Infantry;
         bridge.is_voxel = false;
-        bridge.health = Health {
-            current: 100,
-            max: 100,
-        };
+        bridge.health = Health { current: 100 };
         bridge.on_bridge = true;
         bridge.position.z = 4;
 

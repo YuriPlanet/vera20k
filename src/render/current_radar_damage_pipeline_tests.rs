@@ -311,7 +311,7 @@ fn spawn(
     category: EntityCategory,
     cell: (u16, u16),
     z: u8,
-    health: u16,
+    health: i32,
     facing: u8,
 ) -> u64 {
     let owner = sim.interner.intern(owner_name);
@@ -324,10 +324,7 @@ fn spawn(
         z,
         facing,
         owner,
-        Health {
-            current: health,
-            max: health,
-        },
+        Health { current: health },
         type_ref,
         category,
         0,

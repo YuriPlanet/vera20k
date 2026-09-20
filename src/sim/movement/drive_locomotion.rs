@@ -2,7 +2,7 @@
 //!
 //! This module owns Drive-specific state updates that should not leak into the
 //! generic `MovementTarget` path. Detailed DriveTrack consumption remains in
-//! `drive_track`; this file handles the Drive-local speed fraction scaffold.
+//! `track_host`; this file handles the Drive-local speed fraction scaffold.
 
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::{LocomotorKind, SpeedType};
@@ -17,26 +17,6 @@ use crate::sim::pathfinding::terrain_speed::{self, TerrainSpeedConfig};
 use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
 
 const DRIVE_DESTINATION_BRAKE_FLOOR: SimFixed = SimFixed::lit("0.3");
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum DriveProcessOutcome {
-    NotDrive,
-    Processed,
-}
-
-pub(crate) fn process_drive_locomotion_shell(entity: &GameEntity) -> DriveProcessOutcome {
-    if entity.drive_locomotion.is_none() {
-        return DriveProcessOutcome::NotDrive;
-    }
-    DriveProcessOutcome::Processed
-}
-
-pub(super) fn drive_requires_native_step(
-    drive: &DriveLocomotionRuntime,
-    path_replay: &crate::sim::components::FootPathQueue,
-) -> bool {
-    !path_replay.remaining_directions().is_empty() || drive.track.residual != 0
-}
 
 /// `ILocomotion::Is_Moving` (slot 4) for the Drive locomotor.
 ///
@@ -123,16 +103,17 @@ pub(super) fn compute_drive_target_speed_fraction(
     )
 }
 
-/// Update Drive target/current speed fractions before budget consumption.
+/// Apply Drive's retained target to Foot before budget consumption.
 ///
 /// Gamemd keeps the target fraction on DriveLocomotion and the applied/current
 /// fraction on the owner through `SetSpeedFraction`4D3710. A controller swap
 /// must leave that live owner value available to the retained invocation.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn update_drive_speed_fraction(
-    drive: &mut DriveLocomotionRuntime,
+    drive: &DriveLocomotionRuntime,
     owner_speed: &mut FootSpeedState,
-    target_fraction: SimFixed,
     accelerates: bool,
+    unit_passive: bool,
     raw_speed_per_frame: SimFixed,
     accel_factor: SimFixed,
     decel_factor: SimFixed,
@@ -140,10 +121,11 @@ pub(super) fn update_drive_speed_fraction(
     distance_to_goal: SimFixed,
 ) {
     update_vehicle_speed_fraction(
-        &mut drive.target_speed_fraction,
+        drive.target_speed_fraction,
+        drive.track.turn_index,
         &mut owner_speed.applied_fraction,
-        target_fraction,
         accelerates,
+        unit_passive,
         raw_speed_per_frame,
         accel_factor,
         decel_factor,
@@ -152,17 +134,17 @@ pub(super) fn update_drive_speed_fraction(
     );
 }
 
-/// Update Ship's class-owned target fraction and owner-applied fraction.
+/// Apply Ship's retained target to the owner-applied fraction.
 ///
 /// The active Ship `Process_Drive_Track` body uses these same transitions
 /// before calling the owner's `SetSpeedFraction` slot. The target belongs to
 /// Ship; the applied value belongs to the live Foot owner.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn update_ship_speed_fraction(
-    ship: &mut ShipLocomotionRuntime,
+    ship: &ShipLocomotionRuntime,
     owner_speed: &mut FootSpeedState,
-    target_fraction: SimFixed,
     accelerates: bool,
+    unit_passive: bool,
     raw_speed_per_frame: SimFixed,
     accel_factor: SimFixed,
     decel_factor: SimFixed,
@@ -170,10 +152,11 @@ pub(super) fn update_ship_speed_fraction(
     distance_to_goal: SimFixed,
 ) {
     update_vehicle_speed_fraction(
-        &mut ship.target_speed_fraction,
+        ship.target_speed_fraction,
+        ship.track.turn_index,
         &mut owner_speed.applied_fraction,
-        target_fraction,
         accelerates,
+        unit_passive,
         raw_speed_per_frame,
         accel_factor,
         decel_factor,
@@ -182,132 +165,37 @@ pub(super) fn update_ship_speed_fraction(
     );
 }
 
-/// Ship normally recomputes its requested fraction in `Process_Movement`.
-/// `Stop_Moving` is the active exception: after it clears destination while a
-/// committed head remains, `Process_Drive_Track` consumes the class-owned
-/// clamped target without running a fresh terrain request over it.
-pub(super) fn ship_process_target_speed_fraction(
-    ship: &ShipLocomotionRuntime,
-    movement_target_fraction: SimFixed,
-) -> SimFixed {
-    if ship.destination.is_none() && ship.head_to.is_some() {
-        ship.target_speed_fraction
-    } else {
-        movement_target_fraction
-    }
-}
-
-/// The `Accelerates=` ramp, `DriveLocomotionClass::Process_Drive_Track` @
-/// `0x004B0F20`. Three of its arms are **not** modelled, recorded here:
+/// Fixed-point prefix scaffold. Drive4B0F74..126F and Ship6A0644..0937
+/// first copy the target for Accelerates=false; otherwise Unit Passive and
+/// signed selector>=64 bypass the entire ramp. Native executable coverage:
+/// tools/spatial_oracle/track_speed_native.json.
 ///
-/// - **The second brake band.** Outside `SlowdownDistance`, when `owner+0x3CD`
-///   is set, native brakes by `rawSpeed × 0.0015` with a floor of `0.1`
-///   (`0x004B10FF`) — much gentler, to a much lower floor, than the arrival
-///   band. `+0x3CD` is written by `UnitClass::ReceiveDamage` `0x00737E51`,
-///   `TemporalClass::AI` `0x00629C69`, the teleport post-warp validation and
-///   the jumpjet touchdown, and `Process` @ `0x004B0500` also zeroes the target
-///   speed on it — the two writes there are `[recv+0x4C]` and `[recv+0x50]` on
-///   the **ILocomotion** receiver, i.e. complete-object `+0x50`/`+0x54`, the two
-///   halves of one `double`. The integer movement residual at complete `+0x4C`
-///   is untouched. So it is load-bearing in two places. Its identity is
-///   UNCHECKED, which is why this carries no frequency clause yet: that is the
-///   gap to close before ranking it.
-/// - **The crush clamp.** While `owner+0x6B5` is set (raised at `0x004B1A2F`
-///   when the mover drives over a crushable, cleared in
-///   `UnitClass::PerCellProcess`), native replaces the whole ramp with
-///   `min(target, 0.2)` and writes it back to `drive+0x50` (`0x004B1146`).
-///   Trigger: a crusher mid-crush. Player effect: retail slows to a fifth speed
-///   over the victim. Frequency: **common, not rare.** It lives inside the
-///   `Accelerates` branch, and of the 29 `Crusher=yes` types in stock
-///   `rulesmd.ini` only 14 carry `Accelerates=false` — the 15 that accelerate
-///   include `[APOC]`, both MCVs, `[V3]`, every ore miner and the amphibious
-///   transports. An Apocalypse driving over infantry is ordinary Soviet play.
-///   Downstream risk: it writes the locomotor-owned slot, not just the owner's.
-/// - **The `drive+0x58 >= 0x40` bypass.** Both `Process_Movement` @
-///   `0x004B2630` and this function gate on `*(int*)(drive+0x58) < 0x40`; above
-///   it native skips the `drive+0x50` write *and* the whole ramp, setting the
-///   owner fraction directly. VERA always writes and always ramps. Trigger:
-///   a live `Force_Track` curve. `Force_Track` @ `0x004B0C40` is the only writer
-///   that can push the selector past 0x3F — both ordinary writers cap at 63 —
-///   and the three call sites that pass one are the **Yuri Tank Bunker**
-///   occupant lifecycle: the installer at `0x00458E50` (`0x43`..`0x46`, chosen
-///   by facing at `0x00459132`-`0x0045915C`), `BuildingClass::UndockUnit` @
-///   `0x004593A0` (`0x47`, pushed at `0x0045942C`) and
-///   `BuildingClass::ReleaseDockedHarvester` @ `0x004595C0` (`0x47`, pushed at
-///   `0x00459751`). The latter two early-return unless the building's `+0x2E4`
-///   dock link is set, and the installer is its only setter, so the whole family
-///   needs a garrisoned bunker. Stock `rulesmd.ini` has exactly one
-///   `Bunker=yes`: `[NATBNK]`.
-///
-///   So the gate means: while on a bunker install or eject curve, skip the ramp
-///   and drive at the 1.0 `Force_Track` installed. Player effect: VERA ramps
-///   where native jumps straight to full speed. Frequency: **zero in any match
-///   without a garrisoned Tank Bunker**, occasional in Yuri matchups — not the
-///   factory door. Downstream risk: `ForcedDriveTrackState` already carries a
-///   full-speed constant, so the forced arm is approximated; what is missing is
-///   the same `< 0x40` gate inside `Process_Movement` @ `0x004B2630` (gates read
-///   at `0x004B0FA8` and `0x004B3DFA`).
-///
-///   `Force_Track` has three further callers, all passing `-1`:
-///   `TechnoClass::PerformDeploy` @ `0x007101B3`, `SuperClass::Launch` @
-///   `0x006CCAA2`, and `0x0062AB24`.
-/// - **The `Passive=` skip.** `UnitTypeClass+0xE0C` (stored at `0x0074783D`)
-///   disables the entire ramp for a UnitClass mover. Trigger: a `Passive=yes`
-///   type. Player effect: none observed. Frequency: zero in skirmish — stock
-///   `Passive=yes` is civilian traffic. Downstream risk: one `if`.
+/// Remaining production gaps include native double arithmetic, raw type speed,
+/// full XYZ distance, sinking +3CD, crush +6B5, and linked-owner propagation.
+/// The crush byte's actual producers include overlay-specific conditions; an
+/// ordinary infantry crush alone does not establish that byte.
 #[allow(clippy::too_many_arguments)]
 fn update_vehicle_speed_fraction(
-    target_slot: &mut SimFixed,
+    target: SimFixed,
+    selector: i32,
     current_slot: &mut SimFixed,
-    target_fraction: SimFixed,
     accelerates: bool,
+    unit_passive: bool,
     raw_speed_per_frame: SimFixed,
     accel_factor: SimFixed,
     decel_factor: SimFixed,
     slowdown_distance: SimFixed,
     distance_to_goal: SimFixed,
 ) {
-    // The locomotor-owned target fraction is **not** clamped in gamemd.
-    // `Process_Movement` @ `0x004B2630` writes `drive+0x50` raw on the
-    // `0x004B3DFA CMP [drive+0x58],0x40` / `JGE` low side, the raw `FSTP` being
-    // at `0x004B3E00`. Reading that side as "everything that is not a
-    // `Force_Track` curve" matches the bunker family documented above and the
-    // `0x004B3C75 MOV [EBP+0x58],-1` reset, but the 0x40 boundary's own meaning
-    // is **not** demonstrated here and should not be cited as if it were. So a
-    // healthy tracked mover
-    // going downhill on a 100% land row legitimately carries 1.2 — the terrain
-    // chain's own tests assert the combined value exceeds 1.0. The only native
-    // clamp is inside `TechnoClass::SetSpeedFraction` @ `0x004D3710`, on the
-    // owner's `+0x578`.
-    //
-    // That clamp still governs the speed the player sees, because `+0x578` —
-    // not this slot — is the accumulator: `Process_Drive_Track` @ `0x004B0F20`
-    // reads it at `0x004B1193` and `0x004B11D1`, and every arm that *writes* it
-    // goes through vtable `+0x544`. Corrected after review: it is **not** true
-    // that every arm calls it. `0x004B11DF JNZ 0x004B1218` skips the call, and
-    // the skip condition is exactly **equality**, not "at or below" as a first
-    // correction said: `0x004B119E TEST AH,1` / `0x004B11A1 JZ 0x004B11D1`
-    // routes *current < target* to the accelerate arm at `0x004B11A3`, which
-    // does call `+0x544`, so the decelerate compare is only reached with
-    // current >= target and its `TEST AH,0x41` leaves only the equal case.
-    // Skipping then leaves the previous — already clamped — value standing.
-    // Either way gamemd discards the above-1.0 portion and the mover does not
-    // go faster downhill.
-    // Keeping this slot unclamped matches where the native clamp lives, and
-    // matters only to anything that reads the *target* fraction rather than the
-    // owner's; it is not a speed change.
-    //
-    // It is a speed change for a **damaged** mover, which is why that path is
-    // modelled separately: `0x004B3DF0 FMUL [0x007E7FC0]` applies 0.75 after
-    // the slope and before any clamp, so 1.2 and 1.0 targets become 0.9 and
-    // 0.75 and both survive.
-    *target_slot = target_fraction;
+    // ProcessMovement retains an unclamped class target. Only the Foot
+    // setter4D3710 clamps the applied fraction to [0,1].
     if !accelerates {
-        *current_slot = target_fraction.clamp(SIM_ZERO, SIM_ONE);
+        *current_slot = target.clamp(SIM_ZERO, SIM_ONE);
         return;
     }
-
-    let target = *target_slot;
+    if unit_passive || selector >= 64 {
+        return;
+    }
     let mut current = *current_slot;
     if slowdown_distance > SIM_ZERO && distance_to_goal < slowdown_distance {
         current -= raw_speed_per_frame * decel_factor;
@@ -336,18 +224,10 @@ fn update_vehicle_speed_fraction(
 /// adjusted speed in leptons/second, so dividing by the 15-Hz native baseline
 /// recovers the first integer before applying the Foot-owned fraction.
 ///
-/// Two native terms are **not** modelled, recorded rather than guessed:
-/// - the elite multiply, `HasWeaponAbility(0)` -> `x Rules+0x678`, which sits
-///   *between* the two truncations (`0x004DB1E8`-`0x004DB205`). Trigger: an
-///   elite unit. Player effect: elites move at their veteran speed instead of
-///   their elite one. Frequency: every elite vehicle, which an active player
-///   accumulates over a long match. Downstream risk: none - one factor in the
-///   middle of a chain VERA already reproduces exactly.
-/// - the halving at `0x004DB226`: RTTI 1 (UnitClass) with `owner+0x6CC != -1`
-///   -> `speed / 2` via `CDQ/SUB/SAR 1`. This is the active-YR CTF flag owner
-///   index, normally inactive in stock multiplayer; it is not a TS-only gate.
-///   See FOOTCLASS_GET_CURRENT_SPEED_EXACT_GHIDRA_REPORT.md for the retained
-///   speed-crate input and staged getter proof needed by the live Process host.
+/// This remains a fixed-point projection. The caller already applies the
+/// FASTER ability for veteran and elite owners, but native house/crate factors,
+/// CTF signed halving, and exact staged x87 truncation require the pending Foot
+/// numeric-owner migration; see track_speed_native and its executable corpus.
 pub(crate) fn owner_current_speed_from_fraction(
     adjusted_speed_per_second: SimFixed,
     current_speed_fraction: SimFixed,
@@ -368,10 +248,11 @@ mod tests {
         let mut owner_speed = FootSpeedState::default();
         let mut ship = ShipLocomotionRuntime::default();
 
+        ship.target_speed_fraction = SIM_HALF;
         update_ship_speed_fraction(
-            &mut ship,
+            &ship,
             &mut owner_speed,
-            SIM_HALF,
+            false,
             false,
             SimFixed::from_num(10),
             SimFixed::lit("0.03"),
@@ -383,11 +264,12 @@ mod tests {
         assert_eq!(owner_speed.applied_fraction, SIM_HALF);
 
         owner_speed.applied_fraction = SIM_ZERO;
+        ship.target_speed_fraction = SIM_ONE;
         update_ship_speed_fraction(
-            &mut ship,
+            &ship,
             &mut owner_speed,
-            SIM_ONE,
             true,
+            false,
             SimFixed::from_num(10),
             SimFixed::lit("0.03"),
             SimFixed::lit("0.002"),
@@ -434,7 +316,7 @@ mod tests {
             applied_fraction: SIM_HALF,
             cached_current_speed: 10,
         };
-        let mut ship = ShipLocomotionRuntime {
+        let ship = ShipLocomotionRuntime {
             destination: None,
             head_to: Some(DriveCoord::cell(4, 3, 0)),
             target_speed_fraction: SimFixed::lit("0.3"),
@@ -442,13 +324,11 @@ mod tests {
         };
 
         for _ in 0..10 {
-            let requested = ship_process_target_speed_fraction(&ship, SIM_ONE);
-            assert_eq!(requested, SimFixed::lit("0.3"));
             update_ship_speed_fraction(
-                &mut ship,
+                &ship,
                 &mut owner_speed,
-                requested,
                 true,
+                false,
                 speed / SimFixed::from_num(15),
                 SimFixed::lit("0.03"),
                 SimFixed::lit("0.002"),
@@ -760,10 +640,11 @@ mod tests {
         };
         let mut drive = DriveLocomotionRuntime::default();
 
+        drive.target_speed_fraction = SimFixed::lit("1.2");
         update_drive_speed_fraction(
-            &mut drive,
+            &drive,
             &mut owner_speed,
-            SimFixed::lit("1.2"),
+            false,
             false,
             SimFixed::from_num(10),
             SimFixed::lit("0.03"),
@@ -784,10 +665,11 @@ mod tests {
         };
         let mut drive = DriveLocomotionRuntime::default();
 
+        drive.target_speed_fraction = SIM_HALF;
         update_drive_speed_fraction(
-            &mut drive,
+            &drive,
             &mut owner_speed,
-            SIM_HALF,
+            false,
             false,
             SimFixed::from_num(10),
             SimFixed::lit("0.03"),
@@ -808,11 +690,12 @@ mod tests {
         };
         let mut drive = DriveLocomotionRuntime::default();
 
+        drive.target_speed_fraction = SIM_ONE;
         update_drive_speed_fraction(
-            &mut drive,
+            &drive,
             &mut owner_speed,
-            SIM_ONE,
             true,
+            false,
             SimFixed::from_num(10),
             SimFixed::lit("0.03"),
             SimFixed::lit("0.002"),
@@ -832,11 +715,12 @@ mod tests {
         };
         let mut drive = DriveLocomotionRuntime::default();
 
+        drive.target_speed_fraction = SIM_ONE;
         update_drive_speed_fraction(
-            &mut drive,
+            &drive,
             &mut owner_speed,
-            SIM_ONE,
             true,
+            false,
             SimFixed::from_num(10),
             SimFixed::lit("0.03"),
             SimFixed::lit("0.002"),
@@ -858,11 +742,12 @@ mod tests {
         };
         let mut drive = DriveLocomotionRuntime::default();
 
+        drive.target_speed_fraction = SIM_ONE;
         update_drive_speed_fraction(
-            &mut drive,
+            &drive,
             &mut owner_speed,
-            SIM_ONE,
             true,
+            false,
             SimFixed::from_num(10),
             SimFixed::lit("0.03"),
             SimFixed::lit("0.002"),

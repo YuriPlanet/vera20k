@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Drive/Ship Process_Track entry gate through speed-prefix admission or complete early residual-clear return;144 finite input combinations",
+  "assumptions": [
+    "Supplied disjoint owner/class/type memory and original Unit vtable7F5C70. Original GetType6F3270 jumps through the original+88 slot to741490, which reads supplied owner+6C4; no virtual return stub is used",
+    "Each family exhausts72 combinations: valid+63=0/1, signed selector+58=-1/0/-2, Foot queue head+5E0=-1/2/8, class+62=0/1 and Type Turret+CA1=0/1. This is exhaustive only over those listed values, not all machine state or stock-type reachability",
+    "Residual+4C is supplied12345678hex, cursor+5C76543210hex, head XYZ null and owner alive+90=1. The boundary does not read head coordinates; selector-2 rows demonstrate a raw !=-1 comparison but do not claim downstream descriptor validity",
+    "Entry is a full native-shaped thiscall frame with a supplied unused argument0. Early exits execute the original residual store, epilogue and RET4 to an external stop sentinel; admitted rows stop before4B0F69/6A0639",
+    "Read-only observers record actual getter/return visits and locomotor writes. Code and original vtable bytes are checked unchanged, and only residual may change in the supplied owner/class state",
+    "Speed target/application, later turning/passive/acceleration gates, tube execution, Process_Movement, caller lifecycle and full Process_Track are excluded. Prefix eligibility is not successful movement"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "unit_vtable": "0x007F5C70",
+    "get_type": "0x006F3270",
+    "unit_type": "0x00741490",
+    "drive_entry": "0x004B0F20",
+    "drive_prefix": "0x004B0F69",
+    "drive_early_clear": "0x004B25F2",
+    "drive_early_ret": "0x004B2605",
+    "drive_type_call": "0x004B0F55",
+    "ship_entry": "0x006A05F0",
+    "ship_prefix": "0x006A0639",
+    "ship_early_clear": "0x006A1C43",
+    "ship_early_ret": "0x006A1C56",
+    "ship_type_call": "0x006A0625"
+  },
+  "original_code_range_sha256": {
+    "004B0F20..004B0F69": "1717b5006128d2285d2ee94340cd71274d45ff6fe7e7a5a332fb8ab9e0933429",
+    "004B25F2..004B2608": "648901d2ea5fae998912730101928cb7a6529567ba810b80acf8280d70ccd1c3",
+    "006A05F0..006A0639": "acf61a5d5325fb66667cd60b6f0350e5b90fab6c67cd97fdbc332f269f6bfe96",
+    "006A1C43..006A1C59": "660bd2d420468b79b0725850dfd06d8064d09a06dc3e541e903800e5ccf2646d",
+    "006F3270..006F3278": "b7655f4aae69b7187b779cdc966f345e6a878c6ce4f756b676a079015b791f42",
+    "00741490..00741497": "8b3b8079858d27e0a2380dbf780c211a99983f17c0b4c448ea6f3209d7858320"
+  },
+  "payload_sha256": "bccee3268051563bfc36636437a6419895f5d16c9335fd50ae7ac50038186f2d"
+}

@@ -21,7 +21,7 @@ pub const WIDE_AMPLITUDE_THRESHOLD: SimFixed = SimFixed::lit("3.141593");
 
 /// Callback invoked when a rocking entity's body angle exceeds ±π.
 ///
-/// Implementations should apply `damage = entity.health.max` with the
+/// Implementations should apply `damage = live ObjectType.strength` with the
 /// ruleset's C4Warhead, `source_house = None`, `source_object = None`,
 /// `force_kill = true`. Until combat-side damage lands, use
 /// `NoopSelfDestruct`; swap in a real implementation in Phase F (Task 19).
@@ -74,10 +74,7 @@ mod tests {
             0,
             0,
             test_intern("Americans"),
-            Health {
-                current: 400,
-                max: 400,
-            },
+            Health { current: 400 },
             test_intern("HTNK"),
             EntityCategory::Unit,
             0,

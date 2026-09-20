@@ -7,12 +7,14 @@
 use super::*;
 
 pub(super) struct ReceiverHealthCommit {
+    pub(super) building_entry_frame: Option<i32>,
     pub(super) became_fatal: bool,
+    pub(super) state: damage::DamageState,
     pub(super) entered_techno_death: bool,
     pub(super) reached_exact_zero: bool,
     pub(super) postmortem_candidate: Option<i32>,
     pub(super) fatal_category: EntityCategory,
-    pub(super) positive_postlude: Option<(u16, bool, bool)>,
+    pub(super) positive_postlude: Option<(i32, bool, bool)>,
     pub(super) synchronous_retaliation: bool,
     pub(super) smoke_maintenance: Option<(EntityCategory, damage::DamageState)>,
     pub(super) healing_only: bool,
@@ -36,17 +38,15 @@ pub(super) fn commit_receiver_health(
     current_tick: u64,
 ) -> Option<ReceiverHealthCommit> {
     let target_id = event.target_id;
+    let mut building_entry_frame = None;
     let attacker_id = event.attacker_id;
-    let postmortem_duration = receiver_outcome.flatten().and_then(|resolved| {
-        let target = entities.get(target_id)?;
-        postmortem_duration_for_event(event, target, rules, interner, resolved.outcome)
-    });
+    let mut state = damage::DamageState::Unaffected;
     let mut became_fatal = false;
     let mut entered_techno_death = false;
     let mut reached_exact_zero = false;
     let mut postmortem_candidate = None;
     let mut fatal_category = EntityCategory::Unit;
-    let mut positive_postlude: Option<(u16, bool, bool)> = None;
+    let mut positive_postlude: Option<(i32, bool, bool)> = None;
     let mut synchronous_retaliation = false;
     let mut smoke_maintenance: Option<(EntityCategory, damage::DamageState)> = None;
     let mut healing_only = false;
@@ -95,59 +95,47 @@ pub(super) fn commit_receiver_health(
         }
         let reached_survivor_postlude =
             receive_outcome.is_some_and(|outcome| outcome.reached_survivor_postlude);
-        let receive_state = receive_outcome.map(|outcome| outcome.state);
-        // `TechnoClass::ReceiveDamage @ 0x0070281D` calls vtable `+0xFC`
-        // (`StartUncloaking(0) @ 0x00703850`). It sits after the
-        // ObjectClass HP commit and after the `ToProtect` response, and
-        // before the `if (damage < 0) return` heal early-out, which is why
-        // a HEAL surfaces a diving submarine just as reliably as a shell
-        // does.
-        //
-        // Two native conditions guard it, and BOTH are read from the
-        // disassembly, not the decompiler — the decompiler renders this
-        // dispatch as `switch (uVar7)` after assigning `uStack_a4 = 4`,
-        // which hides the selector overwrite below:
-        //
-        // 1. Every defensive gate in `TechnoClass::ReceiveDamage @
-        //    0x00701900` returns ABOVE the `uVar7 =
-        //    ObjectClass__ReceiveDamage(this)` join — the `TypeImmune`
-        //    (`type+0xC8C`) same-type/same-owner arm, `vt+0x160`
-        //    (IronCurtain/ForceShield), `vt+0x1D4` (warping in), the
-        //    `AffectsAllies=no` (`warhead+0x179`) allied arm, and the
-        //    accepted Psychedelic arm (`return 1`). None of those reaches
-        //    `+0xFC`, so an Iron-Curtained, type-immune or ally-shielded
-        //    cloaked object stays submerged. `reached_survivor_postlude`
-        //    is exactly "the receiver delegated to ObjectClass and came
-        //    back through the surviving-object tail", i.e. that join.
-        // 2. Post-join HEALTH, not the ObjectClass result code:
-        //      0070202e MOV  EAX,[ESI+0x6C]   ; this->Health
-        //      00702031 TEST EAX,EAX
-        //      00702033 JNZ  0x00702040
-        //      00702035 MOV  EDI,0x4          ; overwrites the selector
-        //      00702049 JMP  [EDI*4 + 0x702D24]
-        //    The table at `0x00702D24` is `[0x007027F7, 0x00702713,
-        //    0x00702695, 0x007027F7, 0x00702050]`; case 4 is the death
-        //    handler, which returns at `0x00702692` (`RET 0x1C`) without
-        //    ever reaching `0x0070281D`. So `Health == 0` after the join
-        //    takes the death branch WHATEVER ObjectClass returned — which
-        //    covers both "this record killed it" and "it was already a
-        //    corpse" (`ObjectClass::ReceiveDamage @ 0x005F5390` opens
-        //    `if (Health < 1) return 0`, and 0 is case 0, but the health
-        //    test overrides it). The hostile-hit latch six bytes below at
-        //    `0x00702812` sits in the same basic block and is guarded
-        //    identically.
-        //
-        // `target.health.current` here is still the PRE-record value, so
-        // "post-join health nonzero" is `pre > 0 && state != Dead`:
-        // `classify` returns `Dead` exactly when `prev - delta <= 0`.
-        uncloak_after_damage = reached_survivor_postlude
-            && target.health.current > 0
-            && receive_state.is_some_and(|state| state != damage::DamageState::Dead);
-        // TechnoClass's persistent hostile-hit byte is written in the
-        // shared surviving post-Object tail. The source object must be
-        // non-null, and alliance direction is target owner -> captured
-        // source house. This is deliberately separate from retaliation's
-        // transient `last_attacker_id`.
+        let target_type = rules.object(interner.resolve(target.type_ref()))?;
+        if target.category == EntityCategory::Structure {
+            building_entry_frame = Some(crate::sim::building_art::receiver_body_frame(
+                target,
+                target_type,
+                rules,
+            ));
+        }
+        let strength = target_type.strength;
+        let mut packet = receive_outcome.map_or(event.damage, |outcome| outcome.hp_delta);
+        let building_no_c4 = target.category == EntityCategory::Structure && !target_type.can_c4;
+        state = super::object_health::commit(
+            target,
+            &mut packet,
+            strength,
+            receive_outcome.map_or(event.damage != 0, |outcome| outcome.apply_object_damage),
+            building_no_c4,
+            rules.general.condition_red,
+            |_target, callback| match callback {
+                // Native456E00's Changed callback is redraw/parent notification,
+                // not a retained damaged-art health latch. Its visual body is
+                // outside this represented receiver boundary.
+                super::object_health::HealthCallback::Changed => {}
+                super::object_health::HealthCallback::Kill => {
+                    reached_exact_zero = true;
+                }
+                super::object_health::HealthCallback::Destroy => {
+                    became_fatal = true;
+                }
+            },
+        );
+        let receive_state = Some(state);
+        // Techno70202E tests exact0 after Object returns. Negative healed HP
+        // remains on its ordinary tail; ObjectAlive/result5 is a different gate.
+        entered_techno_death =
+            became_fatal || (reached_survivor_postlude && target.health.current == 0);
+        if entered_techno_death {
+            fatal_category = target.category;
+        }
+        let survivor_tail = reached_survivor_postlude && !entered_techno_death;
+        uncloak_after_damage = survivor_tail;
         let hostile_source = attacker_id != RAD_NO_ATTACKER
             && attacker_owner.is_some_and(|source_owner| {
                 !crate::map::houses::is_allied_with(
@@ -156,88 +144,43 @@ pub(super) fn commit_receiver_health(
                     interner.resolve(source_owner),
                 )
             });
-        let resolved_damage = receive_outcome.map_or(event.damage, |outcome| outcome.hp_delta);
         if reached_survivor_postlude
             && let Some(source_owner) = live_source_owner
-            && let Some(final_damage) =
-                receive_outcome.and_then(|outcome| outcome.post_object_damage)
-            && let Some(target_type) = rules.object(interner.resolve(target.type_ref()))
+            && let Some(prepared) = receive_outcome
         {
+            // An Object early gate leaves the prepared packet intact. Otherwise
+            // commit owns CanC4 rewriting and the positive overkill cap.
+            let final_packet = if !prepared.apply_object_damage {
+                prepared.post_object_damage.unwrap_or(packet)
+            } else {
+                packet
+            };
             threat_feedback = Some((
                 target.owner(),
                 source_owner,
-                final_damage,
-                target_type.strength,
+                final_packet,
+                strength,
                 receiver_type_value(target, target_type, rules),
             ));
         }
-        if resolved_damage == 0 {
-            if reached_survivor_postlude && target.health.current > 0 && hostile_source {
-                latch_hostile_hit = true;
-            }
-            if reached_survivor_postlude && target.health.current > 0 {
-                smoke_maintenance = receive_state.map(|state| (target.category, state));
-            }
-            synchronous_retaliation = event.distance_leptons.is_some()
-                && event.damage >= 0
-                && reached_survivor_postlude
-                && target.health.current > 0;
-        } else if resolved_damage < 0 {
-            let healing = resolved_damage.unsigned_abs().min(u32::from(u16::MAX)) as u16;
-            target.health.current = target
-                .health
-                .current
-                .saturating_add(healing)
-                .min(target.health.max);
-            if reached_survivor_postlude && target.health.current > 0 && hostile_source {
-                latch_hostile_hit = true;
-            }
-            target.refresh_building_damage_state_gate(rules.general.condition_yellow_x1000);
-            if reached_survivor_postlude && target.health.current > 0 {
-                smoke_maintenance = receive_state.map(|state| (target.category, state));
-            }
-            healing_only = true;
-        } else {
-            let damage = resolved_damage.min(i32::from(u16::MAX)) as u16;
-            let was_alive = target.health.current > 0;
-            target.health.current = target.health.current.saturating_sub(damage);
-            target.refresh_building_damage_state_gate(rules.general.condition_yellow_x1000);
-            became_fatal = was_alive && target.health.current == 0;
-            reached_exact_zero = became_fatal;
-            if became_fatal {
-                fatal_category = target.category;
-            }
-            synchronous_retaliation = event.distance_leptons.is_some()
-                && event.damage >= 0
-                && reached_survivor_postlude
-                && target.health.current > 0;
-            if reached_survivor_postlude && target.health.current > 0 {
-                if hostile_source {
-                    latch_hostile_hit = true;
-                }
-                smoke_maintenance = receive_state.map(|state| (target.category, state));
-            }
-            positive_postlude = Some((damage, reached_survivor_postlude, hostile_source));
-            if became_fatal && let Some(duration_frames) = postmortem_duration {
-                // Do not restore here. Native first executes ObjectClass's
-                // exact-zero kill/Destroy callbacks, then victim-house anger,
-                // and only afterward arms the timer and writes Alive/HP=1.
-                postmortem_candidate = Some(duration_frames);
-                positive_postlude = None;
-                synchronous_retaliation = false;
-                smoke_maintenance = None;
-                latch_hostile_hit = false;
-            }
+        latch_hostile_hit = survivor_tail && hostile_source;
+        smoke_maintenance = survivor_tail.then_some((target.category, state));
+        synchronous_retaliation =
+            event.distance_leptons.is_some() && event.damage >= 0 && survivor_tail;
+        healing_only = packet < 0 && !entered_techno_death;
+        if packet > 0 {
+            positive_postlude = Some((packet, survivor_tail, hostile_source));
         }
-
-        // 70202E..702035 selects Techno's fatal branch on post-Object Health0,
-        // including a captured successor killed by a prior nested receiver.
-        // This does not repeat Object's fresh exact-zero kill/score callbacks.
-        // Native comparison: tools/spatial_oracle/bridge_zero_health_receiver.
-        entered_techno_death =
-            became_fatal || (reached_survivor_postlude && target.health.current == 0);
-        if entered_techno_death {
-            fatal_category = target.category;
+        if became_fatal
+            && receiver_outcome.is_some()
+            && let Some(duration) =
+                postmortem_duration_for_event(event, target, rules, interner, state)
+        {
+            postmortem_candidate = Some(duration);
+            positive_postlude = None;
+            synchronous_retaliation = false;
+            smoke_maintenance = None;
+            latch_hostile_hit = false;
         }
 
         // gamemd-derived: `BuildingClass::ReceiveDamage @ 0x00442230`'s
@@ -327,6 +270,8 @@ pub(super) fn commit_receiver_health(
     }
 
     Some(ReceiverHealthCommit {
+        building_entry_frame,
+        state,
         became_fatal,
         entered_techno_death,
         reached_exact_zero,

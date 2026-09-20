@@ -103,10 +103,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
         0,
         0,
         owner,
-        crate::sim::components::Health {
-            current: 1000,
-            max: 1000,
-        },
+        crate::sim::components::Health { current: 1000 },
         producer_type,
         crate::map::entities::EntityCategory::Structure,
         0,

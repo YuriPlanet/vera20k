@@ -3,7 +3,7 @@
 //! Models the `Bunker=yes` mission helper: a facing-driven 6-state machine that,
 //! once a candidate unit is on the footprint, shoves blockers, turns the unit to
 //! face the building, force-tracks it onto the building cell, turns it South,
-//! plays entry anims, then installs (hide + reciprocal link + up sound). The
+//! plays entry anims, then installs (deselect + reciprocal link + up sound). The
 //! inter-state waits are turn/track completions — NOT frame-count timers.
 //!
 //! sim/ only — never render/ui/sidebar/audio/net.
@@ -12,7 +12,6 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::BunkerLink;
 use crate::sim::movement;
 use crate::sim::movement::bump_crush::scatter_blocker;
-use crate::sim::movement::drive_track::begin_forced_turn_track;
 use crate::sim::movement::facing_from_delta;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::entity_occupancy_cells;
@@ -158,7 +157,7 @@ fn step_install(
         }
         BunkerState::TurnSouth => {
             if !is_turning(sim, unit_id) {
-                // Walls rise just before the unit hides (health-gated variant).
+                // Walls rise before reciprocal install/deselection (health-gated variant).
                 crate::sim::docking::bunker_link::emit_bunker_wall_anim(
                     sim,
                     building_id,
@@ -194,10 +193,9 @@ fn is_turning(sim: &Simulation, unit_id: u64) -> bool {
 }
 
 fn is_moving(sim: &Simulation, unit_id: u64) -> bool {
-    sim.substrate
-        .entities
-        .get(unit_id)
-        .is_some_and(|u| u.forced_drive_track.is_some() || u.movement_target.is_some())
+    sim.substrate.entities.get(unit_id).is_some_and(|u| {
+        movement::track_head::committed_track_head(u).is_some() || u.movement_target.is_some()
+    })
 }
 
 /// The candidate is on one of the bunker's footprint cells and not moving.
@@ -212,7 +210,8 @@ fn on_footprint_and_stopped(sim: &Simulation, building_id: u64, unit_id: u64) ->
     let on = footprint
         .iter()
         .any(|&(cx, cy)| cx == unit.position.rx && cy == unit.position.ry);
-    on && unit.movement_target.is_none() && unit.forced_drive_track.is_none()
+    on && unit.movement_target.is_none()
+        && movement::track_head::committed_track_head(unit).is_none()
 }
 
 /// No live vehicle/infantry other than the candidate stands on the footprint.
@@ -274,9 +273,9 @@ fn shove_footprint_blockers(
             &mut sim.scenario_rng,
             Some(rules),
             &sim.interner,
-            crate::sim::movement::DestinationTiming::new(
+            crate::sim::movement::DestinationTiming::from_rules(
                 sim.session.binary_frame,
-                sim.blockage_path_delay_ticks,
+                rules.into(),
             ),
         );
     }
@@ -322,7 +321,7 @@ fn octant_install_track(facing: u8) -> u8 {
 /// already on the anchor cell (no slide needed).
 fn start_install_force_track(
     sim: &mut Simulation,
-    rules: &RuleSet,
+    _rules: &RuleSet,
     building_id: u64,
     unit_id: u64,
 ) -> bool {
@@ -339,11 +338,11 @@ fn start_install_force_track(
     else {
         return false;
     };
-    let Some((ux, uy, tref)) = sim
+    let Some((ux, uy)) = sim
         .substrate
         .entities
         .get(unit_id)
-        .map(|u| (u.position.rx, u.position.ry, u.type_ref()))
+        .map(|u| (u.position.rx, u.position.ry))
     else {
         return false;
     };
@@ -354,38 +353,21 @@ fn start_install_force_track(
     }
     let facing = facing_from_delta(dcx, dcy);
     let track = octant_install_track(facing);
-    // `FootClass::GetCurrentSpeed @ 0x004DB1A0`: the install turn track is a
-    // drive-track like any other, so the FASTER stage applies.
-    let install_obj = sim.object_type(tref, rules);
-    let speed_raw = install_obj.map(|o| o.speed).unwrap_or(4).max(1);
-    let speed = match sim.substrate.entities.get(unit_id) {
-        Some(unit) => crate::sim::combat::veterancy::entity_mover_speed_leptons_per_second(
-            unit,
-            install_obj,
-            speed_raw,
-            rules.general.veteran_speed,
-        ),
-        None => crate::util::fixed_math::ra2_speed_to_leptons_per_second(speed_raw),
-    };
-    // Native passes the building's exact GetCoords result, not merely its cell
-    // origin. Express that absolute head relative to the unit's current origin.
-    let Some(forced) = begin_forced_turn_track(
-        track,
-        dcx * 256 + building_sub_x,
-        dcy * 256 + building_sub_y,
-        speed,
-        false,
-    ) else {
-        return false;
-    };
-    let (entities, cell_occupation) = (
-        &mut sim.substrate.entities,
-        &mut sim.substrate.cell_occupation,
+    let admitted = sim.force_drive_track(
+        unit_id,
+        i32::from(track),
+        crate::sim::components::DriveCoord {
+            x: i32::from(bx) * 256 + building_sub_x,
+            y: i32::from(by) * 256 + building_sub_y,
+            z: building_z,
+        },
     );
-    let Some(unit) = entities.get_mut(unit_id) else {
-        return false;
-    };
-    movement::install_forced_drive_track(unit, cell_occupation, forced, building_z)
+    // Building4591AF calls Force_Track, then4591BE explicitly sets Foot's
+    // applied fraction. The generic locomotor admission does not own speed.
+    if let Some(unit) = sim.substrate.entities.get_mut(unit_id) {
+        unit.foot_speed.applied_fraction = crate::util::fixed_math::SIM_ONE;
+    }
+    admitted
 }
 
 #[cfg(test)]
@@ -415,10 +397,7 @@ mod tests {
             0,
             0,
             owner_id,
-            Health {
-                current: 1000,
-                max: 1000,
-            },
+            Health { current: 1000 },
             type_id,
             EntityCategory::Structure,
             0,
@@ -432,23 +411,26 @@ mod tests {
     fn spawn_tank_on(sim: &mut Simulation, sid: u64, rx: u16, ry: u16) {
         let owner_id = sim.interner.intern("Americans");
         let type_id = sim.interner.intern("TANK");
-        let ge = GameEntity::new_at_frame_zero_for_test(
+        let mut ge = GameEntity::new_at_frame_zero_for_test(
             sid,
             rx,
             ry,
             0,
             0,
             owner_id,
-            Health {
-                current: 400,
-                max: 400,
-            },
+            Health { current: 400 },
             type_id,
             EntityCategory::Unit,
             0,
             5,
             true,
         );
+        ge.locomotor = Some(
+            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Drive,
+            ),
+        );
+        ge.drive_locomotion = Some(Default::default());
         sim.substrate.entities.insert(ge);
     }
 
@@ -484,12 +466,6 @@ mod tests {
 
         assert!(start_install_force_track(&mut sim, &rules, 2, 1));
         let unit = sim.substrate.entities.get(1).unwrap();
-        let forced = unit
-            .forced_drive_track
-            .as_ref()
-            .expect("bunker Force_Track installed");
-        assert_eq!(forced.track.head_offset_x, 256 + 96);
-        assert_eq!(forced.track.head_offset_y, 160);
         let exact_head = crate::sim::components::DriveCoord {
             x: 10 * 256 + 96,
             y: 10 * 256 + 160,
@@ -564,13 +540,13 @@ mod tests {
             BunkerLink::Installed(2)
         );
         assert!(
-            !sim.substrate.entities.get(1).unwrap().in_logic_vector,
-            "installed unit is hidden"
+            sim.substrate.entities.get(1).unwrap().in_logic_vector,
+            "installed unit remains in LogicVector"
         );
         let installed = sim.substrate.entities.get(1).unwrap();
         assert!(installed.lifecycle.object_alive);
-        assert!(installed.lifecycle.in_limbo);
-        assert!(!installed.lifecycle.cell_marked);
+        assert!(!installed.lifecycle.in_limbo);
+        assert!(installed.lifecycle.cell_marked);
         assert_eq!(
             sim.bunker_wall_events.iter().filter(|e| e.up).count(),
             1,

@@ -45,29 +45,14 @@ impl AtCoordQuery {
     /// and its retained head are reread; a path is not a substitute for either.
     pub(crate) fn from_entity(entity: &crate::sim::game_entity::GameEntity) -> Option<Self> {
         let locomotor = entity.locomotor.as_ref()?;
-        let (head, track) = match locomotor.kind {
-            LocomotorKind::Drive => entity
-                .drive_locomotion
-                .as_ref()
-                .map(|s| (s.head_to, s.track)),
-            LocomotorKind::Ship => entity
-                .ship_locomotion
-                .as_ref()
-                .map(|s| (s.head_to, s.track)),
+        let track = match locomotor.kind {
+            LocomotorKind::Drive => entity.drive_locomotion.as_ref().map(|s| s.track),
+            LocomotorKind::Ship => entity.ship_locomotion.as_ref().map(|s| s.track),
             _ => None,
         }
         .unwrap_or_default();
-        let head = if matches!(locomotor.kind, LocomotorKind::Walk | LocomotorKind::Hover) {
-            locomotor.step_head()
-        } else {
-            head
-        };
-        let mut current = super::ground_pose::position_world_coord(&entity.position);
-        if locomotor.kind == LocomotorKind::Hover {
-            // Existing Hover owns its vertical displacement separately from
-            // the retained ground coordinate; combine those current writers.
-            current.z = current.z.wrapping_add(locomotor.altitude.to_num::<i32>());
-        }
+        let head = super::foot_coordinate::stored_head(entity);
+        let current = super::foot_coordinate::current_coordinate(entity);
         Self::from_state(
             locomotor.kind,
             current,
@@ -97,11 +82,7 @@ impl AtCoordQuery {
             return None;
         }
         let stored = stored_head.unwrap_or(NULL_COORD);
-        let head = if stored == NULL_COORD {
-            current
-        } else {
-            stored
-        };
+        let head = super::foot_coordinate::head_or_current(stored_head, current);
         let handoff = if track_family && head != NULL_COORD && !track.reversed {
             usize::try_from(track.turn_index)
                 .ok()

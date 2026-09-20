@@ -34,10 +34,7 @@ fn fixture() -> (Simulation, RuleSet) {
         0,
         0,
         owner,
-        Health {
-            current: 400,
-            max: 400,
-        },
+        Health { current: 400 },
         type_id,
         EntityCategory::Unit,
         0,
@@ -52,21 +49,6 @@ fn fixture() -> (Simulation, RuleSet) {
     entity.lifecycle.in_limbo = false;
     sim.substrate.entities.insert(entity);
     (sim, rules)
-}
-
-fn curve() -> DriveTrackState {
-    DriveTrackState {
-        before_first_point: false,
-        raw_track_index: 1,
-        point_index: 3,
-        residual: 5,
-        transform_flags: 0,
-        head_offset_x: 128,
-        head_offset_y: 128,
-        cell_offset_x: 0,
-        cell_offset_y: 0,
-        target_facing: 0,
-    }
 }
 
 fn replay_fixture() -> crate::sim::components::FootPathQueue {
@@ -93,7 +75,6 @@ fn supply_drive_state(entity: &mut GameEntity) {
         },
         ..Default::default()
     });
-    entity.drive_track = Some(curve());
 }
 
 fn activate_drive(entity: &mut GameEntity) {
@@ -105,8 +86,6 @@ fn owned_state(entity: &GameEntity) -> serde_json::Value {
     serde_json::to_value((
         &entity.locomotor,
         &entity.drive_locomotion,
-        &entity.drive_track,
-        &entity.forced_drive_track,
         &entity.navigation.path_replay,
         &entity.foot_speed,
     ))
@@ -118,8 +97,6 @@ fn assert_retired(entity: &GameEntity) {
     assert_eq!(locomotor.active_kind(), LocomotorKind::Teleport);
     assert!(locomotor.piggyback.is_none());
     assert!(entity.drive_locomotion.is_none());
-    assert!(entity.drive_track.is_none());
-    assert!(entity.forced_drive_track.is_none());
 }
 
 fn destination(sim: &mut Simulation, rules: &RuleSet, building: bool) -> bool {
@@ -180,17 +157,12 @@ fn refused_restore_keeps_live_head_and_forced_segment() {
         let (mut sim, rules) = fixture();
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         activate_drive(entity);
-        if forced {
-            entity.forced_drive_track = Some(ForcedDriveTrackState {
-                turn_track_index: 0x47,
-                track: curve(),
-                speed: SimFixed::from_num(6),
-            });
-        }
-        // An active forced segment also has a native head ahead of its owner.
-        // The legacy forced adapter alone cannot add an IsOKToEnd gate.
+        // Both ordinary and forced tracks use the active class's raw head.
         entity.drive_locomotion.as_mut().unwrap().head_to = Some(DriveCoord::cell(9, 8, 731));
-        let before = owned_state(entity);
+        if forced {
+            assert!(sim.force_drive_track(1, 0x47, DriveCoord::cell(9, 8, 731)));
+        }
+        let before = owned_state(sim.substrate.entities.get(1).unwrap());
 
         assert!(!destination(&mut sim, &rules, false));
         assert!(!movement::tick_locomotor_piggyback_restore_one(
@@ -210,11 +182,7 @@ fn building_destination_installs_fresh_drive_without_previous_instance_state() {
     // A saved state produced by the old direct-END path could leave these
     // fields attached to primary Teleport. They must not become a new Drive.
     supply_drive_state(entity);
-    entity.forced_drive_track = Some(ForcedDriveTrackState {
-        turn_track_index: 0x47,
-        track: curve(),
-        speed: SimFixed::from_num(6),
-    });
+    entity.drive_locomotion.as_mut().unwrap().track.turn_index = 0x47;
 
     assert!(destination(&mut sim, &rules, true));
 
@@ -223,14 +191,10 @@ fn building_destination_installs_fresh_drive_without_previous_instance_state() {
     assert_eq!(locomotor.active_kind(), LocomotorKind::Drive);
     assert_eq!(locomotor.effective_kind(), LocomotorKind::Teleport);
     assert!(entity.movement_target.is_some());
-    assert!(entity.forced_drive_track.is_none());
     let drive = entity.drive_locomotion.as_ref().unwrap();
     assert_eq!(drive.track.residual, 0);
     assert_eq!(entity.foot_speed.applied_fraction, SimFixed::lit("0.5"));
     assert_eq!(entity.foot_speed.cached_current_speed, 11);
-    if let Some(track) = &entity.drive_track {
-        assert_eq!(track.residual, 0);
-    }
 }
 
 #[test]
@@ -238,11 +202,8 @@ fn reusing_active_drive_keeps_complete_instance_including_forced_track() {
     let (mut sim, _) = fixture();
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     activate_drive(entity);
-    entity.forced_drive_track = Some(ForcedDriveTrackState {
-        turn_track_index: 0x47,
-        track: curve(),
-        speed: SimFixed::from_num(6),
-    });
+    assert!(sim.force_drive_track(1, 0x47, DriveCoord::cell(9, 8, 731)));
+    let entity = sim.substrate.entities.get_mut(1).unwrap();
     let before = owned_state(entity);
 
     assert!(begin_drive_for_teleporter(entity, 900));
@@ -302,7 +263,10 @@ fn stop_command_retires_only_the_drive_admitted_by_its_existing_gate() {
                 entity.drive_locomotion.as_ref().unwrap().head_to,
                 Some(DriveCoord::cell(9, 8, 731))
             );
-            assert_eq!(entity.drive_track.as_ref().unwrap().residual, 5);
+            assert_eq!(
+                entity.drive_locomotion.as_ref().unwrap().track.residual,
+                971
+            );
         } else {
             assert_retired(entity);
         }
@@ -330,6 +294,7 @@ fn finished_teleport_restores_suspended_drive_without_retiring_its_state() {
         &mut sim.substrate.occupancy,
         &[1],
         1,
+        None,
         None,
     );
 
@@ -454,10 +419,11 @@ fn foot_speed_ownership_matches_original_helper_witnesses() {
         // SetSpeedFraction clamp. Native witnesses execute the complete setter.
         if case["input"]["family"] == "drive" {
             let mut drive = DriveLocomotionRuntime::default();
+            drive.target_speed_fraction = requested;
             super::super::drive_locomotion::update_drive_speed_fraction(
-                &mut drive,
+                &drive,
                 &mut owner_speed,
-                requested,
+                false,
                 false,
                 SIM_ONE,
                 SIM_ZERO,
@@ -484,10 +450,11 @@ fn foot_speed_ownership_matches_original_helper_witnesses() {
             assert_eq!(case["output"]["end_preserves_owner"], true);
         } else {
             let mut ship = ShipLocomotionRuntime::default();
+            ship.target_speed_fraction = requested;
             super::super::drive_locomotion::update_ship_speed_fraction(
-                &mut ship,
+                &ship,
                 &mut owner_speed,
-                requested,
+                false,
                 false,
                 SIM_ONE,
                 SIM_ZERO,

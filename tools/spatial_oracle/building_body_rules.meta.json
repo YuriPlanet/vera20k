@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "BuildingType art body triples, GateStages, FirestormWall and ordinary buildup asset-count slice",
+  "assumptions": [
+    "Supplied INI section/entry indexes with native CRC; cached section pointer matches supplied TEST type name",
+    "Original ReadString64, sprintf and sscanf execute for all four animation triplets",
+    "Buildup count is supplied raw SHP header16, pointer presence supplied after asset lookup",
+    "Constructor triple defaults0,1,0 from EBX0 at45DD9A and EBP1 at45E27F; GateStages9 at45E1F0; FirestormWall0 at45E14B",
+    "Buildup ordinary45F230 path only; alternate theater45EAA5 full-frame-count path is recorded but not executed or unified"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "triples": "0x004615CA",
+    "integer_reader": "0x005276D0",
+    "bool_reader": "0x005295F0",
+    "buildup": "0x0045F2AA"
+  },
+  "original_slices": [
+    {
+      "start": "0045DD90",
+      "end_exclusive": "0045DDA6",
+      "hex": "8b44240483ec0853555633db57538bf150e84a2d2b00",
+      "sha256": "dc80cc1998ee049575db818de9cb6d697cf5a27ce7687a4735d4d92d9af3c071"
+    },
+    {
+      "start": "0045E27F",
+      "end_exclusive": "0045E284",
+      "hex": "bd01000000",
+      "sha256": "d791468a4770d36d6f8519c2cdd9fb0ee19a89a1b1bf0b17b92a859fff90bbc9"
+    },
+    {
+      "start": "0045E13A",
+      "end_exclusive": "0045E158",
+      "hex": "9ebd160000889ebe160000889ebf160000889ec0160000889ec116000088",
+      "sha256": "763a6eba64ed9bc19786887adbabc350dc363b6e097b1cb1cbca05d52edb3df9"
+    },
+    {
+      "start": "0045E1F0",
+      "end_exclusive": "0045E1FA",
+      "hex": "c786f816000009000000",
+      "sha256": "29267752d1bfa4ec914b655873e8ace8b43b923fd1682336b200bbc5528124e5"
+    },
+    {
+      "start": "0045E362",
+      "end_exclusive": "0045E3BC",
+      "hex": "899e040f000089ae080f0000899e0c0f0000899e100f000089ae140f0000899e180f0000899e1c0f000089ae200f0000899e240f0000899e340f000089ae380f0000899e3c0f0000899e400f000089ae440f0000899e480f0000",
+      "sha256": "2643f02b5e954548ff6824ee4b65341f35a882c807b5a50d25162b66466d40c9"
+    },
+    {
+      "start": "00460AC0",
+      "end_exclusive": "00460AE0",
+      "hex": "8a85c0160000506820aa8100538bcee81c8b0c008a8dc11600008885c0160000",
+      "sha256": "09d7b2e83f3bdaf3087f06921b17c008e2525bfb4fd7b4481f49a285806dd000"
+    },
+    {
+      "start": "004612D1",
+      "end_exclusive": "004612EE",
+      "hex": "8b85f81600005068f4a6810057b980718800e8e8630c008985f8160000",
+      "sha256": "999b9b215a0eb8b44e07965960081c88f69685fc517e5088aae8f16914b04238"
+    },
+    {
+      "start": "004615CA",
+      "end_exclusive": "004617B8",
+      "hex": "8b85180f00008b8d140f00008b95100f00008d9d180f00005051528d84248c01000068b089810050e8fd78360083c4148d8c24400100008d9424800100008dbdf80100006a4051526800a6810057b980718800e8ee730c0085c07e248d85140f000053508d85100f0000508d84244c01000068b089810050e8e98e360083c4148b8d240f00008b95200f00008b851c0f00008d9d240f00005152508d8c248c01000068b089810051e87d78360083c4148d9424400100008d842480010000b9807188006a40525068f4a5810057e874730c0085c07e248d85200f000053508d851c0f0000508d8c244c01000068b089810051e86f8e360083c4148b953c0f00008b85380f00008b8d340f00008d9d3c0f00005250518d94248c01000068b089810052e80378360083c4148d8424400100008d8c24800100006a40505168e8a5810057b980718800e8fa720c0085c07e248d85380f000053508d85340f0000508d94244c01000068b089810052e8f58d360083c4148b85480f00008b8d440f00008b95400f00008d9d480f00005051528d84248c01000068b089810050e88977360083c4148d8c24400100008d9424800100006a40515268dca5810057b980718800e880720c0085c07e248d85440f000053508d85400f0000508d84244c01000068b089810050e87b8d360083c414",
+      "sha256": "85cc18da1f29db173ccab1c943af2a751856bc6760f791cfb7786e58e8a10977"
+    },
+    {
+      "start": "0045F2AA",
+      "end_exclusive": "0045F310",
+      "hex": "3bc38985000e0000745c0fbf4006992bc2b9010000008bf08a85b7160000d1fe3ac389742410740b8bb5f816000046897424103bf37e1d8b0de0718800dd8118150000dc0df8277e00da742410e8046c36008bc8899d040f000089b5080f0000898d0c0f0000",
+      "sha256": "c015ecf7caa233e2791424727fabe4501aaa6dfc839f4f7bc6dec44acfb51e04"
+    },
+    {
+      "start": "0045EAA5",
+      "end_exclusive": "0045EADA",
+      "hex": "8b8e000e00003bcb0f84870000000fbf49063bcbb8010000007408b84b00000099f7f9899e040f0000898e080f000089860c0f0000",
+      "sha256": "a0865e252f3c5735cbc665a6f30aa9009ba8289d544879730a0dfdec6f6fa08d"
+    }
+  ],
+  "payload_sha256": "73b0e570adeceaf9b097015c9636e17476cd6036a009785090d4f76ebbea4620"
+}

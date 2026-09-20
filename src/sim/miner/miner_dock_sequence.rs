@@ -34,7 +34,6 @@ use crate::sim::economy::apply_income_mult;
 use crate::sim::house_state::{house_state_for_owner_mut, income_ppm_for_owner};
 use crate::sim::production::{credits_entry_for_owner, foundation_dimensions};
 use crate::sim::radio::{self, RadioMessage, RadioPayload};
-use crate::util::fixed_math::ra2_speed_to_leptons_per_second;
 
 /// Maximum diamond-ring radius for the post-unload exit-cell spiral search.
 /// gamemd's `FootClass::Find_Nearby_Passable_Cell` derives its cap from
@@ -60,9 +59,6 @@ const APPROACH_HELLO_BASE_FRAMES: u8 = 14;
 const MISSION_DEPLOY_FACING_WAIT_FRAMES: u8 = 5;
 const MISSION_DEPLOY_UNLOAD_BASE_FRAMES: u8 = 14;
 const MISSION_DEPLOY_UNLOAD_JITTER_MAX_FRAMES: u32 = 2;
-const REFINERY_EXIT_FORCE_TRACK: u8 = 0x47;
-const REFINERY_EXIT_FORCE_HEAD_OFFSET_X: i32 = 0;
-const REFINERY_EXIT_FORCE_HEAD_OFFSET_Y: i32 = 256;
 
 /// Helper: record a dock phase transition to the snapshot's debug buffer.
 fn record_dock_phase(snap: &mut MinerSnapshot, old: RefineryDockPhase, new: RefineryDockPhase) {
@@ -479,7 +475,7 @@ fn resolve_refinery_cells(
         .unwrap_or((1, 1));
     let qc = obj.and_then(|o| o.queueing_cell);
     let dock_off = obj.and_then(|o| o.pads.first().map(|p| p.lepton_offset));
-    let dock_capacity = obj.map(|o| o.number_of_docks.max(1) as usize).unwrap_or(1);
+    let dock_capacity = obj.map(|o| o.dock_contact_capacity() as usize).unwrap_or(1);
     let rx = entity.position.rx;
     let ry = entity.position.ry;
     let wait_queue = refinery_queue_cell(rx, ry, w, h, qc);
@@ -545,49 +541,19 @@ fn dock_abort_state_from_miner(miner: &super::Miner) -> MinerState {
     }
 }
 
-fn start_refinery_exit_force_track(
-    entity: &mut crate::sim::game_entity::GameEntity,
-    cell_occupation: &mut crate::sim::occupancy::CellOccupationGrid,
-    speed: SimFixed,
-) -> bool {
-    let Some(forced) = movement::drive_track::begin_forced_turn_track(
-        REFINERY_EXIT_FORCE_TRACK,
-        REFINERY_EXIT_FORCE_HEAD_OFFSET_X,
-        REFINERY_EXIT_FORCE_HEAD_OFFSET_Y,
-        speed,
-        false,
-    ) else {
-        return false;
-    };
-    // This VERA refinery-exit adapter retains the current raw height; its
-    // caller policy remains unproven against retail.
-    let head_z = movement::ground_pose::position_world_coord(&entity.position).z;
-    movement::install_forced_drive_track(entity, cell_occupation, forced, head_z)
-}
-
-/// `FootClass::GetCurrentSpeed @ 0x004DB1A0`: the dock/exit drive tracks run on
-/// the same per-frame getter as an ordered move, so the `FASTER` stage applies.
-fn entity_full_speed(sim: &Simulation, rules: &RuleSet, entity_id: u64) -> SimFixed {
-    let Some(entity) = sim.substrate.entities.get(entity_id) else {
-        return ra2_speed_to_leptons_per_second(4);
-    };
-    let obj = sim.object_type(entity.type_ref(), rules);
-    crate::sim::combat::veterancy::entity_mover_speed_leptons_per_second(
-        entity,
-        obj,
-        obj.map_or(4, |o| o.speed.max(1)),
-        rules.general.veteran_speed,
-    )
-}
-
-/// Apply gamemd's interrupt `BuildingClass::UndockUnit` shape for miners that
-/// are actually linked to this refinery before the building is removed.
-pub(crate) fn interrupt_refinery_docked_miners(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    ref_sid: u64,
-) -> usize {
-    let candidates: Vec<(u64, bool)> = sim
+/// VERA's current refinery-loss adapter: release contacts/reservations and
+/// reset the miner cursor/timers, preserving cargo and locomotor state.
+/// Returns the number of miners whose adapter state was cleared.
+///
+/// Native Sell44AAA4 and ReceiveDamage4424A2 call release4593A0 only through
+/// the reciprocal bunker link (+2E4), whose producer is gated by Bunker at
+/// 44B797..44B7A3. Refinery contacts/on_pad are not that link and cannot
+/// authorize Force_Track(0x47) or SetSpeedFraction(1). Native sale's radio0x17
+/// receiver737A98 and death's later contact-loss dispatch73DEE0 have distinct
+/// mission/scatter timing. This eager shared reset remains an unfinished
+/// VERA adapter; it does not implement either complete native sequence.
+pub(crate) fn interrupt_refinery_docked_miners(sim: &mut Simulation, ref_sid: u64) -> usize {
+    let candidates: Vec<u64> = sim
         .substrate
         .entities
         .keys_sorted()
@@ -614,7 +580,7 @@ pub(crate) fn interrupt_refinery_docked_miners(
                 .dock_reservations
                 .has_contact(ref_sid, entity_id);
             if is_on_pad || has_contact {
-                Some((entity_id, is_on_pad))
+                Some(entity_id)
             } else {
                 None
             }
@@ -622,18 +588,13 @@ pub(crate) fn interrupt_refinery_docked_miners(
         .collect();
 
     let mut interrupted = 0;
-    for (entity_id, was_on_pad) in candidates {
+    for entity_id in candidates {
         sim.production
             .dock_reservations
             .cancel_miner(ref_sid, entity_id);
         bus_break(sim, entity_id, ref_sid);
         clear_refinery_contact(sim, entity_id, ref_sid);
-        let speed = entity_full_speed(sim, rules, entity_id);
-        let (entities, cell_occupation) = (
-            &mut sim.substrate.entities,
-            &mut sim.substrate.cell_occupation,
-        );
-        let Some(entity) = entities.get_mut(entity_id) else {
+        let Some(entity) = sim.substrate.entities.get_mut(entity_id) else {
             continue;
         };
         let Some(miner) = entity.miner.as_mut() else {
@@ -660,10 +621,7 @@ pub(crate) fn interrupt_refinery_docked_miners(
 
         entity.display_type_override = None;
         entity.movement_target = None;
-        entity.drive_track = None;
-        if was_on_pad && start_refinery_exit_force_track(entity, cell_occupation, speed) {
-            interrupted += 1;
-        }
+        interrupted += 1;
     }
     interrupted
 }
@@ -677,12 +635,11 @@ fn abort_invalid_refinery(sim: &mut Simulation, snap: &mut MinerSnapshot, ref_si
         clear_refinery_contact(sim, snap.entity_id, ref_sid);
     }
 
+    sim.cancel_drive_track(snap.entity_id);
     if let Some(entity) = sim.substrate.entities.get_mut(snap.entity_id) {
         entity.display_type_override = None;
         entity.facing_target = None;
         entity.movement_target = None;
-        entity.drive_track = None;
-        entity.forced_drive_track = None;
     }
 
     snap.miner.reserved_refinery = None;
@@ -706,11 +663,10 @@ fn abort_missing_unload_building(sim: &mut Simulation, snap: &mut MinerSnapshot,
     bus_break(sim, snap.entity_id, ref_sid);
     clear_refinery_contact(sim, snap.entity_id, ref_sid);
 
+    sim.cancel_drive_track(snap.entity_id);
     if let Some(entity) = sim.substrate.entities.get_mut(snap.entity_id) {
         entity.facing_target = None;
         entity.movement_target = None;
-        entity.drive_track = None;
-        entity.forced_drive_track = None;
         snap.rx = entity.position.rx;
         snap.ry = entity.position.ry;
     }
@@ -762,12 +718,11 @@ fn abort_missing_unload_building(sim: &mut Simulation, snap: &mut MinerSnapshot,
 /// no trigger today; a future contact-drop that leaves the phase in place would
 /// let the drain continue one gate longer than native.
 fn abort_unload_contact_lost(sim: &mut Simulation, snap: &mut MinerSnapshot, ref_sid: u64) {
+    sim.cancel_drive_track(snap.entity_id);
     if let Some(entity) = sim.substrate.entities.get_mut(snap.entity_id) {
         // Enter_Idle_Mode base: drop target/destination; +0x500: Stop_Moving.
         entity.facing_target = None;
         entity.movement_target = None;
-        entity.drive_track = None;
-        entity.forced_drive_track = None;
         // +0x6D1 = 0 drops the UnloadingClass image with the latch.
         entity.display_type_override = None;
     }
@@ -1118,10 +1073,8 @@ fn phase_mission_enter(
         // Building 0x0E sends 0x12 with anchor+(3,1). The accepted cell is
         // inside the refinery footprint for stock GAREFN/NAREFN, so use the
         // direct move path already used for refinery pad entry.
-        let timing = movement::DestinationTiming::new(
-            sim.session.binary_frame,
-            sim.blockage_path_delay_ticks,
-        );
+        let timing =
+            movement::DestinationTiming::from_rules(sim.session.binary_frame, rules.into());
         if movement::issue_direct_move(
             &mut sim.substrate.entities,
             snap.entity_id,
@@ -1343,6 +1296,14 @@ fn phase_unloading(
         return;
     }
 
+    let Some(unload_building_id) = mission_deploy_unload_building(sim, snap.entity_id) else {
+        abort_missing_unload_building(sim, snap, ref_sid);
+        return;
+    };
+    // Original73E37E..73E3BA precedes FindFirstNonEmptySlot. Constructors
+    // therefore consume identity/RNG and append Logic entries before credits.
+    crate::sim::world::building_anim::begin_refinery_unload_gate(sim, rules, unload_building_id);
+
     // Drain one resource-type "slot" per threshold crossing — all bales
     // of the same type drop in one atomic step. The 14.4-tick interval
     // is the latency between SLOT drains, not between bale credits.
@@ -1356,11 +1317,6 @@ fn phase_unloading(
         .find(|t| snap.miner.cargo.iter().any(|b| b.resource_type == *t));
 
     if let Some(slot_type) = next_slot {
-        let Some(unload_building_id) = mission_deploy_unload_building(sim, snap.entity_id) else {
-            abort_missing_unload_building(sim, snap, ref_sid);
-            return;
-        };
-
         let mut slot_value: i32 = 0;
         let mut slot_bales: i32 = 0; // P7: bale COUNT (the HarvestedCredits stat is bales×5, not value×5)
         snap.miner.cargo.retain(|b| {
@@ -1457,7 +1413,8 @@ fn phase_unloading(
     // ProductionAnim (stock GAREFN/NAREFN define none → no-op), `+0xBC = 4`,
     // and `ClearAnimSlot(0xA)` while `+0x584` is still alive — the SpecialAnim
     // is cut, not played out.
-    let unload_building = mission_deploy_unload_building(sim, snap.entity_id);
+    crate::sim::world::building_anim::end_refinery_unload_empty(sim, rules, unload_building_id);
+    let unload_building = Some(unload_building_id);
     if let Some(building_id) = unload_building {
         sim.bale_events.push(BaleDepositEvent {
             building_id,
@@ -1505,11 +1462,10 @@ fn phase_departing(sim: &mut Simulation, rules: &RuleSet, snap: &mut MinerSnapsh
     bus_break(sim, snap.entity_id, ref_sid);
     clear_refinery_contact(sim, snap.entity_id, ref_sid);
 
+    sim.cancel_drive_track(snap.entity_id);
     if let Some(entity) = sim.substrate.entities.get_mut(snap.entity_id) {
         entity.display_type_override = None;
         entity.movement_target = None;
-        entity.drive_track = None;
-        entity.forced_drive_track = None;
         entity.facing_target = None;
         snap.rx = entity.position.rx;
         snap.ry = entity.position.ry;
@@ -1622,9 +1578,9 @@ fn issue_move_if_idle(
             Some(&blocker_neighbor_counts),
             sim.playfield_bounds,
             Some(&mut sim.substrate.cell_occupation),
-            crate::sim::movement::DestinationTiming::new(
+            crate::sim::movement::DestinationTiming::from_rules(
                 sim.session.binary_frame,
-                sim.blockage_path_delay_ticks,
+                rules.into(),
             ),
         );
     }

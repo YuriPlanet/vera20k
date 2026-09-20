@@ -47,7 +47,9 @@ use crate::sim::house_state::HouseState;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::vision::FogState;
 use crate::util::fixed_math::SimFixed;
-use crate::util::native_x87::{X87Chop53, X87Ordering, X87Value};
+use crate::util::native_x87::{
+    MaskedX87Chop53 as X87Chop53, MaskedX87Ordering as X87Ordering, MaskedX87Value,
+};
 
 /// Snapshot of garrison state for a garrisoned building attacker.
 /// Extracted during Phase 1 to avoid borrow conflicts in Phase 2.
@@ -333,7 +335,7 @@ pub(crate) fn calculate_ai_threat_score(
     interner: &StringInterner,
     terrain: Option<&ResolvedTerrainGrid>,
     alliances: Option<&HouseAllianceMap>,
-) -> Option<X87Value> {
+) -> Option<MaskedX87Value> {
     let scorer = entities.get(scorer_id)?;
     let scorer_type = rules.object(interner.resolve(scorer.type_ref()))?;
     let coefficients = super::greatest_threat::ThreatCoefficients::resolve(
@@ -491,15 +493,9 @@ pub(crate) fn should_retaliate_from_damage(
                 Some(alliances),
             ),
         )
-        // This comparison changed behaviour in the GSI-05.13 slice, and the
-        // change is a correction rather than a side effect: `X87Chop53::compare`
-        // ordered on the exponent before settling zero operands, so any score in
-        // `(0, 1)` compared against an exactly-zero score came back as the
-        // SMALLER one. An AI defender holding a zero-scored current target used
-        // to refuse retaliation against a positive-scored attacker; it no longer
-        // does. Reachability needs an exactly-zero `calculate_ai_threat_score`,
-        // which the term structure makes uncommon but not impossible.
-        && X87Chop53::compare(current_score, attacker_score) == X87Ordering::Greater
+        // ShouldRetaliate708A8E spills the current target's score to double;
+        // 708A9F..A8 compares the new score and rejects on C0 (Less or Unordered).
+        && retaliation_score_refuses(current_score, attacker_score)
     {
         return false;
     }
@@ -721,4 +717,13 @@ mod tests {
             Some(2)
         );
     }
+}
+
+/// Original708A8E stores the old score;708A9F..A8 refuses on C0.
+pub(super) fn retaliation_score_refuses(current: MaskedX87Value, attacker: MaskedX87Value) -> bool {
+    let current = X87Chop53::load_f64(X87Chop53::store_f64_masked_chop(current));
+    matches!(
+        X87Chop53::compare(attacker, current),
+        X87Ordering::Less | X87Ordering::Unordered
+    )
 }

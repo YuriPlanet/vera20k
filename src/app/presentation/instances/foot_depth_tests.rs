@@ -83,10 +83,7 @@ fn entity(runtime: &mut SimRuntime, name: &str, category: EntityCategory) -> Gam
         0,
         0,
         owner,
-        Health {
-            current: 100,
-            max: 100,
-        },
+        Health { current: 100 },
         type_ref,
         category,
         0,

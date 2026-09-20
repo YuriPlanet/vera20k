@@ -136,25 +136,35 @@ pub(super) fn refresh_drive_destination_coord(
     true
 }
 
-pub(super) fn resolve_entity_nav_target_drive_coord(
+/// Resolve the live receiver behind a non-null NavCom. The Rust reference tag
+/// does not change the native virtual receiver, and a dangling ID is not NULL.
+pub(super) fn nav_target_coordinate(
     target: NavTargetRef,
     entities: &EntityStore,
-) -> Option<DriveCoord> {
-    match target {
-        // OPEN: Foot4DBDF0 first asks the target's active locomotor Head_To.
-        // This current-coordinate fallback needs the retained Walk/Hover heads
-        // before moving Infantry reaim is complete; never write it into our head.
-        NavTargetRef::Entity { id } => entities
-            .get(id)
-            .map(|entity| super::ground_pose::position_world_coord(&entity.position)),
-        NavTargetRef::Cell { .. } | NavTargetRef::Object { .. } | NavTargetRef::Building { .. } => {
-            None
-        }
+    terrain: Option<&ResolvedTerrainGrid>,
+) -> Result<DriveCoord, String> {
+    let id = match target {
+        NavTargetRef::Cell { rx, ry } => return Ok(target_cell_coord(rx, ry, terrain)),
+        NavTargetRef::Entity { id }
+        | NavTargetRef::Object { id }
+        | NavTargetRef::Building { id } => id,
+    };
+    let entity = entities
+        .get(id)
+        .ok_or_else(|| format!("NavCom coordinate target {id} disappeared"))?;
+    if entity.category == crate::map::entities::EntityCategory::Structure {
+        // Building447E90 is requester-dependent for Helipad/UnitRepair/Bunker.
+        // Its full receiver and signed dock metadata remain required; do not
+        // silently turn a live Building target into native navigation failure.
+        return Err(format!(
+            "Building {id} navigation coordinate requires its +4C receiver"
+        ));
     }
+    super::foot_coordinate::navigation_coordinate(entity, terrain)
 }
 
 /// Owner non-null destination path for the Phase 1 normal cell-target slice.
-pub(super) fn set_destination_internal_cell(
+pub(crate) fn set_destination_internal_cell(
     entity: &mut GameEntity,
     target: (u16, u16),
     resolved_terrain: Option<&ResolvedTerrainGrid>,
@@ -199,46 +209,6 @@ pub(super) fn set_destination_internal_null(entity: &mut GameEntity) {
     }
 }
 
-/// Walk75BE6F..75BF29 reloads the persistent destination AFTER PerCell and
-/// survival. Only null or matching signed cell + |dz| < 2*B45C28 retires NavCom.
-/// An A* approach endpoint has no independent destination authority.
-pub(super) fn finish_walk_navigation(entity: &mut GameEntity) -> bool {
-    let Some(loco) = entity.locomotor.as_ref() else {
-        return false;
-    };
-    if loco.kind != LocomotorKind::Walk
-        || loco.step_head().is_some()
-        || !entity.lifecycle.object_alive
-        || entity.lifecycle.in_limbo
-        || entity.object_is_falling_down != 0
-    {
-        return false;
-    }
-    let current = super::ground_pose::position_world_coord(&entity.position);
-    let arrived = loco.walk_destination().is_none_or(|dest| {
-        (current.x / 256) as i16 == (dest.x / 256) as i16
-            && (current.y / 256) as i16 == (dest.y / 256) as i16
-            && current.z.wrapping_sub(dest.z).wrapping_abs()
-                < 2 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS
-    });
-    if arrived {
-        set_destination_internal_null(entity);
-    } else if let Some(dest) = loco.walk_destination()
-        && let Some(target) = entity.movement_target.as_mut()
-        && target.next_index >= target.path.len()
-    {
-        //75BE6F..75BF64 retains a changed destination, including a same-cell
-        //height mismatch. The next no-head75AF1D/75AFC5 searches it. Retire
-        //only the exhausted route into the existing empty execution request;
-        //Foot's native queue/reference and the persistent destination survive.
-        target.path.clear();
-        target.path_layers.clear();
-        target.next_index = 0;
-        target.final_goal = Some(((dest.x / 256) as u16, (dest.y / 256) as u16));
-    }
-    arrived
-}
-
 /// FootClass::Stop_Moving-equivalent owner clear: zeroes only the owner
 /// destination pair (NavCom and its auxiliary slot), nothing else.
 pub(super) fn foot_stop_moving(entity: &mut GameEntity) {
@@ -250,7 +220,6 @@ pub(super) fn foot_stop_moving(entity: &mut GameEntity) {
 fn reset_drive_track_runtime(entity: &mut GameEntity) {
     if let Some(drive) = entity.drive_locomotion.as_mut() {
         drive.head_to = None;
-        drive.pending_track_occupation = false;
         drive.track_valid = false;
         drive.track.turn_index = -1;
         drive.track.cursor = 0;
@@ -285,7 +254,6 @@ pub(super) fn finish_drive_navigation(
             // ended track still loses its aim point.
             if let Some(drive) = entity.drive_locomotion.as_mut() {
                 drive.head_to = None;
-                drive.pending_track_occupation = false;
             }
             return;
         }
@@ -312,7 +280,6 @@ pub(super) fn finish_drive_navigation(
         // ordinary Ship null-destination path observes that same rest state.
         if let Some(ship) = entity.ship_locomotion.as_mut() {
             ship.head_to = None;
-            ship.pending_track_occupation = false;
             entity.navigation.path_replay.cursor = entity
                 .navigation
                 .path_replay
@@ -387,7 +354,9 @@ pub(super) fn process_pending_empty_drive_arrivals_in_order(
         if !entity.navigation.pending_arrival_clear {
             continue;
         }
-        if entity.movement_target.is_some() || entity.drive_track.is_some() {
+        if entity.movement_target.is_some()
+            || crate::sim::movement::track_head::committed_track_head(entity).is_some()
+        {
             continue;
         }
         if entity.navigation.nav_queue.is_empty() {
@@ -617,36 +586,35 @@ mod tests {
     #[test]
     fn resolve_nav_target_drive_coord_tracks_moving_entity() {
         let mut entities = EntityStore::new();
-        entities.insert(GameEntity::test_default(2, "MTNK", "Allies", 3, 4));
+        let mut target = GameEntity::test_default(2, "E1", "Allies", 3, 4);
+        target.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
+        entities.insert(target);
 
-        let first =
-            resolve_entity_nav_target_drive_coord(NavTargetRef::Entity { id: 2 }, &entities)
-                .unwrap();
+        let first = nav_target_coordinate(NavTargetRef::Entity { id: 2 }, &entities, None).unwrap();
         entities.get_mut(2).unwrap().position.rx += 1;
         let second =
-            resolve_entity_nav_target_drive_coord(NavTargetRef::Entity { id: 2 }, &entities)
-                .unwrap();
+            nav_target_coordinate(NavTargetRef::Entity { id: 2 }, &entities, None).unwrap();
 
         assert_ne!(first, second);
     }
 
     #[test]
-    fn resolve_nav_target_drive_coord_does_not_reaim_cell_targets() {
+    fn nav_target_coordinate_dispatches_cells_and_rejects_dangling_objects() {
         let entities = EntityStore::new();
-
         assert_eq!(
-            resolve_entity_nav_target_drive_coord(NavTargetRef::Cell { rx: 12, ry: 34 }, &entities),
-            None
+            nav_target_coordinate(NavTargetRef::cell(12, 34), &entities, None).unwrap(),
+            DriveCoord::cell(12, 34, 0)
         );
-    }
-
-    #[test]
-    fn resolve_nav_target_drive_coord_does_not_guess_building_anchor() {
-        let entities = EntityStore::new();
-
-        assert_eq!(
-            resolve_entity_nav_target_drive_coord(NavTargetRef::Building { id: 7 }, &entities),
-            None
-        );
+        for target in [
+            NavTargetRef::Entity { id: 7 },
+            NavTargetRef::Object { id: 7 },
+            NavTargetRef::Building { id: 7 },
+        ] {
+            assert!(
+                nav_target_coordinate(target, &entities, None)
+                    .unwrap_err()
+                    .contains("disappeared")
+            );
+        }
     }
 }

@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original ordinary Drive/Ship outer continuation joined to actual TrackProcess entry and early-clear epilogue",
+  "assumptions": [
+    "Outer execution starts at ordinary interior4B0A6B/6A0134 with a native-shaped saved-register/local frame and owner link",
+    "Original outer CALLfresh supplies output pointer and arguments1,0; supplied fresh returnAL/output/alive/valid/selector/queue/latch/turret effects are explicit boundary inputs",
+    "Original outer output/alive tests choose whether real TrackProcess executes with argument0; AL does not replace output/lifecycle state",
+    "Actual TrackProcess entry includes original Unit type getters, residual-clear store and complete epilogue/RET4 when rejected",
+    "Admitted entries stop before speed prefix4B0F69/6A0639; no speed or paid movement body is claimed",
+    "Initial residual14/-2 and invalid selectors demonstrate retained residual handling, not downstream selector-2 geometry validity",
+    "Output retirement is supplied, not inferred from a Rust finished list; no fresh turn/refusal receiver or full Process_Movement is executed",
+    "No null owner-link input is supplied; native ordinary alive branch dereferences that link",
+    "Read-only observers record native visits/writes; original code and Unit vtable checked unchanged"
+  ],
+  "substitutions": [
+    "Scratch Process_Movement boundary body supplies listed data writes and AL then RET12 to the original caller return address; no original code bytes patched"
+  ],
+  "entry_points": {
+    "drive_ordinary": "0x004B0A6B",
+    "drive_fresh": "0x004B2630",
+    "drive_entry": "0x004B0F20",
+    "drive_prefix": "0x004B0F69",
+    "drive_early_clear": "0x004B25F2",
+    "drive_early_ret": "0x004B2605",
+    "drive_type_call": "0x004B0F55",
+    "ship_ordinary": "0x006A0134",
+    "ship_fresh": "0x006A1C80",
+    "ship_entry": "0x006A05F0",
+    "ship_prefix": "0x006A0639",
+    "ship_early_clear": "0x006A1C43",
+    "ship_early_ret": "0x006A1C56",
+    "ship_type_call": "0x006A0625"
+  },
+  "original_code": [
+    {
+      "start": "004B0A6B",
+      "end_exclusive": "004B0ACE",
+      "hex": "538d4c24286a01518bcf885c2430e8b21b0000385c2424740c32c05f5e5d5b83c410c204008b5608389a90000000750c32c05f5e5d5b83c410c20400538bcfe8710400008b46083bc3740c3898900000000f85cafcffff5f5e5d32c05b83c410c20400",
+      "sha256": "87be5a0b144aee7233d030f020dac0299d5308e7cc768613226c4eeec1813aed"
+    },
+    {
+      "start": "006A0134",
+      "end_exclusive": "006A0193",
+      "hex": "538d4c24286a01518bcf885c2430e8391b0000385c2424740c32c05f5e5d5b83c410c204008b5608389a90000000750c32c05f5e5d5b83c410c20400538bcfe8780400008b46083898900000000f85b2fcffff5f5e5d32c05b83c410c20400",
+      "sha256": "b4eb1474737810caeac3f182592c7f43e90e46914c317757e98d7b661851888f"
+    },
+    {
+      "start": "004B0F20",
+      "end_exclusive": "004B0F69",
+      "hex": "81ecf000000053558be956578a456384c07406837d58ff75108b450c83b8e0050000080f85a91600008a456284c074198b4d0c8b11ff92840000008a88a10c000084c90f8489160000",
+      "sha256": "1717b5006128d2285d2ee94340cd71274d45ff6fe7e7a5a332fb8ab9e0933429"
+    },
+    {
+      "start": "004B25F2",
+      "end_exclusive": "004B2608",
+      "hex": "c7454c000000005f5e5d32c05b81c4f0000000c20400",
+      "sha256": "648901d2ea5fae998912730101928cb7a6529567ba810b80acf8280d70ccd1c3"
+    },
+    {
+      "start": "006A05F0",
+      "end_exclusive": "006A0639",
+      "hex": "81ece400000053558be956578a456384c07406837d58ff75108b450c83b8e0050000080f852a1600008a456284c074198b4d0c8b11ff92840000008a88a10c000084c90f840a160000",
+      "sha256": "acf61a5d5325fb66667cd60b6f0350e5b90fab6c67cd97fdbc332f269f6bfe96"
+    },
+    {
+      "start": "006A1C43",
+      "end_exclusive": "006A1C59",
+      "hex": "c7454c000000005f5e5d32c05b81c4e4000000c20400",
+      "sha256": "660bd2d420468b79b0725850dfd06d8064d09a06dc3e541e903800e5ccf2646d"
+    },
+    {
+      "start": "006F3270",
+      "end_exclusive": "006F3278",
+      "hex": "8b01ffa088000000",
+      "sha256": "b7655f4aae69b7187b779cdc966f345e6a878c6ce4f756b676a079015b791f42"
+    },
+    {
+      "start": "00741490",
+      "end_exclusive": "00741497",
+      "hex": "8b81c4060000c3",
+      "sha256": "8b3b8079858d27e0a2380dbf780c211a99983f17c0b4c448ea6f3209d7858320"
+    }
+  ],
+  "payload_sha256": "4ab17fb91ec3ba70c00e8b835f3dc2518874953f5e9f48729e800ce3062c4199"
+}

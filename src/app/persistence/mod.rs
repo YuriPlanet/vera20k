@@ -617,7 +617,8 @@ mod tests {
                 team: LaunchTeam::None,
                 difficulty: AiDifficulty::Easy,
             }],
-            pre_fill_house_roster: crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
+            pre_fill_house_roster:
+                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
             options: SkirmishLaunchOptions::default(),
         }
     }
@@ -633,8 +634,11 @@ mod tests {
         let mut next_correlation = 1;
         let correlation =
             crate::match_bootstrap::allocate_match_correlation(&mut next_correlation).unwrap();
-        let startup =
-            crate::match_bootstrap::prepare_match_startup(correlation, accepted, &mut TestClock(seed));
+        let startup = crate::match_bootstrap::prepare_match_startup(
+            correlation,
+            accepted,
+            &mut TestClock(seed),
+        );
         let initial_simulation = Simulation::with_seed(u64::from(seed));
         let mut authority = MatchStartup::default();
         authority.begin(Some(correlation));
@@ -667,6 +671,7 @@ mod tests {
             shared_cell_dummy
                 .apply_bridge_flag_slot(crate::map::bridge_facts::BridgeStampSlot::Anchor, true);
             let mut replay = ReplayLog::new(ReplayHeader {
+                pixel_conversion_bounds: Default::default(),
                 version: 1,
                 tick_hz: 15,
                 seed: simulation.session.seed,
@@ -1155,7 +1160,11 @@ mod tests {
             "[Houses]\n0=SavedPlayer\n1=OutgoingPlayer\n[SavedPlayer]\n[OutgoingPlayer]\n[Basic]\nPlayer=SavedPlayer\n",
         );
         let roster = crate::map::houses::parse_house_roster(&roster_ini, &[], Some(&rules));
-        crate::sim::scenario_bootstrap::initialize_map_roster_houses(&mut saved, &roster, Some(&rules));
+        crate::sim::scenario_bootstrap::initialize_map_roster_houses(
+            &mut saved,
+            &roster,
+            Some(&rules),
+        );
         crate::sim::scenario_bootstrap::initialize_campaign_current_house(
             &mut saved,
             &roster,
@@ -1188,7 +1197,11 @@ mod tests {
         let outgoing_hash = runtime.simulation.state_hash();
         let outgoing_rng = runtime.simulation.rng_state();
         let prepared = PreparedLoad::from_repository(
-            LoadPreparationView::from_runtime(&repository, Some(&runtime), Some(LOAD_FIXTURE_MAP_HASH)),
+            LoadPreparationView::from_runtime(
+                &repository,
+                Some(&runtime),
+                Some(LOAD_FIXTURE_MAP_HASH),
+            ),
             &path,
         )
         .expect("repository transaction prepares saved House identity");
@@ -1222,8 +1235,9 @@ mod tests {
         for (case_index, handle) in ["Neutral", "sPeCiAl", "COMPUTER1"].into_iter().enumerate() {
             let mut session = load_fixture_launch();
             session.player_name = handle.to_string();
-            let launch = crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(session)
-                .expect("existing display name remains admitted");
+            let launch =
+                crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(session)
+                    .expect("existing display name remains admitted");
             let mut saved = load_fixture_simulation(true);
             crate::sim::scenario_bootstrap::initialize_skirmish_launch_houses(
                 &mut saved,

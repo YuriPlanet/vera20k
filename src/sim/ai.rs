@@ -905,10 +905,7 @@ mod tests {
             0,
             0,
             owner_id,
-            Health {
-                current: 1000,
-                max: 1000,
-            },
+            Health { current: 1000 },
             type_id_interned,
             EntityCategory::Structure,
             0,
@@ -974,10 +971,7 @@ mod tests {
                 0,
                 0,
                 owner_id,
-                Health {
-                    current: 1000,
-                    max: 1000,
-                },
+                Health { current: 1000 },
                 mcv_type,
                 EntityCategory::Unit,
                 0,

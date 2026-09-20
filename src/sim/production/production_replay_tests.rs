@@ -228,6 +228,7 @@ fn record(
     ticks: u64,
 ) -> (Vec<u64>, ReplayLog) {
     let mut log = ReplayLog::new(ReplayHeader {
+        pixel_conversion_bounds: Default::default(),
         version: 1,
         tick_hz: 15,
         // Record the sim's actual construction seed — playback fidelity is

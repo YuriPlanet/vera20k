@@ -448,6 +448,7 @@ mod tests {
         );
         assert!(tick.terminal_score_finalized);
         let mut replay = ReplayLog::new(ReplayHeader {
+            pixel_conversion_bounds: Default::default(),
             version: 1,
             tick_hz: 15,
             seed,

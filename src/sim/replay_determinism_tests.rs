@@ -59,6 +59,7 @@ fn run_with_frame_profile(total_ms: u32, frame_ms: u32) -> (u64, Vec<u64>, Repla
     let mut acc_ms: u64 = 0;
     let mut hashes: Vec<u64> = Vec::new();
     let mut replay = ReplayLog::new(ReplayHeader {
+        pixel_conversion_bounds: sim.session.pixel_conversion_bounds,
         version: 1,
         tick_hz: 30,
         seed: 123_456,
@@ -151,12 +152,17 @@ fn replay_reapplies_header_seed() {
     let desc = ScenarioDescriptor {
         seed: 0x00A1_1CE5,
         map_name: "seed_roundtrip".to_string(),
+        pixel_conversion_bounds: crate::util::pixel_conversion::PixelConversionBounds {
+            width: 640,
+            height: 480,
+        },
         ..Default::default()
     };
     let mut sim = sim_with_unit(&desc);
     let grid = PathGrid::new(32, 32);
     let heights: BTreeMap<(u16, u16), u8> = BTreeMap::new();
     let mut replay = ReplayLog::new(ReplayHeader {
+        pixel_conversion_bounds: sim.session.pixel_conversion_bounds,
         version: 1,
         tick_hz: 30,
         // The descriptor seed/map name are what the sim was constructed from;
@@ -187,10 +193,12 @@ fn replay_reapplies_header_seed() {
     let descriptor_from_header = |header: &ReplayHeader| ScenarioDescriptor {
         seed: u32::try_from(header.seed).expect("diagnostic replay seed fits native width"),
         map_name: header.map_name.clone(),
+        pixel_conversion_bounds: header.pixel_conversion_bounds,
         ..Default::default()
     };
     let mut playback = sim_with_unit(&descriptor_from_header(&replay.header));
-    let replayed = ReplayRunner::run_fixture(&mut playback, &replay, None, &heights, Some(&grid), TICK_MS);
+    let replayed =
+        ReplayRunner::run_fixture(&mut playback, &replay, None, &heights, Some(&grid), TICK_MS);
     assert_eq!(
         live, replayed,
         "playback from header.seed must match the recorded timeline"
@@ -200,7 +208,8 @@ fn replay_reapplies_header_seed() {
     let mut corrupted = replay.clone();
     corrupted.header.seed ^= 1;
     let mut wrong = sim_with_unit(&descriptor_from_header(&corrupted.header));
-    let diverged = ReplayRunner::run_fixture(&mut wrong, &corrupted, None, &heights, Some(&grid), TICK_MS);
+    let diverged =
+        ReplayRunner::run_fixture(&mut wrong, &corrupted, None, &heights, Some(&grid), TICK_MS);
     assert_ne!(
         live, diverged,
         "a corrupted header seed must not reproduce the timeline"

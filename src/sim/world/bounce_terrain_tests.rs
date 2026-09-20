@@ -144,10 +144,7 @@ fn fixture(case: &Value) -> Simulation {
                 0,
                 0,
                 owner,
-                crate::sim::components::Health {
-                    current: 100,
-                    max: 100,
-                },
+                crate::sim::components::Health { current: 100 },
                 type_ref,
                 category,
                 0,

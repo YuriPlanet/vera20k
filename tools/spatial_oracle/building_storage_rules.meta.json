@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Building ART SiloDamage ReadBool461169 and false constructor default45E0BA",
+  "assumptions": [
+    "Fresh constructorfalse; fixed ART source, originalINI CRC/keylookup/ReadBool execute."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "read": "0x00461169"
+  },
+  "original_slices": [
+    {
+      "start": "00461169",
+      "end_exclusive": "00461186",
+      "hex": "8a8da8160000516880a7810057b980718800e870840c008885a8160000",
+      "sha256": "2a04c8b1a2d68df9ce99c90f6a251eee7b91019e4b8fef9a4e1d94f5e702b685"
+    },
+    {
+      "start": "0045E0BA",
+      "end_exclusive": "0045E0C0",
+      "hex": "889ea8160000",
+      "sha256": "febc9ebc16d91e5ca8818e6a4ce483701ec29149887c56d3c8a6e697c3f333a5"
+    }
+  ],
+  "payload_sha256": "e2c961594fd27b944cb20f68d754a4cb633a1f77c060922cc7dd2f51f7bf02a9"
+}

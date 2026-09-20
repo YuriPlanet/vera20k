@@ -200,7 +200,8 @@ fn stock_cloak_tick_facts(
         should_uncloak,
         health_above_red: health_strictly_above_condition_red(
             entity.health,
-            rules.general.condition_red_x1000,
+            object.strength,
+            rules.general.condition_red,
         ),
         cloaking_speed: object.cloaking_speed,
         cloak_delay_frames: rules.general.cloak_delay_frames,
@@ -551,9 +552,53 @@ fn emit_configured_cloak_sound(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 
 fn health_strictly_above_condition_red(
     health: crate::sim::components::Health,
-    condition_red_x1000: i64,
+    strength: i32,
+    condition_red: f64,
 ) -> bool {
-    i64::from(health.current) * 1000 > i64::from(health.max) * condition_red_x1000
+    health.compare_ratio(strength, condition_red)
+        == crate::util::native_x87::MaskedX87Ordering::Greater
+}
+
+#[cfg(test)]
+#[test]
+fn original_health_ratio_corpus_populates_cloak_tick_facts() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::components::Health;
+    use crate::sim::game_entity::GameEntity;
+    for row in crate::sim::health_ratio_fixture::rows() {
+        let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=SUB\n[SUB]\nStrength={}\nCloakable=yes\n",
+            row.input.strength
+        )))
+        .unwrap();
+        rules.general.condition_red = row.input.red();
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("A");
+        let type_ref = sim.interner.intern("SUB");
+        let mut entity = GameEntity::new_at_frame_zero_for_test(
+            1,
+            0,
+            0,
+            0,
+            0,
+            owner,
+            Health {
+                current: row.input.current,
+            },
+            type_ref,
+            EntityCategory::Unit,
+            0,
+            5,
+            true,
+        );
+        entity.cloak = Some(crate::sim::cloak_disguise::CloakRuntime::new(0, 9));
+        sim.substrate.entities.insert(entity);
+        let facts = stock_cloak_tick_facts(&sim, 1, &rules).expect("cloakable unit facts");
+        assert_eq!(
+            facts.health_above_red, row.output.cloak_above_red,
+            "{row:?}"
+        );
+    }
 }
 
 /// Produce the world-dependent virtual results consumed by

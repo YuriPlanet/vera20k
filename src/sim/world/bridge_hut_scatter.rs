@@ -106,7 +106,7 @@ impl Simulation {
         while let Some(id) = self.substrate.entities.infantry_registry_at(index) {
             index += 1;
             let coord = self
-                .infantry_navigation_coordinate(id)
+                .foot_navigation_coordinate(id)
                 .map_err(|cause| self.hut_callback_error(id, cause))?;
             let terrain = self.resolved_terrain.as_ref().ok_or_else(|| {
                 self.hut_callback_error(id, "hut coordinate requires live map cells".into())
@@ -240,7 +240,7 @@ impl Simulation {
         // The successful FNPC arm does not consume it, but still draws first.
         let _fallback_direction_draw = self.scenario_rng.next_range_u32_inclusive(0, 4);
         let seed = self
-            .infantry_navigation_coordinate(id)
+            .foot_navigation_coordinate(id)
             .map_err(|cause| self.hut_callback_error(id, cause))?;
         let seed = (
             i32::from((seed.x / 256) as i16),

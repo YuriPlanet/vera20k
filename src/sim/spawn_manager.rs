@@ -707,10 +707,10 @@ fn restore_docked_child(sim: &mut Simulation, rules: &RuleSet, owner_id: u64, sl
     if let Some(obj) = child_type.as_deref().and_then(|name| rules.object(name))
         && let Some(child) = sim.substrate.entities.get_mut(child_id)
     {
-        // Native state 6 writes Health (and its smoothed mirror) from the
+        // Native state 6 writes Health and retained estimated health from the
         // child type's `Strength=`, and Ammo from the child type's `Ammo=`.
-        child.health.current = obj.strength.max(1) as u16;
-        child.health.max = obj.strength.max(1) as u16;
+        child.health.current = obj.strength;
+        child.estimated_health.reset(child.health.current);
         if let Some(ammo) = child.aircraft_ammo.as_mut() {
             ammo.current = ammo.max;
         }
@@ -1045,6 +1045,7 @@ fn hold_child_over_owner(
         child_id,
         (rx, ry),
         speed,
+        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, rules.into()),
     );
 }
 
@@ -1106,6 +1107,7 @@ fn recall_child_to_owner(sim: &mut Simulation, rules: &RuleSet, owner_id: u64, c
         child_id,
         (rx, ry),
         speed,
+        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, rules.into()),
     );
 }
 

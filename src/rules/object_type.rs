@@ -48,6 +48,53 @@ pub enum ObjectCategory {
     Building,
 }
 
+/// `TechnoTypeClass+394`: constructor710CA5 and INI reader477590.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(i32)]
+pub enum VhpScan {
+    #[default]
+    None = 0,
+    Normal = 1,
+    Strong = 2,
+}
+
+impl VhpScan {
+    fn read_ini(section: &IniSection) -> Self {
+        // The projection retains only passes after this type's allocation.
+        // Unknown values retain the previous field, as native ReadINI71256D.
+        if let Some(values) = section.projected_values("VHPScan") {
+            values.iter().fold(Self::None, |current, value| {
+                Self::read_value(current, value)
+            })
+        } else {
+            section
+                .get("VHPScan")
+                .map_or(Self::None, |value| Self::read_value(Self::None, value))
+        }
+    }
+
+    fn read_value(current: Self, value: &str) -> Self {
+        use crate::rules::ini_value::{strtrim_ascii, truncate_bytes};
+        // ReadString128, then strtok(","): repeated/leading commas are skipped,
+        // but whitespace inside the selected token is not trimmed again.
+        let value = strtrim_ascii(truncate_bytes(value, 127));
+        let Some(token) = value.split(',').find(|token| !token.is_empty()) else {
+            // Native passes null to the CRT comparator for comma-only input;
+            // keep malformed non-retail input inert instead of manufacturing a mode.
+            return current;
+        };
+        if token.eq_ignore_ascii_case("None") {
+            Self::None
+        } else if token.eq_ignore_ascii_case("Normal") {
+            Self::Normal
+        } else if token.eq_ignore_ascii_case("Strong") {
+            Self::Strong
+        } else {
+            current
+        }
+    }
+}
+
 /// Sidebar/build-queue classification for buildable buildings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildCategory {
@@ -519,6 +566,8 @@ pub struct ObjectType {
     /// OFF the single-target passive-acquire commit; the spread-fire mechanism
     /// itself is not implemented. Default no.
     pub distributed_fire: bool,
+    /// `VHPScan=` estimated-health filtering/scoring; native default None.
+    pub vhp_scan: VhpScan,
     /// Whether this unit fires a warhead at its own position on death (e.g.,
     /// Apocalypse Tank explosion damages nearby units).
     pub explodes: bool,
@@ -934,6 +983,10 @@ pub struct ObjectType {
     /// exclusion in Spark collision (`LaserFence=yes`).
     pub laser_fence: bool,
 
+    /// BuildingType+16C0, initialized false45E14B; ReadBool460AC0 reads
+    /// FirestormWall. Body frame43EF90 selects the retained firestorm frame.
+    pub firestorm_wall: bool,
+
     /// Signed native `Passengers=` value at `TechnoTypeClass+0x5E0`.
     /// Positive values allocate transport capacity; TeamType post-load zone
     /// derivation distinguishes exact zero from every signed nonzero value.
@@ -1193,9 +1246,10 @@ pub struct ObjectType {
     pub unit_reload: bool,
     /// Whether this building is a helipad (Helipad=yes in rules.ini).
     pub helipad: bool,
-    /// How many units may dock at this building simultaneously (NumberOfDocks= in rules.ini).
-    /// Default 1. Airfields typically have 4.
-    pub number_of_docks: u8,
+    /// Signed BuildingType+1780 (`NumberOfDocks`), constructor45E28A default1.
+    /// ReadInteger46492E preserves zero/negative counts for coordinate queries.
+    /// Contact allocation applies its separate minimum through `dock_contact_capacity`.
+    pub number_of_docks: i32,
 
     /// Whether this building can be toggled on/off by the player.
     /// Parsed from `TogglePower=yes` in rules.ini.
@@ -1204,11 +1258,13 @@ pub struct ObjectType {
     pub toggle_power: bool,
 
     /// Whether this building is affected by low-power situations.
-    /// Parsed from `Powered=yes` in rules.ini. Defaults to true for buildings.
+    /// Parsed from `Powered=yes`; native constructor45E04B defaults false.
     /// When true and the owner is in low power, the building deactivates:
     /// defenses stop firing, radar goes offline, gap/spysat/superweapons pause.
     /// Power plants (positive Power=) are never deactivated regardless of this flag.
     pub powered: bool,
+    /// BuildingType+1574, constructor45E051 and ReadBool46000A.
+    pub powered_special: bool,
 
     /// Whether this unit can use the disguise ability (Spy).
     /// Parsed from `CanDisguise=yes` in rules.ini. Enables `Disguise` cursor
@@ -1358,7 +1414,7 @@ pub struct ObjectType {
     /// Used to position the four chimney-smoke emitters on a refinery.
     pub refinery_smoke_offsets: [IVec3; 4],
     /// `RefinerySmokeFrames=` — frame count for the smoke particle system.
-    pub refinery_smoke_frames: u16,
+    pub refinery_smoke_frames: i32,
     /// `GapRadiusInCells=` — per-object gap-generator radius (overrides the
     /// global default for this object).
     pub gap_radius_in_cells: u8,
@@ -1413,6 +1469,12 @@ fn native_minutes_to_ticks(value: f32) -> u32 {
 }
 
 impl ObjectType {
+    /// Building43BCBD..43BCD0 allocates at least one radio contact even when
+    /// the signed type count is nonpositive. This is not the coordinate-query count.
+    pub fn dock_contact_capacity(&self) -> u32 {
+        self.number_of_docks.max(1) as u32
+    }
+
     /// BuildingType virtual used by the Building receive-damage prelude and
     /// the native base-reservation writer.
     ///
@@ -1772,6 +1834,7 @@ impl ObjectType {
             // Default yes. The INI spelling really is "Aquire" — do not correct it.
             can_passive_acquire: section.get_bool("CanPassiveAquire").unwrap_or(true),
             distributed_fire: section.get_bool("DistributedFire").unwrap_or(false),
+            vhp_scan: VhpScan::read_ini(section),
             explodes: section.get_bool("Explodes").unwrap_or(false),
             veteran_abilities,
             elite_abilities,
@@ -1998,6 +2061,7 @@ impl ObjectType {
             show_occupant_pips: section.get_bool("ShowOccupantPips").unwrap_or(true),
             bridge_repair_hut: section.get_bool("BridgeRepairHut").unwrap_or(false),
             laser_fence: section.get_bool("LaserFence").unwrap_or(false),
+            firestorm_wall: section.get_bool("FirestormWall").unwrap_or(false),
             passengers: section.get_i32("Passengers").unwrap_or(0),
             size_limit: section.get_i32("SizeLimit").unwrap_or(0).max(0) as u32,
             size: section
@@ -2080,15 +2144,13 @@ impl ObjectType {
             bunker: section.get_bool("Bunker").unwrap_or(false),
             unit_reload: section.get_bool("UnitReload").unwrap_or(false),
             helipad: section.get_bool("Helipad").unwrap_or(false),
-            number_of_docks: section.get_i32("NumberOfDocks").unwrap_or(1).max(1) as u8,
+            number_of_docks: section.get_i32("NumberOfDocks").unwrap_or(1),
             // TogglePower defaults to true for buildings, false for units.
             toggle_power: section
                 .get_bool("TogglePower")
                 .unwrap_or(category == ObjectCategory::Building),
-            // Powered defaults to true for buildings — most deactivate during low power.
-            powered: section
-                .get_bool("Powered")
-                .unwrap_or(category == ObjectCategory::Building),
+            powered: section.get_bool("Powered").unwrap_or(false),
+            powered_special: section.get_bool("PoweredSpecial").unwrap_or(false),
             can_disguise: section.get_bool("CanDisguise").unwrap_or(false),
             disguise_when_still: section.get_bool("DisguiseWhenStill").unwrap_or(false),
             wall: section.get_bool("Wall").unwrap_or(false),
@@ -2172,8 +2234,7 @@ impl ObjectType {
                     .map(parse_ivec3_offset)
                     .unwrap_or(IVec3::ZERO),
             ],
-            refinery_smoke_frames: section.get_i32("RefinerySmokeFrames").unwrap_or(0).max(0)
-                as u16,
+            refinery_smoke_frames: section.get_i32("RefinerySmokeFrames").unwrap_or(25),
             gap_radius_in_cells: section
                 .get_i32("GapRadiusInCells")
                 .map(|n| n.clamp(0, u8::MAX as i32) as u8)
@@ -2396,6 +2457,115 @@ fn parse_exit_coord(value: Option<&str>) -> Option<(i32, i32, i32)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn signed_dock_count_is_distinct_from_contact_capacity() {
+        #[derive(serde::Deserialize)]
+        struct Row {
+            initial: i32,
+            raw: Option<String>,
+            count: i32,
+            capacity: u32,
+        }
+        // Executed original ReadInteger call site and separate contact clamp.
+        // Non-constructor defaults test the shared reader, not Rules pass lifetime.
+        let rows: Vec<Row> = serde_json::from_str(include_str!(
+            "../../tools/spatial_oracle/building_dock_count_rules.json"
+        ))
+        .unwrap();
+        for row in rows {
+            // The native corpus supplies cached INI entries directly. Physical
+            // INI loading drops empty values; preserve the reader boundary here.
+            let mut ini = IniFile::from_str("[PAD]\nStrength=100\n");
+            if let Some(raw) = &row.raw {
+                ini.projection_section_mut("PAD").set("NumberOfDocks", raw);
+            }
+            let section = ini.section("PAD").unwrap();
+            assert_eq!(
+                section.get_i32("NumberOfDocks").unwrap_or(row.initial),
+                row.count,
+                "initial={} raw={:?}",
+                row.initial,
+                row.raw
+            );
+            let mut object = ObjectType::from_ini_section("PAD", section, ObjectCategory::Building);
+            if row.initial == 1 {
+                assert_eq!(object.number_of_docks, row.count, "{:?}", row.raw);
+            } else {
+                object.number_of_docks = row.count;
+            }
+            assert_eq!(
+                object.dock_contact_capacity(),
+                row.capacity,
+                "{:?}",
+                row.raw
+            );
+        }
+    }
+
+    #[test]
+    fn vhp_scan_parser_preserves_native_names_token_and_default() {
+        for (raw, expected) in [
+            ("None", VhpScan::None),
+            ("nOrMaL", VhpScan::Normal),
+            ("Strong,Normal", VhpScan::Strong),
+            (",,Normal", VhpScan::Normal),
+            (" Normal ", VhpScan::Normal),
+            ("Normal ,Strong", VhpScan::Strong),
+            ("Weak", VhpScan::Strong),
+            ("2", VhpScan::Strong),
+        ] {
+            assert_eq!(VhpScan::read_value(VhpScan::Strong, raw), expected, "{raw}");
+        }
+        let ini = IniFile::from_str("[TYPE]\nStrength=100\n");
+        assert_eq!(
+            ObjectType::from_ini_section(
+                "TYPE",
+                ini.section("TYPE").unwrap(),
+                ObjectCategory::Vehicle
+            )
+            .vhp_scan,
+            VhpScan::None,
+        );
+    }
+
+    #[test]
+    fn vhp_scan_layers_retain_prior_mode_and_ignore_preallocation_body() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[VehicleTypes]\n0=EXISTING\n[EXISTING]\nVHPScan=Strong\n[LATE]\nVHPScan=Strong\n",
+        ));
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str(
+                "[VehicleTypes]\n0=LATE\n[EXISTING]\nVHPScan=Invalid\n[LATE]\nVHPScan=Invalid\n",
+            ),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).unwrap();
+        assert_eq!(rules.object("EXISTING").unwrap().vhp_scan, VhpScan::Strong);
+        assert_eq!(rules.object("LATE").unwrap().vhp_scan, VhpScan::None);
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[EXISTING]\nVHPScan=None\n[LATE]\nVHPScan=Normal,Strong\n"),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).unwrap();
+        assert_eq!(rules.object("EXISTING").unwrap().vhp_scan, VhpScan::None);
+        assert_eq!(rules.object("LATE").unwrap().vhp_scan, VhpScan::Normal);
+    }
+
+    #[test]
+    fn vhp_scan_retail_nasam_is_strong() {
+        // Checked retail rulesmd.ini NASAM section, VHPScan=Strong at12132;
+        // keep the fixture independent of machine-local retail installations.
+        let ini = IniFile::from_str("[NASAM]\nVHPScan=Strong\n");
+        let obj = ObjectType::from_ini_section(
+            "NASAM",
+            ini.section("NASAM").unwrap(),
+            ObjectCategory::Building,
+        );
+        assert_eq!(obj.vhp_scan, VhpScan::Strong);
+    }
+
     #[test]
     fn building_native_speed_default_and_repair_type_inputs() {
         let ini = crate::rules::ini_parser::IniFile::from_str(
@@ -2679,6 +2849,31 @@ mod tests {
         );
         assert!(fence.laser_fence);
         assert!(!other.laser_fence);
+    }
+
+    #[test]
+    fn firestorm_wall_matches_original_native_reader() {
+        #[derive(serde::Deserialize)]
+        struct Row {
+            raw: Option<String>,
+            output: bool,
+        }
+        #[derive(serde::Deserialize)]
+        struct Fixture {
+            firestorm_wall: Vec<Row>,
+        }
+        let fixture: Fixture = serde_json::from_str(include_str!(
+            "../../tools/spatial_oracle/building_body_rules.json"
+        ))
+        .unwrap();
+        for row in fixture.firestorm_wall {
+            let mut section = IniSection::new("TEST".to_string());
+            if let Some(raw) = &row.raw {
+                section.set("FirestormWall", raw);
+            }
+            let object = ObjectType::from_ini_section("TEST", &section, ObjectCategory::Building);
+            assert_eq!(object.firestorm_wall, row.output, "{:?}", row.raw);
+        }
     }
 
     #[test]
@@ -3885,11 +4080,35 @@ mod tests {
     }
 
     #[test]
-    fn techno_type_refinery_smoke_frames_defaults_to_zero() {
+    fn techno_type_refinery_smoke_frames_defaults_to_native_25() {
         let ini: IniFile = IniFile::from_str("[FOO]\nFixtureOnly=1\n");
         let section = ini.section("FOO").expect("section");
         let obj = ObjectType::from_ini_section("FOO", section, ObjectCategory::Building);
-        assert_eq!(obj.refinery_smoke_frames, 0);
+        assert_eq!(obj.refinery_smoke_frames, 25);
+    }
+
+    #[test]
+    fn original_eight_refinery_smoke_frames_scalar_rows() {
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tools/spatial_oracle/refinery_smoke.json"
+        ))
+        .unwrap();
+        let rows = corpus["frames_parser"].as_array().unwrap();
+        assert_eq!(rows.len(), 8);
+        for row in rows {
+            // Feed the original ReadInt boundary directly. A physical empty
+            // INI value is removed earlier by the separate lexical loader.
+            let mut section = IniSection::new("B".to_owned());
+            if let Some(raw) = row["raw"].as_str() {
+                section.set("RefinerySmokeFrames", raw);
+            }
+            let object = ObjectType::from_ini_section("B", &section, ObjectCategory::Building);
+            assert_eq!(
+                object.refinery_smoke_frames,
+                row["output"].as_i64().unwrap() as i32,
+                "{row}"
+            );
+        }
     }
 
     #[test]

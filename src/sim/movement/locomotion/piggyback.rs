@@ -250,6 +250,18 @@ impl LocomotorRuntime {
 pub struct StashedLocomotor(Box<LocomotorRuntime>);
 
 impl StashedLocomotor {
+    /// These legacy height fields mirror the linked owner's height, rather
+    /// than a native field belonging to the suspended interface. A real
+    /// SetHeight(0) coordinate writer invalidates their previous values.
+    pub(crate) fn owner_grounded(&mut self) {
+        if matches!(self.0.kind, LocomotorKind::Fly | LocomotorKind::Hover) {
+            self.0.common.altitude = crate::util::fixed_math::SIM_ZERO;
+        }
+        if let LocomotorRuntimePayload::Rocket(Some(rocket)) = &mut self.0.payload {
+            rocket.altitude = crate::util::fixed_math::SIM_ZERO;
+        }
+    }
+
     pub fn capture(state: &LocomotorState) -> Self {
         Self(Box::new(LocomotorRuntime::capture(state)))
     }

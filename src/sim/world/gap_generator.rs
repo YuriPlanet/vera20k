@@ -16,33 +16,66 @@ impl Simulation {
             .into_iter()
             .collect()
     }
-    /// Selected stock GAGAP domain of4555D0. Constructor660 is true; no
-    /// represented writer supplies504/67C/6CC/PoweredSpecial here. Optional
-    /// producer domains remain explicit, not inferred from unrelated fields.
-    pub(super) fn gap_operational_state(&self, id: u64, rules: &RuleSet) -> Option<(bool, i32)> {
+    /// Shared4555D0 inputs represented by Building and House owners. Native
+    /// HasPower/EMP/overpower producers remain outside
+    /// this adapter's established domain; do not infer them from visual state.
+    pub(crate) fn building_operational_state(&self, id: u64, rules: &RuleSet) -> Option<bool> {
         let entity = self.substrate.entities.get(id)?;
-        if entity.category != EntityCategory::Structure
-            || !entity.lifecycle.object_alive
-            || entity.lifecycle.in_limbo
-        {
+        if entity.category != EntityCategory::Structure {
             return None;
         }
         let object = rules.object(self.interner.resolve(entity.type_ref()))?;
-        if !object.gap_generator {
-            return None;
-        }
         let operational = entity.health.current != 0
+            && (!object.needs_engineer || entity.building_has_engineer)
             //Actual Rust placement currently retains Construction in the
             //BuildingUp owner, without publishing that native Mission yet.
             //Keep its admission closed until that represented build completes.
             && entity.building_up.is_none()
             && !matches!(entity.mission.effective().raw(), 0x12 | 0x13)
-            && power_system::is_building_powered(&self.power_states, rules, entity, &self.interner);
-        Some((operational, i32::from(object.gap_radius_in_cells)))
+            && power_system::is_building_powered(&self.power_states, rules, entity, &self.interner)
+            && !(object.powered_special && self.building_power_outage(id));
+        Some(operational)
     }
 
-    pub(super) fn visit_building_gap(&mut self, id: u64, rules: &RuleSet) {
-        let Some((operational, radius)) = self.gap_operational_state(id, rules) else {
+    pub(crate) fn building_power_outage(&self, id: u64) -> bool {
+        self.substrate
+            .entities
+            .get(id)
+            .and_then(|entity| self.power_states.get(&entity.owner()))
+            .is_some_and(|state| {
+                state.power_blackout_remaining != 0 || state.has_drained_power_source
+            })
+    }
+
+    pub(super) fn gap_operational_state(&self, id: u64, rules: &RuleSet) -> Option<(bool, i32)> {
+        let entity = self.substrate.entities.get(id)?;
+        if !entity.lifecycle.object_alive || entity.lifecycle.in_limbo {
+            return None;
+        }
+        let object = rules.object(self.interner.resolve(entity.type_ref()))?;
+        object
+            .gap_generator
+            .then(|| {
+                (
+                    self.building_operational_state(id, rules),
+                    i32::from(object.gap_radius_in_cells),
+                )
+            })
+            .and_then(|(state, radius)| state.map(|state| (state, radius)))
+    }
+
+    ///43FB20 visits all Buildings, not just gap generators. The4549B0 dispatcher
+    /// publishes gap changes before slot power changes, then43FBEF stores6C8.
+    pub(crate) fn visit_building_operational(&mut self, id: u64, rules: &RuleSet) {
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .is_none_or(|entity| !entity.lifecycle.object_alive || entity.lifecycle.in_limbo)
+        {
+            return;
+        }
+        let Some(operational) = self.building_operational_state(id, rules) else {
             return;
         };
         if self
@@ -50,24 +83,25 @@ impl Simulation {
             .entities
             .get(id)
             .unwrap()
-            .gap_generator
-            .last_operational
+            .building_last_operational
             == operational
         {
             return;
         }
-        let viewers = self.gap_viewers();
-        for viewer in viewers {
-            self.set_building_gap_for_viewer(id, viewer, operational, radius);
+        if let Some((_, radius)) = self.gap_operational_state(id, rules) {
+            let viewers = self.gap_viewers();
+            for viewer in viewers {
+                self.set_building_gap_for_viewer(id, viewer, operational, radius);
+            }
         }
+        self.update_building_anim_power(id, operational, rules);
         //43FBEF stores6C8 after the dispatcher returns. A SpySat bracket does
         //not change this sample, even when it changes one viewer's269.
         self.substrate
             .entities
             .get_mut(id)
             .unwrap()
-            .gap_generator
-            .last_operational = operational;
+            .building_last_operational = operational;
     }
 
     fn set_building_gap_for_viewer(

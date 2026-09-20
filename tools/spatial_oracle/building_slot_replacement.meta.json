@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Building4519F7 frame handoff/scalar delete/full destructor through451A36 pointer install",
+  "assumptions": [
+    "420 rows,21slots,5 signed frames,old presence,2 supplied constructor frames",
+    "Old Anim+CC/type pointer null, no Logic membership, vectors empty with exact original initializer vtables",
+    "Constructor output supplied with independent timer/loop/firstAI values; constructor and nonnull type cleanup excluded"
+  ],
+  "substitutions": [
+    "operator_delete7C8B3D records arena release and returns; no original code patch"
+  ],
+  "entry_points": {
+    "replacement": "0x004519F7",
+    "scalar_deleting_destructor": "0x00426590",
+    "destructor": "0x004228E0"
+  },
+  "original_slices": [
+    {
+      "start": "004519F7",
+      "end_exclusive": "00451A36",
+      "hex": "8b5c243c8b849e5c05000085c074298b88ac000000898dac0000008b8c9e5c05000085c9c7849e5c0500000000000074078b116a01ff522089ac9e5c050000",
+      "sha256": "4f9b1d0bacbfb543643019062e0d84184b00e3787fe76428c5daead09d554221"
+    },
+    {
+      "start": "00426590",
+      "end_exclusive": "004265AC",
+      "hex": "568bf1e848c3fffff644240801740956e898253a0083c4048bc65ec2",
+      "sha256": "400c64957539959c4890c3449b3910f1f45644b75cabb92ddfc53a278c256ef3"
+    },
+    {
+      "start": "004228E0",
+      "end_exclusive": "00422B1D",
+      "hex": "83ec10b2015355568bf157c70654337e00c7460438337e00c7460830337e00c7460c28337e00e8c52f3000a0a0e9a80033db3ac30f84b50000008baecc0000003beb74438b3db8e9a80033c93bfb7e1c8b15ace9a8008b023bc6740839a8cc00000074084183c2043bcf7cea3bcf75118b45008bcdff907c010000889d84000000899ecc0000008b86c80000003bc3744838985503000074408d8e9c0000008b969c000000895424148d5424148b4104528944241c8b4908894c2420b9e8f78700e88a2d14008b8840010000054001000081e1fffffdff89088bcee870231d0084c0740b56b9e8f78700e8a16d08008b1570f6b0008d44241050b970f6b00089742414ff521083f8ff742d8b0d80f6b0003bc17d23493bc1890d80f6b0007d188b0d74f6b000408b1481895481fc8b0d80f6b0003bc17ce88b8ec80000003bcb7405e8b96300008dbea00100008bcfe82c36feff8daeb40100008bcde81f36feff8bcfe8b831feff8bcde8b131feff8d4604899ecc00000050899ec8000000e8bcd7feff83f8fe755c8b15003ea8008d44241050b9003ea80089742414ff521083f8ff0f84850000008b0d103ea8003bc17d7b493bc1890d103ea8007d708b0d043ea800408b1481895481fc8b0d103ea8003bc17ce88bcee8c3101d005f5e5d5b83c410c38b15a8e9a8008d44241050b9a8e9a80089742414ff521083f8ff742d8b0db8e9a8003bc17d23493bc1890db8e9a8007d188b0dace9a800408b1481895481fc8b0db8e9a8003bc17ce88bcee86b101d005f5e5d5b83c410c3",
+      "sha256": "b7897daa2b1e4de0555e4a229f2a651b35fdc876319e696a3dac0ca7fa129337"
+    },
+    {
+      "start": "005F3B80",
+      "end_exclusive": "005F3D84",
+      "hex": "51568bf18b4e38c70660f07e0085c9c7460444f07e00c746083cf07e00c7460c34f07e007405e8054ee4ff8b1598f6b0008d44240450b998f6b00089742408ff521083f8ff742d8b0da8f6b0003bc17d23493bc1890da8f6b0007d188b0d9cf6b000408b1481895481fc8b0da8f6b0003bc17ce88b1560e3a8008d44240450b960e3a80089742408ff521083f8ff742d8b0d70e3a8003bc17d23493bc1890d70e3a8007d188b0d64e3a800408b1481895481fc8b0d70e3a8003bc17ce88b1520f7b0008d44240450b920f7b00089742408ff521083f8ff742d8b0d30f7b0003bc17d23493bc1890d30f7b0007d188b0d24f7b000408b1481895481fc8b0d30f7b0003bc17ce88b1570f6b0008d44240450b970f6b00089742408ff521083f8ff742d8b0d80f6b0003bc17d23493bc1890d80f6b0007d188b0d74f6b000408b1481895481fc8b0d80f6b0003bc17ce88b1518f6b0008d44240450b918f6b00089742408ff521083f8ff742d8b0d28f6b0003bc17d23493bc1890d28f6b0007d188b0d1cf6b000408b1481895481fc8b0d28f6b0003bc17ce855578d7e3cc74630000000008bcfc6869000000000e80e20e1ff8d6e508bcde80420e1ff8bcfe8bd1ee1ff8bcde8b61ee1ff8b8ea80000005f85c95d740fe8d52df6ffc786a8000000000000008a869800000084c0740b56b978f78700e8667df6ff8bcee86fc4e1ff5e59c3",
+      "sha256": "9d16365e19ee0b948f38429d8d4282367cb5a7cd531fafc934d3c2c98548416d"
+    }
+  ],
+  "vector_initializers": [
+    {
+      "vector": "00B0F698",
+      "vtable": "007E91EC",
+      "store": "0072586D",
+      "bytes": "c70598f6b000ec917e00"
+    },
+    {
+      "vector": "00A8E360",
+      "vtable": "007E4F64",
+      "store": "004E7AFD",
+      "bytes": "c70560e3a800644f7e00"
+    },
+    {
+      "vector": "00B0F720",
+      "vtable": "007E91EC",
+      "store": "007252ED",
+      "bytes": "c70520f7b000ec917e00"
+    },
+    {
+      "vector": "00B0F670",
+      "vtable": "007E91EC",
+      "store": "0072536D",
+      "bytes": "c70570f6b000ec917e00"
+    },
+    {
+      "vector": "00B0F618",
+      "vtable": "007E91EC",
+      "store": "007253ED",
+      "bytes": "c70518f6b000ec917e00"
+    },
+    {
+      "vector": "00A8E9A8",
+      "vtable": "007E9F24",
+      "store": "004E6D7D",
+      "bytes": "c705a8e9a800249f7e00"
+    }
+  ],
+  "payload_sha256": "13a43e5d59cd8eea675181c9d66ff6d2445fabc6efb85188468dde9d939ac7ce"
+}

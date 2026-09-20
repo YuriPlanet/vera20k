@@ -789,6 +789,7 @@ fn advance_one_simulation_frame(state: &mut AppState, tick_lane: TickLane) -> bo
         if state.match_state.match_diagnostics.replay_log.is_none() {
             let sim = &rt.simulation;
             state.match_state.match_diagnostics.replay_log = Some(ReplayLog::new(ReplayHeader {
+                pixel_conversion_bounds: sim.session.pixel_conversion_bounds,
                 version: 1,
                 tick_hz: SIM_TICK_HZ,
                 seed: sim.session.seed,

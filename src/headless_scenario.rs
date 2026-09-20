@@ -122,6 +122,7 @@ fn build_headless_terrain_bootstrap(
     overlay_registry: Option<&OverlayTypeRegistry>,
     cliff_back_impassability: u8,
     seed: u32,
+    pixel_conversion_bounds: crate::util::pixel_conversion::PixelConversionBounds,
 ) -> HeadlessTerrainBootstrap {
     let mut bootstrap_rng = ScenarioBootstrapRng::new(seed);
     let (mut scenario_fill_rng, mut variant_main_rng) = bootstrap_rng.terrain_draws();
@@ -149,6 +150,7 @@ fn build_headless_terrain_bootstrap(
         &mut variant_selector,
         shared_cell_dummy,
         crate::map::resolved_terrain::OverlayLoadSource::Authored,
+        pixel_conversion_bounds,
     );
     drop(variant_selector);
     drop(variant_draw);
@@ -300,6 +302,7 @@ pub(crate) fn load_with_launch(
         .into_iter()
         .map(|wp| (wp.index, (wp.rx, wp.ry)))
         .collect(),
+        pixel_conversion_bounds: Default::default(),
         lighting: crate::sim::scenario_session::ScenarioLightingState::new(
             crate::sim::scenario_session::ScenarioLightProfileUnits {
                 ambient_percent: lighting_profiles.normal.ambient_percent,
@@ -535,6 +538,7 @@ mod retail_construction_tests {
                 &recording,
                 NativeReplayHeader::default(),
                 |loaded| {
+                    let pixel_conversion_bounds = Default::default();
                     let bootstrap = build_headless_terrain_bootstrap(
                         &map,
                         None,
@@ -543,9 +547,11 @@ mod retail_construction_tests {
                         None,
                         2,
                         loaded.seed,
+                        pixel_conversion_bounds,
                     );
                     let heights = bootstrap.resolved.build_height_map();
                     let descriptor = ScenarioDescriptor {
+                        pixel_conversion_bounds,
                         free_radar: map.basic.free_radar.unwrap_or(false),
                         map_width: bootstrap.resolved.width(),
                         map_height: bootstrap.resolved.height(),
@@ -607,8 +613,17 @@ mod retail_construction_tests {
             "fixture has no explicit terrain cells"
         );
 
-        let terrain_bootstrap =
-            build_headless_terrain_bootstrap(&map, None, None, None, None, 2, seed);
+        let pixel_conversion_bounds = Default::default();
+        let terrain_bootstrap = build_headless_terrain_bootstrap(
+            &map,
+            None,
+            None,
+            None,
+            None,
+            2,
+            seed,
+            pixel_conversion_bounds,
+        );
         assert_eq!(
             (
                 terrain_bootstrap.resolved.width(),
@@ -627,6 +642,7 @@ mod retail_construction_tests {
 
         let height_map = terrain_bootstrap.resolved.build_height_map();
         let descriptor = ScenarioDescriptor {
+            pixel_conversion_bounds,
             seed,
             map_width: terrain_bootstrap.resolved.width(),
             map_height: terrain_bootstrap.resolved.height(),

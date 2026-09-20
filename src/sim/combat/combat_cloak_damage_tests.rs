@@ -78,7 +78,7 @@ fn store(attacker_type: &str, attacker_owner: &str) -> EntityStore {
 struct Landed {
     cloak_state: i32,
     sounds: Vec<SimSoundEvent>,
-    victim_hp: u16,
+    victim_hp: i32,
 }
 
 /// One `commit_damage_events` transaction: entity 1 hits entity 2 for 40 with
@@ -155,6 +155,30 @@ fn hit_records(
         sounds: collected,
         victim_hp: victim.health.current,
     }
+}
+
+#[test]
+fn healing_overflow_stays_on_techno_nonzero_continuation_and_uncloaks() {
+    // Object5F546A wraps INT_MAX-(-1) to INT_MIN and returns0; Techno70202E
+    // checks exact0, so its real surviving tail still calls StartUncloaking.
+    let rules = dolphin_rules();
+    let mut entities = store("DEST", "Americans");
+    let victim = entities.get_mut(2).unwrap();
+    victim.health.current = i32::MAX;
+    victim.estimated_health = crate::sim::estimated_health::EstimatedHealth::from_raw(-1234);
+    let landed = hit_records(
+        &mut entities,
+        &rules,
+        "SonicWH",
+        &HouseAllianceMap::new(),
+        &[-1],
+    );
+    assert_eq!(landed.victim_hp, i32::MIN);
+    assert_eq!(landed.cloak_state, 3, "negative HP must still uncloak");
+    let victim = entities.get(2).unwrap();
+    assert!(victim.lifecycle.object_alive);
+    assert!(!victim.dying);
+    assert_eq!(victim.estimated_health.get(), -1234);
 }
 
 /// Positive control. Without it the three negative tests below would also pass

@@ -697,6 +697,9 @@ fn read_stream_into(bytes: &[u8], cursor: &mut usize, destination: &mut [u8]) ->
 /// Header for the Rust-only deterministic diagnostic log.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplayHeader {
+    /// Match input; an old JSON log uses the documented default profile.
+    #[serde(default)]
+    pub pixel_conversion_bounds: crate::util::pixel_conversion::PixelConversionBounds,
     pub version: u32,
     pub tick_hz: u32,
     pub seed: u64,
@@ -764,6 +767,11 @@ impl ReplayRunner {
         replay: &ReplayLog,
         tick_ms: u32,
     ) -> Result<Vec<u64>> {
+        anyhow::ensure!(
+            runtime.simulation.session.pixel_conversion_bounds
+                == replay.header.pixel_conversion_bounds,
+            "replay pixel conversion bounds differ from the initialized match"
+        );
         debug_assert_eq!(
             runtime.simulation.session.seed, replay.header.seed,
             "replay playback sim must be constructed from header.seed"
@@ -851,6 +859,10 @@ impl ReplayRunner {
         trigger_inputs: Option<TriggerInputs<'_>>,
     ) -> Vec<u64> {
         // The diagnostic playback must be constructed from the recorded seed.
+        assert_eq!(
+            sim.session.pixel_conversion_bounds, replay.header.pixel_conversion_bounds,
+            "replay pixel conversion bounds differ from the initialized match"
+        );
         // A sim seeded
         // differently than the header it replays is a guaranteed silent
         // divergence.
@@ -1335,6 +1347,7 @@ mod tests {
     #[test]
     fn diagnostic_log_json_roundtrip() {
         let mut log = ReplayLog::new(ReplayHeader {
+            pixel_conversion_bounds: Default::default(),
             version: 1,
             tick_hz: 30,
             seed: 42,
@@ -1367,6 +1380,7 @@ mod tests {
     fn gsi_04_07_wall_sell_diagnostic_replay_roundtrips_without_native_version_bump() {
         let owner = crate::sim::intern::test_intern("Receiver");
         let mut log = ReplayLog::new(ReplayHeader {
+            pixel_conversion_bounds: Default::default(),
             version: 1,
             tick_hz: 15,
             seed: 7,
@@ -1403,6 +1417,7 @@ mod tests {
         sim.session.house_order.push(owner);
         sim.session.tick = 3;
         let mut log = ReplayLog::new(ReplayHeader {
+            pixel_conversion_bounds: Default::default(),
             version: 1,
             tick_hz: 15,
             seed: 7,
@@ -1455,6 +1470,7 @@ mod tests {
         assert_eq!(recorded.session.game_options.game_speed, 4);
 
         let mut log = ReplayLog::new(ReplayHeader {
+            pixel_conversion_bounds: Default::default(),
             version: 1,
             tick_hz: 15,
             seed: 7,
@@ -1479,6 +1495,7 @@ mod tests {
         let mut sim = Simulation::with_seed(7);
         let owner = sim.interner.intern("Local");
         let mut log = ReplayLog::new(ReplayHeader {
+            pixel_conversion_bounds: Default::default(),
             version: 1,
             tick_hz: 15,
             seed: 7,
@@ -1522,6 +1539,7 @@ mod tests {
         let regenerated = CommandEnvelope::new(owner, 1, Command::SetGameSpeed { speed: 4 });
         sim.queue_command(regenerated.clone());
         let mut log = ReplayLog::new(ReplayHeader {
+            pixel_conversion_bounds: Default::default(),
             version: 1,
             tick_hz: 15,
             seed: 7,

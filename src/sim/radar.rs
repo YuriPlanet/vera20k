@@ -348,7 +348,7 @@ mod tests {
             "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
              [BuildingTypes]\n0=GARADR\n1=GAPOWR\n\
              [GARADR]\nName=Radar\nRadar=yes\nPower=-40\nFoundation=2x2\n\
-             [GAPOWR]\nName=Power Plant\nPower=200\nFoundation=2x2\n",
+             [GAPOWR]\nName=Power Plant\nStrength=100\nPower=200\nFoundation=2x2\n",
         );
         RuleSet::from_ini(&ini).expect("radar test rules")
     }
@@ -363,10 +363,7 @@ mod tests {
             0,
             0,
             owner_id,
-            crate::sim::components::Health {
-                current: 100,
-                max: 100,
-            },
+            crate::sim::components::Health { current: 100 },
             type_ref,
             EntityCategory::Structure,
             0,
@@ -374,6 +371,7 @@ mod tests {
             false,
         );
         e.lifecycle.in_limbo = false;
+        e.lifecycle.cell_marked = true;
         sim.substrate.entities.insert(e);
     }
 

@@ -33,7 +33,7 @@ use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
 ///
 /// Replaces the original engine's MissionClass dispatch for aircraft.
 /// Each variant carries its own sub-state for the state machine.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Hash, Serialize, Deserialize)]
 pub enum AircraftMission {
     /// Idle on the ground or hovering — waiting for orders.
     /// BalloonHover aircraft idle at cruise altitude.
@@ -79,7 +79,7 @@ pub enum AircraftMission {
         reload_timer: MissionTimer,
         /// Pad index assigned to this aircraft on the airfield (0-based).
         /// Meaningful once `sub_state >= 1` (after pad reservation succeeds).
-        pad_index: u8,
+        pad_index: u32,
     },
 
     /// Parked on helipad pad — freshly built, waiting for player command.
@@ -89,7 +89,7 @@ pub enum AircraftMission {
         /// Airfield entity stable_id this aircraft is docked at.
         airfield_id: u64,
         /// Pad index this aircraft is parked on (0-based).
-        pad_index: u8,
+        pad_index: u32,
     },
 
     /// Standard superweapon paradrop carrier in its Open-equivalent mission.
@@ -514,7 +514,7 @@ pub fn tick_aircraft_missions(
                         let type_str = sim.interner.resolve(af_type_ref);
                         let max_slots = rules
                             .object(type_str)
-                            .map(|o| o.number_of_docks.max(1))
+                            .map(|o| o.dock_contact_capacity())
                             .unwrap_or(1);
                         // Native AircraftClass::IsCellOccupied reaches the
                         // unconditional Winged Cell leaf first; dock ownership
@@ -795,7 +795,16 @@ pub fn tick_aircraft_missions(
                 ))
             })
             .unwrap_or(SimFixed::from_num(8));
-        air_movement::issue_air_move_command(&mut sim.substrate.entities, id, (rx, ry), speed);
+        air_movement::issue_air_move_command(
+            &mut sim.substrate.entities,
+            id,
+            (rx, ry),
+            speed,
+            crate::sim::movement::DestinationTiming::from_rules(
+                sim.session.binary_frame,
+                rules.into(),
+            ),
+        );
     }
 
     // Fire commands: set attack_target so combat system fires this tick.

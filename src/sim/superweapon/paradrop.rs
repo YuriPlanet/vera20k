@@ -20,9 +20,9 @@ use crate::sim::movement::air_movement;
 use crate::sim::movement::locomotor::AirMovePhase;
 use crate::sim::passenger::PassengerRole;
 use crate::sim::pathfinding::PathGrid;
-use crate::sim::world::edge_cell::{find_paradrop_edge_cell, Edge};
+use crate::sim::world::edge_cell::{Edge, find_paradrop_edge_cell};
 use crate::sim::world::{PlacementEvidence, SimSoundEvent, Simulation};
-use crate::util::fixed_math::{ra2_speed_to_leptons_per_second, SimFixed};
+use crate::util::fixed_math::{SimFixed, ra2_speed_to_leptons_per_second};
 
 #[derive(Debug, Clone, Copy)]
 pub enum ParaDropKind {
@@ -205,6 +205,7 @@ fn spawn_pdplane(
         pdplane_id,
         (target_rx, target_ry),
         speed,
+        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, rules.into()),
     );
 
     // Criterion 4 intentionally chooses the first cell just outside the
@@ -275,9 +276,7 @@ fn spawn_pdplane(
         // No passengers loaded — kill the empty carrier rather than fly empty.
         let infantry_terminal = sim.begin_raw_infantry_death(pdplane_id, None);
         sim.substrate.entities.note_dying_transition();
-        if !infantry_terminal
-            && let Some(entity) = sim.substrate.entities.get_mut(pdplane_id)
-        {
+        if !infantry_terminal && let Some(entity) = sim.substrate.entities.get_mut(pdplane_id) {
             entity.health.current = 0;
             entity.dying = true;
         }

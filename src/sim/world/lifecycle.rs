@@ -832,6 +832,9 @@ impl Simulation {
             entity.position.sub_x = request.position.sub_x;
             entity.position.sub_y = request.position.sub_y;
         }
+        if let Some(rules) = context.rules {
+            self.reposition_building_anim_slots(stable_id, rules);
+        }
         // `TechnoClass::Unlimbo @ 0x006F6CFE` establishes the canonical
         // TechnoClass+0x3D5 byte from mode-one MapClass membership. Headless
         // fixtures have no MapClass authority, so they retain the constructor
@@ -1703,59 +1706,50 @@ impl Simulation {
         self.unmark_entity_remove(stable_id, UninitContext::default());
     }
 
-    /// gamemd-derived: active YR `FlyLocomotionClass__Process @ 0x004CD600`
-    /// reaches `FootClass__Set_Height_On_Bridge @ 0x005F5FA0` through the
-    /// Object vtable. It commits signed absolute Object Z from exact ground,
-    /// the `OnBridge` deck offset, and Fly altitude before the final Mark(PUT).
-    fn sync_fly_object_height(&mut self, stable_id: u64) {
+    /// Materialize the legacy split representation before its first Fly
+    /// producer visit. Exact Object coordinates are already physical Z and
+    /// cannot be reconstructed from a stale altitude cache at the wrapper tail.
+    /// Native4CDD1A reads current owner height after horizontal SetCoords;
+    /// conditional SetHeight calls (4CDE9D/4CDFB6) modify that value. The
+    /// equal-height alive branch4CDECA..4CE145 performs no height write.
+    fn materialize_legacy_fly_coordinate(&mut self, stable_id: u64) {
         use crate::rules::locomotor_type::LocomotorKind;
+        use crate::sim::movement::ground_pose::{ground_surface_z_at, position_world_xy};
         use crate::sim::movement::locomotor::MovementLayer;
 
-        let Some(entity) = self.substrate.entities.get(stable_id) else {
+        let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return;
         };
         let Some(locomotor) = entity.locomotor.as_ref() else {
             return;
         };
-        // Jumpjets keep an exact Z too: the native cruise writes one, and the
-        // adapter phases around it must not leave it stale.
-        if locomotor.layer != MovementLayer::Air
-            || !matches!(locomotor.kind, LocomotorKind::Fly | LocomotorKind::Jumpjet)
+        if entity.position.exact_z_leptons.is_some()
+            || locomotor.layer != MovementLayer::Air
+            || locomotor.kind != LocomotorKind::Fly
         {
             return;
         }
-
-        let world_x = i32::from(entity.position.rx)
-            .wrapping_mul(crate::sim::cell_kernel::LEPTONS_PER_CELL)
-            .wrapping_add(entity.position.sub_x.to_num::<i32>());
-        let world_y = i32::from(entity.position.ry)
-            .wrapping_mul(crate::sim::cell_kernel::LEPTONS_PER_CELL)
-            .wrapping_add(entity.position.sub_y.to_num::<i32>());
-        // CellClass__GetGroundHeight @ 0x00578080 resolves a missing/out-of-map
-        // lookup through the zero-height dummy CellClass, not Object's coarse Z.
-        let terrain_cell = self
-            .resolved_terrain
-            .as_ref()
-            .and_then(|terrain| terrain.cell(entity.position.rx, entity.position.ry));
-        let ground_z = if let Some(cell) = terrain_cell {
-            let Ok(ground_z) = ground_height_leptons(cell.level, cell.slope_type, world_x, world_y)
-            else {
-                return;
-            };
-            ground_z
-        } else {
-            0
+        // Shared ground owner includes the live canonical Dummy's level and
+        // slope. Only a mapless fixture uses the constructor's ground zero.
+        let surface = ground_surface_z_at(
+            position_world_xy(&entity.position),
+            entity.on_bridge,
+            self.resolved_terrain.as_ref(),
+            None,
+        );
+        let surface = match (surface, self.resolved_terrain.is_some()) {
+            (Some(surface), _) => surface,
+            (None, false) => {
+                if entity.on_bridge {
+                    BRIDGE_DECK_HEIGHT_LEPTONS
+                } else {
+                    0
+                }
+            }
+            (None, true) => return,
         };
-        let surface_z = if entity.on_bridge {
-            ground_z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS)
-        } else {
-            ground_z
-        };
-        let exact_z = surface_z.wrapping_add(locomotor.altitude.to_num::<i32>());
-
-        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            entity.position.exact_z_leptons = Some(exact_z);
-        }
+        entity.position.exact_z_leptons =
+            Some(surface.wrapping_add(locomotor.altitude.to_num::<i32>()));
     }
 
     /// Run one production air-process visit with the active Fly
@@ -1785,6 +1779,8 @@ impl Simulation {
             self.unmark_entity_remove_impl(stable_id, false, UninitContext::default());
         }
 
+        self.materialize_legacy_fly_coordinate(stable_id);
+
         // A cruising Jumpjet runs the native Update/State3 body instead of the
         // air adapter (`world::jumpjet_cruise`).
         let stats = match self.tick_jumpjet_cruise_one(stable_id, rules) {
@@ -1793,10 +1789,9 @@ impl Simulation {
                 &mut self.substrate.entities,
                 &[stable_id],
                 self.session.tick,
+                self.resolved_terrain.as_ref(),
             ),
         };
-
-        self.sync_fly_object_height(stable_id);
 
         if transact_fly
             && self
@@ -2439,6 +2434,7 @@ impl Simulation {
     }
 
     fn run_represented_uninit_pre_hook(&mut self, stable_id: u64) {
+        self.clear_all_building_anim_slots(stable_id);
         self.clear_building_damage_fire_slots(stable_id);
         self.release_owned_count_once(stable_id);
         crate::sim::docking::bunker_link::break_links_on_despawn(self, stable_id);
@@ -2690,7 +2686,7 @@ impl Simulation {
         expired_get_coords_cell: Option<(u16, u16)>,
         expired_is_high_flying: bool,
         expired_object_alive: bool,
-        expired_health: u16,
+        expired_health: i32,
         expired_is_selling: bool,
         expired_owner: Option<InternedId>,
         control: PointerExpiryControl,
@@ -3279,6 +3275,7 @@ impl Simulation {
         if self.substrate.anims.contains_key(stable_id) {
             self.conceal_anim(stable_id);
             self.detach_anim_from_owner(stable_id);
+            self.clear_building_anim_reference(stable_id);
         }
         // A Jumpjet destroyed while hovering never reaches State 4's release,
         // so its cell AltObject slot (`CellClass+0xE0`) is dropped here rather
@@ -3511,10 +3508,7 @@ mod base_plan_lifecycle_tests {
             0,
             0,
             owner,
-            crate::sim::components::Health {
-                current: 100,
-                max: 100,
-            },
+            crate::sim::components::Health { current: 100 },
             type_ref,
             EntityCategory::Structure,
             0,

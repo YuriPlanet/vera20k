@@ -13,7 +13,7 @@ use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::GeneralRules;
-use crate::sim::components::{DriveOccupationFootprint, MovementTarget};
+use crate::sim::components::MovementTarget;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::terrain_cost::TerrainCostGrid;
@@ -30,7 +30,6 @@ use crate::rules::locomotor_type::MovementZone;
 use crate::sim::components::OrderIntent;
 use crate::sim::game_entity::GameEntity;
 
-use super::drive_track;
 use super::teleport_movement;
 
 /// Check if an entity can accept a new movement destination.
@@ -57,25 +56,15 @@ pub fn clear_navigation_for_entity(entity: &mut GameEntity) {
     entity.navigation.nav_queue.clear();
 }
 
-/// Head_To and selector remain authoritative after world callbacks; neither
-/// ordinary geometry cursor nor raw occupation metadata can reconstruct them.
+/// A committed head comes from the active locomotor after world callbacks;
+/// the physical path and raw occupation metadata cannot reconstruct it.
 fn committed_movement_head(entity: &GameEntity) -> Option<(u16, u16)> {
-    let (head, track) = match entity.locomotor.as_ref()?.kind {
-        LocomotorKind::Drive => {
-            let state = entity.drive_locomotion.as_ref()?;
-            (state.head_to?, state.track)
-        }
-        LocomotorKind::Ship => {
-            let state = entity.ship_locomotion.as_ref()?;
-            (state.head_to?, state.track)
-        }
-        LocomotorKind::Walk => {
-            let head = entity.locomotor.as_ref()?.step_head()?;
-            return Some(((head.x / 256) as u16, (head.y / 256) as u16));
-        }
-        _ => return None,
+    let head = if entity.locomotor.as_ref()?.kind == LocomotorKind::Walk {
+        entity.locomotor.as_ref()?.step_head()?
+    } else {
+        super::track_head::committed_track_head(entity)?
     };
-    (track.turn_index >= 0).then_some(((head.x / 256) as u16, (head.y / 256) as u16))
+    Some(((head.x / 256) as u16, (head.y / 256) as u16))
 }
 
 /// Clear a destination while preserving only an already committed Drive/Ship
@@ -86,7 +75,7 @@ pub fn stop_navigation_at_committed_head(e: &mut GameEntity) {
     // Chain selection consumes the remaining native direction queue, which is
     // independent of the physical A* cursor. Stop must retire that abandoned
     // suffix as well as truncate MovementTarget below. Keep the committed
-    // curve/head and replay reference intact until the segment finishes.
+    // retained selector/head and replay reference until the segment finishes.
     super::path_markers::exhaust_path_replay(&mut e.navigation.path_replay);
     retain_path_to_head(e, committed_head);
 }
@@ -178,11 +167,11 @@ fn retain_path_to_head(
 #[derive(Debug, Clone, Copy)]
 pub struct DestinationTiming {
     pub binary_frame: u32,
-    pub blockage_path_delay_ticks: u16,
+    pub blockage_path_delay_ticks: i32,
 }
 
 impl DestinationTiming {
-    pub const fn new(binary_frame: u32, blockage_path_delay_ticks: u16) -> Self {
+    pub const fn new(binary_frame: u32, blockage_path_delay_ticks: i32) -> Self {
         Self {
             binary_frame,
             blockage_path_delay_ticks,
@@ -200,10 +189,10 @@ impl DestinationTiming {
     /// +668 = (frame, Rules+1768), +640 = (frame, 0) for every accepted
     /// setter. The setter never writes +64C; the no-head Process FindPath
     /// success continuation 0x75B2E2 owns that reset.
-    fn accept_walk(self, entity: &mut crate::sim::game_entity::GameEntity) {
+    pub(crate) fn accept(self, entity: &mut crate::sim::game_entity::GameEntity) {
         let path = &mut entity.navigation.path_runtime;
-        path.start_movement(self.binary_frame, 0, true);
-        path.start_blocked(self.binary_frame, self.blockage_path_delay_ticks, true);
+        path.start_movement(self.binary_frame, 0);
+        path.start_blocked(self.binary_frame, self.blockage_path_delay_ticks);
         path.path_blocked = false;
     }
 }
@@ -394,7 +383,8 @@ pub fn issue_direct_move(
     }
     let start = (entity.position.rx, entity.position.ry);
     if start == target {
-        return true; // Already there.
+        timing.accept(entities.get_mut(entity_id).expect("accepted mover"));
+        return true;
     }
     let current_layer = entity.movement_layer_or_ground();
 
@@ -424,17 +414,8 @@ pub fn issue_direct_move(
     };
 
     if let Some(entity_mut) = entities.get_mut(entity_id) {
-        if entity_mut
-            .locomotor
-            .as_ref()
-            .is_some_and(|l| l.active_kind() == LocomotorKind::Walk)
-        {
-            // Scatter 0x744063 and the other direct callers reach the same
-            // Set_Destination_Internal tail as an ordinary order.
-            timing.accept_walk(entity_mut);
-        } else {
-            entity_mut.navigation.path_runtime = crate::sim::components::FootPathRuntime::default();
-        }
+        // Direct callers share Foot4D96C2's accepted destination tail.
+        timing.accept(entity_mut);
         entity_mut.movement_target = Some(movement);
         let has_rot = entity_mut.locomotor.as_ref().is_some_and(|l| l.rot > 0);
         if entity_mut.category != EntityCategory::Infantry && has_rot {
@@ -546,7 +527,7 @@ fn issue_move_command_with_destination_impl(
     mover_is_crusher: bool,
     blocker_neighbor_counts: Option<&BlockerNeighborCounts>,
     playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
-    mut cell_occupation: Option<&mut crate::sim::occupancy::CellOccupationGrid>,
+    cell_occupation: Option<&mut crate::sim::occupancy::CellOccupationGrid>,
     object_destination: Option<(
         crate::sim::components::NavTargetRef,
         crate::sim::components::DriveCoord,
@@ -580,10 +561,8 @@ fn issue_move_command_with_destination_impl(
     // NavCom in `FootClass::Set_Destination_Internal` @ `0x004D94B0`, the
     // coordinate in Drive `Head_To_Coord` @ `0x004AFD40` — and never touches
     // the Drive track cursor, so the new path takes effect at the curve's next
-    // node. Installing a fresh curve here re-read the body position from the
-    // new curve's lead-in point (the current cell centre) and visibly snapped
-    // the vehicle backward, up to half a cell, on every mid-drive re-order.
-    // Keep the curve and anchor the new path at its committed head cell.
+    // node. Keep its retained selector, cursor and head; anchor the new path
+    // at that committed head cell.
     let current_cell = (entity.position.rx, entity.position.ry);
     let committed_walk = locomotor_kind == Some(LocomotorKind::Walk)
         && entity
@@ -661,7 +640,7 @@ fn issue_move_command_with_destination_impl(
         // object turn searches, or the already-paid head until it completes.
         let committed_head = committed_path_head(entity);
         entity.navigation.path_replay.clear_live_head();
-        timing.accept_walk(entity);
+        timing.accept(entity);
         entity.movement_target = Some(MovementTarget {
             speed,
             current_speed: speed,
@@ -776,11 +755,10 @@ fn issue_move_command_with_destination_impl(
                         .path_layers
                         .extend_from_slice(&appended_layers[1..]);
                     movement.speed = speed;
-                    entity_mut.navigation.path_runtime.start_blocked(
-                        timing.binary_frame,
-                        0,
-                        locomotor_kind == Some(LocomotorKind::Walk),
-                    );
+                    entity_mut
+                        .navigation
+                        .path_runtime
+                        .start_blocked(timing.binary_frame, 0);
                     entity_mut.navigation.path_runtime.path_blocked = false;
                     debug_assert_eq!(
                         movement.path.len(),
@@ -1045,186 +1023,25 @@ fn issue_move_command_with_destination_impl(
             // the existing prepared physical path, without publishing it here.
             entity_mut.navigation.path_replay.clear_live_head();
         }
-        let mut drive_track_started = false;
-        let mut track_occupation_target: Option<DriveOccupationFootprint> = None;
-        let mut accepted_path_reference: Option<(i16, i16)> = None;
-        let mut accepted_head = None;
-        let mut accepted_path_nodes: usize = 1;
-        // Set when the body is not yet on the head path node's octant: gamemd
-        // commands that turn and installs no curve until the body reaches it.
-        let mut turn_first: Option<u8> = None;
-        // A kept in-flight curve owns facing and position until it completes;
-        // the fresh-curve selection below runs only from a standstill anchor.
-        if !keep_in_flight_curve && let Some(f) = new_facing {
-            if entity_mut.category != EntityCategory::Infantry
-                && uses_shared_tracks
-                && let Some((dx, dy)) = initial_step_delta
-            {
-                let to_delta =
-                    movement
-                        .path
-                        .get(1)
-                        .zip(movement.path.get(2))
-                        .map(|(&(hx, hy), &(ax, ay))| {
-                            (i32::from(ax) - i32::from(hx), i32::from(ay) - i32::from(hy))
-                        });
-                match drive_track::plan_drive_track_from_path(
-                    entity_mut.facing,
-                    (dx, dy),
-                    to_delta,
-                    uses_ship_locomotor,
-                ) {
-                    drive_track::DriveTrackDecision::TurnFirst { desired_facing } => {
-                        turn_first = Some(desired_facing);
-                    }
-                    drive_track::DriveTrackDecision::Select(plan) => {
-                        if let Some((head, curve)) =
-                            super::track_head::begin_fresh(&plan, &entity_mut.position)
-                        {
-                            super::track_head::accept_fresh_progress(
-                                locomotor_kind.expect("shared track kind"),
-                                &mut entity_mut.drive_locomotion,
-                                &mut entity_mut.ship_locomotion,
-                                plan.selection.turn_track_index,
-                            );
-                            entity_mut.drive_track = Some(curve);
-                            accepted_head = Some(head);
-                            drive_track_started = true;
-                        }
-                        if drive_track_started {
-                            // `next_index` starts at 1, so the head node index is
-                            // exactly the number of nodes the curve spans.
-                            let head_index = plan.nodes;
-                            accepted_path_nodes = plan.nodes;
-                            let head_rx = i32::from(entity_mut.position.rx) + plan.head_dx;
-                            let head_ry = i32::from(entity_mut.position.ry) + plan.head_dy;
-                            accepted_path_reference = Some((head_rx as i16, head_ry as i16));
-                            if movement.layer_at(head_index)
-                                == crate::sim::movement::locomotor::MovementLayer::Ground
-                                && let (Ok(rx), Ok(ry)) =
-                                    (u16::try_from(head_rx), u16::try_from(head_ry))
-                            {
-                                track_occupation_target = Some(DriveOccupationFootprint {
-                                    rx,
-                                    ry,
-                                    layer: crate::sim::movement::locomotor::MovementLayer::Ground,
-                                });
-                            }
-                        }
-                    }
-                    drive_track::DriveTrackDecision::Unavailable => {}
-                }
-            }
-
-            if drive_track_started {
-                entity_mut.facing_target = None;
-            } else if uses_shared_tracks {
-                entity_mut.drive_track = None;
-                entity_mut.facing_target = turn_first;
-                if let Some(ship) = entity_mut.ship_locomotion.as_mut() {
-                    ship.head_to = None;
-                    ship.pending_track_occupation = false;
-                }
-            } else {
-                entity_mut.drive_track = None;
-                // Infantry always turn instantly (RA2 behavior).
-                // Vehicles with ROT>0 set facing_target for gradual rotation.
-                let has_rot: bool = entity_mut.locomotor.as_ref().is_some_and(|l| l.rot > 0);
-                if entity_mut.category != EntityCategory::Infantry && has_rot {
-                    entity_mut.facing_target = Some(f);
-                } else {
-                    entity_mut.facing = f;
-                }
-            }
-        }
-        // A kept curve's head-to and handoff occupation claims stay with it —
-        // the body is still physically driving into the claimed cells. The
-        // clear/replace arms below are for curves this order replaces.
-        if uses_drive_locomotor && !keep_in_flight_curve {
-            let current_cell = (entity_mut.position.rx, entity_mut.position.ry);
-            let current_layer = entity_mut
-                .occupancy_list_layer()
-                .unwrap_or(crate::sim::movement::locomotor::MovementLayer::Ground);
-            if let Some(drive) = entity_mut.drive_locomotion.as_mut() {
-                drive.head_to = accepted_head;
-                if let Some(reference) = accepted_path_reference {
-                    super::path_markers::accept_path_replay(
-                        &mut entity_mut.navigation.path_replay,
-                        reference,
-                        accepted_path_nodes,
-                    );
-                }
-                match (track_occupation_target, cell_occupation.as_deref_mut()) {
-                    (Some(next), Some(occupation)) => {
-                        crate::sim::occupancy::replace_drive_head_to_occupation(
-                            &mut entity_mut.foot_occupation_enabled,
-                            drive,
-                            occupation,
-                            entity_id,
-                            current_cell,
-                            current_layer,
-                            next,
-                        );
-                        // The curve this order replaces takes its forward
-                        // handoff claim with it. Leaving it behind strands a
-                        // cell nothing occupies, and every later mover is
-                        // refused entry to it for the rest of the match.
-                        crate::sim::occupancy::drop_drive_handoff_occupation(
-                            &mut entity_mut.foot_occupation_enabled,
-                            drive,
-                            occupation,
-                            entity_id,
-                            current_cell,
-                            current_layer,
-                        );
-                    }
-                    (Some(next), None) => {
-                        drive.occupation_head_to = Some(next);
-                        drive.occupation_handoff = None;
-                    }
-                    (None, Some(occupation)) => {
-                        crate::sim::occupancy::clear_drive_head_to_occupation_for_replacement(
-                            &mut entity_mut.foot_occupation_enabled,
-                            drive,
-                            occupation,
-                            entity_id,
-                            current_cell,
-                            current_layer,
-                        );
-                        crate::sim::occupancy::drop_drive_handoff_occupation(
-                            &mut entity_mut.foot_occupation_enabled,
-                            drive,
-                            occupation,
-                            entity_id,
-                            current_cell,
-                            current_layer,
-                        );
-                    }
-                    (None, None) => {
-                        drive.occupation_head_to = None;
-                        drive.occupation_handoff = None;
-                    }
-                }
-            }
-        } else if uses_ship_locomotor && !keep_in_flight_curve {
-            if let Some(ship) = entity_mut.ship_locomotion.as_mut() {
-                ship.head_to = accepted_head;
-                if let Some(reference) = accepted_path_reference {
-                    super::path_markers::accept_path_replay(
-                        &mut entity_mut.navigation.path_replay,
-                        reference,
-                        accepted_path_nodes,
-                    );
-                }
-            }
-        }
-        if entity_mut
-            .locomotor
-            .as_ref()
-            .is_none_or(|l| l.active_kind() != LocomotorKind::Walk)
+        // Unit741970 -> Foot4D94B0 -> Drive4AFD40/Ship69F450 records a
+        // destination. Fresh ProcessMovement4B2630/6A1C80 owns turn admission,
+        // CanEnter, selector/head publication, queue shift and Apply1. Preparing
+        // a track here used to bypass that entire production corridor.
+        // An already committed head remains independent of the new route.
+        if !keep_in_flight_curve
+            && !uses_shared_tracks
+            && let Some(f) = new_facing
         {
-            entity_mut.navigation.path_runtime = crate::sim::components::FootPathRuntime::default();
+            let has_rot = entity_mut.locomotor.as_ref().is_some_and(|l| l.rot > 0);
+            if entity_mut.category != EntityCategory::Infantry && has_rot {
+                entity_mut.facing_target = Some(f);
+            } else {
+                entity_mut.facing = f;
+            }
         }
+        // Unit's accepted setter reaches Foot4D96C2..9707 just as Walk's
+        // does. Preserve +64C; this is not a Foot constructor.
+        timing.accept(entity_mut);
         entity_mut.movement_target = Some(movement);
     }
 

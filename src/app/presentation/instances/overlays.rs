@@ -413,13 +413,16 @@ pub(crate) fn build_anim_class_instances(
         let Some(anim) = sim.anim(stable_id) else {
             continue;
         };
-        if anim.runtime.inactive {
+        if anim.runtime.inactive || anim.building_slot.is_some() {
             continue;
         }
         let type_name: &str = sim.interner.resolve(anim.type_id);
         let config = state
             .rules()
             .and_then(|rules| rules.art_registry.anim_runtime_config(type_name));
+        if config.is_some_and(|config| !config.art_body_read) {
+            continue;
+        }
         if !crate::sim::anim_class::anim_draw_detail_visible(
             crate::sim::anim_class::AnimDrawDetailInput {
                 // No authoritative draw-rate degradation producer exists yet.

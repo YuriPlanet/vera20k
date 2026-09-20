@@ -437,7 +437,9 @@ pub(crate) fn commit_entities(
             death.invulnerability_impact_effects.push(effect);
         }
         let Some(receiver_health::ReceiverHealthCommit {
+            building_entry_frame,
             became_fatal,
+            state: receive_state,
             entered_techno_death,
             reached_exact_zero,
             postmortem_candidate,
@@ -608,7 +610,6 @@ pub(crate) fn commit_entities(
             target.lifecycle.object_alive = true;
             target.health.current = 1;
             target.dying = false;
-            target.refresh_building_damage_state_gate(rules.general.condition_yellow_x1000);
             #[cfg(test)]
             death
                 .receiver_stage_trace
@@ -631,6 +632,13 @@ pub(crate) fn commit_entities(
             };
         }
         if healing_only {
+            finish_building_art_receiver(
+                world,
+                target_id,
+                receive_state,
+                building_entry_frame,
+                rules,
+            );
             continue;
         }
 
@@ -640,14 +648,12 @@ pub(crate) fn commit_entities(
             // fear or the shared Techno postlude. The attacker coordinate is
             // read while the source is still represented, including nested
             // DeathWeapon receiver recursion.
-            let surviving_infantry_result = receiver_outcome.flatten().is_some_and(|resolved| {
-                matches!(
-                    resolved.outcome.state,
-                    damage::DamageState::Damaged
-                        | damage::DamageState::Yellow
-                        | damage::DamageState::Red
-                )
-            });
+            let surviving_infantry_result = matches!(
+                receive_state,
+                damage::DamageState::Damaged
+                    | damage::DamageState::Yellow
+                    | damage::DamageState::Red
+            );
             let attacker_coord = (attacker_id != RAD_NO_ATTACKER)
                 .then(|| world.substrate.entities.get(attacker_id))
                 .flatten()
@@ -705,9 +711,9 @@ pub(crate) fn commit_entities(
                     target_id,
                     scatter.destination,
                     scatter.speed,
-                    crate::sim::movement::DestinationTiming::new(
+                    crate::sim::movement::DestinationTiming::from_rules(
                         world.session.binary_frame,
-                        world.blockage_path_delay_ticks,
+                        Some(rules),
                     ),
                 );
             }
@@ -721,8 +727,8 @@ pub(crate) fn commit_entities(
                     target,
                     damage,
                     true,
-                    rules.general.condition_red_x1000,
-                    rules.general.condition_yellow_x1000,
+                    rules.general.condition_red,
+                    rules.general.condition_yellow,
                 );
             }
             // Neither native ping survives the killing blow.
@@ -871,9 +877,43 @@ pub(crate) fn commit_entities(
             }
             death.append(nested);
         }
+        finish_building_art_receiver(world, target_id, receive_state, building_entry_frame, rules);
     }
 
     (death, under_attack_events)
+}
+
+/// Building442A95 refreshes for nonzero returned result;442B37 independently
+/// refreshes if current body frame differs from the entry value. Result5 and
+/// cleared ObjectAlive leave before either arm. In particular healing result0
+/// must not unconditionally synchronize the retained animation flag.
+fn finish_building_art_receiver(
+    world: &mut Simulation,
+    target_id: u64,
+    state: damage::DamageState,
+    entry_frame: Option<i32>,
+    rules: &RuleSet,
+) {
+    let Some(entry_frame) = entry_frame else {
+        return;
+    };
+    if state == damage::DamageState::AlreadyDead {
+        return;
+    }
+    let Some(target) = world.substrate.entities.get(target_id) else {
+        return;
+    };
+    if !target.lifecycle.object_alive {
+        return;
+    }
+    let Some(object) = rules.object(world.interner.resolve(target.type_ref())) else {
+        return;
+    };
+    if state != damage::DamageState::Unaffected
+        || crate::sim::building_art::receiver_body_frame(target, object, rules) != entry_frame
+    {
+        world.refresh_building_damage_state(target_id, rules);
+    }
 }
 
 pub(crate) fn handle_death(
@@ -1819,7 +1859,7 @@ pub(super) fn resolve_attacker_fire(
         u16,
         SimFixed,
         SimFixed,
-        u16,
+        i32,
         EntityCategory,
         InternedId,
         InternedId,
@@ -1854,7 +1894,7 @@ pub(super) fn resolve_attacker_fire(
                 try_,
                 tsx,
                 tsy,
-                1u16,
+                1i32,
                 EntityCategory::Structure,
                 snap.type_id,
                 snap.owner,

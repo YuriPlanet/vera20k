@@ -19,12 +19,13 @@ use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::components::OrderIntent;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::pathfinding::PathGrid;
+use crate::sim::replay::{ReplayHeader, ReplayLog, ReplayRunner};
 use std::collections::BTreeMap;
 
 fn slice6_rules() -> RuleSet {
     // Two attack-capable vehicles + an infantry; ranges short enough that no
     // auto-combat fires during the scripted window (commands drive everything,
-    // keeping the RNG stream out of the picture).
+    // while constructor and Walk head-selection draws still use Scenario RNG).
     let ini: IniFile = IniFile::from_str(
         "[InfantryTypes]\n0=E1\n\n\
          [VehicleTypes]\n0=MTNK\n\n\
@@ -73,6 +74,13 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
     }
 }
 
+// Immutable historical receipt from5777c115. The final active track had a
+// detached geometry/cursor payload that cannot be recovered from the retained
+// class. Old comments and pins below refer to that historical execution only;
+// current tests must not fabricate it or relax the pre167 projection guard.
+#[allow(dead_code)]
+#[rustfmt::skip]
+mod schema166_receipt {
 /// The pre-slice baseline. Captured from `dev` BEFORE the Slice-6 edits (run the
 /// gate once, read the failure's `left:` value, paste it here). Slice 6 is
 /// behavior-preserving, so this constant MUST NOT change for a Slice-6 *behavior*
@@ -412,6 +420,14 @@ const SLICE6_BASELINE_HASH_PRE_FOOT_PATH_RUNTIME_V160: u64 = 0x1D31_3ED8_9A2D_04
 // E1 from tick 9 (receipt .local/harness-repin-20260915/slice6-dump.diff);
 // the owner-excluded probe below therefore differs from main here. Rust pins.
 const SLICE6_BASELINE_HASH: u64 = 0x1B35_F16E_945D_5812;
+const SLICE6_RAW_OWNER_EXCLUDED_V161_HASH: u64 = 0x1906_B698_79B5_95DE;
+const SLICE6_PRE_SUSTAINED_SIGHT_V142_HASH: u64 = 0x3378_724A_9514_52B4;
+}
+
+// Schema171: live type acceleration preserves retasked track progression;
+// fresh turning defers admission. Old receipts above remain historical only.
+// See docs/research/TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md, PR415 attribution.
+const SLICE6_BASELINE_HASH: u64 = 2458534358217456420;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -477,81 +493,145 @@ fn replay_hash_stable_through_slice6() {
         (11, Command::Stop { entity_id: 1 }),
     ];
 
+    let mut log = ReplayLog::new(ReplayHeader {
+        version: 1,
+        pixel_conversion_bounds: sim.session.pixel_conversion_bounds,
+        tick_hz: 15,
+        seed: sim.session.seed,
+        map_name: "slice6_retask".to_string(),
+        rules_hash: rules.simulation_config_hash(),
+    });
+    let mut stopped_head = None;
     for tick in 0..16u64 {
         let due: Vec<CommandEnvelope> = script
             .iter()
             .filter(|(t, _)| *t == tick + 1)
             .map(|(t, c)| cmd_envelope(&sim, "Americans", *t, c.clone()))
             .collect();
-        let _ = sim.advance_tick(&due, Some(&rules), &heights, Some(&grid), None, 67);
+        let result = sim.advance_tick(&due, Some(&rules), &heights, Some(&grid), None, 67);
+        assert!(result.frame_committed, "retask frame {tick} must commit");
+        assert_eq!(
+            result.executed_commands,
+            due.len(),
+            "scripted envelope at {tick} must be consumed"
+        );
+        log.record_tick(tick, due, result.state_hash);
+
+        if tick >= 10 {
+            let tank = sim.substrate.entities.get(1).expect("retasked tank lives");
+            let drive = tank.drive_locomotion.as_ref().expect("Drive owner");
+            if tick == 10 {
+                stopped_head = drive.head_to;
+                assert!(
+                    stopped_head.is_some(),
+                    "Stop must exercise an already committed segment"
+                );
+            }
+            assert!(
+                tank.navigation.nav_com.is_none(),
+                "Stop clears owner NavCom"
+            );
+            assert!(
+                drive.destination.is_none(),
+                "Stop clears the class destination"
+            );
+            assert!(
+                drive.head_to.is_none() || drive.head_to == stopped_head,
+                "Stop must not select a new head from abandoned orders"
+            );
+            assert_eq!(
+                tank.navigation.path_replay.cursor as usize,
+                tank.navigation.path_replay.directions.len(),
+                "Stop exhausts the abandoned direction suffix"
+            );
+            assert!(
+                tank.attack_target.is_none(),
+                "Stop retires the previous attack"
+            );
+        }
     }
 
+    // Unlike the old single-run hash gate, execute every recorded command a
+    // second time through ReplayRunner and compare each committed frame.
+    let mut replay = Simulation::new();
+    replay.spawn_from_map(
+        &[
+            unit("Americans", "MTNK", 3, 3, EntityCategory::Unit),
+            unit("Soviet", "MTNK", 25, 3, EntityCategory::Unit),
+            unit("Americans", "E1", 5, 5, EntityCategory::Infantry),
+        ],
+        Some(&rules),
+        &heights,
+    );
+    let replayed = ReplayRunner::run_fixture_with_overlay_registry(
+        &mut replay,
+        &log,
+        Some(&rules),
+        &heights,
+        Some(&grid),
+        None,
+        67,
+    );
+    assert_eq!(replayed.len(), log.ticks.len());
+    for (frame, (actual, recorded)) in replayed.iter().zip(&log.ticks).enumerate() {
+        assert_eq!(*actual, recorded.state_hash, "retask replay frame {frame}");
+    }
     assert_eq!(
-        sim.state_hash_without_raw_infantry_owners_v161_probe(),
-        0x1906_B698_79B5_95DE,
-        "raw infantry owner-excluded projection changed beyond the House-index re-encoding"
+        replay.scenario_rng.logical_state(),
+        sim.scenario_rng.logical_state()
     );
     assert_eq!(
-        sim.state_hash_without_sustained_gap_sight_v142(),
-        0x3378_724A_9514_52B4,
-        "committed pre-v142 Slice6 projection changed"
+        replay.main_rng.logical_state(),
+        sim.main_rng.logical_state()
     );
-    let pre_lifecycle_hash = sim.state_hash_before_lifecycle_v28_and_mission_v29();
-    let pre_mission_hash = sim.state_hash_without_mission_v29();
-    let pre_base_plan_hash = sim.state_hash_without_base_plan_v110();
-    let pre_crate_authority_hash = sim.state_hash_without_crate_authority_v114();
-    let pre_wall_runtime_hash = sim.state_hash_without_wall_runtime_v115();
-    let pre_disguise_detect_hash = sim.state_hash_without_disguise_detect_v117();
-    let pre_credit_income_hash = sim.state_hash_without_credit_income_v135();
     assert_eq!(
-        sim.state_hash_without_infantry_terminal_v136(),
-        SLICE6_PRE_INFANTRY_TERMINAL_V136_HASH,
-        "committed pre-v136 Slice6 projection changed"
+        replay.mapgen_rng.logical_state(),
+        sim.mapgen_rng.logical_state()
     );
+    for (id, health) in [(1, 300), (2, 300), (3, 125)] {
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(id)
+                .expect("actor lives")
+                .health
+                .current,
+            health,
+            "retask window must not turn into a combat/death fixture"
+        );
+    }
     let hash = sim.state_hash();
     println!(
-        "[slice6] hashes=pre-v28:{pre_lifecycle_hash:016X},pre-v29:{pre_mission_hash:016X},pre-v110:{pre_base_plan_hash:016X},pre-v114:{pre_crate_authority_hash:016X},pre-v115:{pre_wall_runtime_hash:016X},pre-v117:{pre_disguise_detect_hash:016X},pre-v135:{pre_credit_income_hash:016X},current:{hash:016X}"
+        "[schema168 slice6] pre168={:016X}",
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(168))
     );
-    assert_eq!(
-        pre_credit_income_hash, SLICE6_PRE_CREDIT_INCOME_V135_HASH,
-        "committed pre-v135 projection changed"
+    println!(
+        "[slice6] current={hash:016X} streams={:016X},{:016X},{:016X}",
+        sim.scenario_rng.state(),
+        sim.main_rng.state(),
+        sim.mapgen_rng.state()
     );
-    assert_eq!(
-        pre_lifecycle_hash, SLICE6_PRE_LIFECYCLE_V28_HASH,
-        "committed pre-v28/pre-v29 projection changed"
-    );
-    assert_eq!(
-        pre_mission_hash, SLICE6_PRE_MISSION_V29_HASH,
-        "committed pre-v29 projection changed; trace any behavior or composition drift"
-    );
-    assert_eq!(
-        pre_base_plan_hash, SLICE6_PRE_BASE_PLAN_V110_HASH,
-        "committed pre-v110 projection changed"
-    );
-    assert_eq!(
-        pre_crate_authority_hash, SLICE6_PRE_CRATE_AUTHORITY_V114_HASH,
-        "committed pre-v114 projection changed"
-    );
-    assert_eq!(
-        pre_wall_runtime_hash, SLICE6_PRE_WALL_RUNTIME_V115_HASH,
-        "committed pre-v115 projection changed"
-    );
-    assert_eq!(
-        pre_disguise_detect_hash, SLICE6_PRE_DISGUISE_DETECT_V117_HASH,
-        "committed pre-v117 projection changed"
-    );
-    let pre_membership_hash = sim.state_hash_without_cell_membership_v159();
-    println!("[schema159] pre159={pre_membership_hash:016X} current={hash:016X}");
-    assert_eq!(
-        pre_membership_hash, SLICE6_BASELINE_HASH_PRE_CELL_MEMBERSHIP_V159,
-        "immediately preceding main hash changed beyond schema159 composition"
-    );
-    let pre_foot_runtime_hash = sim.state_hash_without_foot_path_runtime_v160();
-    println!("[schema160] pre160={pre_foot_runtime_hash:016X} current={hash:016X}");
-    assert_eq!(
-        pre_foot_runtime_hash, SLICE6_BASELINE_HASH_PRE_FOOT_PATH_RUNTIME_V160,
-        "immediately preceding main hash changed beyond schema160 composition"
-    );
+    for id in sim.substrate.entities.keys_sorted() {
+        let entity = sim.substrate.entities.get(id).unwrap();
+        println!(
+            "[slice6 owner] id={id} cell=({},{}) sub=({},{}) health={} mission={:?} queued={:?} nav={:?} path={:?} drive={:?} speed={:?}",
+            entity.position.rx,
+            entity.position.ry,
+            entity.position.sub_x,
+            entity.position.sub_y,
+            entity.health.current,
+            entity.mission.current(),
+            entity.mission.queued(),
+            entity.navigation.nav_com,
+            entity.movement_target.as_ref().map(|target| (
+                target.next_index,
+                target.path.len(),
+                target.final_goal
+            )),
+            entity.drive_locomotion,
+            entity.foot_speed,
+        );
+    }
     assert_eq!(
         hash, SLICE6_BASELINE_HASH,
         "Slice 6 scripted-retask state hash drifted. Treat this as behavior drift \

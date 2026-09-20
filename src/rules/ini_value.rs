@@ -338,6 +338,36 @@ pub(crate) fn atoi_lenient(s: &str) -> i32 {
     v as i32
 }
 
+/// One native CRT sscanf `%d` conversion, retaining the unconsumed input for
+/// the caller's literal separators. Decimal arithmetic retains the low32 bits.
+/// Original7CA530 consumers: Building4615CA and Infantry523DB0; executable
+/// fixtures building_body_rules and infantry_sequence_rules preserve both.
+pub(crate) fn scan_decimal_i32(bytes: &mut &[u8]) -> Option<i32> {
+    while bytes
+        .first()
+        .is_some_and(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 11 | 12))
+    {
+        *bytes = &bytes[1..];
+    }
+    let negative = bytes.first() == Some(&b'-');
+    if negative || bytes.first() == Some(&b'+') {
+        *bytes = &bytes[1..];
+    }
+    if !bytes.first().is_some_and(u8::is_ascii_digit) {
+        return None;
+    }
+    let mut value = 0_u32;
+    while let Some(&digit) = bytes.first().filter(|digit| digit.is_ascii_digit()) {
+        value = value.wrapping_mul(10).wrapping_add(u32::from(digit - b'0'));
+        *bytes = &bytes[1..];
+    }
+    Some(if negative {
+        value.wrapping_neg()
+    } else {
+        value
+    } as i32)
+}
+
 /// sscanf "%f"-equivalent leading float (P7): optional sign, decimal mantissa,
 /// and optional exponent. Parsing stops at the first byte outside that token
 /// (`12.5%` -> 12.5, `1.25e2junk` -> 125). Empty/junk -> 0.0.

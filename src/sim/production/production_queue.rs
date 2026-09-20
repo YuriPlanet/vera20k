@@ -496,7 +496,7 @@ fn tick_production_impl(
                     .and_then(|af| {
                         let af_type = sim.interner.resolve(af.type_ref());
                         let af_obj = rules.object(af_type)?;
-                        Some(af_obj.number_of_docks.max(1))
+                        Some(af_obj.dock_contact_capacity())
                     })
                     .unwrap_or(1);
                 let assigned_pad = sim
@@ -628,9 +628,9 @@ fn tick_production_impl(
                         Some(&blocker_neighbor_counts),
                         sim.playfield_bounds,
                         Some(&mut sim.substrate.cell_occupation),
-                        crate::sim::movement::DestinationTiming::new(
+                        crate::sim::movement::DestinationTiming::from_rules(
                             sim.session.binary_frame,
-                            sim.blockage_path_delay_ticks,
+                            rules.into(),
                         ),
                     );
                     if naval_rally.is_some()

@@ -727,7 +727,6 @@ fn iron_curtain_command_forces_authored_strength_and_attributes_retained_deaths(
     {
         let object = sim.substrate.entities.get_mut(over_strength).unwrap();
         object.health.current = 150;
-        object.health.max = 150;
     }
     {
         let object = sim.substrate.entities.get_mut(wounded).unwrap();
@@ -743,7 +742,7 @@ fn iron_curtain_command_forces_authored_strength_and_attributes_retained_deaths(
             .health
             .current,
         50,
-        "receiver damage is authored Strength=100, not a raw kill or health.max"
+        "receiver damage is authored Strength=100 despite actual HP150"
     );
     let dead = sim.substrate.entities.get(wounded).unwrap();
     assert_eq!(
@@ -1014,7 +1013,6 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
     sim.reveal(tank);
     // Keep it alive through the nested DeathWeapon without setting IC first.
     sim.substrate.entities.get_mut(tank).unwrap().health.current = 10_000;
-    sim.substrate.entities.get_mut(tank).unwrap().health.max = 10_000;
     let boomer = sim
         .construct_object_limbo_at_height("BOOM", "Americans", 5, 5, 0, 4, &rules)
         .unwrap();

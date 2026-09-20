@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Drive/Ship Process live Facing sampler, retained turn latch publication, reason0 completion callback order and post-callback lifecycle gates; bounded active-track dispatch precedence",
+  "assumptions": [
+    "Interior Process frames begin at Drive4B0775/Ship69FE22 for sampler rows, or4B055A/69FC6A for active-dispatch rows. Floor/interpolation prelude and full Process invocation are excluded",
+    "ESI is supplied class+4 interface; EDI is complete class. Retained latch is base+62, active byte base+63, selector base+58; head/destination remain supplied null. Owner NavCom+5A4 and mission+AC are zero, bypassing the preceding building/idle receivers on inactive-track rows",
+    "Original Facing::IsRotating4C9480 executes on supplied Foot+388 rate/timer fields and binary frame. Ten profiles include running/expired, signed rate0/-1, paused timer, zero duration, future anchor, signed frame wrap and equal-angle running timer. Facing fields are verified unchanged",
+    "Forty sampler rows combine each profile with old latch0/1 across both families. Thirty-two completion rows cross all alive/limbo/falling and callback-rewritten latch0/1 values. Sixteen old-latch0 rows cross lifecycle bits to show these particular guards are not reached without a completion callback",
+    "Forty-eight active-gate rows cross selector-1/0/-2, valid0/1, running/expired sampler and retained latch0/1. Native active CALL executes and stops before Process_Track body; bypass rows do not establish its result or later Process re-entry",
+    "Completion stops before the next owner mission precheck, live turning stops before the common Process tail, and rejected lifecycle rows execute the original RET4. These boundaries do not certify subsequent alive handling, world callbacks, speed or movement",
+    "Read-only observers record latch writes, sampler results, callback input reason and lifecycle guard inputs. Original executable code and original Unit vtable bytes remain unchanged; only the external copied vtable slot is replaced"
+  ],
+  "substitutions": [
+    "Only owner+18C completion is supplied: external x86 fixture body writes explicitly listed callback_after lifecycle/latch bytes, returns a declared EAX and performs RET4. Copied Unit vtable+18C points to that body. Real completion-receiver side effects and producer reachability of supplied mutations are excluded",
+    "No sampler, branch, active-track direct CALL or guard is hooked or replaced; observation hooks never alter registers, memory or control flow"
+  ],
+  "entry_points": {
+    "facing_is_rotating": "0x004C9480",
+    "drive_active_gate": "0x004B055A",
+    "drive_sample": "0x004B0775",
+    "drive_sampler_call": "0x004B077B",
+    "drive_common_tail": "0x004B078C",
+    "drive_latch_test": "0x004B0896",
+    "drive_latch_clear": "0x004B089B",
+    "drive_completion_call": "0x004B08A4",
+    "drive_guards": "0x004B08AA",
+    "drive_guarded_return": "0x004B08CE",
+    "drive_after_completion": "0x004B08D1",
+    "drive_track_call": "0x004B0576",
+    "drive_track_entry": "0x004B0F20",
+    "ship_active_gate": "0x0069FC6A",
+    "ship_sample": "0x0069FE22",
+    "ship_sampler_call": "0x0069FE28",
+    "ship_common_tail": "0x0069FE39",
+    "ship_latch_test": "0x0069FF5D",
+    "ship_latch_clear": "0x0069FF62",
+    "ship_completion_call": "0x0069FF6B",
+    "ship_guards": "0x0069FF71",
+    "ship_guarded_return": "0x0069FF95",
+    "ship_after_completion": "0x0069FF98",
+    "ship_track_call": "0x0069FC86",
+    "ship_track_entry": "0x006A05F0"
+  },
+  "original_code_range_sha256": {
+    "004B055A..004B08D1": "88e7039ef75b78d875cd06a73935f7291db162e22a8cb890741237fb973d09a3",
+    "0069FC6A..0069FF98": "d7de85f11f7e3c5067f46f59a0f66b2884a4720bb0327870946e684763ad7c4e",
+    "004C9480..004C94AD": "79f899657e153e0db41bd7a53a81c441996854d52ec73286cc2465398c7680c9"
+  },
+  "payload_sha256": "71390abc588c95df24263fecc052a344c4c9b9689cd41e77eb9ac440357f0416"
+}

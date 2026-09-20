@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Rules [AI] PathDelay and BlockagePathDelay retained readers; eleven original PathDelay*900 conversion slices",
+  "assumptions": [
+    "Supplied INI indexes; original CRT floating-scanner initializer7C8F5E executes first; original ReadDouble5283D0/ReadInt5276D0 and parser call/store instructions execute",
+    "PC53/chop, masked exceptions. Binary64 retained field becomes signedlow32 of original _ftol signed64 conversion",
+    "Missing defaults remain native double0.016 and signed60; supplied prior values exercise retained reads",
+    "ReadDouble52854D passes its section argument slot to sscanf as float output; failed conversion exposes section-pointer bits00839DA4 widened from float. Malformed/empty rows describe this exact AI caller ABI; Rust shared reader deliberately returns zero for malformed non-retail inputs. No portable arbitrary-section malformed-input claim",
+    "Conversion slices stop immediately after _ftol return, before timer store. No whole locomotor or timer aging claim",
+    "Raw NaN/infinity conversion rows are supplied retained data, not claims of authored parser reachability"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "read_path": "0x006739E5",
+    "read_blockage": "0x00673A0C"
+  },
+  "original_slices": [
+    {
+      "start": "006673CD",
+      "end_exclusive": "006673D2",
+      "hex": "ba4d62903f",
+      "sha256": "3c3253076a7618b59afd0c10e1360a9f3b4fe4fc94225c686dd9401d3306f677"
+    },
+    {
+      "start": "0066760E",
+      "end_exclusive": "00667628",
+      "hex": "c78660170000fca9f1d2899664170000c786681700003c000000",
+      "sha256": "53f019f90ea176176e79315d50a7ce5d5f1c7ae81b012e6a3995afa3802970aa"
+    },
+    {
+      "start": "006739E5",
+      "end_exclusive": "00673A37",
+      "hex": "8b96641700008b86601700008b0dd40c7f0052506828d38300518bcfe8ca49ebffdd9e601700008b9668170000a1d40c7f00526814d38300508bcfe8ab3cebff8b8e141500008b9610150000898668170000",
+      "sha256": "a19653a7f33ae0980f3f67f438eb0d20a8a3dfbac1fa708dce9e12f76633cb05"
+    },
+    {
+      "start": "005283D0",
+      "end_exclusive": "0052859B",
+      "hex": "83ec0c33c053558b6c24188bd93be80f84b10100008b54241c3bd00f84a50100008b4b04563be9570f859e0000008b73083bf00f847f0100008944241089442414894424188bfa83c9ff33c0f2aef7d14951528d4c2418e8b499f7ff8b4e3083c62c85c9894424240f844a0100008b4e1085c974043901741b8d5424248bce52e89b30000085c00f842b0100008946108b4424248b4e0485c90f84cc0000008b4e1085c97404390174178d4424248bce50e86a30000085c00f84ad0000008946108b761083c604e9a40000008944241089442414894424188bfd83c9ff33c0f2aef7d14951558d4c2418e82199f7ff8d73288bf8897c24208b460485c074568b461085c07404393874138d4424208bce50e83a31000085c0743b8946108d4c2420897c2420518bcee8932e000084c074088b761083c604eb05be2c88b7008b3685f674118b542424897308896b0433c0e9dcfeffffdd44242833c05f5e8943048943085d5b83c40cc21000be3088b7008b3685f674428b461085c0743b8d4c24205168d85b820050e8d31f2a00d944242c8b56106825250000dd5c243852e8bd292a0083c41485c0740edd442428dc0d08387e00dd5c2428dd4424285f5e5d5b83c40cc21000dd4424205d",
+      "sha256": "c059869945ed12277a782280bfc25e6cb8b2b535fe18fb38e35d07427e8b34ac"
+    },
+    {
+      "start": "007C8F5E",
+      "end_exclusive": "007C8F96",
+      "hex": "b8d8ee7c00c705d4c4870082eb7c00a3d0c48700c705d8c48700e8eb7c00c705dcc4870028eb7c00c705e0c48700d0eb7c00a3e4c48700c3",
+      "sha256": "2f1536b4f9c0e291bf9b3da71f9f186c3d6ccecc0305e7e1869f76c88595cd4b"
+    },
+    {
+      "start": "004B2850",
+      "end_exclusive": "004B2861",
+      "hex": "dd8060170000dc0df8277e00e89f363100",
+      "sha256": "dcddedaa55b77403473399f9edf21b02f7911a608094e982f07b415a7e6b6152"
+    },
+    {
+      "start": "004B3A65",
+      "end_exclusive": "004B3A76",
+      "hex": "dd8160170000dc0df8277e00e88a243100",
+      "sha256": "be62d4a763564183740665f771280d846aee9bb1a17897eb331025b8b11e6c0a"
+    },
+    {
+      "start": "004D4022",
+      "end_exclusive": "004D4033",
+      "hex": "dd8260170000dc0df8277e00e8cd1e2f00",
+      "sha256": "92ae495e38cc6e6a53c7551a11de2925e91d50d8b0b7fcdf18d6506f48a1bd6b"
+    },
+    {
+      "start": "00516696",
+      "end_exclusive": "005166A7",
+      "hex": "dd8060170000dc0df8277e00e859f82a00",
+      "sha256": "1b3e33329cc01d7ea1783f97aea96067a8321daed2818beb8924947cbc34f0dd"
+    },
+    {
+      "start": "005168DC",
+      "end_exclusive": "005168ED",
+      "hex": "dd8260170000dc0df8277e00e813f62a00",
+      "sha256": "ff9b007974cb4831e31a54fa4ca19d0f1c44043436cf1169b7fa32317a843cd1"
+    },
+    {
+      "start": "005B0286",
+      "end_exclusive": "005B0297",
+      "hex": "dd8160170000dc0df8277e00e8695c2100",
+      "sha256": "1668a1c5067c9f1e781906980e42c92704d0135b7920aa3353be2a232478b466"
+    },
+    {
+      "start": "005B0CAE",
+      "end_exclusive": "005B0CBF",
+      "hex": "dd8160170000dc0df8277e00e841522100",
+      "sha256": "81eedf94caa2af98d7a9f3625f66a157c7fac179d3de341111d358ac7b0ac678"
+    },
+    {
+      "start": "006A1EA0",
+      "end_exclusive": "006A1EB1",
+      "hex": "dd8060170000dc0df8277e00e84f401200",
+      "sha256": "ea5bdbcc79d87a21e7db5037cd148253b56961b5286bf42ff099035c5a0636f9"
+    },
+    {
+      "start": "006A30B4",
+      "end_exclusive": "006A30C5",
+      "hex": "dd8160170000dc0df8277e00e83b2e1200",
+      "sha256": "3e166eba040c1d1f9e10bc15ee55dc0a9cc9baac0f8f30b310094420f03b4e98"
+    },
+    {
+      "start": "0075AF6F",
+      "end_exclusive": "0075AF80",
+      "hex": "dd8160170000dc0df8277e00e880af0600",
+      "sha256": "a463bc925f89c86b93d23364fa8b15635ba49c40c5f68b8eabbe92f73e90e89a"
+    },
+    {
+      "start": "0075B98C",
+      "end_exclusive": "0075B99D",
+      "hex": "dd8160170000dc0df8277e00e863a50600",
+      "sha256": "85f12558ddbaa751e03f8c1afa2507cf89cfdb3eadd575a2ca0a725dbac0b96e"
+    }
+  ],
+  "payload_sha256": "6cb9397aef4e3144fa29dfdbd703c7c93bdd1c777643b410f4d2f1701a464a2d"
+}

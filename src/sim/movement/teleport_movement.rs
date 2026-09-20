@@ -192,13 +192,20 @@ pub fn issue_teleport_command(
         // non-Teleport base locomotor as a temporary override. CMIN far return uses
         // `issue_active_teleport_head_to_coord` instead, because Teleport is its
         // primary active locomotor in gamemd.
+        let physical = super::foot_coordinate::current_coordinate(entity);
         if let Some(ref mut loco) = entity.locomotor {
             if loco.kind != LocomotorKind::Teleport {
-                loco.begin_piggyback(
+                if !loco.begin_piggyback(
                     crate::rules::locomotor_type::LocomotorKind::Teleport,
                     crate::sim::movement::locomotor::MovementLayer::Ground,
                     binary_frame,
-                );
+                ) {
+                    return false;
+                }
+                // BEGIN719E90 replaces an interface, not Object+9C. Publish
+                // the outgoing controller's legacy split coordinate before
+                // the new raw-copy +18 receiver can observe the owner.
+                entity.position.exact_z_leptons = Some(physical.z);
             }
         }
     }
@@ -313,6 +320,7 @@ pub fn tick_teleport_movement(
     occupancy: &mut OccupancyGrid,
     live_order: &[u64],
     sim_tick: u64,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     mut visuals: Option<&mut TeleportVisuals<'_>>,
 ) -> Vec<(u64, SpecialMovementOutcome)> {
     // Collect entity IDs that need cleanup after ticking.
@@ -360,7 +368,38 @@ pub fn tick_teleport_movement(
                 entity.position.ry = teleport.target_ry;
                 entity.position.sub_x = CELL_CENTER_LEPTON;
                 entity.position.sub_y = CELL_CENTER_LEPTON;
-                entity.position.exact_z_leptons = None;
+                // Process719631..7196B2: SetCoords, resolve destination bridge,
+                // then Object+1CC/5F5FA0 SetHeight(0). An old split altitude or
+                // suspended locomotor must not reappear in the arrival XYZ.
+                if let Some(terrain) = terrain {
+                    let cell = terrain.native_cell_identity((
+                        teleport.target_rx as i16,
+                        teleport.target_ry as i16,
+                    ));
+                    entity.on_bridge = terrain.native_cell_flags(cell) & 0x100 != 0;
+                }
+                if !super::ground_pose::commit_ground_height(
+                    &mut entity.position,
+                    entity.on_bridge,
+                    terrain,
+                    None,
+                ) {
+                    entity.position.exact_z_leptons = Some(
+                        i32::from(entity.position.z as i8)
+                            .wrapping_mul(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS),
+                    );
+                }
+                // Native Fly4CCC25/Rocket66295C read owner+1C8 height. The
+                // legacy Rust controllers cache that height separately; a
+                // suspended interface cannot restore the pre-warp value.
+                if let Some(loco) = entity.locomotor.as_mut() {
+                    if let Some(stashed) = loco.piggyback.as_mut() {
+                        stashed.owner_grounded();
+                    }
+                }
+                if let Some(rocket) = entity.rocket_state.as_mut() {
+                    rocket.altitude = crate::util::fixed_math::SIM_ZERO;
+                }
                 if let Some(visuals) = visuals.as_deref_mut() {
                     visuals.spawn_warp_out(
                         entity.position.rx,
@@ -567,6 +606,7 @@ mod tests {
             can_retaliate: true,
             can_passive_acquire: true,
             distributed_fire: false,
+            vhp_scan: crate::rules::object_type::VhpScan::None,
             explodes: false,
             veteran_abilities: Default::default(),
             elite_abilities: Default::default(),
@@ -703,6 +743,7 @@ mod tests {
             to_tile: None,
             bridge_repair_hut: false,
             laser_fence: false,
+            firestorm_wall: false,
             passengers: 0,
             size_limit: 0,
             size: 3,
@@ -752,6 +793,7 @@ mod tests {
             number_of_docks: 1,
             toggle_power: false,
             powered: false,
+            powered_special: false,
             can_disguise: false,
             disguise_when_still: false,
             wall: false,
@@ -834,7 +876,7 @@ mod tests {
         );
 
         // One admitted frame relocates instantly.
-        tick_teleport_movement(&mut entities, &mut OccupancyGrid::new(), &[], 0, None);
+        tick_teleport_movement(&mut entities, &mut OccupancyGrid::new(), &[], 0, None, None);
 
         let entity = entities.get(1).expect("should exist");
         assert_eq!(entity.position.rx, 20, "Should have relocated to target");
@@ -849,7 +891,7 @@ mod tests {
         // Advance through the ChronoDelay countdown.
         let delay = ts.being_warped_ticks;
         for _ in 0..delay + 5 {
-            tick_teleport_movement(&mut entities, &mut OccupancyGrid::new(), &[], 0, None);
+            tick_teleport_movement(&mut entities, &mut OccupancyGrid::new(), &[], 0, None, None);
         }
 
         // TeleportState should be removed after completion.
@@ -891,6 +933,7 @@ mod tests {
                 &mut OccupancyGrid::new(),
                 &[],
                 0,
+                None,
                 Some(&mut visuals),
             );
         }
@@ -942,6 +985,7 @@ mod tests {
                 &mut OccupancyGrid::new(),
                 &[],
                 0,
+                None,
                 Some(&mut visuals),
             );
             tick_teleport_movement(
@@ -949,6 +993,7 @@ mod tests {
                 &mut OccupancyGrid::new(),
                 &[],
                 1,
+                None,
                 Some(&mut visuals),
             );
         }
@@ -977,7 +1022,14 @@ mod tests {
         live_entities.insert(teleporter(1, 5, 5, 21));
         live_entities.insert(teleporter(2, 6, 5, 22));
 
-        tick_teleport_movement(&mut live_entities, &mut OccupancyGrid::new(), &[2], 0, None);
+        tick_teleport_movement(
+            &mut live_entities,
+            &mut OccupancyGrid::new(),
+            &[2],
+            0,
+            None,
+            None,
+        );
 
         let first = live_entities.get(1).expect("id 1");
         assert_eq!(
@@ -999,6 +1051,7 @@ mod tests {
             &mut OccupancyGrid::new(),
             &[],
             0,
+            None,
             None,
         );
 
@@ -1049,7 +1102,7 @@ mod tests {
 
         // Complete the whole sequence: one Relocate frame plus the chrono delay.
         for _ in 0..200 {
-            tick_teleport_movement(&mut entities, &mut OccupancyGrid::new(), &[], 0, None);
+            tick_teleport_movement(&mut entities, &mut OccupancyGrid::new(), &[], 0, None, None);
         }
 
         // Should have restored to Drive.
@@ -1245,7 +1298,7 @@ mod tests {
         assert!(entity.locomotor.as_ref().expect("loco").is_overridden());
 
         // Single frame: position snaps, then cleanup runs because being_warped_ticks==0.
-        tick_teleport_movement(&mut entities, &mut OccupancyGrid::new(), &[], 0, None);
+        tick_teleport_movement(&mut entities, &mut OccupancyGrid::new(), &[], 0, None, None);
 
         let entity = entities.get(1).expect("should exist");
         assert_eq!(entity.position.rx, 20);
@@ -1287,7 +1340,7 @@ mod tests {
         );
 
         // Frame 1: Relocate snaps position and transitions to ChronoDelay (NOT cleanup).
-        tick_teleport_movement(&mut entities, &mut OccupancyGrid::new(), &[], 0, None);
+        tick_teleport_movement(&mut entities, &mut OccupancyGrid::new(), &[], 0, None, None);
         let ts = entities
             .get(1)
             .and_then(|e| e.teleport_state.as_ref())
@@ -1314,7 +1367,7 @@ mod tests {
             0,
         ));
         let outcomes =
-            tick_teleport_movement(&mut entities, &mut OccupancyGrid::new(), &[], 0, None);
+            tick_teleport_movement(&mut entities, &mut OccupancyGrid::new(), &[], 0, None, None);
 
         assert_eq!(outcomes, vec![(1, SpecialMovementOutcome::Continue)]);
         assert!(entities.get(2).expect("attacker").attack_target.is_none());

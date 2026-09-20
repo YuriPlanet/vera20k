@@ -1,0 +1,2453 @@
+{
+  "rows": [
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 65535,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 65535,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 65535,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 65535,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 33,
+      "current": 1,
+      "destination_strength": 100,
+      "estimated": 33,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 333,
+      "current": 1,
+      "destination_strength": 1000,
+      "estimated": 333,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 21844,
+      "current": 1,
+      "destination_strength": 65535,
+      "estimated": 21844,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 9,
+      "current": 1,
+      "destination_strength": 1000,
+      "estimated": 9,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 655,
+      "current": 1,
+      "destination_strength": 65535,
+      "estimated": 655,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 2,
+      "current": 1,
+      "destination_strength": 1000,
+      "estimated": 2,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 145,
+      "current": 1,
+      "destination_strength": 65535,
+      "estimated": 145,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 65535,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 66,
+      "current": 2,
+      "destination_strength": 100,
+      "estimated": 66,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 666,
+      "current": 2,
+      "destination_strength": 1000,
+      "estimated": 666,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 43689,
+      "current": 2,
+      "destination_strength": 65535,
+      "estimated": 43689,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 19,
+      "current": 2,
+      "destination_strength": 1000,
+      "estimated": 19,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1310,
+      "current": 2,
+      "destination_strength": 65535,
+      "estimated": 1310,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 4,
+      "current": 2,
+      "destination_strength": 1000,
+      "estimated": 4,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 291,
+      "current": 2,
+      "destination_strength": 65535,
+      "estimated": 291,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 65535,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 16,
+      "current": 49,
+      "destination_strength": 1,
+      "estimated": 16,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1633,
+      "current": 49,
+      "destination_strength": 100,
+      "estimated": 1633,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 16333,
+      "current": 49,
+      "destination_strength": 1000,
+      "estimated": 16333,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1070404,
+      "current": 49,
+      "destination_strength": 65535,
+      "estimated": 1070404,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 49,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 48,
+      "current": 49,
+      "destination_strength": 100,
+      "estimated": 48,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 489,
+      "current": 49,
+      "destination_strength": 1000,
+      "estimated": 489,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 32112,
+      "current": 49,
+      "destination_strength": 65535,
+      "estimated": 32112,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 49,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 10,
+      "current": 49,
+      "destination_strength": 100,
+      "estimated": 10,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 108,
+      "current": 49,
+      "destination_strength": 1000,
+      "estimated": 108,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 7136,
+      "current": 49,
+      "destination_strength": 65535,
+      "estimated": 7136,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 49,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 49,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 49,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 48,
+      "current": 49,
+      "destination_strength": 65535,
+      "estimated": 48,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 33,
+      "current": 99,
+      "destination_strength": 1,
+      "estimated": 33,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 3300,
+      "current": 99,
+      "destination_strength": 100,
+      "estimated": 3300,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 33000,
+      "current": 99,
+      "destination_strength": 1000,
+      "estimated": 33000,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 2162655,
+      "current": 99,
+      "destination_strength": 65535,
+      "estimated": 2162655,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 99,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 98,
+      "current": 99,
+      "destination_strength": 100,
+      "estimated": 98,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 989,
+      "current": 99,
+      "destination_strength": 1000,
+      "estimated": 989,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 64879,
+      "current": 99,
+      "destination_strength": 65535,
+      "estimated": 64879,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 99,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 21,
+      "current": 99,
+      "destination_strength": 100,
+      "estimated": 21,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 219,
+      "current": 99,
+      "destination_strength": 1000,
+      "estimated": 219,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 14417,
+      "current": 99,
+      "destination_strength": 65535,
+      "estimated": 14417,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 99,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 99,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 99,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 98,
+      "current": 99,
+      "destination_strength": 65535,
+      "estimated": 98,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 33,
+      "current": 100,
+      "destination_strength": 1,
+      "estimated": 33,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 3333,
+      "current": 100,
+      "destination_strength": 100,
+      "estimated": 3333,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 33333,
+      "current": 100,
+      "destination_strength": 1000,
+      "estimated": 33333,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 2184499,
+      "current": 100,
+      "destination_strength": 65535,
+      "estimated": 2184499,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 100,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 100,
+      "current": 100,
+      "destination_strength": 100,
+      "estimated": 100,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1000,
+      "current": 100,
+      "destination_strength": 1000,
+      "estimated": 1000,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 65535,
+      "current": 100,
+      "destination_strength": 65535,
+      "estimated": 65535,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 100,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 22,
+      "current": 100,
+      "destination_strength": 100,
+      "estimated": 22,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 222,
+      "current": 100,
+      "destination_strength": 1000,
+      "estimated": 222,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 14563,
+      "current": 100,
+      "destination_strength": 65535,
+      "estimated": 14563,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 100,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 100,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 100,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 99,
+      "current": 100,
+      "destination_strength": 65535,
+      "estimated": 99,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 149,
+      "current": 449,
+      "destination_strength": 1,
+      "estimated": 149,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 14966,
+      "current": 449,
+      "destination_strength": 100,
+      "estimated": 14966,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 149666,
+      "current": 449,
+      "destination_strength": 1000,
+      "estimated": 149666,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 9808404,
+      "current": 449,
+      "destination_strength": 65535,
+      "estimated": 9808404,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 4,
+      "current": 449,
+      "destination_strength": 1,
+      "estimated": 4,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 448,
+      "current": 449,
+      "destination_strength": 100,
+      "estimated": 448,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 4489,
+      "current": 449,
+      "destination_strength": 1000,
+      "estimated": 4489,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 294252,
+      "current": 449,
+      "destination_strength": 65535,
+      "estimated": 294252,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 449,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 99,
+      "current": 449,
+      "destination_strength": 100,
+      "estimated": 99,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 997,
+      "current": 449,
+      "destination_strength": 1000,
+      "estimated": 997,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 65389,
+      "current": 449,
+      "destination_strength": 65535,
+      "estimated": 65389,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 449,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 449,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 6,
+      "current": 449,
+      "destination_strength": 1000,
+      "estimated": 6,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 448,
+      "current": 449,
+      "destination_strength": 65535,
+      "estimated": 448,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 21845,
+      "current": 65535,
+      "destination_strength": 1,
+      "estimated": 21845,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 2184500,
+      "current": 65535,
+      "destination_strength": 100,
+      "estimated": 2184500,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 21845000,
+      "current": 65535,
+      "destination_strength": 1000,
+      "estimated": 21845000,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1431612075,
+      "current": 65535,
+      "destination_strength": 65535,
+      "estimated": 1431612075,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 655,
+      "current": 65535,
+      "destination_strength": 1,
+      "estimated": 655,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 65534,
+      "current": 65535,
+      "destination_strength": 100,
+      "estimated": 65534,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 655349,
+      "current": 65535,
+      "destination_strength": 1000,
+      "estimated": 655349,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 42948362,
+      "current": 65535,
+      "destination_strength": 65535,
+      "estimated": 42948362,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 145,
+      "current": 65535,
+      "destination_strength": 1,
+      "estimated": 145,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 14563,
+      "current": 65535,
+      "destination_strength": 100,
+      "estimated": 14563,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 145633,
+      "current": 65535,
+      "destination_strength": 1000,
+      "estimated": 145633,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 9544080,
+      "current": 65535,
+      "destination_strength": 65535,
+      "estimated": 9544080,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 65535,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 100,
+      "current": 65535,
+      "destination_strength": 100,
+      "estimated": 100,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1000,
+      "current": 65535,
+      "destination_strength": 1000,
+      "estimated": 1000,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 65535,
+      "current": 65535,
+      "destination_strength": 65535,
+      "estimated": 65535,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 65535,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 65535,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 65535,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 65535,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 33,
+      "current": 1,
+      "destination_strength": 100,
+      "estimated": 33,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 333,
+      "current": 1,
+      "destination_strength": 1000,
+      "estimated": 333,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 21844,
+      "current": 1,
+      "destination_strength": 65535,
+      "estimated": 21844,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 9,
+      "current": 1,
+      "destination_strength": 1000,
+      "estimated": 9,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 655,
+      "current": 1,
+      "destination_strength": 65535,
+      "estimated": 655,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 2,
+      "current": 1,
+      "destination_strength": 1000,
+      "estimated": 2,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 145,
+      "current": 1,
+      "destination_strength": 65535,
+      "estimated": 145,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 65535,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 66,
+      "current": 2,
+      "destination_strength": 100,
+      "estimated": 66,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 666,
+      "current": 2,
+      "destination_strength": 1000,
+      "estimated": 666,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 43689,
+      "current": 2,
+      "destination_strength": 65535,
+      "estimated": 43689,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 19,
+      "current": 2,
+      "destination_strength": 1000,
+      "estimated": 19,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1310,
+      "current": 2,
+      "destination_strength": 65535,
+      "estimated": 1310,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 4,
+      "current": 2,
+      "destination_strength": 1000,
+      "estimated": 4,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 291,
+      "current": 2,
+      "destination_strength": 65535,
+      "estimated": 291,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 2,
+      "destination_strength": 65535,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 16,
+      "current": 49,
+      "destination_strength": 1,
+      "estimated": 16,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1633,
+      "current": 49,
+      "destination_strength": 100,
+      "estimated": 1633,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 16333,
+      "current": 49,
+      "destination_strength": 1000,
+      "estimated": 16333,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1070404,
+      "current": 49,
+      "destination_strength": 65535,
+      "estimated": 1070404,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 49,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 48,
+      "current": 49,
+      "destination_strength": 100,
+      "estimated": 48,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 489,
+      "current": 49,
+      "destination_strength": 1000,
+      "estimated": 489,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 32112,
+      "current": 49,
+      "destination_strength": 65535,
+      "estimated": 32112,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 49,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 10,
+      "current": 49,
+      "destination_strength": 100,
+      "estimated": 10,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 108,
+      "current": 49,
+      "destination_strength": 1000,
+      "estimated": 108,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 7136,
+      "current": 49,
+      "destination_strength": 65535,
+      "estimated": 7136,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 49,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 49,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 49,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 48,
+      "current": 49,
+      "destination_strength": 65535,
+      "estimated": 48,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 33,
+      "current": 99,
+      "destination_strength": 1,
+      "estimated": 33,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 3300,
+      "current": 99,
+      "destination_strength": 100,
+      "estimated": 3300,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 33000,
+      "current": 99,
+      "destination_strength": 1000,
+      "estimated": 33000,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 2162655,
+      "current": 99,
+      "destination_strength": 65535,
+      "estimated": 2162655,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 99,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 98,
+      "current": 99,
+      "destination_strength": 100,
+      "estimated": 98,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 989,
+      "current": 99,
+      "destination_strength": 1000,
+      "estimated": 989,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 64879,
+      "current": 99,
+      "destination_strength": 65535,
+      "estimated": 64879,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 99,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 21,
+      "current": 99,
+      "destination_strength": 100,
+      "estimated": 21,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 219,
+      "current": 99,
+      "destination_strength": 1000,
+      "estimated": 219,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 14417,
+      "current": 99,
+      "destination_strength": 65535,
+      "estimated": 14417,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 99,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 99,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 99,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 98,
+      "current": 99,
+      "destination_strength": 65535,
+      "estimated": 98,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 33,
+      "current": 100,
+      "destination_strength": 1,
+      "estimated": 33,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 3333,
+      "current": 100,
+      "destination_strength": 100,
+      "estimated": 3333,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 33333,
+      "current": 100,
+      "destination_strength": 1000,
+      "estimated": 33333,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 2184499,
+      "current": 100,
+      "destination_strength": 65535,
+      "estimated": 2184499,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1,
+      "current": 100,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 100,
+      "current": 100,
+      "destination_strength": 100,
+      "estimated": 100,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1000,
+      "current": 100,
+      "destination_strength": 1000,
+      "estimated": 1000,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 65535,
+      "current": 100,
+      "destination_strength": 65535,
+      "estimated": 65535,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 100,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 22,
+      "current": 100,
+      "destination_strength": 100,
+      "estimated": 22,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 222,
+      "current": 100,
+      "destination_strength": 1000,
+      "estimated": 222,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 14563,
+      "current": 100,
+      "destination_strength": 65535,
+      "estimated": 14563,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 100,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 100,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 100,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 99,
+      "current": 100,
+      "destination_strength": 65535,
+      "estimated": 99,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 149,
+      "current": 449,
+      "destination_strength": 1,
+      "estimated": 149,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 14966,
+      "current": 449,
+      "destination_strength": 100,
+      "estimated": 14966,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 149666,
+      "current": 449,
+      "destination_strength": 1000,
+      "estimated": 149666,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 9808404,
+      "current": 449,
+      "destination_strength": 65535,
+      "estimated": 9808404,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 4,
+      "current": 449,
+      "destination_strength": 1,
+      "estimated": 4,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 448,
+      "current": 449,
+      "destination_strength": 100,
+      "estimated": 448,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 4489,
+      "current": 449,
+      "destination_strength": 1000,
+      "estimated": 4489,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 294252,
+      "current": 449,
+      "destination_strength": 65535,
+      "estimated": 294252,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 449,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 99,
+      "current": 449,
+      "destination_strength": 100,
+      "estimated": 99,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 997,
+      "current": 449,
+      "destination_strength": 1000,
+      "estimated": 997,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 65389,
+      "current": 449,
+      "destination_strength": 65535,
+      "estimated": 65389,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 449,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": 449,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 6,
+      "current": 449,
+      "destination_strength": 1000,
+      "estimated": 6,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 448,
+      "current": 449,
+      "destination_strength": 65535,
+      "estimated": 448,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 21845,
+      "current": 65535,
+      "destination_strength": 1,
+      "estimated": 21845,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 2184500,
+      "current": 65535,
+      "destination_strength": 100,
+      "estimated": 2184500,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 21845000,
+      "current": 65535,
+      "destination_strength": 1000,
+      "estimated": 21845000,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 1431612075,
+      "current": 65535,
+      "destination_strength": 65535,
+      "estimated": 1431612075,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 3
+    },
+    {
+      "actual": 655,
+      "current": 65535,
+      "destination_strength": 1,
+      "estimated": 655,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 65534,
+      "current": 65535,
+      "destination_strength": 100,
+      "estimated": 65534,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 655349,
+      "current": 65535,
+      "destination_strength": 1000,
+      "estimated": 655349,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 42948362,
+      "current": 65535,
+      "destination_strength": 65535,
+      "estimated": 42948362,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 145,
+      "current": 65535,
+      "destination_strength": 1,
+      "estimated": 145,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 14563,
+      "current": 65535,
+      "destination_strength": 100,
+      "estimated": 14563,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 145633,
+      "current": 65535,
+      "destination_strength": 1000,
+      "estimated": 145633,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 9544080,
+      "current": 65535,
+      "destination_strength": 65535,
+      "estimated": 9544080,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 450
+    },
+    {
+      "actual": 1,
+      "current": 65535,
+      "destination_strength": 1,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 100,
+      "current": 65535,
+      "destination_strength": 100,
+      "estimated": 100,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1000,
+      "current": 65535,
+      "destination_strength": 1000,
+      "estimated": 1000,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 65535,
+      "current": 65535,
+      "destination_strength": 65535,
+      "estimated": 65535,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 65535
+    },
+    {
+      "actual": 1,
+      "current": -1,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 100,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": -100
+    },
+    {
+      "actual": 1,
+      "current": 100,
+      "destination_strength": -1000,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 2147483647,
+      "destination_strength": 2147483647,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 1
+    },
+    {
+      "actual": 1,
+      "current": 65535,
+      "destination_strength": 65536,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 1
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 2147483647,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 2147483647
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 0
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "unit",
+      "source_estimated": -987,
+      "source_strength": 0
+    },
+    {
+      "actual": 1,
+      "current": -1,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 100,
+      "destination_strength": 1000,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": -100
+    },
+    {
+      "actual": 1,
+      "current": 100,
+      "destination_strength": -1000,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 100
+    },
+    {
+      "actual": 1,
+      "current": 2147483647,
+      "destination_strength": 2147483647,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 1
+    },
+    {
+      "actual": 1,
+      "current": 65535,
+      "destination_strength": 65536,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 1
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 2147483647,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 2147483647
+    },
+    {
+      "actual": 1,
+      "current": 0,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 0
+    },
+    {
+      "actual": 1,
+      "current": 1,
+      "destination_strength": 100,
+      "estimated": 1,
+      "kind": "building",
+      "source_estimated": -987,
+      "source_strength": 0
+    }
+  ],
+  "schema_version": 1
+}

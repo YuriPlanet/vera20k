@@ -266,6 +266,69 @@ mod tests {
         entity
     }
 
+    #[test]
+    fn teleport_switch_draws_the_same_exact_owner_coordinate_as_navigation() {
+        use crate::sim::movement::{rocket_movement, teleport_movement};
+        use crate::sim::world::Simulation;
+        for kind in [
+            LocomotorKind::Fly,
+            LocomotorKind::Hover,
+            LocomotorKind::Rocket,
+        ] {
+            let mut sim = Simulation::new();
+            let mut e = air_unit(kind, 125);
+            e.position.z = 2;
+            e.position.exact_z_leptons = Some(333);
+            e.locomotor = Some(LocomotorState::for_test_kind(kind));
+            e.locomotor.as_mut().unwrap().altitude = SimFixed::from_num(125);
+            sim.substrate.entities.insert(e);
+            if kind == LocomotorKind::Rocket {
+                assert!(rocket_movement::attach_rocket_state(
+                    &mut sim.substrate.entities,
+                    1,
+                    (5, 5),
+                    (20, 5),
+                    SimFixed::from_num(250),
+                ));
+                sim.substrate
+                    .entities
+                    .get_mut(1)
+                    .unwrap()
+                    .rocket_state
+                    .as_mut()
+                    .unwrap()
+                    .altitude = SimFixed::from_num(125);
+            }
+            let before = world_z_leptons(sim.substrate.entities.get(1).unwrap());
+            assert_eq!(before, 333);
+            assert!(teleport_movement::issue_teleport_command(
+                &mut sim.substrate.entities,
+                1,
+                (8, 9),
+                &Default::default(),
+                true,
+                0,
+            ));
+            let e = sim.substrate.entities.get(1).unwrap();
+            assert_eq!(world_z_leptons(e), before);
+            assert_eq!(sim.foot_navigation_coordinate(1).unwrap().z, before);
+            assert_eq!(height_lift_px(e), adjust_for_z_lift_px(before));
+            teleport_movement::tick_teleport_movement(
+                &mut sim.substrate.entities,
+                &mut sim.substrate.occupancy,
+                &[1],
+                0,
+                None,
+                None,
+            );
+            let e = sim.substrate.entities.get(1).unwrap();
+            assert_eq!(e.locomotor.as_ref().unwrap().active_kind(), kind);
+            assert_eq!(world_z_leptons(e), 208);
+            assert_eq!(sim.foot_navigation_coordinate(1).unwrap().z, 208);
+            assert_eq!(height_lift_px(e), adjust_for_z_lift_px(208));
+        }
+    }
+
     /// The whole reason this half-tile keeps going wrong, pinned on one cell.
     ///
     /// Three layers share cell (10, 4) at ground level, and gamemd puts them in
@@ -591,10 +654,7 @@ mod tests {
             2, // z=2 for elevation
             0,
             crate::sim::intern::test_intern("Americans"),
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             crate::sim::intern::test_intern("HTNK"),
             EntityCategory::Unit,
             0,
@@ -656,10 +716,7 @@ mod tests {
             0,
             64,
             crate::sim::intern::test_intern("Americans"),
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             crate::sim::intern::test_intern("HTNK"),
             EntityCategory::Unit,
             0,

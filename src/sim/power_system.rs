@@ -25,7 +25,10 @@ pub struct PowerState {
     pub total_output: i32,
     /// Sum of absolute negative `Power=` values (always full rated, regardless of health).
     pub total_drain: i32,
-    /// True when `total_output < total_drain` (binary threshold).
+    /// House+577B: an admitted positive-output Building has DrainingMe.
+    #[serde(default)]
+    pub has_drained_power_source: bool,
+    /// Native signed House power ratio is below one.
     pub is_low_power: bool,
     /// Remaining power-blackout frames. While > 0, `total_output` is forced to 0.
     /// Set by spy infiltration of power plants AND by ForceShield superweapon launch.
@@ -40,6 +43,21 @@ pub struct PowerState {
     pub theoretical_total_power: i32,
 }
 
+impl PowerState {
+    /// House4FCE30 and508D99..DC9: produced>=drained or drained==0 gives1;
+    /// otherwise signed produced/drained is compared with1. With finite i32
+    /// operands, a negative denominator reverses the strict less-than result.
+    pub(crate) fn has_full_power(&self) -> bool {
+        self.total_output >= self.total_drain || self.total_drain <= 0
+    }
+}
+
+/// BuildingType46108A stores NEG(Power) as a signed dword for negative
+/// authored values. MIN remains negative and must not pass the positive-drain gate.
+pub(crate) fn native_building_power_drain(power: i32) -> i32 {
+    if power < 0 { power.wrapping_neg() } else { 0 }
+}
+
 /// Events emitted when a player's power state transitions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PowerEvent {
@@ -49,10 +67,20 @@ pub enum PowerEvent {
     PowerRestored { owner: InternedId },
 }
 
+/// House508CB0/508CB8 tests limbo(+81) and cell-marked(+74), not ObjectAlive
+/// (+90) or actual HP. Rust tombstones remain excluded until physical removal.
+fn participates_in_power_accounting(entity: &GameEntity) -> bool {
+    entity.category == EntityCategory::Structure
+        && !entity.dying
+        && !entity.lifecycle.in_limbo
+        && entity.lifecycle.cell_marked
+}
+
 /// Recalculate power totals for a single owner from their buildings.
 ///
-/// Power output scales with building health using integer arithmetic:
-/// `output = Power * current_hp / max_hp` (rounds down, matching RA2).
+/// Building44E85F..44E86A multiplies native signed-health/live-Strength x87
+/// ratio by the signed output contribution and consumes _ftol's low EAX.
+/// Ratio-first PC53/chop arithmetic intentionally differs from integer division.
 /// Drain is always the full rated `|Power|` regardless of health.
 ///
 /// `UnitAbsorb`/`InfantryAbsorb` buildings (e.g., Yuri Bio-Reactor) add
@@ -70,19 +98,14 @@ fn recalculate_power_for_owner(
 ) {
     let mut produced: i32 = 0;
     let mut drained: i32 = 0;
+    let mut has_drained_power_source = false;
     // Theoretical total: sum of |Power=| from TypeClass for ALL buildings,
     // including those under construction. Used by the power bar fill curve.
     // Does NOT include the ExtraPower garrison bonus.
     let mut theoretical: i32 = 0;
 
     for entity in entities.values() {
-        // A Dying corpse (sold/destroyed this tick, awaiting the end-of-tick
-        // drain) no longer produces or drains power — gamemd drops it from the
-        // house power totals at uninit.
-        if entity.dying || entity.lifecycle.in_limbo {
-            continue;
-        }
-        if entity.category != EntityCategory::Structure || entity.owner() != owner_id {
+        if !participates_in_power_accounting(entity) || entity.owner() != owner_id {
             continue;
         }
         let Some(obj) = rules.object(interner.resolve(entity.type_ref())) else {
@@ -90,13 +113,17 @@ fn recalculate_power_for_owner(
         };
 
         // Theoretical total includes ALL buildings regardless of state.
-        theoretical += obj.power.unsigned_abs() as i32;
+        // This derived sidebar capacity retains its dword storage contract.
+        theoretical = theoretical.wrapping_add(obj.power.wrapping_abs());
 
         // BuildingUp is presentation state, not lifecycle authority. Native
         // AI_AssessPower iterates every live owned building and lets
         // GetPowerOutput/GetPowerDrain decide its contribution; it has no
         // construction-state exclusion.
 
+        // Numeric comparison corpus: tools/spatial_oracle/power_health.json.
+        // Still-open native lifecycle inputs: BeingWarped, online/overpowered,
+        // attached upgrade slots and House campaign registration.
         // Producer branch: base = max(Power, 0), plus ExtraPower × occupants
         // for InfantryAbsorb/UnitAbsorb buildings (gate is strict on all
         // three conditions, matching gamemd's GetPowerOutput).
@@ -105,38 +132,45 @@ fn recalculate_power_for_owner(
             let occupants = entity.passenger_role.cargo().map_or(0, |c| c.count()) as i32;
             if occupants > 0 {
                 output_contribution =
-                    output_contribution.saturating_add(obj.extra_power.saturating_mul(occupants));
+                    output_contribution.wrapping_add(obj.extra_power.wrapping_mul(occupants));
             }
         }
         if output_contribution > 0 {
-            // Health-scaled output: integer division rounds toward zero,
-            // equivalent to gamemd's ftol(base × health_ratio) for positive
-            // operands. Bonus is folded into base before scaling.
-            let hp = entity.health.current as i32;
-            let max_hp = entity.health.max.max(1) as i32;
-            produced = produced.saturating_add(output_contribution * hp / max_hp);
+            // Original44E85F calls5F5C60, then FIMUL and _ftol; House508CFF
+            // adds the signed returned dword with wrapping ADD. No max(1),
+            // health clamp or integer product precedes the native division.
+            use crate::util::native_x87::MaskedX87Chop53 as X87;
+            let output = X87::ftol_i32_low_masked(X87::mul(
+                entity.health.ratio(obj.strength),
+                X87::load_i32(output_contribution),
+            ));
+            produced = produced.wrapping_add(output);
+            //508D1E calls70FEC0 (DrainingMe != null), then repeats the
+            // live GetPowerOutput getter and tests its signed result >0.
+            has_drained_power_source |= entity.draining_me.is_some() && output > 0;
         }
 
         // Drain branch: always full rated value regardless of health.
-        if obj.power < 0 {
-            drained = drained.saturating_add(obj.power.saturating_abs());
-        }
+        // Parser46108A NEG and House508D16 ADD both consume dwords.
+        drained = drained.wrapping_add(native_building_power_drain(obj.power));
     }
 
-    // Spy blackout forces output to zero.
-    if state.power_blackout_remaining > 0 {
+    //508D4A stores the assessment byte;508D79 forces output to zero for
+    // either the outage timer or a drained positive-output contributor.
+    state.has_drained_power_source = has_drained_power_source;
+    if state.power_blackout_remaining > 0 || has_drained_power_source {
         produced = 0;
     }
 
     state.total_output = produced;
     state.total_drain = drained;
-    state.is_low_power = produced < drained;
+    state.is_low_power = !state.has_full_power();
     state.theoretical_total_power = theoretical;
 }
 
 /// Main per-native-frame power system entry point.
 ///
-/// For each player with structures: recalculates power totals, decrements
+/// For each retained power owner or player with contributing structures: recalculates totals, decrements
 /// spy blackout timer, and returns transition events for EVA voice lines.
 ///
 /// gamemd has no HP-degradation effect during low power — `Powered=yes`
@@ -149,19 +183,18 @@ pub fn tick_power_states(
     rules: &RuleSet,
     interner: &crate::sim::intern::StringInterner,
 ) -> Vec<PowerEvent> {
-    // Collect unique owners who have a LIVE structure. A Dying corpse must not
-    // keep an owner's power state alive once its last structure is gone.
-    let mut owners: Vec<InternedId> = Vec::new();
-    for entity in entities.values() {
-        if !entity.dying
-            && !entity.lifecycle.in_limbo
-            && entity.category == EntityCategory::Structure
-            && !owners.contains(&entity.owner())
-        {
-            owners.push(entity.owner());
-        }
-    }
-    owners.sort();
+    // House state outlives its last contributing building. Revisit retained
+    // owners too: an empty contribution set must clear totals and keep the
+    // existing blackout/transition clock advancing after Unmark or removal.
+    let mut owners: Vec<InternedId> = power_states.keys().copied().collect();
+    owners.extend(
+        entities
+            .values()
+            .filter(|entity| participates_in_power_accounting(entity))
+            .map(GameEntity::owner),
+    );
+    owners.sort_unstable();
+    owners.dedup();
 
     let mut events: Vec<PowerEvent> = Vec::new();
 
@@ -193,8 +226,8 @@ pub fn tick_power_states(
 /// Check whether a specific building is functionally active (not disabled by low power).
 ///
 /// Returns `false` if the owner is in low power AND the building has `Powered=yes`
-/// AND consumes power (`Power= <= 0`). Power plants (positive `Power=`) are never
-/// deactivated by low power.
+/// AND its derived native signed drain is positive. A wrapped MIN drain
+/// does not pass this gate, though accounting still adds that signed value.
 pub fn is_building_powered(
     power_states: &BTreeMap<InternedId, PowerState>,
     rules: &RuleSet,
@@ -207,19 +240,17 @@ pub fn is_building_powered(
     let Some(obj) = rules.object(interner.resolve(entity.type_ref())) else {
         return true;
     };
-    // Power plants (positive Power=) are never deactivated.
-    if obj.power > 0 {
+    //4555D0 gates the ratio read on strictly positive native Type+EE4.
+    if native_building_power_drain(obj.power) <= 0 {
         return true;
     }
     // Non-Powered buildings are never deactivated.
     if !obj.powered {
         return true;
     }
-    // Check if owner is in low power.
-    let is_low = power_states
+    power_states
         .get(&entity.owner())
-        .is_some_and(|state| state.is_low_power);
-    !is_low
+        .is_none_or(PowerState::has_full_power)
 }
 
 /// Trigger a spy-infiltration power blackout for the target owner.
@@ -272,6 +303,66 @@ mod tests {
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern;
 
+    #[test]
+    fn original_signed_operational_and_drained_generator_assessment() {
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tools/spatial_oracle/building_power_state.json"
+        ))
+        .unwrap();
+        let rules = rules_from_ini(
+            "[BuildingTypes]\n0=B\n1=C\n[B]\nPower=200\nStrength=100\n[C]\nPower=-100\nPowered=yes\nStrength=100\n",
+        );
+        let consumer = make_building(2, "C", "A", 100);
+        let generator = make_building(1, "B", "A", 100);
+        let interner = test_interner();
+        let owner = generator.owner();
+        assert_eq!(corpus["predicate_rows"].as_array().unwrap().len(), 121);
+        for row in corpus["predicate_rows"].as_array().unwrap() {
+            let state = PowerState {
+                total_output: row["output"].as_i64().unwrap() as i32,
+                total_drain: row["drain"].as_i64().unwrap() as i32,
+                ..Default::default()
+            };
+            assert_eq!(
+                state.has_full_power(),
+                row["operational"].as_bool().unwrap(),
+                "{row}"
+            );
+            let states = BTreeMap::from([(owner, state)]);
+            assert_eq!(
+                is_building_powered(&states, &rules, &consumer, &interner),
+                row["operational"].as_bool().unwrap(),
+                "{row}"
+            );
+        }
+        assert_eq!(corpus["assessment_rows"].as_array().unwrap().len(), 32);
+        for row in corpus["assessment_rows"].as_array().unwrap() {
+            let mut entity = generator.clone();
+            entity.health.current = row["current"].as_i64().unwrap() as i32;
+            entity.draining_me = row["draining"].as_bool().unwrap().then_some(99);
+            entity.lifecycle.in_limbo = row["limbo"].as_bool().unwrap();
+            entity.lifecycle.cell_marked = row["marked"].as_bool().unwrap();
+            let mut entities = EntityStore::default();
+            entities.insert(entity);
+            let mut states = BTreeMap::from([(owner, PowerState::default())]);
+            tick_power_states(&mut states, &mut entities, &rules, &interner);
+            assert_eq!(
+                states[&owner].total_output,
+                row["output"].as_i64().unwrap() as i32,
+                "{row}"
+            );
+            assert_eq!(
+                states[&owner].has_drained_power_source,
+                row["special_outage"].as_bool().unwrap(),
+                "{row}"
+            );
+            // The next real assessment clears the retained flag on detach.
+            entities.get_mut(1).unwrap().draining_me = None;
+            tick_power_states(&mut states, &mut entities, &rules, &interner);
+            assert!(!states[&owner].has_drained_power_source);
+        }
+    }
+
     fn test_interner() -> intern::StringInterner {
         intern::test_interner()
     }
@@ -282,14 +373,12 @@ mod tests {
         RuleSet::from_ini(&ini).expect("test rules")
     }
 
-    fn make_building(id: u64, type_ref: &str, owner: &str, hp: u16, max_hp: u16) -> GameEntity {
+    fn make_building(id: u64, type_ref: &str, owner: &str, hp: i32) -> GameEntity {
         let mut e = GameEntity::test_default(id, type_ref, owner, 10, 10);
         e.category = EntityCategory::Structure;
-        e.health = Health {
-            current: hp,
-            max: max_hp,
-        };
+        e.health = Health { current: hp };
         e.lifecycle.in_limbo = false;
+        e.lifecycle.cell_marked = true;
         e
     }
 
@@ -334,13 +423,190 @@ BuildSpeed=0.02
     }
 
     #[test]
+    fn original_signed_health_power_corpus_through_owner_recalculation() {
+        let corpus: serde_json::Value =
+            serde_json::from_str(include_str!("../../tools/spatial_oracle/power_health.json"))
+                .unwrap();
+        assert_eq!(corpus["rows"].as_array().unwrap().len(), 429);
+        let mut compared = 0;
+        for row in corpus["rows"].as_array().unwrap() {
+            let input = &row["input"];
+            // These native branches have no equivalent Rust lifecycle producers
+            // yet. The native corpus records them but cannot prove them migrated.
+            if !input["online"].as_bool().unwrap()
+                || input["warped"].as_bool().unwrap()
+                || input["overpowered"].as_bool().unwrap()
+            {
+                continue;
+            }
+            let value = |key: &str| input[key].as_i64().unwrap() as i32;
+            let rules = rules_from_ini(&format!(
+                "[BuildingTypes]\n0=TEST\n1=PRIOR\n2=DRAINMAX\n3=DRAINMIN\n\
+                 [TEST]\nStrength={}\nPower={}\nExtraPower={}\nUnitAbsorb={}\nInfantryAbsorb={}\n\
+                 [PRIOR]\nStrength=1\nPower=1\n[DRAINMAX]\nStrength=1\nPower=-2147483647\n\
+                 [DRAINMIN]\nStrength=1\nPower=-2147483648\n",
+                value("strength"),
+                value("power"),
+                value("extra"),
+                input["unit_absorb"].as_bool().unwrap(),
+                input["infantry_absorb"].as_bool().unwrap()
+            ));
+            let mut store = EntityStore::new();
+            let mut building = make_building(1, "TEST", "Owner", value("actual"));
+            let occupants = value("occupants") as u32;
+            let mut cargo = crate::sim::passenger::PassengerCargo::new(occupants, 0);
+            cargo.passengers = (0..occupants).map(|i| 100 + u64::from(i)).collect();
+            cargo.passenger_sizes = vec![1; occupants as usize];
+            cargo.total_size = occupants;
+            building.passenger_role = crate::sim::passenger::PassengerRole::Transport { cargo };
+            store.insert(building);
+            // Supply existing aggregate output with a signed-HP Power=1 source.
+            store.insert(make_building(2, "PRIOR", "Owner", value("prior_output")));
+            match value("prior_drain") {
+                0 => {}
+                i32::MAX => {
+                    store.insert(make_building(3, "DRAINMAX", "Owner", 1));
+                }
+                i32::MIN => {
+                    store.insert(make_building(3, "DRAINMIN", "Owner", 1));
+                }
+                -1 => {
+                    store.insert(make_building(3, "DRAINMAX", "Owner", 1));
+                    store.insert(make_building(4, "DRAINMIN", "Owner", 1));
+                }
+                other => panic!("unrepresented fixture prior drain {other}"),
+            }
+            let owner = intern::test_intern("Owner");
+            let interner = test_interner();
+            let mut states = BTreeMap::new();
+            tick_power_states(&mut states, &mut store, &rules, &interner);
+            let state = &states[&owner];
+            assert_eq!(
+                state.total_output,
+                row["output"]["total_output"].as_i64().unwrap() as i32,
+                "{row}"
+            );
+            assert_eq!(
+                state.total_drain,
+                row["output"]["total_drain"].as_i64().unwrap() as i32,
+                "{row}"
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 422);
+    }
+
+    #[test]
+    fn native_power_admission_uses_cell_mark_not_object_alive_or_signed_health() {
+        let corpus: serde_json::Value =
+            serde_json::from_str(include_str!("../../tools/spatial_oracle/power_health.json"))
+                .unwrap();
+        let rules = test_rules();
+        for row in corpus["admission_rows"].as_array().unwrap() {
+            let input = &row["input"];
+            let mut store = EntityStore::new();
+            let mut plant = make_building(1, "GAPOWR", "Allies", 600);
+            plant.lifecycle.cell_marked = input["marked"].as_bool().unwrap();
+            plant.lifecycle.object_alive = input["alive"].as_bool().unwrap();
+            plant.lifecycle.in_limbo = input["limbo"].as_bool().unwrap();
+            store.insert(plant);
+            let owner = intern::test_intern("Allies");
+            let mut state = PowerState::default();
+            recalculate_power_for_owner(&mut state, &store, &rules, owner, &test_interner());
+            assert_eq!(
+                state.total_output,
+                if row["admitted"].as_bool().unwrap() {
+                    200
+                } else {
+                    0
+                },
+                "{row}"
+            );
+        }
+    }
+
+    #[test]
+    fn native_empty_house_scan_clears_retained_power_totals() {
+        let corpus: serde_json::Value =
+            serde_json::from_str(include_str!("../../tools/spatial_oracle/power_health.json"))
+                .unwrap();
+        let rules = test_rules();
+        let owner = intern::test_intern("Allies");
+        for row in corpus["empty_contribution_rows"].as_array().unwrap() {
+            let mut store = EntityStore::new();
+            let input = &row["input"];
+            match input["member"].as_str().unwrap() {
+                "unmarked" | "limbo" => {
+                    let mut plant = make_building(1, "GAPOWR", "Allies", 600);
+                    plant.lifecycle.in_limbo = input["member"] == "limbo";
+                    plant.lifecycle.cell_marked = input["member"] == "limbo";
+                    store.insert(plant);
+                }
+                "empty" | "null" => {}
+                other => panic!("unexpected native member fixture {other}"),
+            }
+            let mut states = BTreeMap::from([(
+                owner,
+                PowerState {
+                    total_output: input["prior_output"].as_i64().unwrap() as i32,
+                    total_drain: input["prior_drain"].as_i64().unwrap() as i32,
+                    ..Default::default()
+                },
+            )]);
+            tick_power_states(&mut states, &mut store, &rules, &test_interner());
+            assert_eq!(
+                (states[&owner].total_output, states[&owner].total_drain),
+                (
+                    row["output"]["total_output"].as_i64().unwrap() as i32,
+                    row["output"]["total_drain"].as_i64().unwrap() as i32,
+                ),
+                "{row}",
+            );
+        }
+    }
+
+    #[test]
+    fn power_owner_survives_last_contribution_removal_and_ticks_blackout() {
+        let rules = test_rules();
+        let plant = make_building(1, "GAPOWR", "Allies", 600);
+        let drain = make_building(2, "GAPILE", "Allies", 500);
+        let owner = plant.owner();
+        let interner = test_interner();
+        let mut store = EntityStore::new();
+        let mut states = BTreeMap::new();
+        store.insert(plant);
+        tick_power_states(&mut states, &mut store, &rules, &interner);
+        assert_eq!(states[&owner].total_output, 200);
+        store.get_mut(1).unwrap().lifecycle.cell_marked = false;
+        tick_power_states(&mut states, &mut store, &rules, &interner);
+        assert_eq!(states[&owner].total_output, 0);
+        assert_eq!(states[&owner].theoretical_total_power, 0);
+
+        store.insert(drain);
+        assert_eq!(
+            tick_power_states(&mut states, &mut store, &rules, &interner),
+            vec![PowerEvent::EnteredLowPower { owner }],
+        );
+        trigger_spy_blackout(&mut states, owner, 2);
+        store.remove(2);
+        assert_eq!(
+            tick_power_states(&mut states, &mut store, &rules, &interner),
+            vec![PowerEvent::PowerRestored { owner }],
+        );
+        assert_eq!(states[&owner].total_drain, 0);
+        assert_eq!(states[&owner].power_blackout_remaining, 1);
+        assert!(tick_power_states(&mut states, &mut store, &rules, &interner).is_empty());
+        assert_eq!(states[&owner].power_blackout_remaining, 0);
+    }
+
+    #[test]
     fn test_health_scaled_output() {
         let rules = test_rules();
         let mut store = EntityStore::new();
         // Power plant at 50% HP should produce 50% output.
-        store.insert(make_building(1, "GAPOWR", "Allies", 300, 600));
+        store.insert(make_building(1, "GAPOWR", "Allies", 300));
         // Barracks at any health always drains full amount.
-        store.insert(make_building(2, "GAPILE", "Allies", 50, 500));
+        store.insert(make_building(2, "GAPILE", "Allies", 50));
 
         let mut state = PowerState::default();
         let interner = test_interner();
@@ -356,7 +622,7 @@ BuildSpeed=0.02
     fn test_full_health_full_output() {
         let rules = test_rules();
         let mut store = EntityStore::new();
-        store.insert(make_building(1, "GAPOWR", "Allies", 600, 600));
+        store.insert(make_building(1, "GAPOWR", "Allies", 600));
 
         let mut state = PowerState::default();
         let interner = test_interner();
@@ -373,18 +639,21 @@ BuildSpeed=0.02
         let rules = test_rules();
         let mut store = EntityStore::new();
         // Small power plant at low health.
-        store.insert(make_building(1, "NAPOWR", "Soviet", 40, 400)); // 150 * 40/400 = 15
+        store.insert(make_building(1, "NAPOWR", "Soviet", 40)); // native ratio-first PC53/chop returns14
         // Tesla Coil drains 75.
-        store.insert(make_building(2, "TESLA", "Soviet", 400, 400));
+        store.insert(make_building(2, "TESLA", "Soviet", 400));
 
         let mut state = PowerState::default();
         let interner = test_interner();
         let soviet = intern::test_intern("Soviet");
         recalculate_power_for_owner(&mut state, &store, &rules, soviet, &interner);
 
-        assert_eq!(state.total_output, 15, "150 * 40/400 = 15");
+        assert_eq!(
+            state.total_output, 14,
+            "native44E866 ratio-first multiply truncates to14"
+        );
         assert_eq!(state.total_drain, 75);
-        assert!(state.is_low_power, "15 < 75");
+        assert!(state.is_low_power, "14 < 75");
     }
 
     #[test]
@@ -392,7 +661,7 @@ BuildSpeed=0.02
         let rules = test_rules();
         let mut store = EntityStore::new();
         // Tesla Coil at 1 HP still drains full 75.
-        store.insert(make_building(1, "TESLA", "Soviet", 1, 400));
+        store.insert(make_building(1, "TESLA", "Soviet", 1));
 
         let mut state = PowerState::default();
         let interner = test_interner();
@@ -406,8 +675,8 @@ BuildSpeed=0.02
     fn test_spy_blackout_forces_zero_output() {
         let rules = test_rules();
         let mut store = EntityStore::new();
-        store.insert(make_building(1, "GAPOWR", "Allies", 600, 600));
-        store.insert(make_building(2, "GAPILE", "Allies", 500, 500));
+        store.insert(make_building(1, "GAPOWR", "Allies", 600));
+        store.insert(make_building(2, "GAPILE", "Allies", 500));
 
         let mut state = PowerState::default();
         state.power_blackout_remaining = 100;
@@ -424,7 +693,7 @@ BuildSpeed=0.02
     fn test_spy_blackout_timer_decrements() {
         let rules = test_rules();
         let mut store = EntityStore::new();
-        store.insert(make_building(1, "GAPOWR", "Allies", 600, 600));
+        store.insert(make_building(1, "GAPOWR", "Allies", 600));
 
         let interner = test_interner();
         let allies = intern::test_intern("Allies");
@@ -446,7 +715,7 @@ BuildSpeed=0.02
         let rules = test_rules();
         let mut store = EntityStore::new();
         // Start with just a tesla coil (drain=75, output=0) → immediate low power.
-        store.insert(make_building(1, "TESLA", "Soviet", 400, 400));
+        store.insert(make_building(1, "TESLA", "Soviet", 400));
 
         // Pre-intern all strings that will be used (including NAPOWR for the second
         // building added later) so the interner clone has everything.
@@ -462,7 +731,7 @@ BuildSpeed=0.02
         );
 
         // Add a power plant → should restore power.
-        store.insert(make_building(2, "NAPOWR", "Soviet", 400, 400));
+        store.insert(make_building(2, "NAPOWR", "Soviet", 400));
         let events = tick_power_states(&mut states, &mut store, &rules, &interner);
         assert!(
             events.contains(&PowerEvent::PowerRestored { owner: soviet }),
@@ -476,7 +745,7 @@ BuildSpeed=0.02
         let allies = intern::test_intern("Allies");
 
         // Power plant (positive Power=) is never deactivated.
-        let plant = make_building(1, "GAPOWR", "Allies", 600, 600);
+        let plant = make_building(1, "GAPOWR", "Allies", 600);
 
         // Get interner AFTER all strings are interned (make_building interns type_ref).
         let interner = test_interner();
@@ -484,6 +753,7 @@ BuildSpeed=0.02
         states.insert(
             allies,
             PowerState {
+                total_drain: 100,
                 is_low_power: true,
                 ..PowerState::default()
             },
@@ -499,7 +769,7 @@ BuildSpeed=0.02
     fn test_is_building_powered_for_consumer_during_low_power() {
         let rules = test_rules();
         let soviet = intern::test_intern("Soviet");
-        let tesla = make_building(1, "TESLA", "Soviet", 400, 400);
+        let tesla = make_building(1, "TESLA", "Soviet", 400);
 
         // Get interner AFTER all strings are interned.
         let interner = test_interner();
@@ -507,6 +777,7 @@ BuildSpeed=0.02
         states.insert(
             soviet,
             PowerState {
+                total_drain: 100,
                 is_low_power: true,
                 ..PowerState::default()
             },
@@ -522,7 +793,7 @@ BuildSpeed=0.02
     fn test_is_building_powered_for_consumer_during_surplus() {
         let rules = test_rules();
         let soviet = intern::test_intern("Soviet");
-        let tesla = make_building(1, "TESLA", "Soviet", 400, 400);
+        let tesla = make_building(1, "TESLA", "Soviet", 400);
 
         // Get interner AFTER all strings are interned.
         let interner = test_interner();
@@ -550,7 +821,7 @@ BuildSpeed=0.02
         let rules = test_rules();
         let mut store = EntityStore::new();
         // Tesla coil (Powered=yes, Power=-75) with no power plant → sustained low power.
-        store.insert(make_building(1, "TESLA", "Soviet", 100, 400));
+        store.insert(make_building(1, "TESLA", "Soviet", 100));
 
         let interner = test_interner();
         let mut states: BTreeMap<InternedId, PowerState> = BTreeMap::new();
@@ -571,7 +842,7 @@ BuildSpeed=0.02
     fn test_live_building_under_construction_contributes_power() {
         let rules = test_rules();
         let mut store = EntityStore::new();
-        let mut plant = make_building(1, "GAPOWR", "Allies", 600, 600);
+        let mut plant = make_building(1, "GAPOWR", "Allies", 600);
         plant.building_up = Some(crate::sim::components::BuildingUp {
             elapsed_ticks: 0,
             total_ticks: 30,
@@ -611,13 +882,13 @@ BuildSpeed=0.02
 ",
         );
         let mut store = EntityStore::new();
-        let mut radar = make_building(1, "AMRADR", "Allies", 600, 600);
+        let mut radar = make_building(1, "AMRADR", "Allies", 600);
         radar.building_up = Some(crate::sim::components::BuildingUp {
             elapsed_ticks: 1,
             total_ticks: 30,
         });
         store.insert(radar);
-        store.insert(make_building(2, "GAPOWR", "Allies", 600, 600));
+        store.insert(make_building(2, "GAPOWR", "Allies", 600));
 
         let interner = test_interner();
         let allies = intern::test_intern("Allies");
@@ -671,9 +942,9 @@ BuildSpeed=0.02
         )
     }
 
-    /// YAPOWR test entity with `n` garrisoned passengers and given hp/max.
-    fn make_yapowr(id: u64, owner: &str, hp: u16, max_hp: u16, passenger_count: u32) -> GameEntity {
-        let mut e = make_building(id, "YAPOWR", owner, hp, max_hp);
+    /// YAPOWR test entity with `n` passengers and signed actual HP.
+    fn make_yapowr(id: u64, owner: &str, hp: i32, passenger_count: u32) -> GameEntity {
+        let mut e = make_building(id, "YAPOWR", owner, hp);
         let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0);
         for i in 0..passenger_count {
             cargo.board_forced(100 + i as u64, 1);
@@ -686,7 +957,7 @@ BuildSpeed=0.02
     fn test_yapowr_empty_no_bonus() {
         let rules = yapowr_rules();
         let mut store = EntityStore::new();
-        store.insert(make_yapowr(1, "Yuri", 750, 750, 0));
+        store.insert(make_yapowr(1, "Yuri", 750, 0));
 
         let yuri = intern::test_intern("Yuri");
         let interner = test_interner();
@@ -701,7 +972,7 @@ BuildSpeed=0.02
     fn test_yapowr_garrisoned_full_hp() {
         let rules = yapowr_rules();
         let mut store = EntityStore::new();
-        store.insert(make_yapowr(1, "Yuri", 750, 750, 5));
+        store.insert(make_yapowr(1, "Yuri", 750, 5));
 
         let yuri = intern::test_intern("Yuri");
         let interner = test_interner();
@@ -715,7 +986,7 @@ BuildSpeed=0.02
     fn test_yapowr_garrisoned_half_hp_scales_bonus() {
         let rules = yapowr_rules();
         let mut store = EntityStore::new();
-        store.insert(make_yapowr(1, "Yuri", 375, 750, 5));
+        store.insert(make_yapowr(1, "Yuri", 375, 5));
 
         let yuri = intern::test_intern("Yuri");
         let interner = test_interner();
@@ -733,7 +1004,7 @@ BuildSpeed=0.02
         // a bonus — the gate is on the TypeClass flags.
         let rules = yapowr_rules();
         let mut store = EntityStore::new();
-        let mut e = make_building(1, "GAPOWR", "Allies", 600, 600);
+        let mut e = make_building(1, "GAPOWR", "Allies", 600);
         let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0);
         cargo.board_forced(100, 1);
         e.passenger_role = crate::sim::passenger::PassengerRole::Transport { cargo };
@@ -766,7 +1037,7 @@ BuildSpeed=0.02
 ",
         );
         let mut store = EntityStore::new();
-        let mut e = make_building(1, "ZEROEX", "Yuri", 750, 750);
+        let mut e = make_building(1, "ZEROEX", "Yuri", 750);
         let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0);
         for i in 0..5 {
             cargo.board_forced(100 + i as u64, 1);
@@ -804,7 +1075,7 @@ BuildSpeed=0.02
 ",
         );
         let mut store = EntityStore::new();
-        let mut e = make_building(1, "NEGEX", "Yuri", 750, 750);
+        let mut e = make_building(1, "NEGEX", "Yuri", 750);
         let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0);
         for i in 0..3 {
             cargo.board_forced(100 + i as u64, 1);
@@ -845,7 +1116,7 @@ BuildSpeed=0.02
 ",
         );
         let mut store = EntityStore::new();
-        let mut e = make_building(1, "UABS", "Yuri", 500, 500);
+        let mut e = make_building(1, "UABS", "Yuri", 500);
         let mut cargo = crate::sim::passenger::PassengerCargo::new(3, 0);
         for i in 0..2 {
             cargo.board_forced(100 + i as u64, 1);
@@ -868,7 +1139,7 @@ BuildSpeed=0.02
     fn test_live_yapowr_under_construction_keeps_native_output_formula() {
         let rules = yapowr_rules();
         let mut store = EntityStore::new();
-        let mut e = make_yapowr(1, "Yuri", 750, 750, 5);
+        let mut e = make_yapowr(1, "Yuri", 750, 5);
         e.building_up = Some(crate::sim::components::BuildingUp {
             elapsed_ticks: 0,
             total_ticks: 30,
