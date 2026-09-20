@@ -3,7 +3,7 @@
 //! `render_game()` is the per-frame entry point. It runs a 7-phase pipeline:
 //!
 //! 1. **World instances** — terrain tiles, map overlays, bridges, VXL units,
-//!    SHP buildings/infantry, world effects, damage fires, fog snapshots
+//!    SHP buildings/infantry, AnimClass objects, damage fires, fog snapshots
 //! 2. **Debug instances** — pathgrid, cell grid, heightmap overlays (toggled by hotkey)
 //! 3. **Shroud ABuffer** - CPU shroud buffer rebuilt before UI overlays sample it
 //! 4. **UI instances** - minimap dots, selection brackets, health bars, placement preview

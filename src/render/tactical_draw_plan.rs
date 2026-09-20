@@ -218,25 +218,21 @@ pub struct TacticalDrawPlan {
 
 impl TacticalDrawPlan {
     /// Build fixed cell passes plus stable `LayerClass` object ordering.
-    /// RESIDUAL (GSI-13.12) — pass 2 named the bypass and found a second
-    /// ordering difference; `render/tactical_compat.rs`, pass 1's named
-    /// suspect, is not an ordering path at all.
-    /// - **The bypass is `build_world_effect_instances`** (`overlays.rs`), which
-    ///   never enters this planner. Bridge explosions and debris therefore
-    ///   interleave with objects by pixel-Y instead of sitting in their own
-    ///   layer. Native's default anim layer is 3 (Air), from
-    ///   `AnimTypeClass::Constructor @ 0x00427530`.
+    /// RESIDUAL (GSI-13.12) — `render/tactical_compat.rs`, pass 1's named
+    /// suspect, is not an ordering path at all. The legacy world-effect bypass
+    /// pass 2 named is gone: bridge explosions are `AnimClass` objects. Their
+    /// types author no `Layer=`, so they default to `Top` and join the flat
+    /// registration-ordered stream, not this planner; only `Layer=Ground` and
+    /// owner-attached anims reach it.
     /// - **`Submit_Object @ 0x004A9720` sorts only layer 2.** VERA Y-sorts every
     ///   layer, so any two objects sharing another layer can swap against
     ///   retail.
-    /// - Trigger: any frame with a bridge collapse or debris on screen, and any
-    ///   frame with two objects in a non-ground layer.
-    /// - Player effect: a debris sprite draws in front of or behind something it
+    /// - Trigger: any frame with two objects in a non-ground layer.
+    /// - Player effect: one sprite draws in front of or behind another it
     ///   should not.
-    /// - Frequency: bounded by those two conditions rather than continuous.
-    /// - Downstream risk: both halves must land together — routing world effects
-    ///   into the planner and restricting the Y-sort to layer 2 shift the render
-    ///   goldens, and doing them separately re-baselines twice.
+    /// - Frequency: bounded by that condition rather than continuous.
+    /// - Downstream risk: restricting the Y-sort to layer 2 shifts the render
+    ///   goldens.
     ///
     /// The owner-attached anim half of this row is CLOSED — GSI-05.12 removed
     /// the short-circuit that used to keep burning-building fires out of this

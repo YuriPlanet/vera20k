@@ -85,10 +85,6 @@ fn relocation_constructs_departure_and_arrival_warp_anims_in_the_mover_turn() {
             "the art section's own Rate=, through the one AnimType rule"
         );
     }
-    assert!(
-        sim.world_effects.is_empty(),
-        "no second animation lane receives the warp"
-    );
 }
 
 #[test]
@@ -102,5 +98,4 @@ fn unbound_warp_art_relocates_without_an_anim() {
     let mover = sim.substrate.entities.get(1).unwrap();
     assert_eq!((mover.position.rx, mover.position.ry), (8, 9));
     assert_eq!(sim.substrate.anims.len(), 0);
-    assert!(sim.world_effects.is_empty());
 }

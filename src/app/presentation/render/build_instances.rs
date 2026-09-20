@@ -140,7 +140,7 @@ fn lookup_exact_terrain_variant<T>(
 }
 
 /// Build all game-world sprite instances: terrain tiles, map overlays, bridges,
-/// VXL units, SHP buildings/infantry, world effects, damage fires.
+/// VXL units, SHP buildings/infantry, AnimClass objects, damage fires.
 /// All instance vectors are Y-sorted (depth descending) for correct draw order.
 pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> WorldInstances {
     // Terrain tiles use the selected TMP owner exactly. A sparse/null cell in
@@ -302,7 +302,6 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
         &ground_order,
     );
     sort_by_depth_desc_with_pages(&mut unit, &mut unit_pages);
-    instances::build_world_effect_instances(state, &mut shp_paged);
     // Scheduler-owned AnimClass objects use their parsed native layer: Ground
     // joins the integer plan, Top appends to the flat page-tagged stream.
     instances::build_anim_class_instances(

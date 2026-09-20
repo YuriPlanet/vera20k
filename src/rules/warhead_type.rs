@@ -296,8 +296,8 @@ pub struct WarheadType {
     /// - Downstream risk: the launch side belongs to the death path
     ///   (`GSI-08.11`) and the falling-object physics to `BounceClass`, which
     ///   `Bouncer=` SHP anims need too, so the two rows want one shared physics
-    ///   owner rather than two. Bridge collapse already emits SHP debris as
-    ///   `WorldEffect` rows and would migrate onto that owner.
+    ///   owner rather than two. Bridge collapse `MetallicDebris=` waits on the
+    ///   same owner.
     pub debris_types: Vec<String>,
     /// Per-type debris count cap.
     ///

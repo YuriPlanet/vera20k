@@ -667,7 +667,6 @@ mod tests {
                 crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
                 Vec::new(),
                 Vec::new(),
-                std::collections::BTreeMap::new(),
             );
             restored
                 .restore_map_authority_after_snapshot_load(
@@ -1004,7 +1003,6 @@ mod tests {
                 crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
                 Vec::new(),
                 Vec::new(),
-                std::collections::BTreeMap::new(),
             );
             restored
                 .restore_map_authority_after_snapshot_load(

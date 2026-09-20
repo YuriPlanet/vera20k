@@ -307,8 +307,6 @@ impl SmudgeGrid {
     ///
     /// Returns true if a smudge was placed, false otherwise.
     /// Ore mutation is caller-specific: `AnimClass::Middle @ 0x00424F00`
-    /// (Ghidra's `AnimClass__Start` label there is transposed with
-    /// `0x00424CE0`; the address is right)
     /// reduces tiberium before its crater attempt, even on placement failure;
     /// direct `BuildingClass::DestructionEffects @ 0x004415F0` and
     /// `BuildingClass::SpawnSurvivors @ 0x00442D90` callers do not.

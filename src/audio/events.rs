@@ -255,14 +255,6 @@ pub enum GameSoundEvent {
         eva_event: Option<String>,
     },
 
-    /// Positional sound emitted when a world-effect animation starts.
-    WorldEffectStarted {
-        /// sound.ini ID for the selected animation's StartSound/Report.
-        sound_id: String,
-        /// Screen position for spatial audio.
-        source: Option<SoundSource>,
-    },
-
     /// The `[AudioVisual] BaseUnderAttackSound` siren that rides with the
     /// under-attack EVA line.
     ///
@@ -399,8 +391,7 @@ impl GameSoundEvent {
             | Self::BuildingDamagedSfx { sound_id, .. }
             | Self::VoiceFeedback { sound_id, .. }
             | Self::LightningStrike { sound_id, .. }
-            | Self::SuperWeaponActivated { sound_id, .. }
-            | Self::WorldEffectStarted { sound_id, .. } => sound_id,
+            | Self::SuperWeaponActivated { sound_id, .. } => sound_id,
             Self::AnimationStopped { stop_sound_id, .. } => stop_sound_id.as_deref().unwrap_or(""),
             // The event name, not a sample: the sample is a per-side column
             // the `VoxClass` consumer resolves.
@@ -432,8 +423,7 @@ impl GameSoundEvent {
             | Self::BuildingDamagedSfx { source, .. }
             | Self::VoiceFeedback { source, .. }
             | Self::LightningStrike { source, .. }
-            | Self::SuperWeaponActivated { source, .. }
-            | Self::WorldEffectStarted { source, .. } => *source,
+            | Self::SuperWeaponActivated { source, .. } => *source,
             _ => None,
         }
     }

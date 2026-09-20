@@ -2916,7 +2916,6 @@ pub(crate) fn load_map_from_initial(
                 resolved_terrain,
                 &map_data.header.theater,
                 rules.as_ref(),
-                art.as_ref(),
                 &construction_height_map,
                 Some(&overlay_registry),
                 Some(&overlay_grid),

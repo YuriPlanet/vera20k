@@ -6856,7 +6856,6 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         Default::default(),
         Vec::new(),
         Vec::new(),
-        BTreeMap::new(),
     );
     restored
         .restore_map_authority_after_snapshot_load(&rules, &overlay_registry)

@@ -1350,7 +1350,7 @@ pub struct DestroyedGarrisonBuilding {
 }
 
 /// Explosion animation to spawn at a world position (deferred to caller
-/// which has access to `Simulation` for WorldEffect spawning).
+/// which has access to `Simulation` for AnimClass construction).
 pub struct ExplosionEffect {
     pub shp_name: InternedId,
     pub rx: u16,
@@ -2057,8 +2057,8 @@ impl DeathEffects {
 /// DOES throw debris and consumes the block's draws.
 ///
 /// RESIDUAL (GSI-05.14) — the SHP half spawns through the existing
-/// `ExplosionEffect` -> `WorldEffect` path, which plays the sprite at a fixed
-/// point. Native builds a real `AnimClass` (`0x00421EA0`), and every stock
+/// `ExplosionEffect` path, which plays the sprite at a fixed point. Native
+/// builds a bouncing `AnimClass` (`0x00421EA0`): every stock
 /// debris AnimType is `Bouncer=yes` — all 26 named by `[General]
 /// MetallicDebris=` or by any `DebrisAnims=` line carry it, authored in
 /// `artmd.ini` rather than `rulesmd.ini` (`AnimTypeClass+0x35A`, read at
@@ -2080,7 +2080,7 @@ impl DeathEffects {
 /// - Downstream risk: the constructor's own draws are not consumed either —
 ///   one `RandomRanged` for `RandomRate=`, three `Random__Next()` for the
 ///   launch velocity and three `RandomRanged(-0xFFFF, 0xFFFF)` inside
-///   `BounceClass::Init`, so seven per anim. Every `WorldEffect` anim in the
+///   `BounceClass::Init`, so seven per anim. Every debris producer in the
 ///   engine shares that gap today; closing it belongs with the AnimClass
 ///   bouncer owner, not here, because the same seven draws are missing from
 ///   the `Explosion=`/`DestroyAnim=` producer beside this one.

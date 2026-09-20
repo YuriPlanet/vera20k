@@ -235,7 +235,6 @@ impl PreparedLoad {
         let terrain_speed_config = current_simulation.terrain_speed_config.clone();
         let bridge_explosions = current_simulation.bridge_explosions.clone();
         let metallic_debris = current_simulation.metallic_debris.clone();
-        let bridge_anim_sounds = current_simulation.bridge_anim_sounds.clone();
 
         let mut simulation = snapshot.sim;
         // This is the in-scenario Load Game route: native load reseeds
@@ -254,7 +253,6 @@ impl PreparedLoad {
             terrain_speed_config,
             bridge_explosions,
             metallic_debris,
-            bridge_anim_sounds,
         );
 
         let overlay_registry = overlay_registry.ok_or(PreparedLoadError::MissingOverlayRegistry)?;
