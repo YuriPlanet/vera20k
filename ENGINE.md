@@ -62,6 +62,8 @@ Use the simplest implementation that fully satisfies the required behavior. Avoi
 unnecessary abstractions, duplicated logic and speculative features; prefer clarity
 over minimizing line count.
 
+Prefer data-oriented design for simulation hot loops: organize data for efficient access and batch processing, minimize unnecessary per-entity work.
+
 Choose boundaries and abstractions by responsibility and consumers, not line/type
 counts or C++ structure. Preserve state authority, lifecycle, scheduler/RNG order,
 timers, same-tick effects, persistence and numeric semantics under the policy below.
