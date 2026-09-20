@@ -1009,6 +1009,10 @@ pub struct GeneralRules {
     // --- IronCurtain ([General]) ---
     /// Animation played on IC target (IronCurtainInvokeAnim= in [General]). Default IRONBLST.
     pub iron_curtain_invoke_anim: String,
+    /// `[General] IonBlast=` (`RulesClass+0x298`), the animation the Genetic
+    /// Mutator launch constructs (`SuperClass::Launch 0x006CD8A5`). Retail
+    /// `RING1`. The constructor default is a null type: no key, no animation.
+    pub ion_blast_anim: String,
     // --- ForceShield ([General]) ---
     /// Cell radius of ForceShield AoE (ForceShieldRadius= in [General]).
     pub force_shield_radius: u32,
@@ -1365,6 +1369,7 @@ impl Default for GeneralRules {
             ambient_change_step: 20,
             iron_curtain_duration: 750,
             iron_curtain_invoke_anim: "IRONBLST".to_string(),
+            ion_blast_anim: String::new(),
             force_shield_radius: 4,
             force_shield_duration: 500,
             force_shield_blackout_duration: 1000,
@@ -2408,6 +2413,7 @@ impl GeneralRules {
                 .get("IronCurtainInvokeAnim")
                 .unwrap_or("IRONBLST")
                 .to_string(),
+            ion_blast_anim: general.get("IonBlast").unwrap_or("").trim().to_string(),
             force_shield_radius: general.get_i32("ForceShieldRadius").unwrap_or(4) as u32,
             force_shield_duration: general.get_i32("ForceShieldDuration").unwrap_or(500) as u32,
             force_shield_blackout_duration: general

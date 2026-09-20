@@ -14,7 +14,6 @@ use crate::sim::combat::combat_aoe::{
     AoELayerContext, TerrainCollectionView, apply_aoe_damage_with_terrain_and_scenario,
     bridge_adjusted_impact_z,
 };
-use crate::sim::components::WorldEffect;
 use crate::sim::intern::InternedId;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
@@ -298,26 +297,10 @@ fn spawn_bolt(
         .superweapon_rng()
         .next_range_u32(BOLT_ANIMS.len() as u32) as usize;
     let anim_name = BOLT_ANIMS[anim_idx];
-    let frames = rules.effect_frame_count(anim_name).unwrap_or(20);
-    let anim_iid = sim.interner.intern(anim_name);
-
-    sim.world_effects.push(WorldEffect {
-        anim_spawn: None,
-        shp_name: anim_iid,
-        rx,
-        ry,
-        sub_x: crate::util::lepton::CELL_CENTER_LEPTON,
-        sub_y: crate::util::lepton::CELL_CENTER_LEPTON,
-        z: 0,
-        frame: 0,
-        total_frames: frames,
-        frame_delay: 1,
-        elapsed_frames: 0,
-        translucent: true,
-        delay_frames: 0,
-        start_sound_id: None,
-        start_sound_emitted: false,
-    });
+    // `LightningStorm::GroundStrike @ 0x0053A300` constructs the bolt at the
+    // cell's centre coordinate with the row `(type, &coord, 0, 1, 0x600, 0, 0)`
+    // (`0x0053A387`), the same row as the superweapon invoke animations.
+    super::spawn_cell_anim(sim, rules, anim_name, rx, ry, false);
 
     // 2. Apply area damage via lightning warhead.
     let warhead_id = &rules.general.lightning_warhead;
@@ -359,27 +342,19 @@ fn spawn_bolt(
         for request in smudges {
             sim.commit_smudge_request_inline(rules, overlay_registry, request);
         }
+        // The strike's explosion is the ordinary warhead `AnimList=` pick with
+        // the ordinary row (`0x0053A50E`: drawFlags 0x2600, the `0x0048ACE0`
+        // zAdjust), so it takes the combat explosion constructor.
         for fx in &explosions {
-            let frames = rules
-                .effect_frame_count(sim.interner.resolve(fx.shp_name))
-                .unwrap_or(20);
-            sim.world_effects.push(WorldEffect {
-                anim_spawn: None,
-                shp_name: fx.shp_name,
-                rx: fx.rx,
-                ry: fx.ry,
-                sub_x: fx.sub_x,
-                sub_y: fx.sub_y,
-                z: fx.z,
-                frame: 0,
-                total_frames: frames,
-                frame_delay: 1,
-                elapsed_frames: 0,
-                translucent: true,
-                delay_frames: 0,
-                start_sound_id: None,
-                start_sound_emitted: false,
-            });
+            sim.spawn_combat_explosion_anim(
+                rules,
+                fx.shp_name,
+                fx.rx,
+                fx.ry,
+                fx.sub_x,
+                fx.sub_y,
+                fx.z,
+            );
         }
 
         let scenario_no_damage = sim.session.no_damage;
@@ -800,20 +775,51 @@ mod tests {
 
     #[test]
     fn gsi_04_11_registry_only_lightning_anim_smudge_is_not_deferred() {
-        let (mut sim, rules) = registry_only_warhead_lightning_test_setup();
+        let (mut sim, mut rules) = registry_only_warhead_lightning_test_setup();
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
+            "[EXPLOSION]
+Rate=900
+[WCLBOLT1]
+Layer=ground
+[WCLBOLT2]
+Layer=ground
+\n             [WCLBOLT3]
+Layer=ground
+",
+        ));
+        for name in ["EXPLOSION", "WCLBOLT1", "WCLBOLT2", "WCLBOLT3"] {
+            art.bind_anim_frame_count_for_test(name, 10);
+        }
+        rules.art_registry = art;
         let owner = sim.interner.intern("Americans");
 
         spawn_bolt(&mut sim, &rules, 5, 5, owner, None);
 
         assert!(sim.pending_smudge_requests.is_empty());
 
+        // Bolt and explosion are both real AnimClass instances at the struck
+        // cell; no second animation lane receives either.
         let explosion_iid = sim.interner.intern("EXPLOSION");
+        let at_cell = |anim: &crate::sim::anim_class::AnimObject| {
+            let (rx, ry, ..) = anim.world_coord.to_cell_sub_z();
+            (rx, ry) == (5, 5)
+        };
+        let anims: Vec<_> = sim.substrate.anims.iter().map(|(_, anim)| anim).collect();
         assert!(
-            sim.world_effects
-                .iter()
-                .any(|fx| fx.shp_name == explosion_iid && fx.rx == 5 && fx.ry == 5),
-            "lightning warhead AnimList anim must be pushed to world_effects"
+            anims.iter().any(|anim| anim.type_id == explosion_iid
+                && at_cell(anim)
+                && anim.draw_flags == 0x2600),
+            "the lightning warhead's AnimList pick takes the combat explosion row"
         );
+        assert!(
+            anims.iter().any(|anim| {
+                sim.interner.resolve(anim.type_id).starts_with("WCLBOLT")
+                    && at_cell(anim)
+                    && anim.draw_flags == 0x600
+            }),
+            "the bolt takes the (0, 1, 0x600, 0, 0) row"
+        );
+        assert!(sim.world_effects.is_empty());
     }
 
     #[test]

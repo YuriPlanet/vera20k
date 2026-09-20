@@ -912,7 +912,7 @@ pub fn build_sprite_atlas(
             effect_names.push(r.general.warp_in.name.clone());
             effect_names.push(r.general.warp_out.name.clone());
             effect_names.push(r.general.warp_away.name.clone());
-            // [General] Wake= (WAKE1): spawned as a WorldEffect behind ships.
+            // [General] Wake= (WAKE1): an AnimClass spawned behind ships.
             // Stock art sets no AltPalette= and its Theater= line is commented
             // out, so it is an anim.pal draw like every other AnimType; left
             // out of this set it fell through to unit.pal and drew green.

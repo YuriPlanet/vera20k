@@ -1,12 +1,12 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `722e7cf0d908a5a5f37442f7edf42ef5bef136b6` (2026-09-20), cargo-modules 0.26.0.
+Generated snapshot: `c8e701f19bb23a6c821f28a93aea6755c279ef03` (2026-09-20), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
 External crates and the sysroot are excluded from the dependency graph.
-Contains **839 modules plus the crate root**, and **5324 distinct
+Contains **839 modules plus the crate root**, and **5320 distinct
 cross-module dependency edges**. Check this source commit against your checkout.
 <!-- module-map:provenance:end -->
 
@@ -708,12 +708,12 @@ sim::substrate::locomotion::class -> sim::movement::locomotion::slot
 sim::substrate::locomotion::defaults -> sim::substrate::locomotion::class
 sim::superweapon -> rules::ruleset; rules::superweapon_type; sim::intern; sim::timer; sim::world
 sim::superweapon::cell_grid -> sim::cell_rect; sim::movement::locomotor; sim::world
-sim::superweapon::force_shield -> map::entities; map::houses; rules::ruleset; sim::components; sim::intern; sim::superweapon::invulnerability; sim::world
-sim::superweapon::genetic_converter -> rules::overlay_types; rules::ruleset; sim::components; sim::intern; sim::world
+sim::superweapon::force_shield -> map::entities; map::houses; rules::ruleset; sim::intern; sim::superweapon::invulnerability; sim::world
+sim::superweapon::genetic_converter -> rules::overlay_types; rules::ruleset; sim::intern; sim::world
 sim::superweapon::genetic_converter::mutation -> map::entities; rules::overlay_types; rules::ruleset; sim::combat::combat_aoe; sim::intern; sim::superweapon::cell_grid; sim::world
 sim::superweapon::invulnerability -> sim::game_entity
-sim::superweapon::iron_curtain -> map::entities; rules::ruleset; sim::components; sim::intern; sim::superweapon::cell_grid; sim::superweapon::invulnerability; sim::world
-sim::superweapon::lightning_storm -> rules::overlay_types; rules::ruleset; sim::combat::combat_aoe; sim::components; sim::intern; sim::world
+sim::superweapon::iron_curtain -> map::entities; rules::ruleset; sim::intern; sim::superweapon::cell_grid; sim::superweapon::invulnerability; sim::world
+sim::superweapon::lightning_storm -> rules::overlay_types; rules::ruleset; sim::combat::combat_aoe; sim::intern; sim::world
 sim::superweapon::paradrop -> rules::ruleset; sim::aircraft; sim::intern; sim::movement::air_movement; sim::movement::locomotor; sim::passenger; sim::pathfinding::core; sim::world; sim::world::edge_cell; sim::world::lifecycle; util::fixed_math
 sim::superweapon::psychic_reveal -> rules::ruleset; sim::intern; sim::vision; sim::world
 sim::team_script_vm -> rules::locomotor_type; rules::object_type; rules::ruleset; rules::team_ai_ini; sim::command; sim::intern; util::native_x87

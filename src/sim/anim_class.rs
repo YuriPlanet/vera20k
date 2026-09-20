@@ -528,7 +528,8 @@ impl Simulation {
         );
     }
 
-    #[cfg(test)]
+    /// Construct the `AnimClass` a producer described by cell, sub-cell and
+    /// height level.
     pub(crate) fn spawn_anim_object(
         &mut self,
         rules: &RuleSet,
@@ -562,7 +563,7 @@ impl Simulation {
     /// sound is a constructor-time effect, not a first-tick one.
     ///
     /// Returns `None` when the art type never bound (no art section or no SHP,
-    /// see `ArtRegistry::bind_combat_explosion_anim_assets`); native mints a
+    /// see `ArtRegistry::bind_anim_class_assets`); native mints a
     /// default `AnimTypeClass` in that case whose `End` stays 0, so the anim
     /// retains its first-AI guard, expires on a later visit, and draws nothing.
     ///
@@ -2336,7 +2337,7 @@ mod tests {
     /// 0x00427D00` bails on the absent section before the image loader, so
     /// `End` stays 0 and the anim dies unseen. VERA must decline the spawn
     /// rather than panic or block the shot. Full residual on
-    /// `ArtRegistry::bind_combat_explosion_anim_assets`.
+    /// `ArtRegistry::bind_anim_class_assets`.
     #[test]
     fn combat_explosion_with_unbound_art_declines_instead_of_panicking() {
         let rules = runtime_rules("[TWLT036]\nEnd=8\n", &[("TWLT036", 8)]);

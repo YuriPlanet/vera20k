@@ -1398,7 +1398,7 @@ impl ArtRegistry {
     /// Missing registered ART is therefore handled by the canonical receipt,
     /// not this loader's error policy. Other failed asset bindings are counted
     /// for the caller; they do not create a second AnimType registry.
-    pub fn bind_combat_explosion_anim_assets(
+    pub fn bind_anim_class_assets(
         &mut self,
         roots: &[String],
         asset_manager: &crate::assets::asset_manager::AssetManager,
@@ -1418,7 +1418,7 @@ impl ArtRegistry {
                 Err(error) => {
                     skipped += 1;
                     log::warn!(
-                        "Combat explosion animation [{name}] stays on the legacy effect path: {error}"
+                        "AnimClass animation [{name}] did not bind and will draw nothing: {error}"
                     );
                 }
             }

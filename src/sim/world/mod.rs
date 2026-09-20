@@ -1112,8 +1112,10 @@ pub struct Simulation {
     /// Distance in leptons below which a blocked unit stops instead of repathing.
     /// From CloseEnough= in [General]. Default 576 (~2.25 cells).
     pub close_enough: SimFixed,
-    /// Temporary world-position SHP animations (warp effects, explosions, etc.).
-    /// Ticked each frame, auto-removed when finished.
+    /// Legacy world-position SHP animations. Every producer except the bridge
+    /// collapse has moved to `AnimStore`; those remain because `MetallicDebris=`
+    /// types are native bouncers, an `AnimClass::AI` arm the store lacks.
+    /// Ticked each frame, auto-removed when finished. Neither saved nor hashed.
     #[serde(skip)]
     pub world_effects: Vec<crate::sim::components::WorldEffect>,
     /// When true, newly spawned entities get a `DebugEventLog` allocated.
@@ -6247,7 +6249,7 @@ impl Simulation {
             crate::sim::house_eva::tick_house_eva(self, rules);
             // --- Phase 4.5: Superweapons ---
             // DEPENDS ON: power state (suspend/resume gating).
-            // PRODUCES: world_effects (bolt anims), damage to entities, sound_events.
+            // PRODUCES: AnimClass bolts and explosions, damage to entities, sound_events.
             if self.session.game_options.super_weapons {
                 crate::sim::superweapon::tick_superweapon_instances(self, rules);
             }

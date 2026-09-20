@@ -904,14 +904,12 @@ impl AnimClassSpawnDescriptor {
 
 /// A temporary one-shot SHP animation playing at a fixed world position.
 ///
-/// Used for visual effects not attached to any entity: chrono warp sparkles,
-/// explosions, weapon impacts, ion storm bolts, etc. The render loop draws
-/// these as flat ground-level sprites. They auto-remove when finished.
+/// Legacy lane, superseded by `sim::anim_class::AnimStore`. Its only remaining
+/// producers are the bridge collapse effects (`world::bridge_orchestrator`);
+/// do not add new ones. The render loop draws these as flat ground-level
+/// sprites. They auto-remove when finished.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WorldEffect {
-    /// Native constructor row, when this effect came from a verified
-    /// AnimClass-like spawn path.
-    pub anim_spawn: Option<AnimClassSpawnDescriptor>,
     /// SHP type interned ID (uppercase), e.g., "WARPOUT", "WARPIN", "FBALL1".
     pub shp_name: InternedId,
     /// World cell containing the effect's game-space anchor.
@@ -949,32 +947,6 @@ pub struct WorldEffectTick {
 }
 
 impl WorldEffect {
-    pub fn from_anim_spawn(
-        anim_spawn: AnimClassSpawnDescriptor,
-        total_frames: u16,
-        frame_delay: u16,
-        translucent: bool,
-        start_sound_id: Option<InternedId>,
-    ) -> Self {
-        Self {
-            shp_name: anim_spawn.type_name,
-            rx: anim_spawn.rx,
-            ry: anim_spawn.ry,
-            sub_x: anim_spawn.sub_x,
-            sub_y: anim_spawn.sub_y,
-            z: anim_spawn.z,
-            frame: 0,
-            total_frames,
-            frame_delay,
-            elapsed_frames: 0,
-            translucent,
-            delay_frames: anim_spawn.delay,
-            start_sound_id,
-            start_sound_emitted: false,
-            anim_spawn: Some(anim_spawn),
-        }
-    }
-
     /// Advance the animation by one native gameplay frame.
     pub fn tick(&mut self) -> bool {
         self.tick_with_start_sound().finished
@@ -1343,7 +1315,6 @@ mod tests {
     fn test_world_effect_tick_advances_and_finishes() {
         use crate::sim::intern::test_intern;
         let mut fx = WorldEffect {
-            anim_spawn: None,
             shp_name: test_intern("WARPOUT"),
             rx: 10,
             ry: 10,
@@ -1375,7 +1346,6 @@ mod tests {
         use crate::sim::intern::test_intern;
         let sound_id = test_intern("Explosion06");
         let mut fx = WorldEffect {
-            anim_spawn: None,
             shp_name: test_intern("TWLT036"),
             rx: 10,
             ry: 10,
@@ -1396,30 +1366,5 @@ mod tests {
         assert_eq!(first.started_sound, Some(sound_id));
         let second = fx.tick_with_start_sound();
         assert_eq!(second.started_sound, None);
-    }
-
-    #[test]
-    fn world_effect_preserves_anim_class_constructor_row() {
-        use crate::sim::intern::test_intern;
-        let anim_id = test_intern("WARPOUT");
-        let mut row = AnimClassSpawnDescriptor::new(
-            anim_id,
-            12,
-            34,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-            2,
-        );
-        row.delay = 1;
-        row.loop_count = 1;
-        row.draw_flags = 0x600;
-        row.z_adjust = -30;
-        row.reverse = true;
-
-        let fx = WorldEffect::from_anim_spawn(row.clone(), 20, 1, true, None);
-
-        assert_eq!(fx.shp_name, anim_id);
-        assert_eq!(fx.delay_frames, 1);
-        assert_eq!(fx.anim_spawn, Some(row));
     }
 }
