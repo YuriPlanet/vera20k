@@ -9,12 +9,13 @@
   ],
   "scope": "Original House50BF60 reset and ordered single-precision cost-factor fold. No FactoryPlant membership producer, cost consumer or full House AI claim.",
   "assumptions": [
-    "Supplied vector counts0..512 with repeated pointers to one immutable Building/Type record. This aliases equivalent stock NAINDP type inputs; it does not represent distinct constructed objects. Factors are Infantry1, Units0.75, Aircraft1, Buildings1, Defenses1. Incoming House factors7..11 expose reset; default native FPCW0E7F."
+    "Supplied vector counts0..512 with repeated pointers to one immutable Building/Type record. This aliases equivalent stock NAINDP type inputs; it does not represent distinct constructed objects. Factors are Infantry1, Units0.75, Aircraft1, Buildings1, Defenses1. Incoming House factors7..11 expose reset; default native FPCW0E7F.",
+    "Additional raw bonus_bits rows supply signed minimum/maximum subnormal, minimum normal, maximum finite, signed zero, near-half/one and two factors for counts0,1,2,3,128,150. Original stores determine gradual underflow, signed zero and masked overflow saturation. These are finite arithmetic-domain fixtures, not a claim of stock rule inputs."
   ],
   "substitutions": [],
   "entry_points": {
     "fold": "0x0050BF60",
     "return": "0x0050C04A"
   },
-  "payload_sha256": "35d4b6dd9ddae41698637525d2912b65315e6e371a66a84e17fcbecd156b094a"
+  "payload_sha256": "da3d56a3eef9f8fb40fe3bf88dfb5873a74578b7e6a244279878775ba1366565"
 }

@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "1780 finite subnormal load/add/sub/mul/store primitive cases, executing isolated original gamemd x87 instruction fragments under FPCW0E7F",
+  "assumptions": [
+    "Harness deliberately sequences one-instruction fragments from original Drive TrackProcess and Techno RockingUpdate. This is a primitive numeric contract, not an execution of their original whole-function control flow or gameplay reachability",
+    "All fragment bytes are asserted against pinned retail bytes before and after each case. No executable code or constant table is patched. Native execution alone determines output bits; Python only supplies raw operands and records stores",
+    "Supplied FPCW0E7F models normal YR startup PC53/chop with masked exceptions. x87 status flags are not comparison outputs; this establishes numeric values under that policy, not full status/trap emulation",
+    "Binary32/binary64 loads and same-format add/sub/mul cross signed zeros, minimum subnormals, adjacent subnormal/normal boundaries, cancellation and large exponent gaps. Factors cross zero, least subnormal, quarter, half and adjacent ULPs, one and two",
+    "Both destination formats are observed for load rows. Additional f64-to-f32 rows bracket underflow-to-zero, minimum subnormal and minimum normal boundaries. A multiply result may remain nonzero internally far below binary64 storage range before the final store",
+    "FADDP operates on two original loaded values; subtraction first executes original FCHS on the right operand. FMUL ST1 keeps the left operand below its result, removed by original FSTP ST0 after the result store. x87 TOP returns to its initial zero",
+    "NaN/infinity input, store overflow, full 80-bit exponent under/overflow, divide-by-zero, transcendental instructions, unmasked exceptions and original parent-function control flow are excluded. Existing normal-domain native corpora remain separate regression evidence"
+  ],
+  "substitutions": [
+    "The harness supplies ESI/EBP/ESP, operand memory and fragment entry sequencing. There are no receiver stubs, synthesized arithmetic instructions, patched retail instructions or Python-computed expected numeric results"
+  ],
+  "entry_points": {
+    "load_f32": "0x0070B743",
+    "load_f64": "0x004B1150",
+    "add_pop": "0x004B1064",
+    "negate": "0x0070B5D3",
+    "multiply": "0x004B105E",
+    "pop": "0x004B106F",
+    "store_f32": "0x0070B812",
+    "store_f64": "0x004B10F6"
+  },
+  "x87_control_word": "0E7F",
+  "original_fragments": {
+    "load_f32": {
+      "address": "0070B743",
+      "bytes": "d98630030000",
+      "sha256": "559317e54bb59c2a12c693698fe59a6c0e979ef4a1370c832ec5b97253833a9f"
+    },
+    "load_f64": {
+      "address": "004B1150",
+      "bytes": "dd4550",
+      "sha256": "53cbe288596c2be877f8614c1db614c888db538b9ca065dc066a3a8e686039c3"
+    },
+    "add_pop": {
+      "address": "004B1064",
+      "bytes": "dec1",
+      "sha256": "dbb8b1d8ac9e70730ffefb515704781c137ccc91ebec31f1941deb123de2081d"
+    },
+    "negate": {
+      "address": "0070B5D3",
+      "bytes": "d9e0",
+      "sha256": "201bbb02efb697a8c565136324c6fcfcf60fd5af220a2ebee73d766abbe1d71d"
+    },
+    "multiply": {
+      "address": "004B105E",
+      "bytes": "d8c9",
+      "sha256": "5512d099bd3d8c5e2aba20e9031e5ae2f7cf9e27bc819b2efc4d4e853e465bcb"
+    },
+    "pop": {
+      "address": "004B106F",
+      "bytes": "ddd8",
+      "sha256": "1ef19409dab7c1173f8b89ea21923e57ed2e36092251e5c1366444920de1a843"
+    },
+    "store_f32": {
+      "address": "0070B812",
+      "bytes": "d99e30030000",
+      "sha256": "3f28a163232031a8f4b71a7f687096fc1dadad213b16d1e1e41a3ab737d3e29b"
+    },
+    "store_f64": {
+      "address": "004B10F6",
+      "bytes": "dd5c2424",
+      "sha256": "2d09e0047b08075905f44d422c54fb0c2d4c4e7d9d4a709219031baaeabea225"
+    }
+  },
+  "payload_sha256": "69bfe90fbc0960d006e8bfbed918474da4c377d65aee7b9b23e3e8744fdac0b5"
+}
