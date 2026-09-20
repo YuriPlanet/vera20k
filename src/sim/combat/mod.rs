@@ -2056,8 +2056,13 @@ impl DeathEffects {
 /// from a drop-in therefore has the byte clear, so an ordinary death over water
 /// DOES throw debris and consumes the block's draws.
 ///
-/// RESIDUAL (GSI-05.14) — the SHP half spawns through the existing
-/// `ExplosionEffect` path, which plays the sprite at a fixed point. Native
+/// RESIDUAL (GSI-05.14) — the SHP half pushes `ExplosionEffect` rows, and with
+/// stock data nothing comes of them: `spawn_combat_explosion_anim` constructs
+/// only art types the loader bound, `anim_class_roots` lists neither
+/// `DebrisAnims=` nor `MetallicDebris=`, and no stock warhead, `Explosion=` or
+/// `DestroyAnim=` names a debris type, so every row is dropped. The draws are
+/// taken; no chunk is drawn. Binding them without the bouncer arm would be
+/// worse, because `LoopCount=-1` chunks would play in place forever. Native
 /// builds a bouncing `AnimClass` (`0x00421EA0`): every stock
 /// debris AnimType is `Bouncer=yes` — all 26 named by `[General]
 /// MetallicDebris=` or by any `DebrisAnims=` line carry it, authored in

@@ -757,7 +757,6 @@ pub(crate) struct LoadCellRecalcOutcome {
     pub(crate) finalized: FinalizedOverlayCell,
     pub(crate) zone_before: u8,
     pub(crate) zone_after: u8,
-    pub(crate) navigation_changed: bool,
 }
 
 /// Leptons per cell along one map axis.
@@ -2266,7 +2265,6 @@ impl ResolvedTerrainGrid {
             return Err(LoadCellRecalcError::CellIndexOutOfBounds { index });
         };
         let zone_before = snapshot.zone_type;
-        let navigation_before = load_navigation_signature(&snapshot);
         let source_overlay_id = match overlay.identity() {
             NO_OVERLAY_IDENTITY => None,
             identity @ 0..=254 => Some(identity as u8),
@@ -2573,12 +2571,10 @@ impl ResolvedTerrainGrid {
             current_land_build_blocked,
         );
         let cell = &self.cells[index];
-        let navigation_after = load_navigation_signature(cell);
         Ok(LoadCellRecalcOutcome {
             finalized,
             zone_before,
             zone_after: cell.zone_type,
-            navigation_changed: navigation_before != navigation_after,
         })
     }
 
@@ -5188,30 +5184,6 @@ fn apply_pristine_load_metadata(
     cell.base_speed_costs = metadata.speed_costs;
     cell.base_ground_walk_blocked = cell.canonical_ramp.is_none() && metadata.ground_blocked;
     cell.base_build_blocked = metadata.build_blocked || cell.canonical_ramp.is_some();
-}
-
-fn load_navigation_signature(
-    cell: &ResolvedTerrainCell,
-) -> (
-    bool,
-    Option<u8>,
-    u8,
-    u8,
-    TerrainClass,
-    SpeedCostProfile,
-    bool,
-    bool,
-) {
-    (
-        cell.overlay_blocks,
-        cell.overlay_zone_type,
-        cell.zone_type,
-        cell.land_type,
-        cell.terrain_class,
-        cell.speed_costs,
-        cell.ground_walk_blocked,
-        cell.build_blocked,
-    )
 }
 
 fn ordinary_variant_selection_enabled(

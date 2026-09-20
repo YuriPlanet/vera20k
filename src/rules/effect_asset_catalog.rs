@@ -36,8 +36,7 @@ impl EffectAssetFrameCounts {
     }
 }
 
-/// Deterministic match input derived from authoritative world-effect and
-/// particle SHPs.
+/// Deterministic match input derived from particle image SHPs.
 ///
 /// Keys are trimmed, uppercase asset IDs. A `BTreeMap` is deliberate: binding
 /// and hashing must not inherit `HashMap`'s process-random iteration order.
@@ -47,7 +46,7 @@ pub struct EffectAssetCatalog {
 }
 
 impl EffectAssetCatalog {
-    /// Bind every currently authoritative world-effect and particle root.
+    /// Bind every particle image root.
     ///
     /// Missing or malformed assets are optional at this layer: the entry is
     /// omitted after a warning and each simulation consumer retains its
@@ -273,22 +272,9 @@ fn authoritative_effect_roots(rules: &RuleSet) -> BTreeSet<String> {
         }
     };
 
-    insert(&rules.general.warp_out.name);
-    insert(&rules.general.wake.name);
-    for name in rules.general.infantry_death_anims.iter().flatten() {
-        insert(name);
-    }
-    for warhead in rules.warheads_iter() {
-        for name in &warhead.anim_list {
-            insert(name);
-        }
-    }
-    insert(&rules.general.iron_curtain_invoke_anim);
-    insert(&rules.general.force_shield_invoke_anim);
-    insert(&rules.general.ion_blast_anim);
-    for name in LIGHTNING_BOLT_ANIMS {
-        insert(name);
-    }
+    // Particle images are the only frame counts a consumer asks for
+    // (`sim::particles::system_ai`). Every animation producer constructs an
+    // `AnimClass`, whose frame bounds come from `bind_anim_class_assets`.
     for particle in rules.particle_types_iter() {
         if let Some(name) = particle.image.as_deref() {
             insert(name);
@@ -353,13 +339,16 @@ mod tests {
         let assets = AssetManager::from_loose_root_for_test(root.path());
 
         let ini = IniFile::from_str(
-            "[General]\n\
-             WarpOut=missing\n\
-             Wake=broken\n\
-             [Particles]\n\
+            "[Particles]\n\
              0=Cloud\n\
+             1=Torn\n\
+             2=Absent\n\
              [Cloud]\n\
-             Image=FX\n",
+             Image=FX\n\
+             [Torn]\n\
+             Image=BROKEN\n\
+             [Absent]\n\
+             Image=MISSING\n",
         );
         let mut rules = RuleSet::from_ini(&ini).expect("effect catalog rules");
         let art = ArtRegistry::from_ini(&IniFile::from_str("[FX]\nShadow=yes\n"));

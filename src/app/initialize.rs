@@ -688,7 +688,6 @@ impl App {
                 startup_asset_manager,
                 startup_csf,
                 startup_native_rules,
-                startup_rules_projection,
             ),
             audio: startup_audio_runtime,
             persistence: crate::app::persistence::PersistenceState::new(options_profile),

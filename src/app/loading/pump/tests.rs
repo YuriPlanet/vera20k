@@ -176,7 +176,6 @@ fn begin_loading_plays_loading_theme_and_polls_theme_through_the_lease() {
         Some(AssetManager::from_loose_root_for_test(&dir)),
         None,
         None,
-        None,
     );
     let mut audio = test_audio();
     let session = LoadingSession::from_request(LoadingRequest::unverified_legacy_skirmish(
@@ -231,7 +230,6 @@ fn loading_replacement_and_terminal_retirement_preserve_cache_and_admission_orde
     std::fs::write(dir.join("sentinel.bin"), b"first winner").unwrap();
     let mut assets = crate::app::process_assets::ProcessAssets::from_startup(
         Some(AssetManager::from_loose_root_for_test(&dir)),
-        None,
         None,
         None,
     );
@@ -394,7 +392,6 @@ fn loading_preparation_consumes_real_source_and_returns_lease_on_initial_and_adm
     std::fs::write(dir.join("sentinel.bin"), b"keep this cache").unwrap();
     let mut assets = crate::app::process_assets::ProcessAssets::from_startup(
         Some(AssetManager::from_loose_root_for_test(&dir)),
-        None,
         None,
         None,
     );

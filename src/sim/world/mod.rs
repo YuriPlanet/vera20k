@@ -2489,40 +2489,6 @@ impl Simulation {
         }
     }
 
-    /// `Death_Announcement` for a death site outside the damage kill loop
-    /// that natively still enters `ReceiveDamage` (`+0x16C`) with
-    /// `C4Warhead=` and so reaches `+0x3B8`: `InfantryClass::IronCurtain
-    /// 0x00522632` and `CellClass::BlowUpBridge 0x0047DDAE`. Applies the same
-    /// `Spawned=` gate ([`crate::sim::combat::death_announcement_event`]),
-    /// owner gate and radar type-7 dedupe as the damage kills. Call it for
-    /// each victim after its HP reached zero at the site.
-    pub(crate) fn announce_unit_lost_at_death_site(
-        &mut self,
-        rules: &crate::rules::ruleset::RuleSet,
-        stable_id: u64,
-    ) {
-        let Some(entity) = self.substrate.entities.get(stable_id) else {
-            return;
-        };
-        let Some(obj) = self
-            .interner
-            .try_resolve(entity.type_ref())
-            .and_then(|type_name| rules.object(type_name))
-        else {
-            return;
-        };
-        let event = crate::sim::combat::death_announcement_event(
-            obj,
-            entity.category,
-            entity.position.rx,
-            entity.position.ry,
-            entity.owner(),
-        );
-        if let Some(event) = event {
-            self.dispatch_unit_lost_events(&[event]);
-        }
-    }
-
     /// Borrow all three logical RNG objects without exposing mutation.
     pub fn rng_views(&self) -> SimulationRngViews<'_> {
         SimulationRngViews {
