@@ -7194,6 +7194,50 @@ fn megamission_mid_unload_abandons_the_unload_and_commences_the_order() {
     ));
 }
 
+/// `Command::HarvestCell` assigns Harvest directly, so the Unload mission's
+/// contact gate never runs again for it. The command itself must drop the
+/// unload latch and image, or the miner drives to the ore wearing its
+/// UnloadingClass image and every later queued order waits for its next dock.
+#[test]
+fn harvest_order_mid_unload_drops_the_unload_latch_and_image() {
+    let mut sim = Simulation::new();
+    let rules = miner_rules();
+    let cargo = vec![(ResourceType::Ore, 25u16); 20];
+    let miner_id = spawn_queued_unload_miner(&mut sim, &cargo);
+    crate::sim::miner::miner_dock::enter_dock(&mut sim, miner_id, 2);
+    for _ in 0..200 {
+        tick_miners_n(&mut sim, &rules, 1);
+        let miner = get_miner(&sim, miner_id);
+        if miner.dock_phase == RefineryDockPhase::Unloading && miner.unload_active {
+            break;
+        }
+    }
+    assert!(get_miner(&sim, miner_id).unload_active);
+
+    assert!(sim.apply_command(
+        "Americans",
+        &crate::sim::command::Command::HarvestCell {
+            entity_id: miner_id,
+            target_rx: 30,
+            target_ry: 30,
+        },
+        Some(&rules),
+        None,
+        &BTreeMap::new(),
+    ));
+
+    let entity = sim.substrate.entities.get(miner_id).unwrap();
+    let miner = entity.miner.as_ref().unwrap();
+    assert!(!miner.unload_active);
+    assert!(!miner.unload_cluster_timer.is_armed());
+    assert_eq!(miner.dock_phase, RefineryDockPhase::Approach);
+    assert_eq!(entity.display_type_override, None);
+    assert_eq!(entity.dock_entered_with, None);
+    assert!(!crate::sim::miner::miner_dock::has_contact(
+        &sim, 2, miner_id
+    ));
+}
+
 /// The IDLE arm returns at `0x004C7504..0x004C750C` for a tethered object, so a
 /// miner that has entered its dock ignores Stop; an untethered one has every
 /// radio link broken (`0x004C75DC`).

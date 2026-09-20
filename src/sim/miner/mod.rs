@@ -22,7 +22,9 @@ mod miner_tests;
 mod outbound_drive_tests;
 
 pub(crate) use self::harvest_mission::dispatch_harvest_for_object;
-pub(crate) use self::miner_dock_sequence::interrupt_refinery_docked_miners;
+pub(crate) use self::miner_dock_sequence::{
+    abandon_unload_for_direct_retask, interrupt_refinery_docked_miners,
+};
 // Generic nearby-passable-cell search, reused by the tank-bunker exit placement.
 pub(crate) use self::miner_dock_sequence::find_nearby_passable_cell_with_index;
 pub(crate) use self::miner_system::{extract_bale, search_local_ore};

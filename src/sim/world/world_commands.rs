@@ -830,7 +830,10 @@ impl Simulation {
                 }
                 // The IDLE arm returns at `0x004C7504..0x004C750C` when the
                 // object's tether byte (`+0x418`) is set: a miner that has
-                // entered its dock ignores Stop and finishes unloading.
+                // entered its dock ignores Stop and finishes unloading, and so
+                // does a vehicle still leaving its war factory (the other
+                // writer of `dock_entered_with`). Native also returns for
+                // current missions 0x12 and 0x13, which is not modelled.
                 if self
                     .substrate
                     .entities
@@ -1871,7 +1874,11 @@ impl Simulation {
                 e.movement_target = None;
                 // A harvest order is a MEGAMISSION like any other: it ends a
                 // refinery handshake in progress (`miner_dock::break_for_retask`).
+                // This arm assigns the mission below instead of queueing it, so
+                // an unload in progress is abandoned here rather than by the
+                // Unload mission's contact gate.
                 crate::sim::miner::miner_dock::break_for_retask(self, *entity_id);
+                crate::sim::miner::abandon_unload_for_direct_retask(self, *entity_id);
                 // Commit the Harvest mission and the MoveToOre cursor of
                 // record. Native (EventClass::Execute MEGAMISSION,
                 // disassembled 2026-09-05): the client's mission byte passes

@@ -163,6 +163,48 @@ fn clear_unload_cluster(snap: &mut MinerSnapshot) {
     clear_unload_timer_cluster(snap);
 }
 
+/// Abandon an unload in progress for a command that replaces the miner's
+/// mission directly instead of queueing it.
+///
+/// A queued order is released by the Unload mission's own contact gate
+/// (`abort_unload_contact_lost`). `Command::HarvestCell` assigns Harvest and
+/// rewrites the handler cursor on the spot, so that gate never runs again; the
+/// same clears have to happen here or the miner drives off wearing its
+/// UnloadingClass image with the unload latch set, which holds back every
+/// later queued order until its next dock completes. Does nothing outside an
+/// unload phase.
+pub(crate) fn abandon_unload_for_direct_retask(sim: &mut Simulation, miner_sid: u64) {
+    let Some(entity) = sim.substrate.entities.get_mut(miner_sid) else {
+        return;
+    };
+    let Some(miner) = entity.miner.as_mut() else {
+        return;
+    };
+    if !matches!(
+        miner.dock_phase,
+        RefineryDockPhase::Pivoting
+            | RefineryDockPhase::Unloading
+            | RefineryDockPhase::DepositCooldown
+            | RefineryDockPhase::Departing
+    ) {
+        return;
+    }
+    miner.unload_active = false;
+    miner.unload_accumulator = 0;
+    miner.unload_timer_fired = false;
+    miner.unload_cluster_timer.clear();
+    miner.unload_cluster_scratch = 0;
+    miner.unload_cluster_repeat = 0;
+    miner.mission_deploy_timer.clear();
+    miner.dock_enter_retry.clear();
+    miner.dock_pivot_facing = None;
+    miner.dock_queued = false;
+    miner.dock_phase = RefineryDockPhase::Approach;
+    miner.exit_cell = None;
+    entity.display_type_override = None;
+    entity.facing_target = None;
+}
+
 fn tick_unload_accumulator(sim: &Simulation, snap: &mut MinerSnapshot) {
     // An unarmed timer means the cluster is inactive (was `start_frame == None`).
     if !snap.miner.unload_cluster_timer.is_armed() {

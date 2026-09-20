@@ -119,7 +119,9 @@ pub(crate) fn same_house(sim: &Simulation, refinery_sid: u64, miner_sid: u64) ->
 /// `abort_unload_contact_lost`) finds the contact gone on its next dispatch,
 /// drops the unload latch and image and commences the queued order. Resetting
 /// the phase here instead would leave the latch set, which blocks the queued
-/// mission's readiness while Harvest re-docks the miner.
+/// mission's readiness while Harvest re-docks the miner. A command that
+/// assigns its mission directly never reaches that gate again and must also
+/// call `abandon_unload_for_direct_retask` (`Command::HarvestCell` does).
 ///
 /// Scope: only the refinery contact the miner FSM owns. Other contacts keep
 /// their existing teardown owners (`DockTeardown`). Commands that write their
