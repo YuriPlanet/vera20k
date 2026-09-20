@@ -651,7 +651,7 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
                             sim.interner.resolve(snap.owner),
                             &sim.interner,
                         )
-                        .map(|h| h.credits)
+                        .map(|h| h.economy.credits)
                         .unwrap_or(0);
 
                         match repair_tick(
@@ -745,7 +745,7 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
                 sim.interner.resolve(entity.owner()),
                 &sim.interner,
             ) {
-                house.credits = (house.credits - m.deduct_credits).max(0);
+                house.economy.credits = (house.economy.credits - m.deduct_credits).max(0);
             }
         }
     }
@@ -1033,7 +1033,7 @@ mod tests {
             use crate::sim::house_state::HouseState;
             let owner_id = sim.interner.intern("Americans");
             let mut house = HouseState::new(owner_id, 0, None, false, 0, 10);
-            house.credits = 10_000;
+            house.economy.credits = 10_000;
             sim.houses.insert(owner_id, house);
         }
         spawn_depot(&mut sim);

@@ -1065,7 +1065,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     assert!(!rules.object("FIRSTWALL").unwrap().click_repairable);
     let mut sim = Simulation::with_seed(77);
     let (wall_owner, receiver) = gsi_04_07_wall_sell_seed_houses(&mut sim);
-    let credits_before = sim.houses.get(&wall_owner).unwrap().credits;
+    let credits_before = sim.houses.get(&wall_owner).unwrap().economy.credits;
     let rng_before = sim.scenario_rng.state();
 
     let terrain = gsi_04_10_clear_terrain(8, 8);
@@ -1329,7 +1329,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
         sim.terrain_costs[&crate::rules::locomotor_type::SpeedType::Track].cost_at(5, 4),
         100
     );
-    assert_eq!(sim.houses.get(&wall_owner).unwrap().credits, credits_before);
+    assert_eq!(sim.houses.get(&wall_owner).unwrap().economy.credits, credits_before);
     assert_eq!(sim.scenario_rng.state(), rng_before);
     assert_ne!(sim.state_hash(), hash_before_sale);
     assert!(matches!(
@@ -7914,7 +7914,7 @@ fn combat_death_not_repaired_then_freed_at_end_of_tick() {
         "end-of-tick drain emptied the queue"
     );
     assert_eq!(
-        sim.houses.get(&russia).map(|h| h.credits),
+        sim.houses.get(&russia).map(|h| h.economy.credits),
         Some(1000),
         "destroyed building must not be repaired at Phase 7 (dying-gated, no credits spent)",
     );

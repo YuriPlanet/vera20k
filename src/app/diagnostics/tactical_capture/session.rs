@@ -995,7 +995,7 @@ impl TacticalCaptureSession {
                 == sim
                     .houses
                     .get(&owner_id)
-                    .map(|house| house.credits)
+                    .map(|house| house.economy.credits)
                     .unwrap_or(sidebar.credits);
         let egui = state.capture_egui_observation();
         let egui_ready = egui
@@ -1154,7 +1154,7 @@ impl TacticalCaptureSession {
         Ok(json!({
             "core": core,
             "wallet": {
-                "credits": house.credits,
+                "credits": house.economy.credits,
                 "spent_credits": house.economy.spent_credits,
                 "harvested_credits": house.economy.harvested_credits,
             },
@@ -1505,7 +1505,7 @@ fn validate_houses_and_slots(
             && local.side_index == expected_local_country.side_index()
             && local_country == expected_local_country.country_name()
             && local.difficulty == HouseDifficulty::Normal
-            && local.credits == profile.launch.options.starting_credits,
+            && local.economy.credits == profile.launch.options.starting_credits,
         "local HouseState differs from sealed slot"
     );
 
@@ -1532,9 +1532,9 @@ fn validate_houses_and_slots(
             && ai.side_index == expected_ai_country.side_index()
             && ai_country == expected_ai_country.country_name()
             && ai.difficulty == HouseDifficulty::Easy
-            && ai.credits == profile.launch.options.starting_credits,
+            && ai.economy.credits == profile.launch.options.starting_credits,
         "Computer1 HouseState differs from sealed slot: credits={}, difficulty={:?}",
-        ai.credits, ai.difficulty
+        ai.economy.credits, ai.difficulty
     );
     ensure!(
         sim.session.start_slot_houses.len() == 2

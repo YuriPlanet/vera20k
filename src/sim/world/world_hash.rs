@@ -918,9 +918,8 @@ impl Simulation {
     fn hash_houses(&self, hasher: &mut impl Hasher, schema: HashSchema) {
         for (owner, house) in &self.houses {
             owner.hash(hasher);
-            house.credits.hash(hasher);
-            // P5b: economy statistics are hashed; economy.credits is NOT (it is a
-            // per-sweep shim loaded from house.credits — the one authoritative wallet).
+            house.economy.credits.hash(hasher);
+            // The sole cash balance retains its original position in the hash stream.
             house.economy.spent_credits.hash(hasher);
             house.economy.harvested_credits.hash(hasher);
             house.economy.purifier_count.hash(hasher);

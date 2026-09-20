@@ -890,7 +890,7 @@ fn tick_ai_low_credit_sell_decisions(sim: &mut Simulation, rules: &RuleSet) {
         };
         let house_iq = house.current_iq;
         if house_iq < rules.general.iq_repair_sell
-            || house.credits >= rules.general.credit_reserve
+            || house.economy.credits >= rules.general.credit_reserve
             || house_iq < rules.general.iq_sell_back
         {
             continue;

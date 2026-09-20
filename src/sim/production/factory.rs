@@ -1,11 +1,9 @@
 //! Per-(house, category) factory + deterministic registry — AUTHORITATIVE.
 //!
-//! Since the P5b authority flip (registry authoritative, per-step charge to the
-//! real house wallet, SNAPSHOT_VERSION 17->18) and P5d (queue-of-record moved
-//! into `Factory.queue`, 18->19), this module owns production charging: enqueue
+//! This module owns production charging and the queue-of-record: enqueue
 //! only checks affordability, `step_all` charges `balance/steps_left` per step
 //! at the tick's production phase, a shortfall rewinds the step onto on-hold,
-//! and cancel refunds exactly the unspent remainder. State here is serialized
+//! and cancel refunds the already-paid portion. State here is serialized
 //! and folded into the lockstep hash.
 //!
 //! Determinism: `BTreeMap<(InternedId, ProductionCategory), Factory>` (both key
@@ -14,7 +12,7 @@
 //! 30-player scale target. Integer math only; no float, no RNG.
 //!
 //! Depends on: `sim/intern`, `sim/production/production_types` (ProductionCategory,
-//! BuildQueueState), `sim/economy` (the oracle wallet), `rules` (type cost), and
+//! BuildQueueState), `sim/economy` (the house wallet), `rules` (type cost), and
 //! `sim/world::Simulation` (read-only) for the derive. NEVER on
 //! render/ui/sidebar/audio/net (sim invariant #1).
 //!
@@ -115,9 +113,8 @@ impl Default for SpecialItem {
     }
 }
 
-/// One production state machine per (house, category). Value-type owned by the
-/// `FactoryRegistry`. In P2/P3 it is DERIVED shadow — the per-step charge stepping
-/// (P3) runs against an ORACLE clone, never the hashed wallet.
+/// One authoritative production state machine per (house, category), owned by
+/// `FactoryRegistry`. The factory retains its unpaid obligation; Economy owns cash.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Factory {
     pub owner: InternedId,
@@ -178,11 +175,8 @@ impl Factory {
         self.step_rate_frames = clamped as u16;
     }
 
-    /// Advance one step against an ORACLE economy (a clone / throwaway), NOT the
-    /// hashed wallet (C2/C3/C4/C12/C15). Hash-neutrality is enforced at the CALL SITE
-    /// (P3 only ever passes a clone); the body is wallet-agnostic. The `&mut Economy`
-    /// param (distinct from `&mut self`) is the exact shape the authority-flip slice
-    /// (P5) makes real — that slice flips WHO is passed, not this algorithm.
+    /// Advance one step against the supplied economy (C2/C3/C4/C12/C15).
+    /// Production borrows the house wallet; conservation tests supply a fixture.
     ///
     /// One step per call. The step:
     ///   * increments `progress` first, then reads stepsLeft = 54 - progress;
@@ -259,8 +253,8 @@ impl Factory {
     /// cancelled through the ready-queue path, a later slice). Leaves the queue tail
     /// INTACT — `start_next_queued` is command-bound (C7) and is NOT auto-invoked here.
     ///
-    /// `&mut Economy` is an ORACLE (clone) in P4; hash-neutrality is enforced at the
-    /// CALL SITE, never in this body. The authority-flip slice flips WHO is passed.
+    /// Production passes the house wallet directly; missing-house cleanup uses
+    /// a throwaway economy so cancellation cannot fabricate a house.
     fn cancel_active(&mut self, economy: &mut Economy) -> Option<(i32, Option<u64>)> {
         // No active object -> no-op.
         self.object.as_ref()?;
@@ -930,7 +924,7 @@ impl FactoryRegistry {
     /// P6 write/apply phase: apply a `plan_revalidation` plan. Drops permanently-blocked
     /// queued entries (no refund — never charged), abandons a permanently-blocked active
     /// build with the C8 PARTIAL refund (`original_balance - balance`) into the ONE wallet
-    /// (`house.credits`) via the per-sweep `Economy` shim, then promotes the first surviving
+    /// (`house.economy.credits`), then promotes the first surviving
     /// queued entry (C7 StartNextQueued, cost-seeded, `step_delay = 1` because this sweep runs
     /// BEFORE `step_all` so the promoted build is not charged the same tick). Idle factories
     /// are pruned.
@@ -956,11 +950,7 @@ impl FactoryRegistry {
             if action.abandon_active {
                 let abandoned_entity_id = f.object.as_ref().and_then(|object| object.entity_id);
                 if let Some(house) = houses.get_mut(&action.owner) {
-                    let mut wallet = std::mem::take(&mut house.economy);
-                    wallet.credits = house.credits;
-                    let _ = f.cancel_active(&mut wallet);
-                    house.credits = wallet.credits;
-                    house.economy = wallet;
+                    let _ = f.cancel_active(&mut house.economy);
                 } else {
                     let mut throwaway = Economy::default();
                     let _ = f.cancel_active(&mut throwaway);
@@ -1093,15 +1083,12 @@ impl FactoryRegistry {
     /// `iter_insertion_ordered` (temporal `insertion_seq`) order — the SAME order the
     /// hash folds in — and, for each armed factory whose per-step cadence timer has
     /// expired, (re)computes the rate from the `build_step_time` producer and charges ONE
-    /// step against the owner's REAL wallet (`house.credits`). Reproduces the engine's
+    /// step against the owner's REAL wallet (`house.economy.credits`). Reproduces the engine's
     /// per-tick factory loop (C1), walked before the house tail.
     ///
-    /// `house.credits` is THE single wallet (one debit per step). The per-sweep `Economy`
-    /// shim is loaded from `house.credits` at entry and stored back after, so
-    /// `advance_one_step`'s `&mut Economy` contract is honored unchanged and
-    /// `economy.spent_credits` accumulates; `economy.credits` is a transient shim, never
-    /// the authority, never hashed. `prepared` (from `prepare_step_inputs`) carries the
-    /// producer inputs so this method holds no `&Simulation` borrow.
+    /// Borrow the house's sole economy directly, charging cash and accumulating
+    /// spent credits together. `prepared` (from `prepare_step_inputs`) carries
+    /// the producer inputs so this method holds no `&Simulation` borrow.
     pub(super) fn step_all(
         &mut self,
         houses: &mut BTreeMap<InternedId, crate::sim::house_state::HouseState>,
@@ -1140,16 +1127,12 @@ impl FactoryRegistry {
                 continue;
             }
 
-            // (Charge) one authoritative step against the real wallet via the shim.
+            // (Charge) one authoritative step against the house's economy.
             // Clear the latched on-hold first so an under-funded build RE-ATTEMPTS this
             // cadence (gamemd re-checks affordability each step; advance_one_step's
             // on_hold gate exists for the off-path clone callers).
             f.on_hold = false;
-            let mut wallet = std::mem::take(&mut house.economy);
-            wallet.credits = house.credits; // load the authoritative balance
-            let outcome = f.advance_one_step(&mut wallet);
-            house.credits = wallet.credits; // store the debited balance back (ONE wallet)
-            house.economy = wallet; // keep spent_credits / etc.
+            let outcome = f.advance_one_step(&mut house.economy);
 
             // Completion zeroed step_timer (the object is held for delivery); otherwise
             // re-arm the cadence to the freshly-computed rate.
@@ -1160,16 +1143,13 @@ impl FactoryRegistry {
     }
 
     /// Cancel one production of `type_id` for (owner, category) — the substrate analog
-    /// of the engine's cancel-one command. PURE on the registry + an ORACLE (clone)
-    /// economy in P4 (never the hashed wallet; the legacy `cancel_by_type_for_owner`
-    /// stays authoritative through the authority-flip slice). Precedence (C6 / §6.2 OR,
+    /// of the engine's cancel-one command. Mutates the registry and supplied house
+    /// economy. Precedence (C6 / §6.2 OR,
     /// queued path named first): a QUEUED tail copy is removed FIRST (front-to-back,
     /// FIRST match — RemoveFromQueue); ONLY when no queued copy of `type_id` matches AND
     /// the ACTIVE object is `type_id` is the active build abandoned (refund =
     /// original_balance - balance, AbandonProduction). No match -> NoMatch.
     ///
-    /// `&mut Economy` is an ORACLE (clone) in P4; the authority-flip slice flips WHO is
-    /// passed, not this body.
     pub(super) fn cancel_one(
         &mut self,
         owner: InternedId,

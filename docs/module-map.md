@@ -1,18 +1,19 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `35c5e18b2be87fc94ac8bc2877025b53b293d631` (2026-09-16), cargo-modules 0.26.0.
+Generated snapshot: `3398ef92f5acb1f71bd05e269f088c3ac832892b` (2026-09-19), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
 External crates and the sysroot are excluded from the dependency graph.
-Contains **823 modules plus the crate root**, and **5243 distinct
+Contains **823 modules plus the crate root**, and **5240 distinct
 cross-module dependency edges**. Check this source commit against your checkout.
 <!-- module-map:provenance:end -->
 
 `A -> B; C` lists A's dependencies. Paths omit `vera20k::`; `vera20k` is the root.
 Rows cover individual modules, not their children; `-` means no emitted dependency.
 These are static imports/type relationships, not runtime calls. Verify against current source.
+An absent edge does not prove independence; follow source references, including parameter types.
 Search relevant rows only; follow destinations to trace chains, avoiding revisited modules.
 
 ```powershell
@@ -260,7 +261,7 @@ map::events -> rules::ini_parser
 map::houses -> rules::color_scheme; rules::house_colors; rules::ini_parser; rules::ruleset
 map::iso_tile_flood -> -
 map::lat -> map::map_file; map::theater; rules::ini_parser
-map::lighting -> map::entities; map::map_file; rules::art_data; rules::ini_parser; rules::ruleset
+map::lighting -> map::entities; rules::art_data; rules::ini_parser; rules::ruleset
 map::map_file -> assets::error; assets::mix_archive; map::actions; map::basic; map::briefing; map::cell_tags; map::entities; map::events; map::overlay; map::preview; map::tags; map::trigger_graph; map::triggers; map::tube_facts; map::tubes; map::variable_names; map::waypoints; rules::error; rules::ini_parser; util::base64; util::lzo
 map::overlay -> rules::ini_parser; rules::overlay_types; util::base64; util::lcw
 map::overlay_types -> rules::overlay_types
@@ -592,7 +593,7 @@ sim::movement::locomotor_ready -> -
 sim::movement::movement_blocked -> rules::locomotor_type; sim::components; sim::debug_event_log; sim::movement; sim::movement::locomotor; sim::movement::movement_path; sim::movement::path_markers; sim::occupancy; sim::pathfinding::core; sim::pathfinding::terrain_cost; sim::rng; util::fixed_math
 sim::movement::movement_bridge -> sim::components; sim::movement::locomotor; sim::pathfinding::core; util::fixed_math
 sim::movement::movement_commands -> map::entities; map::resolved_terrain; rules::locomotor_type; rules::ruleset; sim::components; sim::entity_store; sim::game_entity; sim::movement; sim::movement::drive_track; sim::movement::movement_path; sim::movement::teleport_movement; sim::occupancy; sim::pathfinding::core; sim::pathfinding::terrain_cost; sim::pathfinding::zone_map; util::fixed_math
-sim::movement::movement_occupancy -> map::entities; map::houses; map::resolved_terrain; rules::locomotor_type; sim::combat; sim::components; sim::debug_event_log; sim::entity_store; sim::intern; sim::movement; sim::movement::bump_crush; sim::movement::drive_track; sim::movement::locomotor; sim::movement::movement_blocked; sim::movement::movement_bridge; sim::movement::path_markers; sim::occupancy; sim::pathfinding::cell_entry; sim::pathfinding::core; sim::pathfinding::terrain_cost; sim::rng
+sim::movement::movement_occupancy -> map::entities; map::houses; map::resolved_terrain; rules::locomotor_type; sim::combat; sim::components; sim::debug_event_log; sim::entity_store; sim::intern; sim::movement; sim::movement::bump_crush; sim::movement::drive_track; sim::movement::locomotor; sim::movement::movement_blocked; sim::movement::movement_bridge; sim::occupancy; sim::pathfinding::cell_entry; sim::pathfinding::core; sim::pathfinding::terrain_cost; sim::rng
 sim::movement::movement_path -> map::resolved_terrain; rules::locomotor_type; sim::components; sim::find_nearby_cell; sim::movement; sim::movement::locomotor; sim::pathfinding::core; sim::pathfinding::path_smooth; sim::pathfinding::terrain_cost; sim::pathfinding::zone_map; sim::pathfinding::zone_search; sim::rng; util::fixed_math
 sim::movement::movement_step -> map::entities; map::resolved_terrain; map::tube_facts; rules::locomotor_type; sim::components; sim::debug_event_log; sim::game_entity; sim::intern; sim::movement; sim::movement::bump_crush; sim::movement::cell_arrival; sim::movement::drive_locomotion; sim::movement::drive_track; sim::movement::locomotor; sim::movement::movement_blocked; sim::movement::movement_bridge; sim::movement::movement_occupancy; sim::movement::track_process; sim::occupancy; sim::pathfinding::core; sim::pathfinding::terrain_cost; sim::rng; sim::world::substrate; util::fixed_math
 sim::movement::movement_tick -> map::entities; map::houses; map::playfield; map::resolved_terrain; rules::locomotor_type; sim::components; sim::debug_event_log; sim::entity_store; sim::game_entity; sim::infantry; sim::intern; sim::lifecycle_request; sim::movement; sim::movement::bump_crush; sim::movement::drive_locomotion; sim::movement::locomotor; sim::movement::movement_blocked; sim::movement::movement_bridge; sim::movement::movement_commands; sim::movement::movement_occupancy; sim::movement::movement_path; sim::movement::movement_step; sim::movement::path_markers; sim::movement::tube_movement; sim::occupancy; sim::pathfinding::cell_entry; sim::pathfinding::core; sim::pathfinding::terrain_cost; sim::pathfinding::terrain_speed; sim::pathfinding::zone_map; sim::rng; sim::type_handle_table; sim::world::substrate; util::fixed_math
@@ -766,7 +767,7 @@ sim::world::world_spawn::construction -> map::entities; rules::animation_sequenc
 skirmish_cooperative -> assets::asset_manager; rules::ini_parser; sim::rng
 skirmish_launch -> sim::game_options; sim::rng; skirmish_modes
 skirmish_modes -> assets::asset_manager; rules::ini_parser
-skirmish_persistence -> rules::error; rules::ini_parser
+skirmish_persistence -> rules::error
 ui -> -
 ui::client_theme -> -
 ui::gadget -> -

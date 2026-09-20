@@ -134,7 +134,7 @@ pub fn tick_house_eva(sim: &mut Simulation, rules: &RuleSet) {
         if !house.is_controlled_by_human(game_mode_nonzero) {
             continue;
         }
-        let credits = house.credits;
+        let credits = house.economy.credits;
         let mut timer = house.eva_funds_timer;
         let mut guard = house.eva_low_power_guard;
 

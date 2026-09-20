@@ -493,7 +493,8 @@ use crate::sim::world::Simulation;
 // wrong bytes instead of being rejected.
 // v164 adds the per-cell AltObject air slots (CellClass+0xE0), the authority
 // that keeps one hovering Jumpjet per cell.
-const SNAPSHOT_VERSION: u32 = 165;
+// 165 -> 166: remove the duplicate HouseState credit balance; Economy owns cash.
+const SNAPSHOT_VERSION: u32 = 166;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3341,7 +3342,8 @@ mod tests {
         // 161 -> 162: Infantry+6DC current-cell entry answer of the failed path.
         // 162 -> 163: Jumpjet linked type block and flight fields.
         // 164 -> 165: DriveTrackState::before_first_point, inserted mid-record.
-        assert_eq!(super::SNAPSHOT_VERSION, 165);
+        // 165 -> 166: Economy owns the sole house credit balance.
+        assert_eq!(super::SNAPSHOT_VERSION, 166);
     }
 
     #[test]
@@ -3355,7 +3357,7 @@ mod tests {
             let bytes = bincode::serialize(&preamble).expect("previous layout header");
             assert!(matches!(
                 GameSnapshot::load(&bytes),
-                Err(SnapshotError::VersionMismatch { expected: 165, found }) if found == version
+                Err(SnapshotError::VersionMismatch { expected: 166, found }) if found == version
             ));
         }
     }

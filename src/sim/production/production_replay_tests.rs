@@ -10,7 +10,7 @@
 //!     `state_hash` timeline. This is the lockstep ratification of the flip: the
 //!     newly-hashed `Factory`/`Economy` state machine adds no nondeterminism.
 //!   - (B) CONSERVATION (C15) — over a refund-free replay, EVERY tick conserves
-//!     `Σ_owners(house.credits + economy.spent_credits) == Σ_owners(initial)`.
+//!     `Σ_owners(house.economy.credits + economy.spent_credits) == Σ_owners(initial)`.
 //!     The per-step charge moves credits out of the one wallet into `spent_credits`
 //!     and nowhere else; no credit is created or destroyed by the charge machinery.
 //!
@@ -42,6 +42,64 @@ use crate::sim::world::Simulation;
 
 const TICK_MS: u32 = 67;
 const START_CREDITS: i32 = 50_000;
+
+#[test]
+fn income_spending_and_factory_refund_share_the_runtime_wallet() {
+    let (simulation, rules, height_map) = scenario();
+    let (owner, _, _, tank) = ids(&simulation);
+    let mut resources = crate::sim::runtime::SimResources::empty();
+    resources.rules = rules;
+    resources.height_map = height_map;
+    let mut runtime = crate::sim::runtime::SimRuntime {
+        simulation,
+        resources,
+    };
+    for tick in 1..=40 {
+        if tick == 5 {
+            crate::sim::credit_income::add_credits(&mut runtime.simulation, owner, 123);
+        }
+        if tick == 10 {
+            assert_eq!(
+                crate::sim::credit_income::spend_money(&mut runtime.simulation, owner, 17),
+                17
+            );
+        }
+        let commands = match tick {
+            1 => vec![queue(owner, tank, tick)],
+            40 => vec![env(
+                owner,
+                tick,
+                Command::CancelProductionByType {
+                    owner,
+                    type_id: tank,
+                },
+            )],
+            _ => Vec::new(),
+        };
+        runtime
+            .advance_frame(&commands, TICK_MS, crate::sim::world::TickLane::Ordinary)
+            .expect("production frame");
+        let cash = runtime.simulation.houses[&owner].economy.credits;
+        assert_eq!(
+            cash,
+            super::credits_for_owner(&runtime.simulation, "Americans")
+        );
+        assert_eq!(
+            cash,
+            crate::sim::credit_income::available_money(&runtime.simulation, owner)
+        );
+        if tick == 2 {
+            assert!(cash < START_CREDITS, "the live factory charged the wallet");
+        }
+    }
+    let economy = &runtime.simulation.houses[&owner].economy;
+    assert!(economy.spent_credits > 0);
+    assert_eq!(
+        economy.credits,
+        START_CREDITS + 123 - 17,
+        "active cancellation refunds every factory charge without losing intervening income/debits"
+    );
+}
 
 /// Two funded human owners (Americans, Alliance), each owning a Construction Yard
 /// + Barracks + War Factory + Air Force HQ, so the [`build_catalog_rules`] units
@@ -193,7 +251,7 @@ fn record(
 fn event_tail_enqueue_first_charges_on_the_following_frame() {
     let (mut sim, rules, heights) = scenario();
     let (owner, _, infantry, _) = ids(&sim);
-    let credits_before = sim.houses[&owner].credits;
+    let credits_before = sim.houses[&owner].economy.credits;
 
     sim.advance_tick(
         &[queue(owner, infantry, 1)],
@@ -209,7 +267,7 @@ fn event_tail_enqueue_first_charges_on_the_following_frame() {
         .view(owner, ProductionCategory::Infantry)
         .expect("the command tail arms the factory");
     assert_eq!(armed.progress, 0);
-    assert_eq!(sim.houses[&owner].credits, credits_before);
+    assert_eq!(sim.houses[&owner].economy.credits, credits_before);
 
     sim.advance_tick(&[], Some(&rules), &heights, None, None, TICK_MS);
     let charged = sim
@@ -218,7 +276,7 @@ fn event_tail_enqueue_first_charges_on_the_following_frame() {
         .view(owner, ProductionCategory::Infantry)
         .expect("the active factory remains registered");
     assert_eq!(charged.progress, 1);
-    assert!(sim.houses[&owner].credits < credits_before);
+    assert!(sim.houses[&owner].economy.credits < credits_before);
 }
 
 /// (P5d derived-state) An underfunded mid-build factory (on_hold) renders as Building in
@@ -302,7 +360,7 @@ fn factory_flip_replay_is_bit_identical_across_runs_and_playback() {
 }
 
 /// (B) CONSERVATION (C15) — over a refund-free replay, every tick conserves the
-/// global money pool: `Σ(house.credits + economy.spent_credits) == Σ(initial)`.
+/// global money pool: `Σ(house.economy.credits + economy.spent_credits) == Σ(initial)`.
 /// The per-step charge is the only mover of credits; nothing is created or lost.
 #[test]
 fn economy_conservation_over_replay() {
@@ -312,7 +370,10 @@ fn economy_conservation_over_replay() {
     let (am, al, _, _) = ids(&sim);
     let pending = refund_free_stream(&sim);
 
-    let initial: i64 = [am, al].iter().map(|o| sim.houses[o].credits as i64).sum();
+    let initial: i64 = [am, al]
+        .iter()
+        .map(|o| sim.houses[o].economy.credits as i64)
+        .sum();
 
     sim.queue_commands(pending);
     let mut any_spent = false;
@@ -324,7 +385,7 @@ fn economy_conservation_over_replay() {
             .iter()
             .map(|o| {
                 let h = &sim.houses[o];
-                h.credits as i64 + h.economy.spent_credits as i64
+                h.economy.credits as i64 + h.economy.spent_credits as i64
             })
             .sum();
         assert_eq!(
@@ -390,7 +451,10 @@ fn economy_conservation_through_cancel_refund() {
         ),
     ]);
 
-    let initial: i64 = [am, al].iter().map(|o| sim.houses[o].credits as i64).sum();
+    let initial: i64 = [am, al]
+        .iter()
+        .map(|o| sim.houses[o].economy.credits as i64)
+        .sum();
     let mtnk_cost = sim
         .object_type(mtnk, &rules)
         .map(|o| o.cost.max(0))
@@ -398,7 +462,7 @@ fn economy_conservation_through_cancel_refund() {
 
     let mut prev: BTreeMap<InternedId, i32> = [am, al]
         .iter()
-        .map(|&o| (o, sim.houses[&o].credits))
+        .map(|&o| (o, sim.houses[&o].economy.credits))
         .collect();
     let mut cumulative_refunded: i64 = 0;
 
@@ -408,7 +472,7 @@ fn economy_conservation_through_cancel_refund() {
 
         // Every per-owner credit INCREASE is a refund (no deposits in this scenario).
         for &o in &[am, al] {
-            let now = sim.houses[&o].credits;
+            let now = sim.houses[&o].economy.credits;
             let delta = now - *prev.get(&o).unwrap();
             if delta > 0 {
                 cumulative_refunded += delta as i64;
@@ -420,7 +484,7 @@ fn economy_conservation_through_cancel_refund() {
             .iter()
             .map(|o| {
                 let h = &sim.houses[o];
-                h.credits as i64 + h.economy.spent_credits as i64
+                h.economy.credits as i64 + h.economy.spent_credits as i64
             })
             .sum();
         assert_eq!(
@@ -490,13 +554,13 @@ fn revalidate_abandons_build_with_no_factory_and_drops_queued() {
         "no-factory build abandoned + queued dropped -> factory pruned"
     );
     assert_eq!(
-        sim.houses[&am].credits, 50_000,
+        sim.houses[&am].economy.credits, 50_000,
         "an uncharged abandon refunds nothing (credits unchanged)"
     );
 }
 
 /// A build whose producing factory is DESTROYED mid-progress is abandoned with the C8 PARTIAL
-/// refund (exactly the already-charged portion `original_balance - balance`) into house.credits,
+/// refund (exactly the already-charged portion `original_balance - balance`) into house.economy.credits,
 /// and the factory is pruned. Revalidation runs before the charge sweep, so no extra charge
 /// lands the abandon tick.
 #[test]
@@ -539,9 +603,9 @@ fn revalidate_abandons_active_on_factory_loss_partial_refund() {
     );
     sim.substrate.entities.remove(3);
 
-    let credits_before = sim.houses[&am].credits;
+    let credits_before = sim.houses[&am].economy.credits;
     sim.advance_tick(&[], Some(&rules), &heights, None, None, TICK_MS);
-    let refund = sim.houses[&am].credits - credits_before;
+    let refund = sim.houses[&am].economy.credits - credits_before;
     assert_eq!(
         refund, spent,
         "factory-loss abandon refunds exactly the already-charged portion"
