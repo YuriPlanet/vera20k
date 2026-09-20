@@ -1,7 +1,7 @@
-//! Overlay, world effect, and fog snapshot instance builders.
+//! Overlay, muzzle flash, and fog snapshot instance builders.
 //!
 //! Generates SpriteInstances for map overlays (ore/gems, bridges, terrain objects),
-//! world-position effects (warp sparkles), and fog-of-war building snapshots.
+//! muzzle flashes, and fog-of-war building snapshots.
 //! Split from `presentation::instances` to keep files under the 600-line limit.
 //!
 //! ## Dependency rules

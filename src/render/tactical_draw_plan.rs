@@ -220,8 +220,10 @@ impl TacticalDrawPlan {
     /// Build fixed cell passes plus stable `LayerClass` object ordering.
     /// RESIDUAL (GSI-13.12) — `render/tactical_compat.rs`, pass 1's named
     /// suspect, is not an ordering path at all. The legacy world-effect bypass
-    /// pass 2 named is gone: bridge explosions are `AnimClass` objects and enter
-    /// this planner through their layer.
+    /// pass 2 named is gone: bridge explosions are `AnimClass` objects. Their
+    /// types author no `Layer=`, so they default to `Top` and join the flat
+    /// registration-ordered stream, not this planner; only `Layer=Ground` and
+    /// owner-attached anims reach it.
     /// - **`Submit_Object @ 0x004A9720` sorts only layer 2.** VERA Y-sorts every
     ///   layer, so any two objects sharing another layer can swap against
     ///   retail.

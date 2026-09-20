@@ -140,7 +140,7 @@ fn lookup_exact_terrain_variant<T>(
 }
 
 /// Build all game-world sprite instances: terrain tiles, map overlays, bridges,
-/// VXL units, SHP buildings/infantry, world effects, damage fires.
+/// VXL units, SHP buildings/infantry, AnimClass objects, damage fires.
 /// All instance vectors are Y-sorted (depth descending) for correct draw order.
 pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> WorldInstances {
     // Terrain tiles use the selected TMP owner exactly. A sparse/null cell in

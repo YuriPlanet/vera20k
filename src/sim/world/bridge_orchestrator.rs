@@ -1647,8 +1647,9 @@ const BRIDGE_ANIM_DRAW_FLAGS: u32 = 0x600;
 /// scenario draw per walker explosion. The legacy list took neither.
 ///
 /// UNCHECKED: the store draws an anim during its start delay, so frame 0 shows
-/// for up to five frames before the sound; `AnimClass::DrawIt @ 0x00422CA0`
-/// shows no delay test, which suggests native does the same. The
+/// for the delay plus the first-AI visit before the sound;
+/// `AnimClass::DrawIt @ 0x00422CA0` shows no delay test, which suggests native
+/// does the same. The
 /// `BlowUpBridge` Z uses the deck level only while the cell still reports a
 /// deck, where native adds the offset unconditionally.
 fn bridge_explosion_descriptor(
@@ -2597,8 +2598,11 @@ mod tests {
         let bridge_exp_1 = sim.interner.intern("BRIDGEEXP1");
         let bridge_exp_2 = sim.interner.intern("BRIDGEEXP2");
         let metallic_debris = sim.interner.intern("METALDEB1");
+        let metallic_debris_2 = sim.interner.intern("METALDEB2");
         sim.bridge_explosions.extend([bridge_exp_1, bridge_exp_2]);
-        sim.metallic_debris.push(metallic_debris);
+        // Two entries: a slot draw over a one-entry list consumes nothing.
+        sim.metallic_debris
+            .extend([metallic_debris, metallic_debris_2]);
         let rules = rules_with_voxel_max(3);
 
         let mut cells = BTreeSet::new();
@@ -2616,7 +2620,7 @@ mod tests {
             // presence of MetallicDebris entries. BridgeVoxelMax is not part
             // of standard BlowUpBridge debris gating.
             if metallic_draw < BRIDGE_METALLIC_GATE_EXCLUSIVE {
-                let _slot = predicted.next_range_u32(1);
+                let _slot = predicted.next_range_u32(2);
             }
             let _delay = predicted.next_range_u32_inclusive(1, 5);
             let _exp_slot = predicted.next_range_u32(2);
@@ -2640,10 +2644,9 @@ mod tests {
             let (rx, ry, _, _, level) = anims[0].world_coord.to_cell_sub_z();
             assert_eq!((rx, ry, level), (5, 5, 3));
             assert!(
-                sim.substrate
-                    .anims
-                    .iter()
-                    .all(|(_, anim)| anim.type_id != metallic_debris),
+                sim.substrate.anims.iter().all(|(_, anim)| {
+                    anim.type_id != metallic_debris && anim.type_id != metallic_debris_2
+                }),
                 "MetallicDebris is drawn for but not constructed (RESIDUAL M11b)"
             );
         }
@@ -3333,42 +3336,10 @@ mod tests {
         );
     }
 
-    /// Fixture sanity check: this seed fails the verified metallic gate, so
-    /// no MetallicDebris should spawn even though BridgeVoxelMax is zero.
-    #[test]
-    fn bridge_debris_no_metallic_when_gate_fails_even_with_voxel_zero() {
-        let mut sim = Simulation::new();
-        let seed = 0xDEAD_BEEF_u64;
-        sim.reseed_scenario_and_main(seed);
-        sim.resolved_terrain = Some(water_below_bridge_terrain(3));
-        let bridge_explosion = sim.interner.intern("BRIDGEEXP1");
-        let metallic_id = sim.interner.intern("METALDEB1");
-        sim.bridge_explosions.push(bridge_explosion);
-        sim.metallic_debris.push(metallic_id);
-        let rules = rules_with_voxel_max(0);
-
-        let mut cells = BTreeSet::new();
-        cells.insert((5, 5));
-        spawn_bridge_debris(&mut sim, &rules, &cells);
-
-        // A failed 50% gate takes no MetallicDebris slot draw: outer gate,
-        // two jitters, the metallic gate, then the explosion's delay and slot.
-        let mut predicted = crate::sim::rng::SimRng::new(seed);
-        for _ in 0..4 {
-            predicted.next_range_u32_inclusive(0, NORMALIZED_RNG_MAX_INCLUSIVE);
-        }
-        predicted.next_range_u32_inclusive(1, 5);
-        predicted.next_range_u32(1);
-        assert_eq!(
-            sim.scenario_rng.logical_state(),
-            predicted.logical_state(),
-            "metallic gate failure must skip the MetallicDebris slot draw"
-        );
-    }
-
-    #[test]
-    fn bridge_debris_ignores_bridge_voxel_max_when_metallic_gate_passes() {
-        let seed = (1u64..10_000)
+    /// Seed search for a cell that passes the outer 95% gate and lands on the
+    /// wanted side of the 50% metallic gate.
+    fn debris_seed(metallic_passes: bool) -> u64 {
+        (1u64..10_000)
             .find(|seed| {
                 let mut rng = crate::sim::rng::SimRng::new(*seed);
                 let outer = rng.next_range_u32_inclusive(0, NORMALIZED_RNG_MAX_INCLUSIVE);
@@ -3377,35 +3348,87 @@ mod tests {
                 }
                 let _ = rng.next_range_u32_inclusive(0, NORMALIZED_RNG_MAX_INCLUSIVE);
                 let _ = rng.next_range_u32_inclusive(0, NORMALIZED_RNG_MAX_INCLUSIVE);
-                rng.next_range_u32_inclusive(0, NORMALIZED_RNG_MAX_INCLUSIVE)
-                    < BRIDGE_METALLIC_GATE_EXCLUSIVE
+                let metallic = rng.next_range_u32_inclusive(0, NORMALIZED_RNG_MAX_INCLUSIVE);
+                (metallic < BRIDGE_METALLIC_GATE_EXCLUSIVE) == metallic_passes
             })
-            .expect("fixture seed with metallic pass");
+            .expect("fixture seed")
+    }
 
+    /// Multi-entry lists: a slot draw over a one-entry list consumes nothing,
+    /// which would make the draw-count assertions below vacuous.
+    fn debris_sim(seed: u64) -> Simulation {
         let mut sim = Simulation::new();
         sim.reseed_scenario_and_main(seed);
         sim.resolved_terrain = Some(water_below_bridge_terrain(3));
-        let bridge_explosion = sim.interner.intern("BRIDGEEXP1");
-        let metallic_id = sim.interner.intern("METALDEB1");
-        sim.bridge_explosions.push(bridge_explosion);
-        sim.metallic_debris.push(metallic_id);
+        for name in ["BRIDGEEXP1", "BRIDGEEXP2"] {
+            let id = sim.interner.intern(name);
+            sim.bridge_explosions.push(id);
+        }
+        for name in ["METALDEB1", "METALDEB2", "METALDEB3"] {
+            let id = sim.interner.intern(name);
+            sim.metallic_debris.push(id);
+        }
+        sim
+    }
+
+    /// The scenario stream after one fallout cell, with or without the
+    /// MetallicDebris slot draw.
+    fn debris_stream(seed: u64, metallic_slot: bool) -> crate::sim::rng::SimRng {
+        let mut rng = crate::sim::rng::SimRng::new(seed);
+        for _ in 0..4 {
+            rng.next_range_u32_inclusive(0, NORMALIZED_RNG_MAX_INCLUSIVE);
+        }
+        if metallic_slot {
+            rng.next_range_u32(3);
+        }
+        rng.next_range_u32_inclusive(1, 5);
+        rng.next_range_u32(2);
+        rng
+    }
+
+    /// A failed 50% gate takes no MetallicDebris slot draw, even with
+    /// BridgeVoxelMax at zero.
+    #[test]
+    fn bridge_debris_no_metallic_when_gate_fails_even_with_voxel_zero() {
+        let seed = debris_seed(false);
+        let mut sim = debris_sim(seed);
         let rules = rules_with_voxel_max(0);
 
         let mut cells = BTreeSet::new();
         cells.insert((5, 5));
         spawn_bridge_debris(&mut sim, &rules, &cells);
 
-        // A passed gate takes the slot draw whatever BridgeVoxelMax says.
-        let mut predicted = crate::sim::rng::SimRng::new(seed);
-        for _ in 0..4 {
-            predicted.next_range_u32_inclusive(0, NORMALIZED_RNG_MAX_INCLUSIVE);
-        }
-        predicted.next_range_u32(1);
-        predicted.next_range_u32_inclusive(1, 5);
-        predicted.next_range_u32(1);
+        assert_ne!(
+            debris_stream(seed, false).logical_state(),
+            debris_stream(seed, true).logical_state(),
+            "fixture must tell the two sequences apart"
+        );
         assert_eq!(
             sim.scenario_rng.logical_state(),
-            predicted.logical_state(),
+            debris_stream(seed, false).logical_state(),
+            "metallic gate failure must skip the MetallicDebris slot draw"
+        );
+    }
+
+    /// A passed gate takes the slot draw whatever BridgeVoxelMax says.
+    #[test]
+    fn bridge_debris_ignores_bridge_voxel_max_when_metallic_gate_passes() {
+        let seed = debris_seed(true);
+        let mut sim = debris_sim(seed);
+        let rules = rules_with_voxel_max(0);
+
+        let mut cells = BTreeSet::new();
+        cells.insert((5, 5));
+        spawn_bridge_debris(&mut sim, &rules, &cells);
+
+        assert_ne!(
+            debris_stream(seed, false).logical_state(),
+            debris_stream(seed, true).logical_state(),
+            "fixture must tell the two sequences apart"
+        );
+        assert_eq!(
+            sim.scenario_rng.logical_state(),
+            debris_stream(seed, true).logical_state(),
             "BridgeVoxelMax=0 must not suppress the BlowUpBridge metallic slot draw"
         );
     }

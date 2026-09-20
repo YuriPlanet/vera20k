@@ -103,7 +103,7 @@ impl EffectAssetCatalog {
         catalog
     }
 
-    /// Consumer-visible frame count used for authoritative world-effect timing.
+    /// Consumer-visible frame count (particle image timing).
     pub fn effect_frame_count(&self, name: &str) -> Option<u16> {
         self.entry(name).map(|counts| counts.available)
     }
@@ -157,7 +157,7 @@ impl EffectAssetCatalog {
     }
 }
 
-/// Number of SHP frames visible to the existing world-effect consumer.
+/// Number of SHP frames visible to the frame-count consumer.
 ///
 /// gamemd's `AnimTypeClass` INI load at `0x00427D00` calls the SHP loader at
 /// `0x00427B50`, which seeds `End` from the signed SHP header count and halves
