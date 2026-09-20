@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Foot retained AttackMove setup, clear, predicates, coordinates/conversion, resume, idle resume and acquisition; bounded saved-pointer expiry slice; explicit callback substitutions and original resolver/map/type/RTTI helpers",
+  "assumptions": [
+    "Full receiver entries use fresh native-shaped thiscall frames and finish through original RET; callee-saved registers, ESP and other owner bytes are checked. Setup and saved-coordinate accept one stack argument; other complete receivers accept none",
+    "Four retained fields are Foot+5C4 saved mission, +5C8 saved Abstract destination pointer, +5CC saved target pointer and +5D1 engagement latch. Additional observed fields are current target+2B4, current mission+AC, queued mission+B4, alive+90 and position+9C/+A0/+A4. Original366 rows use identity sentinels; extension rows supply corresponding disjoint objects and coordinates",
+    "Each row runs for Unit and Infantry copied fixture vtables. Actual retail clear+4A8, predicates+4AC/+4C4, resume+4C8, acquisition+4CC and idle-resume+4D0 slots are asserted; original vtable bytes remain unchanged",
+    "Ordinary effective-mission calls execute original5B3040: current+AC unless -1, then queued+B4. Explicit mutation rows replace only this copied-vtable slot with listed external returns and field writes, establishing a callback boundary rather than claiming the actual getter mutates",
+    "Callbacks are external x86 stubs with explicit per-call return/mutation scripts and fail on an unexpected extra invocation. Hooks only observe; they never alter memory, registers, branch outcomes or instruction bytes",
+    "Every callback event records arguments and before/after state. Scan coordinate arguments are copied by the original body. QueueMission argument1 is recorded literally; actual QueueMission/Commence effects are not executed",
+    "Resume and idle-resume report the actual AL result; EAX upper bytes are incidental. Acquisition has no boolean return contract here: returned AL/EAX are raw observations and may be callback residue. Clear EAX=0 is likewise observed, not an invented API contract",
+    "Rows with saved_mission -1, latch2, dead-after-callback or inconsistent saved pointer pairs are direct receiver boundary probes, not proof of production reachability. Acquisition direct entry does not enforce its upstream attack-move/timer gate",
+    "A supplied false target predicate for a null target is a boundary stress case, not a claim about native6F78D0: its underlying6F77B0 null-target path returns AL1. The actual weapon/NeverUse-sensitive query is excluded from these callback fixtures",
+    "Setup executes original4DF0E0 and signed event byte+C, tags+12/+17, payloads+E/+13. Normal eligibility executes class746CC0/5228C0 through70F090, real owner/type getters and type711E90 on supplied primary+898 and PreventAttackMove+6C8. A supplied type vtable points+A4 at that original predicate. Dedicated mutation rows replace only owner+4C0",
+    "Original token resolver6E6E20 handles tag11 via original Map5657A0, tag52 via supplied pre-sorted two-record index (101->TARGET_B,202->DEST_B), original523440 search and native CRT Abstract RTTI cast, and other tags via its null return. Null fallback is explicitly supplied zero; index sorting/registration and unrelated token types are not covered. FS:[0] is a mapped sentinel restored after native non-throwing casts; no Windows exception emulation",
+    "Extension objects copy the actual class vtable and preceding RTTI locator. Ordinary+48 executes original5F65A0 from supplied object+9C; callback mutation rows instead return an explicit separate coordinate buffer. Coordinate consumer copy/division/narrowing/precedence instructions remain original",
+    "Original Map5657A0 uses a supplied262144-entry grid with uniform configured pointer or null. Its signed linear-index checks, alias behavior and retained dummy-coordinate writes execute. This does not construct a real map or prove map-object lifetimes",
+    "Expiry slice executes4D9AC9 through stop-before4D9B43 with ESI=owner, EDI=expired pointer, EBP=0 and private stack locals. Original upstream4D9978..4D998C establishes EBP0. All earlier Foot/Techno expiry callbacks/gates and following nav-queue processing are excluded; boundary rows are not full PointerExpired execution and raw EAX/AL at this stop are not returns",
+    "Original366 receiver rows remain the unchanged payload prefix. Extensions exclude command executor4C71CA, actual target range/weapon query, threat scan selection/RNG, QueueMission scheduling, setter navigation/target effects, caller AI cadence, save/hash and full Foot/Unit idle behavior. No Rust comparison or whole-loop parity is claimed"
+  ],
+  "substitutions": [
+    "Fixture copies of retail vtables replace +1E8 QueueMission, +39C scan, +3B4 target predicate, +3C8 AssignTarget and +480 AssignDestination with declared external receiver bodies. Native branch/call/body bytes and retail vtables are never changed",
+    "Three kinds of mission-getter mutation boundary plus second-read pointer mutation use external+184 scripts; all other+184 reads use original5B3040",
+    "Extension-specific eligibility+4C0 and coordinate+48 mutation rows have explicit external return and memory-write scripts; ordinary extension rows execute native class/type eligibility and native coordinate getter. No direct token-resolver or map-lookup calls are replaced"
+  ],
+  "entry_points": {
+    "clear": "0x004DF1A0",
+    "has_saved_mission": "0x004DF1C0",
+    "is_attack_move": "0x004DF310",
+    "resume": "0x004DF320",
+    "acquire": "0x004DF3A0",
+    "idle_resume": "0x004DF4B0",
+    "setup": "0x004DF0E0",
+    "saved_coordinate": "0x004DF1F0",
+    "convert_target": "0x004DF280",
+    "expiry_slice": "0x004D9AC9",
+    "expiry_slice_stop": "0x004D9B43",
+    "effective_mission": "0x005B3040",
+    "token_resolver": "0x006E6E20",
+    "map_lookup": "0x005657A0",
+    "object_coordinate": "0x005F65A0",
+    "unit_vtable": "0x007F5C70",
+    "infantry_vtable": "0x007EB058"
+  },
+  "row_counts": {
+    "clear": 6,
+    "has_saved_mission": 16,
+    "is_attack_move": 16,
+    "resume": 58,
+    "acquire": 126,
+    "idle_resume": 144,
+    "setup": 176,
+    "saved_coordinate": 12,
+    "convert_target": 48,
+    "expiry_slice": 36
+  },
+  "original_code": {
+    "004DF0E0..004DF507": {
+      "hex": "535556578b7c24148bf10fbe6f0c83fd1d0f85920000008a5f178a57128b0684db0f9544241484d20f95c3ff90c004000084c07510f6db1bdb5f83c3025e8bc35d5bc204008a442414c686d10500000084c0c786c40500001d000000741a8d4f13e8da7c20008986c80500005f5e5db8020000005bc2040084db741a8d4f0ee8bc7c20008986cc0500005f5e5db8010000005bc204008b168bceff92a80400005f8bc55e5d5bc204008b068bceff90a80400005f8bc55e5d5bc204009090909033c0c781c4050000ffffffff8981c80500008981cc0500008881d1050000c3908b91c405000033c083faff0f95c0c3908a81d1050000c39090909090909090908b81c4050000c39090909090909090908b81c805000083ec0c85c056742b8b108d4c2404518bc8ff52488bd08b4424148bc88b3289318b72048971045e8b520889510883c40cc204008b89cc05000085c974298b018d54240452ff50488bc88b4424148bd08b3189328b71048972045e8b4908894a0883c40cc204008b442414578bf883c9ff83caff83ceff890f8957048977085f5e83c40cc204009090909083ec14568bf18b8ecc05000085c9745f8b018d54240c52ff50488bc88b019981e2ff00000003c2c1f80866894424048b41049981e2ff0000008d4c240803c251c1f808668944240a8b442408b9e8f787008944240ce8c66408008986c8050000c786cc050000000000005e83c414c3c786c805000000000000c786cc050000000000005e83c414c390909090909090908b91c405000033c083fa1d0f94c0c39053568bf1b3018b86c8050000c686d10500000085c074248b066a016a02ff90e80100008b86c80500008b166a01508bceff92800400008ac35e5bc38b86cc0500008b1685c074226a016a018bceff92e80100008b8ecc0500008b06518bceff90c80300008ac35e5bc38bceff92a80400005e32c05bc39090909090909090909083ec0c568bf18b86c805000085c0747a8a86d105000084c074238b8eb40200008b06518bceff90b403000084c00f85d8000000c786b4020000000000008d969c0000006a018b02894424088b068b4a04894c240c8d4c24088b5208518bce89542414ff909c03000084c00f849b0000008b166a016a018bceff92e8010000c686d1050000015e83c40cc38b86cc05000085c0740f8b16508bceff92b403000084c075688a86d105000084c074158b8eb40200008b06518bceff90b403000084c075498d969c0000006a01c786b4020000000000008b02894424088b068b4a04894c240c8d4c24088b5208518bce89542414ff909c03000084c00f8571ffffff8b86cc0500008986b40200005e83c40cc3568bf132c083bec40500001d751b8a86d105000084c07413c686d1050000008b068bceff90c80400005ec38b168bceff928401000083f80574e58b068bceff908401000083f80574d68b168bceff92a804000032c05ec3",
+      "sha256": "f3597afba5ab0d5f83f686b5ba9fd310d4a16e7591686a12fd84fe1191da0c03"
+    },
+    "005B3040..005B3052": {
+      "hex": "8b81ac00000083f8ff75068b81b4000000c3",
+      "sha256": "cfce1e37c7cceebe9363a67af6ad524e1bc0cbea00568486da7519da5d499f86"
+    },
+    "004D9978..004D998C": {
+      "hex": "39bed4050000750a33ed89aed4050000eb0233ed",
+      "sha256": "33e4d7444d0d8518fc33d2351d3e19c1cf4d796bdbdcd4bbac22436d48fe9965"
+    },
+    "004D9AC9..004D9B43": {
+      "hex": "8b8ecc0500003bcf75623bcd74528b018d54241052ff50488bc88b019981e2ff00000003c2c1f80866894424248b41049981e2ff0000008d4c242003c251c1f808668944242a8b442428b9e8f7870089442424e87fbc08008986c8050000eb0689aec805000089aecc05000039bec8050000750689aec8050000",
+      "sha256": "f197bd810da528fecf27459290e32d907fd7d9117c2018a3183b21914dd35b29"
+    },
+    "006E6E20..006E6F16": {
+      "hex": "83ec08568bf18a46043c340f859f0000008b1544e8b00085d27472a150e8b00085c0740a8b08578b3e3bcf5f745a85d2745ba04ce8b00084c0752e6810c641006a08528b1540e8b00052e8d91c0e008b1544e8b00083c410c70550e8b00000000000c6054ce8b000018b068d4c2404518b0d40e8b00089442408e8a1c5e3ff85c0740aa350e8b00083c004eb05b82888b7008b106a0068c877810068c87781006a0052e81c3c0e0083c4145e83c408c33c0b753b8b0ebee80300008bc199f7feb8d34d62106689542404f7e9c1fa068bc28d4c2404c1e81f03d051b9e8f78700668954240ae896e8e7ff5e83c408c333c05e83c408c3",
+      "sha256": "d7169713463ebd264366144ab2d9822bc9c76524ab8b68d29542c293123f79b1"
+    },
+    "005657A0..005657D8": {
+      "hex": "8b542404560fbf42020fbf32c1e00903c65e78143d000004007d0d8b893c0100008b048185c0750d8b12b850dcab00891574dcab00c20400",
+      "sha256": "bdb90075c58df4b3aecb81d54cfdc37b3259ad9da64d01c216e4ec634ae5a7b8"
+    },
+    "005F65A0..005F65C1": {
+      "hex": "8b44240481c19c000000568bd08b3189328b71048972045e8b4908894a08c20400",
+      "sha256": "26ba83f2c58d565b5ac758175057291af2196aa3195c712da33023ac24592e05"
+    },
+    "00523440..00523484": {
+      "hex": "535685d2578bf27e2b8b4424108b188bc6992bc2d1f88b3cc18d14c13bfb7e048bf0eb0c74168d4a0883caff2bd003f285f67fdb5f5e33c05bc204005f5e8bc25bc20400",
+      "sha256": "901d8f320c14de85179ce2ea42ac9688979465c83af0f7d32ee4368b7b2404bc"
+    },
+    "00746CC0..00746CC5": {
+      "hex": "e9cb83fcff",
+      "sha256": "1e14d8171b09af4849ad5ddd5352f88bf6640648e63c05037506f1ba7c6257c8"
+    },
+    "005228C0..005228C5": {
+      "hex": "e9cbc71e00",
+      "sha256": "e5ceece65a47525f33f724cf905183b316087fb94460d4e9cfc1f40d2a80404e"
+    },
+    "0070F090..0070F0A2": {
+      "hex": "8b01ff90840000008b108bc8ffa2a4000000",
+      "sha256": "8073aabff9c35dbbc25341bfe05254156d6e3b03d2626120e284448f06c7b838"
+    },
+    "00711E90..00711EAA": {
+      "hex": "8b819808000085c0740d8a81c806000084c07503b001c332c0c3",
+      "sha256": "d4f6edf2f05a21c5baf9c71455e441d0688b4a8030459b86b64fc39035860d48"
+    },
+    "006F3270..006F3278": {
+      "hex": "8b01ffa088000000",
+      "sha256": "b7655f4aae69b7187b779cdc966f345e6a878c6ce4f756b676a079015b791f42"
+    },
+    "00741490..00741497": {
+      "hex": "8b81c4060000c3",
+      "sha256": "8b3b8079858d27e0a2380dbf780c211a99983f17c0b4c448ea6f3209d7858320"
+    },
+    "0051FAF0..0051FAF7": {
+      "hex": "8b81c0060000c3",
+      "sha256": "30e5afe858862025db06208f38448c7852bdefff3baedf98f065ed26d901ea19"
+    },
+    "007CAAE4..007CAF20": {
+      "hex": "558bec6aff6850967f0068d4c17c0064a100000000506489250000000083ec3c5356578965e88b750885f6751133c08b4df064890d000000005f5e5bc9c38365fc0056e820010000598bf8897dd48b068b40fc8945dc2b750c8975082bf78975d88b48108b4904f6c1017510ff751456ff75105057e808010000eb1af6c102ff751456ff751050577507e84d010000eb05e83f02000083c4148945e485c0741a83c0085057e863030000595903c78945e0834dfcffe975ffffff33c08945e039451874edc745c43c967f008d45c4508d4dc8e8400000006898f080008d45c850e89b8300008b45ec8b008b0033c93d050000c00f94c18bc1c38b65e86898957f008d4db8e884fdffff6838f080008d45b850e869830000568bf1ff742408e894820000c70660967f008bc65ec20400568bf1e814000000f644240801740756e815dfffff598bc65ec20400e90d830000568bf1ff742408e898820000c70660967f008bc65ec204008b4c24048b018b50fc8bc12b42048b520885d274042bca0301c3558bec518365fc00538b5d0c56578b4310837808008b700c76358b3e8b4d188b073bc1741383c10883c0085150e8f82d00005985c0597506f64714017418ff45fc8b43108b4dfc83c6043b480872cb33c05f5e5bc9c38bc7ebf7558bec83ec0c8365fc00538b5d0c56578b4310837808008b780c0f86890000008b378b4d188b063bc1741383c10883c0085150e8982d00005985c05975568365f400837e04008d47048945f876468b45f88b4d108b188b033bc1741383c10883c0085150e8672d00005985c059751383c30853ff7508e8b60100003b451459597473ff45f48345f8048b45f43b460472bd8b5d0cff45fc8b43108b4dfc83c7043b48080f8277ffffff8b43108365fc00837808008b780c76358b378b4d188b063bc1741383c10883c0085150e8ff2c00005985c0597506f64614037418ff45fc8b43108b4dfc83c7043b480872cb33c05f5e5bc9c38bc6ebf7558bec83ec105356578b7d0c33c98b4710894df0894dfc3948088b580c0f86c70000008b338b4d188b063bc1741783c10883c0085150e89c2c00005985c0590f85870000008365f400837e04008d43048945f876778b45f88b4d108b388b073bc1741383c10883c0085150e8672c00005985c059754483c70857ff7508e8b60000003b4514595975318b7df085ff74278d460850ff7508e89c00000083c7088bd0578955f0ff7508e88b0000008b4df083c4103bc175768975f0ff45f48345f8048b45f43b4604728c8b7d0cff45fc8b47108b4dfc83c3043b48080f8242ffffff8b45f033c93bc175458b4710894dfc3948088b580c76358b338b4d188b063bc1741383c10883c0085150e8c72b00005985c0597506f64614037418ff45fc8b47108b4dfc83c3043b480872cb33c05f5e5bc9c38bc6ebf78b44240833c98b500485d27c118bca8b542404568b70088b1411030c325e8b0003c1c3cccccccccccccccccccccccc",
+      "sha256": "7cfc02801b0041ad4c729ec6def41d64378c9b1ee26c5e79d07d38d56f80ded0"
+    },
+    "007CDA90..007CDBA0": {
+      "hex": "8b5424048b4c2408f7c203000000753c8b023a01752e0ac074263a610175250ae4741dc1e8103a410275190ac074113a6103751083c10483c2040ae475d28bff33c0c3901bc0d1e040c38bfff7c20100000074148a02423a0175e9410ac074e0f7c20200000074a8668b0283c2023a0175d20ac074ca3a610175c90ae474c183c102eb8c558bec81ec8800000053568b750833db3bf30f8c2802000083fe050f8f1f0200006a13e8b9feffffff05a08bb70059391da48bb700740a6a01ff15f0117e00ebee3bf3577424395d0c7410ff750c56e8f20100005959e9d00100008d04768b348584c48700e9c30100008b7d0cc745fc010000003bfb895d080f84a7010000803f4c0f8515010000807f0143",
+      "sha256": "64e6f10e60a5d2c62293e51dbf5fd906d570d57bc0bf5f51cfc59d122f5e8ac4"
+    }
+  },
+  "original_external_slots": {
+    "unit": {
+      "1E8": "005B35E0",
+      "39C": "00709820",
+      "3B4": "006F78D0",
+      "3C8": "006FCDB0",
+      "480": "00741970",
+      "184": "005B3040",
+      "4C0": "00746CC0",
+      "048": "005F65A0"
+    },
+    "infantry": {
+      "1E8": "005B35E0",
+      "39C": "00709820",
+      "3B4": "006F78D0",
+      "3C8": "0051B1F0",
+      "480": "0051AA40",
+      "184": "005B3040",
+      "4C0": "005228C0",
+      "048": "005F65A0"
+    }
+  },
+  "payload_sha256": "5d43c68a8d4c9d2a09bf0498d8dd5086f29ab35d0c0860b4d8470bcf4b22ce95"
+}

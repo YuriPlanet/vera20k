@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original complete Techno scanner709820 callback ordering and retained writes; all external callees supplied",
+  "assumptions": [
+    "Copied Unit vtable; original 709820..7099CD and Unit table unchanged; stack and nonvolatile registers verified",
+    "Timer inactive member receives explicitly seeded uninitialised stack local; its value is not a universal native invariant",
+    "Owner current mission selects delay; scenario RNG draw supplied, not full RNG parity; frame173, normal23, area41",
+    "AssignTarget fixture writes current target and clears passive byte; actual class setter effects excluded",
+    "Original body reads supplied GetFireError codes and threat results; this is not proof of their eligibility or selection semantics",
+    "Original body performs estimated-health subtraction; damage, weapon selection, warhead exclusion and DistributedFire callback semantics are not implemented by this fixture"
+  ],
+  "substitutions": [
+    "Direct calls65C7E0/6B7BB0/709550/6FDB80 segmented only at callee entry; execute supplied machine RET with real call frame",
+    "Copied virtual slots2E4/3C0/3C8/3C4/84/3F8 use explicit supplied machine receivers; per-row return values and writes recorded"
+  ],
+  "entry_points": {
+    "scanner": "0x00709820",
+    "unit_vtable": "0x007F5C70"
+  },
+  "original_code_sha256": "1dcdc4f1f407a5fd4302399f546676a9f4abc66a5406c2012efbaeb999f95ef0",
+  "payload_sha256": "887912cea89edf50e3827f5b207201b1d1eeb081b9711953f8a5ddf2ee4e7b62"
+}
