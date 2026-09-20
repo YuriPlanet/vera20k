@@ -21,9 +21,7 @@ use crate::map::authored_overlay::NativeOverlayMapShape;
 use crate::map::basic::{BasicSection, SpecialFlagsSection};
 use crate::map::overlay_types::OverlayTypeRegistry;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::rules::ruleset::GeneralRules;
 use crate::rules::tiberium_type::{TiberiumTypeId, TiberiumTypeRegistry};
-use crate::sim::miner::ResourceType;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::rng::SimRng;
@@ -31,7 +29,6 @@ use crate::sim::tiberium::{
     NativeCellObjectView, NewTiberiumAdmission, PlaceTiberiumContext,
     TiberiumPlacementObjectContext, can_place_new_tiberium, place_tiberium,
 };
-use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::{NativeF64Bits, X87Chop53, X87Ordering};
 
 /// The `1e-05` double at `0x007E3810` every tiberium percentage gate compares
@@ -46,8 +43,6 @@ const GROWTH_PROCESSOR_REBUILD_BATCH_FACTOR: i64 = 2;
 /// `SpreadProcessor`: rebuild when `heap count > capacity - 0x14`.
 const SPREAD_PROCESSOR_REBUILD_SLACK: i64 = 0x14;
 
-/// Max candidates collected per scan cycle (bounded like RA1's fixed-size arrays).
-const MAX_CANDIDATES: usize = 50;
 /// Native AddToGrowthQueue priority jitter span.
 const GROWTH_QUEUE_PRIORITY_WINDOW: u32 = 50;
 const GROWTH_BATCH_MIN: u32 = 5;
@@ -90,9 +85,6 @@ pub struct OreGrowthConfig {
     /// `Growth * 0.3` growth-timer reload (`0x00722CA4`).
     #[serde(default)]
     pub tiberium_grows_flag: bool,
-    /// Seconds per full map growth scan cycle (from GrowthRate= in minutes, converted
-    /// to integer seconds at config construction to avoid f32 in the tick path).
-    pub growth_rate_seconds: u32,
 }
 
 impl OreGrowthConfig {
@@ -108,9 +100,7 @@ impl OreGrowthConfig {
     /// TiberiumGrows/TiberiumSpreads` have no gamemd reader (the only readers of
     /// those key strings are `[SpecialFlags]` I/O at `0x006B8B30`/`0x006B8CA0`
     /// and `[MultiplayerDialogSettings]` at `0x006720AA`) and no longer gate.
-    /// GrowthRate comes only from rules.ini (legacy scan fallback).
     pub fn resolve(
-        general: &GeneralRules,
         basic: &BasicSection,
         special_flags: &SpecialFlagsSection,
         session: &crate::sim::scenario_session::ScenarioSession,
@@ -124,26 +114,17 @@ impl OreGrowthConfig {
                 special_flags.tiberium_spreads.unwrap_or(true),
             )
         };
-        let growth_rate_minutes = general.growth_rate_minutes.max(0.01);
-        // Convert f32 minutes → integer seconds at the INI boundary via
-        // fixed-point to avoid platform-dependent f32 multiplication rounding.
-        let rate_fixed = SimFixed::saturating_from_num(growth_rate_minutes);
-        let growth_rate_seconds =
-            (rate_fixed * SimFixed::from_num(60)).to_num::<i32>().max(1) as u32;
-
         log::info!(
-            "OreGrowthConfig: grows={}, spreads={}, tiberium_grows_flag={}, rate={}s",
+            "OreGrowthConfig: grows={}, spreads={}, tiberium_grows_flag={}",
             grows,
             spreads,
             tiberium_grows_flag,
-            growth_rate_seconds,
         );
 
         Self {
             grows,
             spreads,
             tiberium_grows_flag,
-            growth_rate_seconds,
         }
     }
 
@@ -153,7 +134,6 @@ impl OreGrowthConfig {
             grows: false,
             spreads: false,
             tiberium_grows_flag: false,
-            growth_rate_seconds: 300, // 5 minutes
         }
     }
 }
@@ -182,28 +162,6 @@ pub(crate) fn native_growth_timer_reload(growth: u32, tiberium_grows_flag: bool)
     // The signed-dword input and multiplier at most 1.0 fit signed64;
     // native keeps EAX (the low dword).
     X87Chop53::ftol_i32_low_masked(product) as u32
-}
-
-/// Queued ore growth cell inserted by native-style AddToGrowthQueue callers.
-///
-/// Native stores queue priority as a float. This keeps the same observable
-/// priority shape while leaving execution to an explicit future queue processor.
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct OreGrowthQueueEntry {
-    pub rx: u16,
-    pub ry: u16,
-    pub priority: f32,
-}
-
-/// Native-style spread queue entry inserted by `Reduce_Tiberium` full removal.
-///
-/// The full queue processor is still being ported; this state captures the
-/// deterministic membership/reseed side effect so depletion no longer drops it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct OreSpreadQueueEntry {
-    pub resource_type: ResourceType,
-    pub rx: u16,
-    pub ry: u16,
 }
 
 /// Native `TiberiumClass` queue/timer state shell.
@@ -554,39 +512,16 @@ impl NativeTiberiumTimer {
     }
 }
 
-/// Persistent state for the incremental map scanner.
-///
-/// Lives in ProductionState. The scanner processes a fraction of the map each
-/// tick and collects candidates via reservoir sampling (fair random selection
-/// from a stream of unknown length, bounded to MAX_CANDIDATES).
+/// Persistent tiberium growth and spread state. Lives in ProductionState.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OreGrowthState {
-    /// Current position in the cell iteration (wraps to 0 after full scan).
-    scan_cursor: usize,
-    /// Total number of cells to scan (map_width * map_height).
+    /// Cells in the overlay storage (map_width * map_height).
     total_cells: usize,
     /// Map dimensions for cell coordinate conversion.
     map_width: u16,
     /// Map height for native neighbor bounds checks.
     #[serde(default)]
     map_height: u16,
-    /// Cells eligible for growth this scan cycle.
-    growth_candidates: Vec<(u16, u16)>,
-    /// Cells eligible for spread this scan cycle.
-    spread_candidates: Vec<(u16, u16)>,
-    /// Reservoir sampling counter for growth (total candidates seen).
-    growth_seen: usize,
-    /// Reservoir sampling counter for spread (total candidates seen).
-    spread_seen: usize,
-    /// Native AddToGrowthQueue-style entries inserted by explicit placement paths.
-    #[serde(default)]
-    growth_queue: Vec<OreGrowthQueueEntry>,
-    /// Native AddToSpreadQueue-style entries inserted by explicit cell events.
-    #[serde(default)]
-    spread_queue: Vec<OreSpreadQueueEntry>,
-    /// Deterministic membership guard for `spread_queue`.
-    #[serde(default)]
-    spread_membership: BTreeSet<(ResourceType, u16, u16)>,
     /// Native per-`TiberiumClass` state shell for the YR queue model.
     #[serde(default)]
     native_tiberium: NativeTiberiumState,
@@ -601,17 +536,9 @@ impl OreGrowthState {
     /// Create a new scanner for a map of the given dimensions.
     pub fn new(map_width: u16, map_height: u16) -> Self {
         Self {
-            scan_cursor: 0,
             total_cells: map_width as usize * map_height as usize,
             map_width,
             map_height,
-            growth_candidates: Vec::with_capacity(MAX_CANDIDATES),
-            spread_candidates: Vec::with_capacity(MAX_CANDIDATES),
-            growth_seen: 0,
-            spread_seen: 0,
-            growth_queue: Vec::new(),
-            spread_queue: Vec::new(),
-            spread_membership: BTreeSet::new(),
             native_tiberium: NativeTiberiumState::default(),
             native_rect: (map_width, map_height),
         }
@@ -1449,65 +1376,12 @@ impl OreGrowthState {
         seeded
     }
 
-    /// Enqueue a newly placed ore cell with native AddToGrowthQueue priority.
-    ///
-    /// Verified TIBTRE placement consumes one raw Random::Next word and stores
-    /// priority as `currentFrame + (signed_abs(raw) % 50)`.
-    pub fn enqueue_growth_queue_cell(
-        &mut self,
-        rx: u16,
-        ry: u16,
-        native_frame: u32,
-        rng: &mut SimRng,
-    ) -> OreGrowthQueueEntry {
-        let priority = growth_queue_priority(native_frame, rng.next_u32());
-        let entry = OreGrowthQueueEntry { rx, ry, priority };
-        self.growth_queue.push(entry);
-        entry
-    }
-
-    /// Native-style growth queue entries waiting for an explicit processor.
-    pub fn growth_queue_entries(&self) -> &[OreGrowthQueueEntry] {
-        &self.growth_queue
-    }
-
-    /// Native-style spread queue entries waiting for a future queue processor.
-    pub fn spread_queue_entries(&self) -> &[OreSpreadQueueEntry] {
-        &self.spread_queue
-    }
-
-    /// Clear all spread memberships for a removed cell across tiberium types.
-    pub fn clear_spread_memberships_for_cell(&mut self, rx: u16, ry: u16) {
-        self.spread_membership
-            .retain(|&(_, cell_rx, cell_ry)| cell_rx != rx || cell_ry != ry);
-        self.spread_queue
-            .retain(|entry| entry.rx != rx || entry.ry != ry);
-    }
-
     /// Native `ClearSpreadBitmaps_AllTypes` for one removed cell. Heap entries
     /// intentionally remain stale and are rejected when popped.
     pub fn clear_native_spread_bitmap_cell(&mut self, rx: u16, ry: u16) {
         for class in &mut self.native_tiberium.classes {
             class.spread_bitmap.remove(&(rx, ry));
         }
-    }
-
-    /// Add one cell to the per-type spread queue if it is not already queued.
-    pub fn enqueue_spread_queue_cell(
-        &mut self,
-        resource_type: ResourceType,
-        rx: u16,
-        ry: u16,
-    ) -> bool {
-        if !self.spread_membership.insert((resource_type, rx, ry)) {
-            return false;
-        }
-        self.spread_queue.push(OreSpreadQueueEntry {
-            resource_type,
-            rx,
-            ry,
-        });
-        true
     }
 
     /// Native `Reduce_Tiberium @ 0x00480A80` full-removal spread reseed.
@@ -1532,7 +1406,6 @@ impl OreGrowthState {
         spread_enabled: bool,
         rng: &mut SimRng,
     ) -> usize {
-        self.clear_spread_memberships_for_cell(removed_cell.0, removed_cell.1);
         self.clear_native_spread_bitmap_cell(removed_cell.0, removed_cell.1);
 
         let map_height = self.effective_map_height();
@@ -1588,29 +1461,23 @@ impl OreGrowthState {
     }
 
     /// Hash persistent ore-growth scheduler state for replay/desync checks.
-    pub fn hash_state(&self, hasher: &mut impl Hasher) {
-        self.scan_cursor.hash(hasher);
+    /// `retired_scanner_fold` reproduces the pre-174 stream: the map scanner's
+    /// cursor, two candidate lists and two sample counters sat here and were
+    /// never written by a native-context sim, so they folded as zero/empty.
+    /// Its three queue folds were unframed loops over always-empty stores.
+    pub fn hash_state(&self, hasher: &mut impl Hasher, retired_scanner_fold: bool) {
+        if retired_scanner_fold {
+            0usize.hash(hasher);
+        }
         self.total_cells.hash(hasher);
         self.map_width.hash(hasher);
         self.effective_map_height().hash(hasher);
-        self.growth_candidates.hash(hasher);
-        self.spread_candidates.hash(hasher);
-        self.growth_seen.hash(hasher);
-        self.spread_seen.hash(hasher);
-        for entry in &self.growth_queue {
-            entry.rx.hash(hasher);
-            entry.ry.hash(hasher);
-            entry.priority.to_bits().hash(hasher);
-        }
-        for entry in &self.spread_queue {
-            entry.resource_type.hash(hasher);
-            entry.rx.hash(hasher);
-            entry.ry.hash(hasher);
-        }
-        for &(resource_type, rx, ry) in &self.spread_membership {
-            resource_type.hash(hasher);
-            rx.hash(hasher);
-            ry.hash(hasher);
+        if retired_scanner_fold {
+            let no_candidates: Vec<(u16, u16)> = Vec::new();
+            no_candidates.hash(hasher);
+            no_candidates.hash(hasher);
+            0usize.hash(hasher);
+            0usize.hash(hasher);
         }
         self.native_rect.hash(hasher);
         self.native_tiberium.classes.len().hash(hasher);
@@ -1919,7 +1786,6 @@ mod tests {
             grows,
             spreads,
             tiberium_grows_flag: false,
-            growth_rate_seconds: 1, // Very fast for testing
         }
     }
 
@@ -2068,25 +1934,6 @@ SpreadPercentage=.06
     }
 
     #[test]
-    fn enqueue_growth_queue_cell_consumes_one_raw_draw_and_stores_priority() {
-        let mut state = make_state(20, 20);
-        let mut rng = SimRng::new(1);
-        let before = rng.state();
-
-        let entry = state.enqueue_growth_queue_cell(4, 7, 1234, &mut rng);
-
-        assert_ne!(rng.state(), before, "queue insertion consumes one raw draw");
-        assert_eq!(entry.rx, 4);
-        assert_eq!(entry.ry, 7);
-        assert_eq!(
-            entry.priority,
-            growth_queue_priority(1234, 0x78B7_6ED5),
-            "first raw draw for seed 1 should set native-style priority"
-        );
-        assert_eq!(state.growth_queue_entries(), &[entry]);
-    }
-
-    #[test]
     fn native_tiberium_shell_allocates_per_type_due_timers() {
         let mut state = make_state(20, 20);
 
@@ -2123,9 +1970,9 @@ SpreadPercentage=.06
         class.spread_bitmap.insert((5, 8));
 
         let mut base_hasher = DefaultHasher::new();
-        base.hash_state(&mut base_hasher);
+        base.hash_state(&mut base_hasher, false);
         let mut changed_hasher = DefaultHasher::new();
-        changed.hash_state(&mut changed_hasher);
+        changed.hash_state(&mut changed_hasher, false);
 
         assert_ne!(base_hasher.finish(), changed_hasher.finish());
     }
@@ -2754,21 +2601,20 @@ SpreadPercentage=.06
             tiberium_spreads_flag: true,
             ..ScenarioDescriptor::default()
         });
-        let config = OreGrowthConfig::resolve(&general, &basic, &map_off, &skirmish);
+        let config = OreGrowthConfig::resolve(&basic, &map_off, &skirmish);
         assert!(config.grows && config.spreads && config.tiberium_grows_flag);
 
         let campaign = ScenarioSession::from_descriptor(&ScenarioDescriptor::default());
-        let config = OreGrowthConfig::resolve(&general, &basic, &map_off, &campaign);
+        let config = OreGrowthConfig::resolve(&basic, &map_off, &campaign);
         assert!(config.grows && !config.spreads && !config.tiberium_grows_flag);
-        let config =
-            OreGrowthConfig::resolve(&general, &basic, &SpecialFlagsSection::default(), &campaign);
+        let config = OreGrowthConfig::resolve(&basic, &SpecialFlagsSection::default(), &campaign);
         assert!(config.grows && config.spreads && config.tiberium_grows_flag);
 
         let basic_off = BasicSection {
             tiberium_growth_enabled: Some(false),
             ..BasicSection::default()
         };
-        let config = OreGrowthConfig::resolve(&general, &basic_off, &map_off, &skirmish);
+        let config = OreGrowthConfig::resolve(&basic_off, &map_off, &skirmish);
         assert!(!config.grows && config.spreads && config.tiberium_grows_flag);
     }
 

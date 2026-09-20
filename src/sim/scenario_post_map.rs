@@ -73,7 +73,6 @@ impl Simulation {
             None
         } else if let Some(overlay_grid) = self.overlay_grid.as_ref() {
             self.production.ore_growth_config = crate::sim::ore_growth::OreGrowthConfig::resolve(
-                &input.rules.general,
                 input.basic,
                 input.special_flags,
                 &self.session,
@@ -110,7 +109,6 @@ impl Simulation {
             )
         } else {
             self.production.ore_growth_config = crate::sim::ore_growth::OreGrowthConfig::resolve(
-                &input.rules.general,
                 input.basic,
                 input.special_flags,
                 &self.session,

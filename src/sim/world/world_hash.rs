@@ -778,7 +778,7 @@ impl Simulation {
         if schema.includes(HashFeature::TerminalScore) {
             self.hash_terminal_score_snapshot(&mut hasher);
         }
-        self.hash_production(&mut hasher);
+        self.hash_production(&mut hasher, schema);
         if schema.includes(HashFeature::AircraftDockState) {
             self.production.airfield_docks.hash_state(&mut hasher);
         }
@@ -1134,7 +1134,8 @@ impl Simulation {
     }
 
     /// Hash all production-related state: queues, ready items, resources.
-    fn hash_production(&self, hasher: &mut impl Hasher) {
+    fn hash_production(&self, hasher: &mut impl Hasher, schema: HashSchema) {
+        let retired_tiberium_fold = !schema.includes(HashFeature::RetiredTiberiumNodeState);
         // P5d: the per-`BuildQueueItem` `queues_by_owner` fold is RETIRED — the
         // queue-of-record now lives in the factory registry (active build = `Factory`
         // head fields; tail = `Factory.queue` of `QueueEntry`) and folds in
@@ -1159,7 +1160,9 @@ impl Simulation {
         self.hash_factory_registry(hasher); // P5b: the authoritative factory registry
 
         // Live ore/gem identity and quantity are folded by `hash_overlay_grid`.
-        self.production.ore_growth_state.hash_state(hasher);
+        self.production
+            .ore_growth_state
+            .hash_state(hasher, retired_tiberium_fold);
         // Hash terrain spawners (TIBTRE-style ore generators).
         for (&(rx, ry), spawner) in &self.production.terrain_spawners {
             rx.hash(hasher);
@@ -1184,7 +1187,11 @@ impl Simulation {
             rx.hash(hasher);
             ry.hash(hasher);
         }
-        self.production.default_ore_overlay_id.hash(hasher);
+        if retired_tiberium_fold {
+            // The fallback ore overlay id: `None` unless terrain spawners were
+            // seeded from a registry, which the pinned fixtures never did.
+            None::<u8>.hash(hasher);
+        }
     }
 
     /// Hash the authoritative factory registry in the deterministic temporal sweep

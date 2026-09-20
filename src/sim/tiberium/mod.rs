@@ -1573,7 +1573,6 @@ SpreadPercentage=.06
         let outcome = reduce_tiberium(&mut ctx, (5, 5), 4);
 
         assert!(outcome.fully_removed);
-        assert!(growth.spread_queue_entries().is_empty());
         let class = &growth.native_tiberium_state().classes[2];
         assert!(class.spread_bitmap.contains(&(6, 5)));
         assert!(class.spread_bitmap.contains(&(5, 6)));

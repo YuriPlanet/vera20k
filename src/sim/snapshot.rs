@@ -509,8 +509,10 @@ use crate::sim::world::Simulation;
 // animations are AnimStore members. The layout is unchanged, but those objects
 // are now saved, hashed and take ids from the shared stable-id counter, so a
 // 172 save taken after a teleport or storm resumes with different ids.
-// 173 -> 174: remove the per-cell resource node map from ProductionState; the
-// overlay grid is the only tiberium store.
+// 173 -> 174: remove the per-cell resource node map and the fallback ore
+// overlay id from ProductionState, the node-era scanner and queue fields from
+// OreGrowthState and the scan rate from OreGrowthConfig; the overlay grid is the
+// only tiberium store.
 const SNAPSHOT_VERSION: u32 = 174;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
@@ -2247,7 +2249,6 @@ mod tests {
                 grows: true,
                 spreads: true,
                 tiberium_grows_flag: false,
-                growth_rate_seconds: 1,
             };
             sim.production.ore_growth_state = OreGrowthState::new(size, size);
             let mut overlays = OverlayGrid::new_with_retained_wall_plane(size, size);

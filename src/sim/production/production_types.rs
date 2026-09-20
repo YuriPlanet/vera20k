@@ -213,10 +213,6 @@ pub struct ProductionState {
     /// This is broader than `terrain_spawners`: non-animated legacy spawners do
     /// not tick, but still reject new Tiberium placement in the native gate.
     pub tiberium_spawning_terrain_cells: BTreeSet<(u16, u16)>,
-    /// Fallback overlay_id used for new ore cells when no overlay registry is
-    /// available. Runtime placement prefers the data-driven `TIB01..TIB12`
-    /// registry set and uses this only for headless/fallback contexts.
-    pub default_ore_overlay_id: Option<u8>,
     /// Airfield dock reservations — multi-slot (NumberOfDocks per airfield).
     pub airfield_docks: crate::sim::docking::aircraft_dock::AirfieldDocks,
     /// Per-(house, category) factory registry — the authoritative production state
@@ -242,7 +238,6 @@ impl Default for ProductionState {
             terrain_object_cells: BTreeMap::new(),
             terrain_occupation_bits: BTreeMap::new(),
             tiberium_spawning_terrain_cells: BTreeSet::new(),
-            default_ore_overlay_id: None,
             airfield_docks: crate::sim::docking::aircraft_dock::AirfieldDocks::default(),
             factory_shadow: FactoryRegistry::default(),
         }

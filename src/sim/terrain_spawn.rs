@@ -807,15 +807,7 @@ fn construct_terrain_objects_inner(
 pub fn seed_terrain_spawner_animation(
     sim: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
-    overlay_registry: &OverlayTypeRegistry,
 ) -> usize {
-    sim.production.default_ore_overlay_id = (0..overlay_registry.len()).find_map(|index| {
-        let id = u8::try_from(index).ok()?;
-        overlay_registry
-            .name(id)
-            .is_some_and(|name| name.to_ascii_uppercase().starts_with("TIB"))
-            .then_some(id)
-    });
     sim.production.terrain_spawners.clear();
 
     let candidates: Vec<(u64, (u16, u16), InternedId)> = sim
@@ -864,11 +856,10 @@ pub fn seed_terrain_spawners(
     sim: &mut crate::sim::world::Simulation,
     terrain_objects: &[crate::map::overlay::TerrainObject],
     rules: &crate::rules::ruleset::RuleSet,
-    overlay_registry: &OverlayTypeRegistry,
     snow_theater: bool,
 ) -> usize {
     construct_terrain_objects(sim, terrain_objects, rules, snow_theater);
-    seed_terrain_spawner_animation(sim, rules, overlay_registry)
+    seed_terrain_spawner_animation(sim, rules)
 }
 
 #[cfg(test)]
@@ -1239,17 +1230,11 @@ SpreadPercentage=.06
             &rules,
             false,
         );
-        assert_eq!(
-            seed_terrain_spawner_animation(&mut sim, &rules, &registry),
-            1
-        );
+        assert_eq!(seed_terrain_spawner_animation(&mut sim, &rules), 1);
         let state = &sim.production.terrain_spawners[&(10, 10)];
         assert_eq!(state.frame_count, 22);
         assert_eq!(state.midpoint_frame, 11);
 
-        // Make absence of the registry observable: a registry-aware spawn uses
-        // TIB01..TIB12, while the fallback-only path would stamp id 12.
-        sim.production.default_ore_overlay_id = Some(12);
         let path_grid = PathGrid::test_all_passable(32, 32);
         let height_map = BTreeMap::new();
         let advance = |sim: &mut Simulation| {
@@ -1302,10 +1287,7 @@ SpreadPercentage=.06
             .collect();
         assert_eq!(placed_cells.len(), 1);
         assert_eq!(placed_cells[0].1, SPAWN_DENSITY_LEVELS as u8);
-        assert!(
-            placed_cells[0].0 < 12,
-            "registry variants must beat fallback id"
-        );
+        assert!(placed_cells[0].0 < 12, "a registry TIB01..TIB12 variant");
     }
 
     #[test]
@@ -1481,10 +1463,6 @@ SpreadPercentage=.06
                 .cell(expected_cell.0, expected_cell.1)
                 .overlay_id,
             Some(variant)
-        );
-        assert!(
-            growth_state.growth_queue_entries().is_empty(),
-            "native path should bypass the legacy growth queue"
         );
         let class = &growth_state.native_tiberium_state().classes[0];
         assert_eq!(class.growth.len(), 1);
@@ -1668,7 +1646,7 @@ SpreadPercentage=.06
                 name: "UNKNOWN".to_string(),
             },
         ];
-        let seeded = seed_terrain_spawners(&mut sim, &objs, &rules, &overlay_registry, false);
+        let seeded = seed_terrain_spawners(&mut sim, &objs, &rules, false);
         assert_eq!(seeded, 1);
         let placed = sim
             .production
@@ -1690,7 +1668,6 @@ SpreadPercentage=.06
             sim.production.tiberium_spawning_terrain_cells,
             BTreeSet::from([(5, 6), (1, 2)])
         );
-        assert_eq!(sim.production.default_ore_overlay_id, Some(2));
     }
 
     /// A `[Terrain]` entry read straight out of a map INI must become a live
@@ -1840,7 +1817,7 @@ SpreadPercentage=.06
 
         let mut sim = Simulation::new();
         assert_eq!(
-            seed_terrain_spawner_animation(&mut sim, &rules, &OverlayTypeRegistry::empty()),
+            seed_terrain_spawner_animation(&mut sim, &rules),
             0,
             "no constructed objects means no spawners"
         );
@@ -1860,10 +1837,7 @@ SpreadPercentage=.06
             sim.production.terrain_spawners.is_empty(),
             "construction alone leaves the animation index empty"
         );
-        assert_eq!(
-            seed_terrain_spawner_animation(&mut sim, &rules, &OverlayTypeRegistry::empty()),
-            1
-        );
+        assert_eq!(seed_terrain_spawner_animation(&mut sim, &rules), 1);
         assert_eq!(
             sim.production.terrain_spawners[&(5, 6)].frame_count,
             STOCK_FRAME_COUNT
@@ -1931,13 +1905,7 @@ SpreadPercentage=.06
                     .mark_deck(object.rx, object.ry, 0x5A);
             }
 
-            let seeded = seed_terrain_spawners(
-                &mut sim,
-                &objects,
-                &rules,
-                &OverlayTypeRegistry::empty(),
-                snow_theater,
-            );
+            let seeded = seed_terrain_spawners(&mut sim, &objects, &rules, snow_theater);
 
             assert_eq!(seeded, 0, "all fixtures are recognized non-spawners");
             assert!(sim.production.terrain_spawners.is_empty());

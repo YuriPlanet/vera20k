@@ -626,7 +626,6 @@ mod tests {
                 name: type_name.to_string(),
             }],
             rules,
-            &OverlayTypeRegistry::empty(),
             false,
         );
     }

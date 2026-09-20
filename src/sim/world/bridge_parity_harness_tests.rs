@@ -192,7 +192,13 @@ mod schema166_receipt {
 // Schema171: retained timers/track ownership and signed-health/hash composition.
 // All201 baseline/candidate positions and RNG states matched. See the PR415
 // section of docs/research/TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 3987870092531804647;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 3987870092531804647;
+// Schema174 removes folds instead of adding them: OreGrowthState's node-era
+// scanner cursor, candidate lists and sample counters, and ProductionState's
+// fallback ore overlay id. A native-context sim never wrote any of them, so the
+// pre-174 projection folds their constants and must still equal the previous
+// current pin, asserted below. Rust hash-composition ratchet, not a native golden.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 6311521725375046682;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
@@ -769,6 +775,11 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         "bridge absolute RNG states changed",
     );
     let final_hash = *replayed.last().expect("at least one tick replayed");
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(174)),
+        BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174,
+        "the pre-174 composition must reproduce the previous current pin"
+    );
     assert_eq!(
         final_hash, BRIDGE_HARNESS_FINAL_HASH,
         "committed bridge-harness baseline drifted. Do not paste the observed value \

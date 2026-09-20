@@ -660,7 +660,13 @@ const GLOBAL_PRE_SUSTAINED_SIGHT_V142_HASH: u64 = 0x4E6E_0CFE_23A8_03A7;
 
 // Schema171: fresh-turn admission/residual clearing and retained-owner hashes.
 // See TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md, PR415 causal attribution.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 11150992376934496020;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 11150992376934496020;
+// Schema174 removes folds instead of adding them: OreGrowthState's node-era
+// scanner cursor, candidate lists and sample counters, and ProductionState's
+// fallback ore overlay id. A native-context sim never wrote any of them, so the
+// pre-174 projection folds their constants and must still equal the previous
+// current pin, asserted below. Rust hash-composition ratchet, not a native golden.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 17631878483843703671;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -1025,6 +1031,11 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         "full08 projection moved: investigate behavior or another hash owner; do not rebaseline"
     );
 
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(174)),
+        GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174,
+        "the pre-174 composition must reproduce the previous current pin"
+    );
     println!(
         "[schema168 global] pre168={:016X}",
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(168))

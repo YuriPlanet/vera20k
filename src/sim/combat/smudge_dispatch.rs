@@ -1313,8 +1313,13 @@ mod dispatch_tests {
             }
             assert_eq!(survivor_grid.iter_occupied().count(), 0);
             assert!(survivor_overlay.take_dirty_cells().is_empty());
-            assert!(survivor_growth.growth_queue_entries().is_empty());
-            assert!(survivor_growth.spread_queue_entries().is_empty());
+            assert!(
+                survivor_growth
+                    .native_tiberium_state()
+                    .classes
+                    .iter()
+                    .all(|class| class.growth.is_empty() && class.spread.is_empty())
+            );
             assert!(survivor_radar.is_empty());
             assert_eq!(survivor_generation, 0);
             assert!(survivor_tactical.is_empty());
