@@ -38,35 +38,47 @@ const INVOKE_ANIM_DRAW_FLAGS: u32 = 0x600;
 /// `0x006CD8A5`) each call `AnimClass::AnimClass @ 0x00421EA0` with
 /// `(type, &coord, delay 0, loopCount 1, drawFlags 0x600, zAdjust 0, reverse 0)`.
 /// `LightningStorm::GroundStrike @ 0x0053A300` passes the same row for its bolt
-/// (`0x0053A387`), at the cell's centre coordinate without the `+5`.
-/// Read at `0x006CCE76..0x006CCF09` for Iron Curtain: `coord` is the target
-/// cell's own coordinate (`vtable+0x48`), its Z raised by the bridge height
-/// global when the cell carries flag `0x100`, then `+5` leptons.
+/// (`0x0053A387`).
+///
+/// The two differ in Z. Read at `0x006CCE76..0x006CCF09` for Iron Curtain: the
+/// invoke `coord` is the target cell's own coordinate (`vtable+0x48`), raised
+/// by the bridge height global (`0x00B0C07C`) when the cell carries flag
+/// `0x100`, then `+5` leptons. The bolt takes
+/// `CellClass::Get_Center_Coords @ 0x00480A30`, which is the ground with no
+/// bridge term. `on_bridge_deck` selects between them.
 ///
 /// A real `AnimClass` plays the art type's `Report=` from `AnimClass::Start`
-/// (retail `[IRONBLST] Report=IronCurtainBlast`), follows its `Rate=` and
-/// `Translucent=`, and runs `Middle`.
+/// (retail `[IRONBLST] Report=IronCurtainBlast`) and follows its `Rate=` and
+/// `Translucent=`. The store does not build native `Middle @ 0x00424F00`
+/// (particles, `Scorch=`, `Crater=`).
 ///
 /// RESIDUAL: the store addresses Z by height level (see
 /// `AnimWorldCoord::to_cell_sub_z`), so the `+5` leptons are below its
-/// resolution and the anim sits on the cell's level, or the bridge deck's.
+/// resolution and an invoke anim sits on the cell's level, or the deck's.
 pub(super) fn spawn_cell_anim(
     sim: &mut Simulation,
     rules: &RuleSet,
     anim_name: &str,
     rx: u16,
     ry: u16,
+    on_bridge_deck: bool,
 ) {
     if anim_name.trim().is_empty() {
         return;
     }
-    let level = sim
-        .resolved_terrain
-        .as_ref()
-        .and_then(|terrain| terrain.cell(rx, ry))
-        .map_or(0, |cell| {
-            cell.bridge_deck_level_if_any().unwrap_or(cell.level)
-        });
+    let level = sim.resolved_terrain.as_ref().map_or(0, |terrain| {
+        let flagged = on_bridge_deck
+            && terrain.native_cell_flags(terrain.native_cell_identity((rx as i16, ry as i16)))
+                & 0x100
+                != 0;
+        terrain.cell(rx, ry).map_or(0, |cell| {
+            if flagged {
+                cell.bridge_deck_level_if_any().unwrap_or(cell.level)
+            } else {
+                cell.level
+            }
+        })
+    });
     let type_name = sim.interner.intern(&anim_name.trim().to_ascii_uppercase());
     let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
         delay: 0,

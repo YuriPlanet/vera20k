@@ -32,7 +32,7 @@ pub fn launch(
     let current_frame = sim.session.binary_frame;
 
     // 1. Spawn invoke animation at target.
-    super::spawn_cell_anim(sim, rules, &anim_name, target_rx, target_ry);
+    super::spawn_cell_anim(sim, rules, &anim_name, target_rx, target_ry, true);
 
     // SuperClass::Launch case 1 (0x006CCF39..0x006CD035) selects a live
     // CellClass list, invokes +0x154, then reads that object's +0x30 AFTER the

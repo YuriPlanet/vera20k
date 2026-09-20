@@ -29,7 +29,7 @@ pub fn launch(
 ) -> bool {
     // Spawn the launch animation before mutation.
     let anim_name = rules.general.ion_blast_anim.clone();
-    super::spawn_cell_anim(sim, rules, &anim_name, target_rx, target_ry);
+    super::spawn_cell_anim(sim, rules, &anim_name, target_rx, target_ry, true);
 
     let kill_count = mutation::execute(sim, rules, owner, target_rx, target_ry, overlay_registry);
 

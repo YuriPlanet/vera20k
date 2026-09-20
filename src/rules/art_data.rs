@@ -1418,7 +1418,7 @@ impl ArtRegistry {
                 Err(error) => {
                     skipped += 1;
                     log::warn!(
-                        "Combat explosion animation [{name}] stays on the legacy effect path: {error}"
+                        "AnimClass animation [{name}] did not bind and will draw nothing: {error}"
                     );
                 }
             }

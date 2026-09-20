@@ -38,7 +38,7 @@ pub fn launch(
     let current_frame = sim.session.binary_frame;
 
     // 1. Spawn invoke animation.
-    super::spawn_cell_anim(sim, rules, &anim_name, target_rx, target_ry);
+    super::spawn_cell_anim(sim, rules, &anim_name, target_rx, target_ry, true);
 
     // 2. Trigger power blackout on owner (take max to never shorten existing).
     if let Some(power_state) = sim.power_states.get_mut(&owner) {

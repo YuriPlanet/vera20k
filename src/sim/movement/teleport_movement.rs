@@ -37,6 +37,10 @@ const TELEPORT_WARP_REVERSE: bool = false;
 
 /// Teleport `AnimClass` constructor rows reached during one Process call.
 ///
+/// The row constants are read from the native constructor sites. The
+/// coordinate is not: native passes the owner's exact `+0x9C` coordinate, VERA
+/// the cell centre and height level of the old and new cell.
+///
 /// The teleport tick borrows only the entity store, so it cannot construct the
 /// animation itself. The object turn constructs every collected row through
 /// `Simulation::spawn_anim_object` as soon as the tick returns, inside the same

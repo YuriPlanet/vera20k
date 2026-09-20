@@ -300,7 +300,7 @@ fn spawn_bolt(
     // `LightningStorm::GroundStrike @ 0x0053A300` constructs the bolt at the
     // cell's centre coordinate with the row `(type, &coord, 0, 1, 0x600, 0, 0)`
     // (`0x0053A387`), the same row as the superweapon invoke animations.
-    super::spawn_cell_anim(sim, rules, anim_name, rx, ry);
+    super::spawn_cell_anim(sim, rules, anim_name, rx, ry, false);
 
     // 2. Apply area damage via lightning warhead.
     let warhead_id = &rules.general.lightning_warhead;

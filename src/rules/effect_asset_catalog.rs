@@ -230,22 +230,19 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     roots.into_iter().collect()
 }
 
-/// Report how many combat-explosion roots the tolerant binder could not bind.
+/// Report how many `anim_class_roots` the tolerant binder could not bind.
 ///
 /// The binder already emits a per-name `warn!`, but a per-name line is invisible
 /// in aggregate: a data change that breaks ten roots reads the same as retail's
-/// standing three unless the count is stated once. Retail's own baseline is
-/// three (`MININUKE - ADDED 11/30`, `GTPOWEXP`, `TSTLEXP` — see
-/// `ArtRegistry::bind_anim_class_assets`), so anything above that is
-/// new and worth looking at.
+/// standing few unless the count is stated once. Retail's combat-explosion
+/// roots alone leave three unbound (`MININUKE - ADDED 11/30`, `GTPOWEXP`,
+/// `TSTLEXP` — see `ArtRegistry::bind_anim_class_assets`); the teleport,
+/// superweapon and lightning roots were not counted against retail.
 pub fn log_unbound_combat_explosion_roots(unbound: usize) {
     if unbound == 0 {
         return;
     }
-    log::info!(
-        "{unbound} combat explosion animation root(s) have no art section and stay on the \
-         legacy effect path (retail's own baseline is 3)"
-    );
+    log::info!("{unbound} AnimClass animation root(s) did not bind and will draw nothing");
 }
 
 fn authoritative_effect_roots(rules: &RuleSet) -> BTreeSet<String> {
@@ -407,5 +404,42 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+}
+
+#[cfg(test)]
+mod anim_class_root_tests {
+    use super::anim_class_roots;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+
+    /// Every producer that constructs an `AnimClass` needs its type bound by
+    /// the loader, or the animation silently draws nothing. The roots come
+    /// from rules, so a renamed `[General]` key must show up here.
+    #[test]
+    fn roots_cover_teleport_superweapon_and_lightning_producers() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nWarpOut=MYWARP\nIronCurtainInvokeAnim=MYIRON\n\
+             ForceShieldInvokeAnim=MYSHIELD\nIonBlast=MYRING\n",
+        ))
+        .expect("rules");
+        let roots = anim_class_roots(&rules);
+        for name in [
+            "MYWARP", "MYIRON", "MYSHIELD", "MYRING", "WCLBOLT1", "WCLBOLT2", "WCLBOLT3",
+        ] {
+            assert!(
+                roots.iter().any(|root| root == name),
+                "{name} missing: {roots:?}"
+            );
+        }
+    }
+
+    /// `RulesClass+0x298` defaults to a null type: without `IonBlast=` the
+    /// Genetic Mutator constructs no animation, and no empty root is bound.
+    #[test]
+    fn absent_ion_blast_adds_no_root() {
+        let rules = RuleSet::from_ini(&IniFile::from_str("[General]\n")).expect("rules");
+        assert_eq!(rules.general.ion_blast_anim, "");
+        assert!(anim_class_roots(&rules).iter().all(|root| !root.is_empty()));
     }
 }

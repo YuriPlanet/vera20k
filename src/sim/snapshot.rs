@@ -505,7 +505,11 @@ use crate::sim::world::Simulation;
 // 170 -> 171: save shared pixel-conversion bounds and retained HasEngineer.
 // 171 -> 172: remove the refinery dock registry from ProductionState; the radio
 // bus (entity contacts and the dock-entered flag) is the only contact record.
-const SNAPSHOT_VERSION: u32 = 172;
+// 172 -> 173: teleport WarpOut, superweapon invoke and Lightning Storm
+// animations are AnimStore members. The layout is unchanged, but those objects
+// are now saved, hashed and take ids from the shared stable-id counter, so a
+// 172 save taken after a teleport or storm resumes with different ids.
+const SNAPSHOT_VERSION: u32 = 173;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3401,7 +3405,7 @@ mod tests {
         // 164 -> 165: DriveTrackState::before_first_point, inserted mid-record.
         // 165 -> 166: Economy owns the sole house credit balance.
         // 170 -> 171: shared animation bounds and retained HasEngineer.
-        assert_eq!(super::SNAPSHOT_VERSION, 172);
+        assert_eq!(super::SNAPSHOT_VERSION, 173);
     }
 
     #[test]
@@ -3526,7 +3530,7 @@ mod tests {
 
     #[test]
     fn combined_bridge_membership_history_schema_rejects_separate_layouts() {
-        for version in 153..=171 {
+        for version in 153..=172 {
             let preamble = GameSnapshotPreamble {
                 product_magic: SNAPSHOT_PRODUCT_MAGIC,
                 envelope_version: SNAPSHOT_ENVELOPE_VERSION,
