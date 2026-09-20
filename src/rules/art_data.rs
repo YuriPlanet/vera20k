@@ -1398,6 +1398,10 @@ impl ArtRegistry {
     /// Missing registered ART is therefore handled by the canonical receipt,
     /// not this loader's error policy. Other failed asset bindings are counted
     /// for the caller; they do not create a second AnimType registry.
+    ///
+    /// Follows each bound type's `Next=`/`TrailerAnim=` like the strict binder,
+    /// so a chained type has loader-derived bounds when the store switches to
+    /// it. A type that fails to bind ends its chain here.
     pub fn bind_anim_class_assets(
         &mut self,
         roots: &[String],
@@ -1406,13 +1410,22 @@ impl ArtRegistry {
         theater_name: &str,
     ) -> usize {
         let mut skipped = 0;
-        for root in roots {
-            let name = root.trim().to_ascii_uppercase();
-            if name.is_empty() || self.scheduler_anim_types.contains(&name) {
+        let mut pending: VecDeque<String> = roots
+            .iter()
+            .map(|root| root.trim().to_ascii_uppercase())
+            .filter(|name| !name.is_empty())
+            .collect();
+        let mut visited = BTreeSet::new();
+        while let Some(name) = pending.pop_front() {
+            if !visited.insert(name.clone()) || self.scheduler_anim_types.contains(&name) {
                 continue;
             }
             match self.bind_one_anim_asset(&name, asset_manager, theater_ext, theater_name) {
                 Ok(()) => {
+                    if let Some(config) = self.anim_runtime_configs.get(&name) {
+                        pending.extend(config.next.iter().cloned());
+                        pending.extend(config.trailer_anim.iter().cloned());
+                    }
                     self.scheduler_anim_types.insert(name);
                 }
                 Err(error) => {

@@ -1914,15 +1914,10 @@ impl MapLoadInitial {
             || theater_ext_for(&map_data.header.theater),
             |td| td.extension,
         );
-        let mut scheduler_roots = scheduler_anim_roots(
+        let scheduler_roots = scheduler_anim_roots(
             &rules,
             &overlay_registry,
             resolved_terrain.tile_animations(),
-        );
-        scheduler_roots.extend(
-            art.building_anim_roots()
-                .into_iter()
-                .filter(|name| rules.anim_type_names.contains(name)),
         );
         art.bind_scheduler_anim_assets(
             &scheduler_roots,
@@ -1934,7 +1929,7 @@ impl MapLoadInitial {
         // Combat explosions are AnimClass instances; tolerant pass, after the
         // strict one, which rewrites the scheduler-owned set wholesale.
         let unbound_explosion_roots = art.bind_anim_class_assets(
-            &crate::rules::effect_asset_catalog::anim_class_roots(&rules),
+            &crate::app::loading::init_helpers::tolerant_anim_class_roots(&rules, &art),
             asset_manager,
             theater_ext,
             &map_data.header.theater,
@@ -2723,17 +2718,12 @@ pub(crate) fn load_map_from_initial(
     // have resolved, but before any atlas or AnimClass construction. Missing
     // tile art is a load error rather than a silently invisible map feature.
     if let (Some(r), Some(a)) = (rules.as_mut(), art.as_mut()) {
-        let mut roots = scheduler_anim_roots(
+        let roots = scheduler_anim_roots(
             r,
             &overlay_registry,
             resolved_terrain
                 .as_ref()
                 .map_or(&[], |terrain| terrain.tile_animations()),
-        );
-        roots.extend(
-            a.building_anim_roots()
-                .into_iter()
-                .filter(|name| r.anim_type_names.contains(name)),
         );
         a.bind_scheduler_anim_assets(
             &roots,
@@ -2745,7 +2735,7 @@ pub(crate) fn load_map_from_initial(
         // same loader-derived End/LoopEnd. Tolerant by design; must follow the
         // strict pass, which rewrites the scheduler-owned set wholesale.
         let unbound_explosion_roots = a.bind_anim_class_assets(
-            &crate::rules::effect_asset_catalog::anim_class_roots(r),
+            &crate::app::loading::init_helpers::tolerant_anim_class_roots(r, a),
             &asset_manager,
             theater_ext,
             &map_data.header.theater,

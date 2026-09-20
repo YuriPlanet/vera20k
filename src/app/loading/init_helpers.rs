@@ -511,6 +511,23 @@ pub(crate) fn load_neutral_tech_types(
     types
 }
 
+/// AnimClass asset roots bound tolerantly: a type whose SHP is missing draws
+/// nothing, as natively, instead of failing the load.
+///
+/// Building animations belong here, not in the strict scheduler closure. Art
+/// defines building sections no rules list names and whose sprites retail never
+/// shipped (`[CAARAY]` with `ActiveAnim=CAARAY_A`), so requiring every art
+/// building animation made every retail map fail to load.
+pub(crate) fn tolerant_anim_class_roots(rules: &RuleSet, art: &ArtRegistry) -> Vec<String> {
+    let mut roots = crate::rules::effect_asset_catalog::anim_class_roots(rules);
+    roots.extend(
+        art.building_anim_roots()
+            .into_iter()
+            .filter(|name| rules.anim_type_names.contains(name)),
+    );
+    roots
+}
+
 /// Scheduler asset roots required by this map's surviving runtime objects.
 ///
 /// Damage-fire roots remain part of the established closure. Terrain animation
@@ -854,6 +871,42 @@ mod retail_placement_oracle_tests;
 
 #[cfg(test)]
 mod tests {
+    /// Building animations are tolerant roots, and only those the rules
+    /// register as AnimTypes: art sections no rules list names (retail
+    /// `[CAARAY]`) must not become required assets.
+    #[test]
+    fn building_anims_are_tolerant_roots_when_registered() {
+        use crate::rules::art_data::ArtRegistry;
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Animations]\n0=KNOWN_A\n[General]\nWarpOut=MYWARP\n",
+        ))
+        .expect("rules");
+        let art = ArtRegistry::from_ini(&IniFile::from_str(
+            "[BLDG]\nActiveAnim=KNOWN_A\n[GHOST]\nActiveAnim=GHOST_A\n",
+        ));
+
+        let roots = super::tolerant_anim_class_roots(&rules, &art);
+
+        assert!(roots.iter().any(|root| root == "KNOWN_A"));
+        assert!(roots.iter().any(|root| root == "MYWARP"));
+        assert!(
+            !roots.iter().any(|root| root == "GHOST_A"),
+            "an unregistered art animation is no root at all: {roots:?}"
+        );
+        let strict = super::scheduler_anim_roots(
+            &rules,
+            &crate::map::overlay_types::OverlayTypeRegistry::empty(),
+            &[],
+        );
+        assert!(
+            !strict.iter().any(|root| root == "KNOWN_A"),
+            "building animations must not be required assets"
+        );
+    }
+
     use std::collections::HashSet;
     use std::path::PathBuf;
 
