@@ -2158,11 +2158,9 @@ impl Simulation {
                         // two row-major attempts at each of the 15 grid cells.
                         // Every representable allocation is successful, so
                         // each attempt consumes type, X, Y, and delay draws.
-                        let anim_types = [
-                            self.interner.intern("XGRYMED1"),
-                            self.interner.intern("XGRYMED2"),
-                            self.interner.intern("XGRYSML1"),
-                        ];
+                        let anim_types =
+                            crate::rules::effect_asset_catalog::CLIFF_COLLAPSE_ANIMS
+                                .map(|name| self.interner.intern(name));
                         for &(cell_x, cell_y) in &mutation.animation_cells {
                             for _ in 0..2 {
                                 let type_index =

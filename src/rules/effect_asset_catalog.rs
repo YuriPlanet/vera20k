@@ -181,6 +181,9 @@ pub fn available_effect_anim_frame_count(
     }
 }
 
+/// Animation types `Simulation`'s cliff-collapse producer names literally.
+pub(crate) const CLIFF_COLLAPSE_ANIMS: [&str; 3] = ["XGRYMED1", "XGRYMED2", "XGRYSML1"];
+
 /// Every animation name the simulation can turn into an `AnimClass` instance,
 /// which the loader must bind before the match starts.
 ///
@@ -234,17 +237,27 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     for name in &rules.bridge_rules.explosions {
         insert(name);
     }
+    // `[General] OreTwinkle=`: the post-`Full_Init` twinkle tail
+    // (`sim::ore_twinkle`). No other list names it, so without this root every
+    // twinkle failed to construct.
+    if let Some(name) = rules.general.ore_twinkle.as_deref() {
+        insert(name);
+    }
+    // The cliff-collapse debris types are literals in the producer
+    // (`sim::world`); stock binds them only through warhead `AnimList=`.
+    for name in CLIFF_COLLAPSE_ANIMS {
+        insert(name);
+    }
     roots.into_iter().collect()
 }
 
 /// Report how many `anim_class_roots` the tolerant binder could not bind.
 ///
 /// The binder already emits a per-name `warn!`, but a per-name line is invisible
-/// in aggregate: a data change that breaks ten roots reads the same as retail's
-/// standing few unless the count is stated once. Retail's combat-explosion
-/// roots alone leave three unbound (`MININUKE - ADDED 11/30`, `GTPOWEXP`,
-/// `TSTLEXP` — see `ArtRegistry::bind_anim_class_assets`); the teleport,
-/// superweapon and lightning roots were not counted against retail.
+/// in aggregate unless the count is stated once. Retail's standing count on a
+/// TEMPERATE map is 35, all building animation names: 28 belong to art sections
+/// no `[BuildingTypes]` entry uses, 7 to real buildings whose files no archive
+/// holds. A data change shows up as a different number.
 pub fn log_unbound_combat_explosion_roots(unbound: usize) {
     if unbound == 0 {
         return;
@@ -359,6 +372,36 @@ mod tests {
         assert_eq!(catalog.raw_frame_count("BROKEN"), None);
     }
 
+    /// A root whose SHP is missing is skipped, not fatal, and a bound root's
+    /// `Next=` chain is bound with it. Retail art names building animations
+    /// (`[CAARAY] ActiveAnim=CAARAY_A`) whose sprites never shipped.
+    #[test]
+    fn tolerant_binder_skips_missing_roots_and_follows_next_chains() {
+        let root = TestRoot::new();
+        std::fs::write(root.path().join("ALPHA.SHP"), shp_with_undecodable_pixels(6))
+            .expect("write root SHP");
+        std::fs::write(root.path().join("BETA.SHP"), shp_with_undecodable_pixels(4))
+            .expect("write chained SHP");
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+            "[ALPHA]\nNext=BETA\n[BETA]\nRate=450\n[ABSENT]\nRate=450\n",
+        ));
+
+        let skipped = art.bind_anim_class_assets(
+            &["ABSENT".to_string(), "ALPHA".to_string()],
+            &assets,
+            "TEM",
+            "TEMPERATE",
+        );
+
+        assert_eq!(skipped, 1, "the missing sprite is counted, not fatal");
+        let bound = art.scheduler_anim_types();
+        assert!(bound.contains("ALPHA"));
+        assert!(bound.contains("BETA"), "Next= chain is bound with its root");
+        assert!(!bound.contains("ABSENT"));
+        assert_eq!(art.anim_runtime_config("BETA").unwrap().end, 4);
+    }
+
     fn catalog_hash(catalog: &EffectAssetCatalog) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         catalog.hash(&mut hasher);
@@ -446,6 +489,22 @@ mod anim_class_root_tests {
         .expect("rules");
         let roots = anim_class_roots(&rules);
         for name in ["MYBRIDGE1", "MYBRIDGE2"] {
+            assert!(
+                roots.iter().any(|root| root == name),
+                "{name} missing: {roots:?}"
+            );
+        }
+    }
+
+    /// Producers that name their type outside any warhead list: the ore
+    /// twinkle and the cliff-collapse literals.
+    #[test]
+    fn roots_cover_ore_twinkle_and_cliff_collapse_literals() {
+        let rules =
+            RuleSet::from_ini(&IniFile::from_str("[General]\nOreTwinkle=MYTWINKLE\n"))
+                .expect("rules");
+        let roots = anim_class_roots(&rules);
+        for name in ["MYTWINKLE", "XGRYMED1", "XGRYMED2", "XGRYSML1"] {
             assert!(
                 roots.iter().any(|root| root == name),
                 "{name} missing: {roots:?}"

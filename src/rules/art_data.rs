@@ -1398,6 +1398,10 @@ impl ArtRegistry {
     /// Missing registered ART is therefore handled by the canonical receipt,
     /// not this loader's error policy. Other failed asset bindings are counted
     /// for the caller; they do not create a second AnimType registry.
+    ///
+    /// Follows each bound type's `Next=`/`TrailerAnim=` like the strict binder,
+    /// so a chained type has loader-derived bounds when the store switches to
+    /// it. A type that fails to bind ends its chain here.
     pub fn bind_anim_class_assets(
         &mut self,
         roots: &[String],
@@ -1406,13 +1410,22 @@ impl ArtRegistry {
         theater_name: &str,
     ) -> usize {
         let mut skipped = 0;
-        for root in roots {
-            let name = root.trim().to_ascii_uppercase();
-            if name.is_empty() || self.scheduler_anim_types.contains(&name) {
+        let mut pending: VecDeque<String> = roots
+            .iter()
+            .map(|root| root.trim().to_ascii_uppercase())
+            .filter(|name| !name.is_empty())
+            .collect();
+        let mut visited = BTreeSet::new();
+        while let Some(name) = pending.pop_front() {
+            if !visited.insert(name.clone()) || self.scheduler_anim_types.contains(&name) {
                 continue;
             }
             match self.bind_one_anim_asset(&name, asset_manager, theater_ext, theater_name) {
                 Ok(()) => {
+                    if let Some(config) = self.anim_runtime_configs.get(&name) {
+                        pending.extend(config.next.iter().cloned());
+                        pending.extend(config.trailer_anim.iter().cloned());
+                    }
                     self.scheduler_anim_types.insert(name);
                 }
                 Err(error) => {
@@ -1860,9 +1873,23 @@ pub fn make_shp_candidates(
     candidates
 }
 
-/// Generate filename candidates for building animation SHPs.
+/// Generate filename candidates for animation SHPs.
 ///
-/// `repo-derived`: uses the anim section's own `Theater=` / `NewTheater=` flags.
+/// gamemd-derived. `AnimTypeClass::LoadImageAndResolveFrameBounds @
+/// 0x00427B50` builds `<Image or ID>.SHP` for a `Theater=no` type, passes it to
+/// `FUN_005F96B0` (which replaces the second letter with the theater's, only
+/// for names matching `[GNCY][AT]`, and does nothing for theater `-1`, the
+/// value `ReadINI` passes), loads it, and on a miss lets `FUN_005F9710` force
+/// the second letter to `G` unconditionally and retries. The two callers that
+/// pass a real theater gate the 96B0 call on the type's own `NewTheater=`
+/// (`AnimType+0x237`): the lazy image fetch for `DemandLoad` types at
+/// `0x00428C30` (gate at `0x00428CD6`) and the save/load tail at `0x00428935`.
+/// So `[GAPOWR_AD] Image=GAPOWR_A`, which authors no `NewTheater=`, still
+/// resolves to `GGPOWR_A.SHP`. UNCHECKED: which routine reloads `NewTheater`
+/// images when a scenario's theater is set; it was not identified.
+///
+/// The theater-extension and plain-name candidates after those two are VERA
+/// leniency kept for `Theater=yes` rows and loose test assets.
 pub fn anim_shp_candidates(
     art: Option<&ArtRegistry>,
     anim_type: &str,
@@ -1877,13 +1904,22 @@ pub fn anim_shp_candidates(
     let uses_theater: bool = entry.map(|e| e.theater).unwrap_or(false);
     let mut candidates: Vec<String> = Vec::with_capacity(6);
 
-    if uses_new_theater {
-        let subbed: String = apply_theater_letter(&upper_image, theater_name);
-        push_shp_pair(&mut candidates, &subbed, theater_ext);
-
-        let generic: String = apply_generic_letter(&upper_image);
-        if generic != subbed && generic != upper_image {
-            push_candidate(&mut candidates, format!("{}.SHP", generic));
+    if !uses_theater {
+        let first: String = if uses_new_theater && takes_theater_letter(&upper_image) {
+            apply_theater_letter(&upper_image, theater_name)
+        } else {
+            upper_image.clone()
+        };
+        push_candidate(&mut candidates, format!("{}.SHP", first));
+        push_candidate(
+            &mut candidates,
+            format!("{}.SHP", apply_generic_letter(&upper_image)),
+        );
+        if uses_new_theater {
+            push_candidate(
+                &mut candidates,
+                format!("{}.{}", first, theater_ext.to_ascii_uppercase()),
+            );
         }
     }
 
@@ -2222,6 +2258,13 @@ fn push_shp_pair(candidates: &mut Vec<String>, base_name: &str, theater_ext: &st
         candidates,
         format!("{}.{}", base_name, theater_ext.to_ascii_uppercase()),
     );
+}
+
+/// `FUN_005F96B0`: the theater letter replaces the second character only when
+/// the first is `G`, `N`, `C` or `Y` and the second is `A` or `T`.
+fn takes_theater_letter(upper_name: &str) -> bool {
+    let mut chars = upper_name.chars();
+    matches!(chars.next(), Some('G' | 'N' | 'C' | 'Y')) && matches!(chars.next(), Some('A' | 'T'))
 }
 
 fn push_candidate(candidates: &mut Vec<String>, candidate: String) {
