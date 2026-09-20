@@ -21,12 +21,12 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::economy::apply_income_mult;
 use crate::sim::house_state::{house_state_for_owner_mut, income_ppm_for_owner};
 use crate::sim::intern::InternedId;
+use crate::sim::miner::extract_bale;
 use crate::sim::miner::miner_system::{
     effective_purifier_count, is_cell_path_clear_for_scan, resource_cell_present,
     search_local_resource,
 };
 use crate::sim::miner::{CargoBale, MinerConfig};
-use crate::sim::miner::{extract_bale, search_local_ore};
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::production::credits_entry_for_owner;
 use crate::sim::world::{PlacementEvidence, Simulation};
@@ -881,6 +881,7 @@ pub fn check_scan_correction(
     sim: &Simulation,
     rules: &RuleSet,
     path_grid: Option<&PathGrid>,
+    overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     master_id: u64,
 ) -> Option<(u16, u16)> {
     let master = sim.substrate.entities.get(master_id)?;
@@ -895,26 +896,28 @@ pub fn check_scan_correction(
     let filter_ref: Option<&dyn Fn((u16, u16)) -> bool> = Some(&*scan_filter);
 
     // Find nearest ore from current position.
-    let current_nearest = search_local_ore(
-        &sim.production.resource_nodes,
+    let current_nearest = search_local_resource(
+        sim,
+        rules,
+        overlay_registry,
         (mrx, mry),
         short_scan,
         filter_ref,
-        cfg.ore_bale_value,
-        cfg.gem_bale_value,
+        &cfg,
     )?;
 
     let current_dist: u16 = manhattan_distance(mrx, mry, current_nearest.0, current_nearest.1);
 
     // Search the broader area (SlaveMinerLongScan) for a better patch.
     let long_scan: u16 = rules.general.slave_miner_long_scan.max(1) as u16;
-    let better_ore = search_local_ore(
-        &sim.production.resource_nodes,
+    let better_ore = search_local_resource(
+        sim,
+        rules,
+        overlay_registry,
         (mrx, mry),
         long_scan,
         filter_ref,
-        cfg.ore_bale_value,
-        cfg.gem_bale_value,
+        &cfg,
     )?;
 
     let better_dist: u16 = manhattan_distance(mrx, mry, better_ore.0, better_ore.1);
@@ -1094,7 +1097,7 @@ mod tests {
         // With no entities, check_scan_correction returns None (master not found).
         let sim = Simulation::new();
         let rules = make_test_rules();
-        assert!(check_scan_correction(&sim, &rules, None, 999).is_none());
+        assert!(check_scan_correction(&sim, &rules, None, None, 999).is_none());
     }
 
     /// Minimal rules for slave miner tests.

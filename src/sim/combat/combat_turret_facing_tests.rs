@@ -358,7 +358,6 @@ fn run_combat_direct(
         None,
         &BTreeMap::<InternedId, PowerState>::new(),
         None,
-        &mut sim.production.resource_nodes,
         None,
         None,
         None,

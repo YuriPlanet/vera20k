@@ -78,7 +78,6 @@ fn collect_area(
         damage,
         true,
         world.session.no_damage,
-        &mut world.production.resource_nodes,
         &mut world.production.ore_growth_state,
         &world.production.tiberium_spawning_terrain_cells,
         &world.production.terrain_object_cells,

@@ -79,8 +79,6 @@ mod delayed_building_fire_tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-#[cfg(test)]
-use crate::sim::miner::ResourceNode;
 
 use self::combat_weapon::{WeaponSlot, select_weapon_against, select_weapon_slot};
 use crate::map::entities::EntityCategory;
@@ -3752,7 +3750,6 @@ mod impact_height_tests {
             None,
             &BTreeMap::<InternedId, PowerState>::new(),
             None,
-            &mut BTreeMap::new(),
             None,
             None,
             Some(&mut terrain),

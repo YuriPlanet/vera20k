@@ -2,11 +2,10 @@
 //!
 //! Owns the Rust equivalents of gamemd's cell-level tiberium view and mutation
 //! boundaries. In a loaded YR map, `OverlayGrid` is the authority for both the
-//! tiberium type and its raw 0..=11 density byte. `ResourceNode` remains only as
-//! a compatibility seam for isolated tests that do not construct the native
-//! overlay/type context.
+//! tiberium type and its raw 0..=11 density byte; there is no second store.
 
-use std::collections::BTreeMap;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 use crate::map::bridge_facts::{BRIDGE_FLAG_DESTROYED_OR_RAMP, BRIDGE_FLAG_STRUCTURAL};
 use crate::map::entities::EntityCategory;
@@ -16,21 +15,15 @@ use crate::rules::ruleset::RuleSet;
 use crate::rules::tiberium_type::{TiberiumTypeId, TiberiumTypeRegistry};
 use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::StringInterner;
-use crate::sim::miner::{ResourceNode, ResourceType};
+use crate::sim::miner::ResourceType;
 use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::ore_growth::OreGrowthState;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::rng::SimRng;
 
-#[cfg(test)]
-const ORE_STOCK_PER_DENSITY: u16 = 120;
-#[cfg(test)]
-const GEM_STOCK_PER_DENSITY: u16 = 180;
-
 /// Mutable state needed to apply a shared tiberium reduction.
 pub struct ReduceTiberiumContext<'a> {
-    pub resource_nodes: &'a mut BTreeMap<(u16, u16), ResourceNode>,
     pub overlay_grid: Option<&'a mut OverlayGrid>,
     pub ore_growth_state: &'a mut OreGrowthState,
     pub overlay_registry: Option<&'a OverlayTypeRegistry>,
@@ -200,6 +193,7 @@ impl<'a> NewTiberiumAdmission<'a> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn compatibility_without_native_context(
         resolved_terrain: Option<&'a ResolvedTerrainGrid>,
         path_grid: Option<&'a PathGrid>,
@@ -453,8 +447,7 @@ pub fn reduce_tiberium(
         ctx.tiberium_types,
     ) {
         (Some(grid), Some(registry), Some(types)) => {
-            // A complete production context never falls back to ResourceNode:
-            // a non-tiberium overlay is an invalid reduction target.
+            // A non-tiberium overlay is an invalid reduction target.
             let Some(view) = tiberium_cell_view(grid, registry, types, cell) else {
                 return ReduceTiberiumOutcome::none();
             };
@@ -560,70 +553,6 @@ pub fn reduce_tiberium(
     }
 }
 
-/// Preserve the old stock-map abstraction only for tests/fixtures that do not
-/// provide the production overlay + registry context.
-#[cfg(test)]
-pub(crate) fn reduce_legacy_resource_node_for_tests(
-    ctx: &mut ReduceTiberiumContext<'_>,
-    cell: (u16, u16),
-    amount: i32,
-) -> ReduceTiberiumOutcome {
-    let Some(node) = ctx.resource_nodes.get(&cell).copied() else {
-        return ReduceTiberiumOutcome::none();
-    };
-    let base = stock_per_density(node.resource_type);
-    let current_density = ctx
-        .overlay_grid
-        .as_deref()
-        .and_then(|grid| {
-            let overlay = grid.cell(cell.0, cell.1);
-            overlay.overlay_id.map(|_| u16::from(overlay.overlay_data))
-        })
-        .unwrap_or_else(|| node.remaining / base);
-    if current_density == 0 {
-        return ReduceTiberiumOutcome::none();
-    }
-    let amount = u16::try_from(amount).unwrap_or(u16::MAX);
-    if amount < current_density {
-        let remaining_density = current_density - amount;
-        if let Some(grid) = ctx.overlay_grid.as_deref_mut() {
-            grid.set_overlay_data(cell.0, cell.1, remaining_density.min(11) as u8);
-        }
-        if let Some(node) = ctx.resource_nodes.get_mut(&cell) {
-            node.remaining = remaining_density.saturating_mul(base);
-        }
-        mark_radar_dirty(ctx, cell);
-        mark_tactical_dirty(ctx, cell);
-        return ReduceTiberiumOutcome {
-            removed_amount: amount,
-            resource_type: Some(node.resource_type),
-            fully_removed: false,
-        };
-    }
-
-    if let Some(grid) = ctx.overlay_grid.as_deref_mut() {
-        grid.clear_overlay(cell.0, cell.1);
-    }
-    ctx.resource_nodes.remove(&cell);
-    ctx.ore_growth_state
-        .reseed_spread_neighbors_after_reduction(node.resource_type, cell, ctx.resource_nodes);
-    mark_radar_dirty(ctx, cell);
-    mark_tactical_dirty(ctx, cell);
-    ReduceTiberiumOutcome {
-        removed_amount: current_density,
-        resource_type: Some(node.resource_type),
-        fully_removed: true,
-    }
-}
-
-#[cfg(test)]
-fn stock_per_density(resource_type: ResourceType) -> u16 {
-    match resource_type {
-        ResourceType::Ore => ORE_STOCK_PER_DENSITY,
-        ResourceType::Gem => GEM_STOCK_PER_DENSITY,
-    }
-}
-
 fn mark_radar_dirty(ctx: &mut ReduceTiberiumContext<'_>, cell: (u16, u16)) {
     if let Some(cells) = ctx.radar_dirty_cells.as_deref_mut()
         && !cells.contains(&cell)
@@ -646,7 +575,7 @@ fn mark_tactical_dirty(ctx: &mut ReduceTiberiumContext<'_>, cell: (u16, u16)) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use crate::map::overlay::{OverlayDataPack, OverlayEntry};
     use crate::map::overlay_types::OverlayTypeRegistry;
@@ -696,20 +625,6 @@ mod tests {
             None,
             (5, 5)
         ));
-    }
-
-    fn ore_node(density: u16) -> ResourceNode {
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: density * ORE_STOCK_PER_DENSITY,
-        }
-    }
-
-    fn gem_node(density: u16) -> ResourceNode {
-        ResourceNode {
-            resource_type: ResourceType::Gem,
-            remaining: density * GEM_STOCK_PER_DENSITY,
-        }
     }
 
     fn native_tiberium_fixture() -> (OverlayTypeRegistry, TiberiumTypeRegistry) {
@@ -1196,7 +1111,6 @@ SpreadPercentage=.06
 
         let mut sim = Simulation::new();
         sim.overlay_grid = Some(grid);
-        assert!(sim.production.resource_nodes.is_empty());
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // packed-overlay persistence on that same post-load cursor.
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
@@ -1227,14 +1141,12 @@ SpreadPercentage=.06
     }
 
     #[test]
-    fn gsi_04_09_missing_reducer_context_fails_closed_over_legacy_node() {
-        let mut nodes = BTreeMap::from([((5, 5), gem_node(4))]);
+    fn gsi_04_09_missing_reducer_context_fails_closed() {
         let mut growth = OreGrowthState::new(10, 10);
         let mut radar_dirty = Vec::new();
         let mut radar_generation = 0;
         let mut tactical_dirty = Vec::new();
         let mut ctx = ReduceTiberiumContext {
-            resource_nodes: &mut nodes,
             overlay_grid: None,
             ore_growth_state: &mut growth,
             overlay_registry: None,
@@ -1254,7 +1166,6 @@ SpreadPercentage=.06
             reduce_tiberium(&mut ctx, (5, 5), 2),
             ReduceTiberiumOutcome::none()
         );
-        assert_eq!(nodes.get(&(5, 5)).copied(), Some(gem_node(4)));
         assert!(radar_dirty.is_empty());
         assert_eq!(radar_generation, 0);
         assert!(tactical_dirty.is_empty());
@@ -1272,10 +1183,8 @@ SpreadPercentage=.06
         ];
 
         for (data, amount, removed, fully_removed, remaining_data) in cases {
-            let mut nodes = BTreeMap::new();
             // Deliberately contradictory legacy state proves it is not read or
             // mirrored when the production overlay context is complete.
-            nodes.insert((4, 4), gem_node(4));
             let mut overlay = OverlayGrid::new(8, 8);
             overlay.place_overlay(4, 4, tib01, data);
             let mut growth = OreGrowthState::new(8, 8);
@@ -1284,7 +1193,6 @@ SpreadPercentage=.06
             let mut radar_generation = 0;
             let mut tactical_dirty = Vec::new();
             let mut ctx = ReduceTiberiumContext {
-                resource_nodes: &mut nodes,
                 overlay_grid: Some(&mut overlay),
                 ore_growth_state: &mut growth,
                 overlay_registry: Some(&overlay_registry),
@@ -1328,19 +1236,12 @@ SpreadPercentage=.06
                 }
             }
             assert_eq!(tactical_dirty, vec![(4, 4)]);
-            assert_eq!(
-                nodes.get(&(4, 4)).copied(),
-                Some(gem_node(4)),
-                "native mutation never consults or mirrors the compatibility seam"
-            );
         }
 
-        let mut nodes = BTreeMap::new();
         let mut overlay = OverlayGrid::new(8, 8);
         overlay.place_overlay(4, 4, tib01, 6);
         let mut growth = OreGrowthState::new(8, 8);
         let mut ctx = ReduceTiberiumContext {
-            resource_nodes: &mut nodes,
             overlay_grid: Some(&mut overlay),
             ore_growth_state: &mut growth,
             overlay_registry: Some(&overlay_registry),
@@ -1364,7 +1265,6 @@ SpreadPercentage=.06
     fn gsi_04_09_max_density_reduction_runs_the_growth_admission_without_rng() {
         let (overlay_registry, tiberium_types) = native_tiberium_fixture();
         let tib01 = overlay_registry.id_for_name("TIB01").expect("TIB01");
-        let mut nodes = BTreeMap::new();
         let mut overlay = OverlayGrid::new(8, 8);
         overlay.place_overlay(4, 4, tib01, 11);
         let mut growth = OreGrowthState::new(8, 8);
@@ -1372,7 +1272,6 @@ SpreadPercentage=.06
         let mut rng = SimRng::new(0x480a80);
         let expected_rng = rng.clone();
         let mut ctx = ReduceTiberiumContext {
-            resource_nodes: &mut nodes,
             overlay_grid: Some(&mut overlay),
             ore_growth_state: &mut growth,
             overlay_registry: Some(&overlay_registry),
@@ -1543,134 +1442,6 @@ SpreadPercentage=.06
         assert_eq!(second.tick.state_hash, sim.state_hash());
     }
 
-    #[test]
-    fn partial_reduction_updates_overlay_node_and_dirty_lists() {
-        let mut nodes = BTreeMap::new();
-        nodes.insert((5, 5), ore_node(8));
-        let mut overlay = OverlayGrid::new(10, 10);
-        overlay.place_overlay(5, 5, 1, 8);
-        let mut growth = OreGrowthState::new(10, 10);
-        let mut radar_dirty = Vec::new();
-        let mut radar_generation = 0;
-        let mut tactical_dirty = Vec::new();
-
-        let mut ctx = ReduceTiberiumContext {
-            resource_nodes: &mut nodes,
-            overlay_grid: Some(&mut overlay),
-            ore_growth_state: &mut growth,
-            overlay_registry: None,
-            tiberium_types: None,
-            resolved_terrain: None,
-            source_object_cells: None,
-            live_objects: None,
-            rng: None,
-            binary_frame: 0,
-            spread_enabled: false,
-            radar_dirty_cells: Some(&mut radar_dirty),
-            radar_dirty_generation: Some(&mut radar_generation),
-            tactical_dirty_cells: Some(&mut tactical_dirty),
-        };
-
-        let outcome = reduce_legacy_resource_node_for_tests(&mut ctx, (5, 5), 2);
-
-        assert_eq!(outcome.removed_amount, 2);
-        assert_eq!(outcome.resource_type, Some(ResourceType::Ore));
-        assert!(!outcome.fully_removed);
-        assert_eq!(overlay.cell(5, 5).overlay_data, 6);
-        assert_eq!(
-            nodes.get(&(5, 5)).unwrap().remaining,
-            6 * ORE_STOCK_PER_DENSITY
-        );
-        assert_eq!(radar_dirty, vec![(5, 5)]);
-        assert_eq!(radar_generation, 1);
-        assert_eq!(tactical_dirty, vec![(5, 5)]);
-    }
-
-    #[test]
-    fn full_reduction_uses_overlay_density_caps_harvest_and_clears_overlay() {
-        let mut nodes = BTreeMap::new();
-        nodes.insert((5, 5), ore_node(12));
-        let mut overlay = OverlayGrid::new(10, 10);
-        overlay.place_overlay(5, 5, 1, 11);
-        let mut growth = OreGrowthState::new(10, 10);
-        let mut radar_dirty = Vec::new();
-        let mut radar_generation = 0;
-        let mut tactical_dirty = Vec::new();
-
-        let mut ctx = ReduceTiberiumContext {
-            resource_nodes: &mut nodes,
-            overlay_grid: Some(&mut overlay),
-            ore_growth_state: &mut growth,
-            overlay_registry: None,
-            tiberium_types: None,
-            resolved_terrain: None,
-            source_object_cells: None,
-            live_objects: None,
-            rng: None,
-            binary_frame: 0,
-            spread_enabled: false,
-            radar_dirty_cells: Some(&mut radar_dirty),
-            radar_dirty_generation: Some(&mut radar_generation),
-            tactical_dirty_cells: Some(&mut tactical_dirty),
-        };
-
-        let outcome = reduce_legacy_resource_node_for_tests(&mut ctx, (5, 5), 12);
-
-        assert_eq!(outcome.removed_amount, 11);
-        assert_eq!(outcome.resource_type, Some(ResourceType::Ore));
-        assert!(outcome.fully_removed);
-        assert!(nodes.get(&(5, 5)).is_none());
-        assert_eq!(overlay.cell(5, 5).overlay_id, None);
-        assert_eq!(radar_dirty, vec![(5, 5)]);
-        assert_eq!(radar_generation, 1);
-        assert_eq!(tactical_dirty, vec![(5, 5)]);
-    }
-
-    #[test]
-    fn full_reduction_reseeds_same_type_spread_neighbors() {
-        let mut nodes = BTreeMap::new();
-        nodes.insert((5, 5), ore_node(3));
-        nodes.insert((6, 5), ore_node(4));
-        nodes.insert((5, 6), ore_node(4));
-        nodes.insert((4, 5), gem_node(4));
-        let mut overlay = OverlayGrid::new(10, 10);
-        overlay.place_overlay(5, 5, 1, 3);
-        let mut growth = OreGrowthState::new(10, 10);
-        let mut radar_dirty = Vec::new();
-        let mut radar_generation = 0;
-        let mut tactical_dirty = Vec::new();
-
-        let mut ctx = ReduceTiberiumContext {
-            resource_nodes: &mut nodes,
-            overlay_grid: Some(&mut overlay),
-            ore_growth_state: &mut growth,
-            overlay_registry: None,
-            tiberium_types: None,
-            resolved_terrain: None,
-            source_object_cells: None,
-            live_objects: None,
-            rng: None,
-            binary_frame: 0,
-            spread_enabled: false,
-            radar_dirty_cells: Some(&mut radar_dirty),
-            radar_dirty_generation: Some(&mut radar_generation),
-            tactical_dirty_cells: Some(&mut tactical_dirty),
-        };
-
-        let outcome = reduce_legacy_resource_node_for_tests(&mut ctx, (5, 5), 3);
-
-        assert!(outcome.fully_removed);
-        let queued: Vec<_> = growth
-            .spread_queue_entries()
-            .iter()
-            .map(|entry| (entry.resource_type, entry.rx, entry.ry))
-            .collect();
-        assert_eq!(
-            queued,
-            vec![(ResourceType::Ore, 6, 5), (ResourceType::Ore, 5, 6)]
-        );
-    }
-
     /// `Reduce_Tiberium @ 0x00480A80` full removal calls the REMOVED class's
     /// `AddToSpreadQueue @ 0x00722AF0` on every in-bounds neighbour whose
     /// removed-class flag byte is clear, and `CanSpreadTiberium @ 0x00483690`
@@ -1685,9 +1456,6 @@ SpreadPercentage=.06
         let (overlay_registry, tiberium_types) = native_tiberium_fixture();
         let tib01 = overlay_registry.id_for_name("TIB01").expect("TIB01");
         let gem01 = overlay_registry.id_for_name("GEM01").expect("GEM01");
-        let mut nodes = BTreeMap::new();
-        nodes.insert((5, 5), gem_node(1));
-        nodes.insert((6, 5), ore_node(4));
         let mut overlay = OverlayGrid::new(10, 10);
         overlay.place_overlay(5, 5, gem01, 1);
         overlay.place_overlay(6, 5, tib01, 4);
@@ -1699,7 +1467,6 @@ SpreadPercentage=.06
         let source_object_cells = BTreeSet::new();
 
         let mut ctx = ReduceTiberiumContext {
-            resource_nodes: &mut nodes,
             overlay_grid: Some(&mut overlay),
             ore_growth_state: &mut growth,
             overlay_registry: Some(&overlay_registry),
@@ -1746,10 +1513,6 @@ SpreadPercentage=.06
         let gem01 = overlay_registry.id_for_name("GEM01").expect("GEM01");
         let tib2_20 = overlay_registry.id_for_name("TIB2_20").expect("TIB2_20");
         assert_eq!(tib2_20, 146);
-        let mut nodes = BTreeMap::new();
-        nodes.insert((5, 5), ore_node(3));
-        nodes.insert((6, 5), ore_node(4));
-        nodes.insert((5, 6), ore_node(4));
         let mut overlay = OverlayGrid::new(10, 10);
         overlay.place_overlay(6, 5, tib2_20, 4);
         overlay.place_overlay(5, 6, tib2_20, 4);
@@ -1792,7 +1555,6 @@ SpreadPercentage=.06
         expected_rng.next_u32();
 
         let mut ctx = ReduceTiberiumContext {
-            resource_nodes: &mut nodes,
             overlay_grid: Some(&mut overlay),
             ore_growth_state: &mut growth,
             overlay_registry: Some(&overlay_registry),
@@ -1863,36 +1625,4 @@ SpreadPercentage=.06
         );
     }
 
-    #[test]
-    fn gem_partial_reduction_uses_gem_density_base_without_overlay() {
-        let mut nodes = BTreeMap::new();
-        nodes.insert((5, 5), gem_node(4));
-        let mut growth = OreGrowthState::new(10, 10);
-
-        let mut ctx = ReduceTiberiumContext {
-            resource_nodes: &mut nodes,
-            overlay_grid: None,
-            ore_growth_state: &mut growth,
-            overlay_registry: None,
-            tiberium_types: None,
-            resolved_terrain: None,
-            source_object_cells: None,
-            live_objects: None,
-            rng: None,
-            binary_frame: 0,
-            spread_enabled: false,
-            radar_dirty_cells: None,
-            radar_dirty_generation: None,
-            tactical_dirty_cells: None,
-        };
-
-        let outcome = reduce_legacy_resource_node_for_tests(&mut ctx, (5, 5), 2);
-
-        assert_eq!(outcome.removed_amount, 2);
-        assert_eq!(outcome.resource_type, Some(ResourceType::Gem));
-        assert_eq!(
-            nodes.get(&(5, 5)).unwrap().remaining,
-            2 * GEM_STOCK_PER_DENSITY
-        );
-    }
 }

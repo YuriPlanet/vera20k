@@ -829,22 +829,19 @@ pub(crate) fn harvester_enter_idle_mode_selector(
 }
 
 /// `CellClass+0xEC` (`LandType`) of one cell: the resolved terrain's land
-/// type when the map carries one (the overlay recompute keeps it current when
-/// ore is placed or removed), else the legacy resource-node fallback (an ore
-/// node ⇒ Tiberium land).
+/// type, which the overlay recompute keeps current when ore is placed or
+/// removed. Without resolved terrain no cell has a land type.
 fn cell_land_type_is(
     sim: &Simulation,
     rx: u16,
     ry: u16,
     wanted: crate::rules::terrain_rules::LandType,
 ) -> bool {
-    if let Some(terrain) = sim.resolved_terrain.as_ref() {
-        return terrain
+    sim.resolved_terrain.as_ref().is_some_and(|terrain| {
+        terrain
             .cell(rx, ry)
-            .is_some_and(|cell| cell.land_type == wanted.as_index());
-    }
-    wanted == crate::rules::terrain_rules::LandType::Tiberium
-        && sim.production.resource_nodes.contains_key(&(rx, ry))
+            .is_some_and(|cell| cell.land_type == wanted.as_index())
+    })
 }
 
 /// The idle-mode selector reached from the Attack handler's no-target exit.

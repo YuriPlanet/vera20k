@@ -4,13 +4,9 @@
 //! charge sweep. Factory-held identity and accounting settle in factory_lifecycle.
 
 use std::collections::BTreeMap;
-#[cfg(test)]
-use std::collections::BTreeSet;
 
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
-#[cfg(test)]
-use crate::sim::miner::{ResourceNode, ResourceType};
 use crate::sim::world::Simulation;
 
 use super::PRODUCTION_STEPS;
@@ -91,56 +87,6 @@ pub(in crate::sim) fn credits_entry_for_owner<'a>(
         );
     }
     &mut sim.houses.get_mut(&key).unwrap().economy.credits
-}
-
-/// Legacy fixture adapter for tests that do not construct `OverlayGrid` and
-/// the parsed type registries. Production map load must never call this.
-///
-/// Returns how many resource cells were added.
-#[cfg(test)]
-pub fn seed_resource_nodes_from_overlays(
-    sim: &mut Simulation,
-    overlays: &[crate::map::overlay::OverlayEntry],
-    overlay_names: &BTreeMap<u8, String>,
-) -> usize {
-    let mut added = 0usize;
-    let mut warned_ids: BTreeSet<u8> = BTreeSet::new();
-    for entry in overlays {
-        let Some(name) = overlay_names.get(&entry.overlay_id) else {
-            if warned_ids.insert(entry.overlay_id) {
-                log::warn!(
-                    "Overlay ID {} not in overlay_names -- resource nodes with this ID skipped",
-                    entry.overlay_id,
-                );
-            }
-            continue;
-        };
-        let upper = name.to_ascii_uppercase();
-        let is_ore = upper.starts_with("TIB");
-        let is_gem = upper.starts_with("GEM");
-        if !is_ore && !is_gem {
-            continue;
-        }
-        let richness = u16::from(entry.frame.min(11)).saturating_add(1);
-        let base = if is_gem { 180 } else { 120 };
-        let stock = base * richness;
-        let res_type = if is_gem {
-            ResourceType::Gem
-        } else {
-            ResourceType::Ore
-        };
-        let key = (entry.rx, entry.ry);
-        sim.production
-            .resource_nodes
-            .entry(key)
-            .and_modify(|node| node.remaining = node.remaining.saturating_add(stock))
-            .or_insert(ResourceNode {
-                resource_type: res_type,
-                remaining: stock,
-            });
-        added += 1;
-    }
-    added
 }
 
 /// Try to enqueue a default buildable unit for `owner`.

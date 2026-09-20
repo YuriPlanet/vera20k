@@ -56,7 +56,6 @@ fn spawn(
 fn combat_visit(
     sim: &mut Simulation,
     rules: &RuleSet,
-    resources: &mut BTreeMap<(u16, u16), ResourceNode>,
     main_rng: &mut SimRng,
     frame: u32,
 ) -> CombatTickResult {
@@ -65,7 +64,6 @@ fn combat_visit(
         &mut sim.substrate.occupancy,
         rules,
         &mut sim.interner,
-        resources,
         u64::from(frame),
         100,
         frame,
@@ -92,10 +90,9 @@ fn gsi_05_10_tesla_arms_without_emission_and_fires_on_visit_28() {
         Some(&rules),
         &sim.interner,
     ));
-    let mut resources = BTreeMap::new();
     let mut main_rng = SimRng::new(1);
 
-    let first = combat_visit(&mut sim, &rules, &mut resources, &mut main_rng, 1);
+    let first = combat_visit(&mut sim, &rules, &mut main_rng, 1);
     assert!(first.consequences.fire_events().is_empty());
     assert_eq!(
         sim.substrate.entities.get(target).unwrap().health.current,
@@ -114,17 +111,23 @@ fn gsi_05_10_tesla_arms_without_emission_and_fires_on_visit_28() {
     );
 
     for visit in 2..=27 {
-        let result = combat_visit(&mut sim, &rules, &mut resources, &mut main_rng, visit);
-        assert!(result.consequences.fire_events().is_empty(), "early fire on visit {visit}");
+        let result = combat_visit(&mut sim, &rules, &mut main_rng, visit);
+        assert!(
+            result.consequences.fire_events().is_empty(),
+            "early fire on visit {visit}"
+        );
     }
     assert_eq!(
         sim.substrate.entities.get(target).unwrap().health.current,
         100
     );
 
-    let expiry = combat_visit(&mut sim, &rules, &mut resources, &mut main_rng, 28);
+    let expiry = combat_visit(&mut sim, &rules, &mut main_rng, 28);
     assert_eq!(expiry.consequences.fire_events().len(), 1);
-    assert_eq!(expiry.consequences.fire_events()[0].weapon_slot, WeaponSlot::Primary);
+    assert_eq!(
+        expiry.consequences.fire_events()[0].weapon_slot,
+        WeaponSlot::Primary
+    );
     assert_eq!(
         sim.substrate.entities.get(target).unwrap().health.current,
         90
@@ -166,9 +169,8 @@ fn gsi_05_10_expiry_reads_live_target_but_keeps_saved_weapon_slot() {
         Some(&rules),
         &sim.interner,
     ));
-    let mut resources = BTreeMap::new();
     let mut main_rng = SimRng::new(2);
-    let arm = combat_visit(&mut sim, &rules, &mut resources, &mut main_rng, 1);
+    let arm = combat_visit(&mut sim, &rules, &mut main_rng, 1);
     assert!(arm.consequences.fire_events().is_empty());
     assert_eq!(
         sim.substrate
@@ -188,10 +190,13 @@ fn gsi_05_10_expiry_reads_live_target_but_keeps_saved_weapon_slot() {
         .as_mut()
         .unwrap()
         .remaining_ticks = 1;
-    let expiry = combat_visit(&mut sim, &rules, &mut resources, &mut main_rng, 2);
+    let expiry = combat_visit(&mut sim, &rules, &mut main_rng, 2);
 
     assert_eq!(expiry.consequences.fire_events().len(), 1);
-    assert_eq!(expiry.consequences.fire_events()[0].weapon_slot, WeaponSlot::Secondary);
+    assert_eq!(
+        expiry.consequences.fire_events()[0].weapon_slot,
+        WeaponSlot::Secondary
+    );
     assert_eq!(sim.substrate.entities.get(air).unwrap().health.current, 100);
     assert_eq!(
         sim.substrate.entities.get(ground).unwrap().health.current,
@@ -213,9 +218,8 @@ fn gsi_05_10_expiry_error_clears_without_retarget_or_shot() {
         Some(&rules),
         &sim.interner,
     ));
-    let mut resources = BTreeMap::new();
     let mut main_rng = SimRng::new(3);
-    let _ = combat_visit(&mut sim, &rules, &mut resources, &mut main_rng, 1);
+    let _ = combat_visit(&mut sim, &rules, &mut main_rng, 1);
 
     let building = sim.substrate.entities.get_mut(tower).unwrap();
     building.attack_target.as_mut().unwrap().target = TargetKind::Entity(99_999);
@@ -224,7 +228,7 @@ fn gsi_05_10_expiry_error_clears_without_retarget_or_shot() {
         .as_mut()
         .unwrap()
         .remaining_ticks = 1;
-    let expiry = combat_visit(&mut sim, &rules, &mut resources, &mut main_rng, 2);
+    let expiry = combat_visit(&mut sim, &rules, &mut main_rng, 2);
 
     assert!(expiry.consequences.fire_events().is_empty());
     let building = sim.substrate.entities.get(tower).unwrap();
@@ -275,13 +279,7 @@ fn gsi_05_10_non_delayed_and_prism_type_bypass_fire_immediately() {
         Some(&rules),
         &sim.interner,
     ));
-    let result = combat_visit(
-        &mut sim,
-        &rules,
-        &mut BTreeMap::new(),
-        &mut SimRng::new(4),
-        1,
-    );
+    let result = combat_visit(&mut sim, &rules, &mut SimRng::new(4), 1);
 
     assert_eq!(result.consequences.fire_events().len(), 2);
     assert!(
@@ -317,13 +315,7 @@ fn gsi_05_10_delays_at_or_below_one_expire_on_the_arming_visit() {
             &sim.interner,
         ));
 
-        let result = combat_visit(
-            &mut sim,
-            &rules,
-            &mut BTreeMap::new(),
-            &mut SimRng::new(5),
-            1,
-        );
+        let result = combat_visit(&mut sim, &rules, &mut SimRng::new(5), 1);
         assert_eq!(result.consequences.fire_events().len(), 1, "delay {delay}");
         assert!(
             sim.substrate

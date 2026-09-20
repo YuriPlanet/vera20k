@@ -10,15 +10,14 @@ use super::production_spawn::{
 use super::war_factory_exit::tick_war_factory_exit_contacts;
 use super::{
     ProductionCategory, STARTING_CREDITS, credits_for_owner, find_spawn_cell_for_owner,
-    is_matching_factory, seed_resource_nodes_from_overlays, structure_satisfies_prerequisite,
+    is_matching_factory, structure_satisfies_prerequisite,
 };
-use crate::map::overlay::OverlayEntry;
 use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::Health;
-use crate::sim::miner::{ResourceNode, ResourceType};
+use crate::sim::miner::ResourceType;
 use crate::sim::occupancy::CellListInsertion;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::world::Simulation;
@@ -1787,46 +1786,6 @@ fn custom_exit_coord_modded_factory() {
 }
 
 #[test]
-fn seed_resource_nodes_from_overlay_detects_ore_and_gems() {
-    let mut sim = Simulation::new();
-    let overlays = vec![
-        OverlayEntry {
-            rx: 5,
-            ry: 6,
-            overlay_id: 1,
-            frame: 3,
-        },
-        OverlayEntry {
-            rx: 7,
-            ry: 9,
-            overlay_id: 2,
-            frame: 11,
-        },
-        OverlayEntry {
-            rx: 2,
-            ry: 2,
-            overlay_id: 3,
-            frame: 4,
-        },
-    ];
-    let names: BTreeMap<u8, String> = BTreeMap::from([
-        (1, "TIB01".to_string()),
-        (2, "GEM01".to_string()),
-        (3, "GAWALL".to_string()),
-    ]);
-
-    let added = seed_resource_nodes_from_overlays(&mut sim, &overlays, &names);
-    assert_eq!(added, 2);
-    let ore_node = sim.production.resource_nodes.get(&(5, 6)).unwrap();
-    assert_eq!(ore_node.remaining, 480);
-    assert_eq!(ore_node.resource_type, ResourceType::Ore);
-    let gem_node = sim.production.resource_nodes.get(&(7, 9)).unwrap();
-    assert_eq!(gem_node.remaining, 2160);
-    assert_eq!(gem_node.resource_type, ResourceType::Gem);
-    assert!(sim.production.resource_nodes.get(&(2, 2)).is_none());
-}
-
-#[test]
 #[ignore = "WIP: harvester path-grid movement not yet landed"]
 fn harvester_moves_to_ore_and_back_with_path_grid() {
     let mut sim = Simulation::new();
@@ -1841,12 +1800,11 @@ fn harvester_moves_to_ore_and_back_with_path_grid() {
     // Whole-multiple of the ore base (120) so the cell drains cleanly. The
     // production overlay seeder always stores `(frame+1) * base`, so cells
     // in real maps never carry a sub-density-level leftover.
-    sim.production.resource_nodes.insert(
+    crate::sim::tiberium::test_support::place_stock_amount(
+        &mut sim,
         (12, 10),
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: 6 * 120,
-        },
+        ResourceType::Ore,
+        6 * 120,
     );
 
     let before = credits_for_owner(&sim, "Americans");

@@ -15,9 +15,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::{SpeedCostProfile, TerrainClass};
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::house_state::HouseState;
-use crate::sim::miner::{
-    CargoBale, MinerConfig, MinerKind, MinerState, ResourceNode, ResourceType,
-};
+use crate::sim::miner::{CargoBale, MinerConfig, MinerKind, MinerState, ResourceType};
 use crate::sim::movement::locomotor::{GroundMovePhase, MovementLayer};
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::PathGrid;
@@ -32,7 +30,6 @@ use crate::util::fixed_math::{SIM_ZERO, SimFixed, ra2_speed_to_leptons_per_secon
 
 const GRID_SIZE: u16 = 64;
 const START: (u16, u16) = (32, 32);
-const ONE_ORE_LEVEL: u16 = 120;
 
 /// Jitter ceiling of the Harvest dispatch epilogue: `RandomRanged(0, 2)`.
 const RATE_EPILOGUE_JITTER_MAX: u32 = 2;
@@ -225,7 +222,6 @@ fn install_world(
     oracle: &OutboundContractOracle,
     grid: &PathGrid,
     ore_cells: &[(u16, u16)],
-    nodes: &[(u16, u16)],
     install_zones: bool,
 ) {
     let terrain = staged_terrain(oracle, ore_cells);
@@ -253,15 +249,6 @@ fn install_world(
             .as_mut()
             .expect("overlay grid")
             .place_overlay(rx, ry, oracle.tib01, 0);
-    }
-    for &cell in nodes {
-        sim.production.resource_nodes.insert(
-            cell,
-            ResourceNode {
-                resource_type: ResourceType::Ore,
-                remaining: ONE_ORE_LEVEL,
-            },
-        );
     }
     if install_zones {
         sim.rebuild_zone_grid(grid);
@@ -426,13 +413,6 @@ fn position_tuple(sim: &Simulation, entity_id: u64) -> (u16, u16, SimFixed, SimF
 }
 
 fn assert_ore_intact(sim: &Simulation, oracle: &OutboundContractOracle, target: (u16, u16)) {
-    let node = sim
-        .production
-        .resource_nodes
-        .get(&target)
-        .expect("positive ore node");
-    assert_eq!(node.resource_type, ResourceType::Ore);
-    assert_eq!(node.remaining, ONE_ORE_LEVEL);
     let overlay = sim
         .overlay_grid
         .as_ref()
@@ -560,7 +540,7 @@ fn production_stock_miners_use_drive_command_for_adjacent_ore() {
     for (type_id, kind) in [("HARV", MinerKind::War), ("CMIN", MinerKind::Chrono)] {
         let mut sim = production_sim(0x0715_D001, &oracle);
         let grid = PathGrid::new(GRID_SIZE, GRID_SIZE);
-        install_world(&mut sim, &oracle, &grid, &[target], &[target], true);
+        install_world(&mut sim, &oracle, &grid, &[target], true);
         let entity_id = spawn_stock_miner(&mut sim, &oracle, type_id, kind);
         spawn_inert_dock_instance(&mut sim);
         let start_position = position_tuple(&sim, entity_id);
@@ -716,7 +696,7 @@ fn production_harv_outbound_drive_uses_rule_profile() {
     let target = (32, 29);
     let mut sim = production_sim(0x0715_D002, &oracle);
     let grid = PathGrid::new(GRID_SIZE, GRID_SIZE);
-    install_world(&mut sim, &oracle, &grid, &[target], &[target], true);
+    install_world(&mut sim, &oracle, &grid, &[target], true);
     let entity_id = spawn_stock_miner(&mut sim, &oracle, "HARV", MinerKind::War);
     spawn_inert_dock_instance(&mut sim);
     arm_search(&mut sim, entity_id);
@@ -799,7 +779,7 @@ fn production_stock_harv_far_return_drive_uses_rule_profile() {
     );
     assert!(!grid.is_walkable(refinery_anchor.0, refinery_anchor.1));
     assert!(grid.is_walkable(staging.0, staging.1));
-    install_world(&mut sim, &oracle, &grid, &[], &[], true);
+    install_world(&mut sim, &oracle, &grid, &[], true);
     let refinery_id = spawn_stock_refinery(&mut sim, &oracle, refinery_anchor);
     let entity_id = spawn_stock_miner(&mut sim, &oracle, "HARV", MinerKind::War);
     arm_full_ore_return(&mut sim, entity_id, &config);
@@ -906,7 +886,7 @@ fn gsi_04_07_placement_miner_return_threads_live_wall_neighbor_authority() {
             refinery_type.bib,
         );
         assert!(grid.is_walkable(staging.0, staging.1));
-        install_world(&mut sim, &oracle, &grid, &[], &[], true);
+        install_world(&mut sim, &oracle, &grid, &[], true);
         let refinery_id = spawn_stock_refinery(&mut sim, &oracle, refinery_anchor);
         let miner_id = spawn_stock_miner(&mut sim, &oracle, "HARV", MinerKind::War);
         arm_full_ore_return(&mut sim, miner_id, &config);
@@ -1016,7 +996,7 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
     );
     assert!(!grid.is_walkable(refinery_anchor.0, refinery_anchor.1));
     assert!(grid.is_walkable(staging.0, staging.1));
-    install_world(&mut sim, &oracle, &grid, &[original], &[original], true);
+    install_world(&mut sim, &oracle, &grid, &[original], true);
     let refinery_id = spawn_stock_refinery(&mut sim, &oracle, refinery_anchor);
     let entity_id = spawn_stock_miner(&mut sim, &oracle, "HARV", MinerKind::War);
     arm_search(&mut sim, entity_id);
@@ -1143,7 +1123,7 @@ fn production_cmin_outbound_drive_keeps_teleport_primary() {
     let target = (32, 29);
     let mut sim = production_sim(0x0715_D003, &oracle);
     let grid = PathGrid::new(GRID_SIZE, GRID_SIZE);
-    install_world(&mut sim, &oracle, &grid, &[target], &[target], true);
+    install_world(&mut sim, &oracle, &grid, &[target], true);
     let entity_id = spawn_stock_miner(&mut sim, &oracle, "CMIN", MinerKind::Chrono);
     spawn_inert_dock_instance(&mut sim);
     arm_search(&mut sim, entity_id);
@@ -1237,7 +1217,7 @@ fn production_cmin_failed_outbound_issue_restores_locomotor_exactly() {
     let mut grid = PathGrid::test_all_blocked(GRID_SIZE, GRID_SIZE);
     grid.set_blocked(START.0, START.1, false);
     grid.set_blocked(target.0, target.1, false);
-    install_world(&mut sim, &oracle, &grid, &[target], &[target], false);
+    install_world(&mut sim, &oracle, &grid, &[target], false);
     let entity_id = spawn_stock_miner(&mut sim, &oracle, "CMIN", MinerKind::Chrono);
     spawn_inert_dock_instance(&mut sim);
     arm_search(&mut sim, entity_id);
@@ -1296,7 +1276,7 @@ fn production_harv_navcom_without_movement_target_is_not_reissued() {
     let grid = PathGrid::new(GRID_SIZE, GRID_SIZE);
     // Only `original` carries ore at acquisition time; the nearer `preferable`
     // cell is staged mid-test below so it can tempt a scan that must not run.
-    install_world(&mut sim, &oracle, &grid, &[original], &[original], true);
+    install_world(&mut sim, &oracle, &grid, &[original], true);
     let entity_id = spawn_stock_miner(&mut sim, &oracle, "HARV", MinerKind::War);
     spawn_inert_dock_instance(&mut sim);
     arm_search(&mut sim, entity_id);
@@ -1323,13 +1303,6 @@ fn production_harv_navcom_without_movement_target_is_not_reissued() {
         .as_mut()
         .expect("overlay grid")
         .place_overlay(preferable.0, preferable.1, oracle.tib01, 0);
-    sim.production.resource_nodes.insert(
-        preferable,
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: ONE_ORE_LEVEL,
-        },
-    );
     let rng_before = sim.rng_state();
     // The still-driving dispatch (non-null NavCom) exits through the default
     // Rate epilogue: exactly one scenario RandomRanged(0,2) draw, no scan.
@@ -1365,7 +1338,7 @@ fn production_harv_navcom_defers_removed_target_revalidation() {
     let grid = PathGrid::new(GRID_SIZE, GRID_SIZE);
     // Only `original` carries ore at acquisition time; `replacement` takes its
     // place mid-test below, after the NavCom is already owned.
-    install_world(&mut sim, &oracle, &grid, &[original], &[original], true);
+    install_world(&mut sim, &oracle, &grid, &[original], true);
     let entity_id = spawn_stock_miner(&mut sim, &oracle, "HARV", MinerKind::War);
     spawn_inert_dock_instance(&mut sim);
     arm_search(&mut sim, entity_id);
@@ -1390,14 +1363,6 @@ fn production_harv_navcom_defers_removed_target_revalidation() {
         overlay_grid.clear_overlay(original.0, original.1);
         overlay_grid.place_overlay(replacement.0, replacement.1, oracle.tib01, 0);
     }
-    sim.production.resource_nodes.remove(&original);
-    sim.production.resource_nodes.insert(
-        replacement,
-        ResourceNode {
-            resource_type: ResourceType::Ore,
-            remaining: ONE_ORE_LEVEL,
-        },
-    );
     let rng_before = sim.rng_state();
     // The still-driving dispatch (non-null NavCom) exits through the default
     // Rate epilogue: exactly one scenario RandomRanged(0,2) draw, no scan.
@@ -1429,7 +1394,7 @@ fn production_cmin_arrival_clears_navcom_same_tick_and_releases_drive() {
     let target = (32, 31);
     let mut sim = production_sim(0x0715_D007, &oracle);
     let grid = PathGrid::new(GRID_SIZE, GRID_SIZE);
-    install_world(&mut sim, &oracle, &grid, &[target], &[target], true);
+    install_world(&mut sim, &oracle, &grid, &[target], true);
     let entity_id = spawn_stock_miner(&mut sim, &oracle, "CMIN", MinerKind::Chrono);
     spawn_inert_dock_instance(&mut sim);
     arm_search(&mut sim, entity_id);
@@ -1519,7 +1484,7 @@ fn cmin_full_close_return_docks_and_deposits() {
         &refinery_type.foundation,
         refinery_type.bib,
     );
-    install_world(&mut sim, &oracle, &grid, &[], &[], true);
+    install_world(&mut sim, &oracle, &grid, &[], true);
     let _refinery_id = spawn_stock_refinery(&mut sim, &oracle, refinery_anchor);
     let entity_id = spawn_stock_miner(&mut sim, &oracle, "CMIN", MinerKind::Chrono);
     arm_full_ore_return(&mut sim, entity_id, &config);
@@ -1591,7 +1556,7 @@ fn cmin_second_cycle_leaves_the_pad_and_reharvests() {
         &refinery_type.foundation,
         refinery_type.bib,
     );
-    install_world(&mut sim, &oracle, &grid, ore, ore, true);
+    install_world(&mut sim, &oracle, &grid, ore, true);
     // install_world places overlays at density 0 (the outbound suite never
     // extracts). Reduce_Tiberium reads the overlay density byte, so give the
     // patch real density or harvesting yields zero bales.
@@ -1600,11 +1565,6 @@ fn cmin_second_cycle_leaves_the_pad_and_reharvests() {
             .as_mut()
             .expect("overlay grid")
             .set_overlay_data(rx, ry, 11);
-        sim.production
-            .resource_nodes
-            .get_mut(&(rx, ry))
-            .expect("ore node")
-            .remaining = 11 * ONE_ORE_LEVEL;
     }
     let _refinery_id = spawn_stock_refinery(&mut sim, &oracle, refinery_anchor);
     let entity_id = spawn_stock_miner(&mut sim, &oracle, "CMIN", MinerKind::Chrono);

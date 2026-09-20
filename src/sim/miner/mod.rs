@@ -27,10 +27,7 @@ pub(crate) use self::miner_dock_sequence::{
 };
 // Generic nearby-passable-cell search, reused by the tank-bunker exit placement.
 pub(crate) use self::miner_dock_sequence::find_nearby_passable_cell_with_index;
-pub(crate) use self::miner_system::{extract_bale, search_local_ore};
-
-#[cfg(test)]
-use std::collections::BTreeMap;
+pub(crate) use self::miner_system::extract_bale;
 
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::GeneralRules;
@@ -44,16 +41,6 @@ use crate::sim::movement::facing_class::FacingClass;
 pub enum ResourceType {
     Ore,
     Gem,
-}
-
-/// A resource node on the map — tracks type and remaining amount.
-///
-/// Replaces the old bare `u16` in `resource_nodes` so the sim knows whether
-/// a cell contains ore or gems (affects bale value and palette).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ResourceNode {
-    pub resource_type: ResourceType,
-    pub remaining: u16,
 }
 
 /// Which miner chassis this entity uses.
@@ -549,48 +536,6 @@ pub fn miner_kind_for_object(object: &ObjectType) -> Option<MinerKind> {
     }
 }
 
-/// Reduce ore/gem density on a cell by `amount` density levels.
-///
-/// Returns the number of density levels actually removed. If the cell is
-/// fully depleted, removes the resource node entirely.
-///
-/// Mirrors `CellClass::Reduce_Tiberium` (0x00480a80) in gamemd.exe.
-/// Called by the combat system after warhead detonation.
-#[cfg(test)]
-pub(crate) fn reduce_tiberium(
-    resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
-    cell: (u16, u16),
-    amount: u16,
-) -> u16 {
-    if amount == 0 {
-        return 0;
-    }
-    // Read type and density before deciding partial vs full removal.
-    let (base, density_levels) = match resource_nodes.get(&cell) {
-        Some(node) => {
-            let base: u16 = match node.resource_type {
-                ResourceType::Ore => 120,
-                ResourceType::Gem => 180,
-            };
-            (base, node.remaining / base)
-        }
-        None => return 0,
-    };
-    if density_levels == 0 {
-        return 0;
-    }
-
-    if amount < density_levels {
-        // Partial reduction: reduce remaining by amount × base.
-        resource_nodes.get_mut(&cell).unwrap().remaining -= amount * base;
-        amount
-    } else {
-        // Full removal: destroy the resource node entirely.
-        resource_nodes.remove(&cell);
-        density_levels
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -821,90 +766,4 @@ mod tests {
         assert_eq!(cfg.gem_bale_value, 50);
     }
 
-    #[test]
-    fn reduce_tiberium_partial_ore() {
-        let mut nodes = BTreeMap::new();
-        // 6 density levels of ore: remaining = 6 * 120 = 720.
-        nodes.insert(
-            (5, 5),
-            ResourceNode {
-                resource_type: ResourceType::Ore,
-                remaining: 720,
-            },
-        );
-        let removed = reduce_tiberium(&mut nodes, (5, 5), 2);
-        assert_eq!(removed, 2);
-        assert_eq!(nodes.get(&(5, 5)).unwrap().remaining, 720 - 2 * 120);
-    }
-
-    #[test]
-    fn reduce_tiberium_full_removal_ore() {
-        let mut nodes = BTreeMap::new();
-        // 3 density levels: remaining = 360.
-        nodes.insert(
-            (5, 5),
-            ResourceNode {
-                resource_type: ResourceType::Ore,
-                remaining: 360,
-            },
-        );
-        let removed = reduce_tiberium(&mut nodes, (5, 5), 12);
-        assert_eq!(removed, 3, "should return old density_levels");
-        assert!(nodes.get(&(5, 5)).is_none(), "node should be removed");
-    }
-
-    #[test]
-    fn reduce_tiberium_exact_density_is_full_removal() {
-        let mut nodes = BTreeMap::new();
-        // 5 density levels: remaining = 600.
-        nodes.insert(
-            (5, 5),
-            ResourceNode {
-                resource_type: ResourceType::Ore,
-                remaining: 600,
-            },
-        );
-        // amount(5) >= density_levels(5) → full removal (amount < density is false).
-        let removed = reduce_tiberium(&mut nodes, (5, 5), 5);
-        assert_eq!(removed, 5);
-        assert!(nodes.get(&(5, 5)).is_none(), "exact match = full removal");
-    }
-
-    #[test]
-    fn reduce_tiberium_empty_cell() {
-        let mut nodes: BTreeMap<(u16, u16), ResourceNode> = BTreeMap::new();
-        let removed = reduce_tiberium(&mut nodes, (5, 5), 10);
-        assert_eq!(removed, 0);
-    }
-
-    #[test]
-    fn reduce_tiberium_zero_amount() {
-        let mut nodes = BTreeMap::new();
-        nodes.insert(
-            (5, 5),
-            ResourceNode {
-                resource_type: ResourceType::Ore,
-                remaining: 720,
-            },
-        );
-        let removed = reduce_tiberium(&mut nodes, (5, 5), 0);
-        assert_eq!(removed, 0);
-        assert_eq!(nodes.get(&(5, 5)).unwrap().remaining, 720, "unchanged");
-    }
-
-    #[test]
-    fn reduce_tiberium_gem_base_rate() {
-        let mut nodes = BTreeMap::new();
-        // 4 density levels of gems: remaining = 4 * 180 = 720.
-        nodes.insert(
-            (5, 5),
-            ResourceNode {
-                resource_type: ResourceType::Gem,
-                remaining: 720,
-            },
-        );
-        let removed = reduce_tiberium(&mut nodes, (5, 5), 2);
-        assert_eq!(removed, 2);
-        assert_eq!(nodes.get(&(5, 5)).unwrap().remaining, 720 - 2 * 180);
-    }
 }

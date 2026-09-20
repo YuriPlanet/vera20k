@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::rules::object_type::ObjectCategory;
 use crate::sim::intern::InternedId;
-use crate::sim::miner::ResourceNode;
 use crate::sim::ore_growth::{OreGrowthConfig, OreGrowthState};
 use crate::sim::production::factory::FactoryRegistry;
 
@@ -193,10 +192,6 @@ pub struct ProductionState {
     pub ready_by_owner: BTreeMap<InternedId, VecDeque<InternedId>>,
     pub active_producer_by_owner: BTreeMap<InternedId, BTreeMap<ProductionCategory, u64>>,
     pub next_enqueue_order: u64,
-    /// Legacy test/save compatibility only. Live YR maps derive resource type
-    /// and raw quantity from `Simulation::overlay_grid`; this map is neither
-    /// seeded nor read/hashed when the production registries are available.
-    pub resource_nodes: BTreeMap<(u16, u16), ResourceNode>,
     /// Ore growth/spread configuration resolved from merged INI sources.
     pub ore_growth_config: OreGrowthConfig,
     /// Incremental scan state for ore growth/spread system.
@@ -239,7 +234,6 @@ impl Default for ProductionState {
             ready_by_owner: BTreeMap::new(),
             active_producer_by_owner: BTreeMap::new(),
             next_enqueue_order: 1,
-            resource_nodes: BTreeMap::new(),
             ore_growth_config: OreGrowthConfig::disabled(),
             ore_growth_state: OreGrowthState::new(0, 0),
             slave_bindings: BTreeMap::new(),

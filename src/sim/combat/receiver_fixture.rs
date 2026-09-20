@@ -39,7 +39,6 @@ fn with_world<R>(
     mut houses: Option<&mut BTreeMap<InternedId, HouseState>>,
     main_rng: Option<&mut SimRng>,
     scenario_rng: &mut SimRng,
-    resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
     overlay_grid: Option<&mut OverlayGrid>,
     terrain: Option<&mut ResolvedTerrainGrid>,
     mut terrain_area: Option<&mut TerrainAreaState>,
@@ -59,7 +58,6 @@ fn with_world<R>(
         world.main_rng = rng.clone();
     }
     world.scenario_rng = scenario_rng.clone();
-    world.production.resource_nodes = std::mem::take(resource_nodes);
     world.overlay_grid = overlay_grid.as_deref().cloned();
     world.resolved_terrain = terrain.as_deref().cloned();
     if let Some(events) = sound_sink.as_deref_mut() {
@@ -120,7 +118,6 @@ fn with_world<R>(
         *rng = world.main_rng;
     }
     *scenario_rng = world.scenario_rng;
-    *resource_nodes = world.production.resource_nodes;
     if let Some(grid) = overlay_grid {
         *grid = world.overlay_grid.expect("supplied overlay retained");
     }
@@ -164,7 +161,6 @@ pub(crate) fn tick_combat(
     occupancy: &mut OccupancyGrid,
     rules: &RuleSet,
     interner: &mut StringInterner,
-    resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
     current_tick: u64,
     tick_ms: u32,
     binary_frame: u32,
@@ -178,7 +174,6 @@ pub(crate) fn tick_combat(
         None,
         &BTreeMap::new(),
         None,
-        resource_nodes,
         None,
         None,
         None,
@@ -202,7 +197,6 @@ pub(crate) fn tick_combat_with_fog(
     fog: Option<&FogState>,
     power_states: &BTreeMap<InternedId, PowerState>,
     sound_sink: Option<&mut Vec<SimSoundEvent>>,
-    resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
     overlay_grid: Option<&mut OverlayGrid>,
     overlay_registry: Option<&OverlayTypeRegistry>,
     terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
@@ -231,7 +225,6 @@ pub(crate) fn tick_combat_with_fog(
         &[],
         &HouseAllianceMap::new(),
         sound_sink,
-        resource_nodes,
         overlay_grid,
         overlay_registry,
         terrain,
@@ -262,7 +255,6 @@ pub(crate) fn tick_combat_with_fog_and_main_rng(
     house_order: &[InternedId],
     alliances: &HouseAllianceMap,
     sound_sink: Option<&mut Vec<SimSoundEvent>>,
-    resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
     overlay_grid: Option<&mut OverlayGrid>,
     overlay_registry: Option<&OverlayTypeRegistry>,
     terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
@@ -290,7 +282,6 @@ pub(crate) fn tick_combat_with_fog_and_main_rng(
         house_order,
         alliances,
         sound_sink,
-        resource_nodes,
         overlay_grid,
         overlay_registry,
         terrain,
@@ -327,7 +318,6 @@ pub(crate) fn commit_damage_events(
     main_rng: &mut SimRng,
     scenario_rng: &mut SimRng,
     handled_deaths: &mut Vec<u64>,
-    resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
     overlay_grid: Option<&mut OverlayGrid>,
     overlay_registry: Option<&OverlayTypeRegistry>,
     terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
@@ -345,7 +335,6 @@ pub(crate) fn commit_damage_events(
         Some(houses),
         Some(main_rng),
         scenario_rng,
-        resource_nodes,
         overlay_grid,
         terrain,
         None,
@@ -383,7 +372,6 @@ pub(crate) fn commit_area_damage_receivers(
     main_rng: &mut SimRng,
     scenario_rng: &mut SimRng,
     handled_deaths: &mut Vec<u64>,
-    resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
     overlay_grid: Option<&mut OverlayGrid>,
     overlay_registry: Option<&OverlayTypeRegistry>,
     terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
@@ -402,7 +390,6 @@ pub(crate) fn commit_area_damage_receivers(
         Some(houses),
         Some(main_rng),
         scenario_rng,
-        resource_nodes,
         overlay_grid,
         terrain,
         terrain_area_state,
@@ -435,7 +422,6 @@ pub(crate) fn handle_entity_deaths(
     handled_deaths: &mut Vec<u64>,
     dead_entities: &[u64],
     damage_events: &[EntityDamageEvent],
-    resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
     overlay_grid: Option<&mut OverlayGrid>,
     overlay_registry: Option<&OverlayTypeRegistry>,
     terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
@@ -452,7 +438,6 @@ pub(crate) fn handle_entity_deaths(
         Some(houses),
         Some(main_rng),
         scenario_rng,
-        resource_nodes,
         overlay_grid,
         terrain,
         terrain_area_state.as_deref_mut(),
@@ -486,7 +471,6 @@ pub(crate) fn emit_projectile_detonations(
     rules: &RuleSet,
     interner: &mut StringInterner,
     handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
-    resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
     overlay_grid: Option<&mut OverlayGrid>,
     overlay_registry: Option<&OverlayTypeRegistry>,
     terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
@@ -508,7 +492,6 @@ pub(crate) fn emit_projectile_detonations(
         None,
         None,
         scenario_rng,
-        resource_nodes,
         overlay_grid,
         terrain,
         fixture_terrain.as_mut(),
@@ -543,7 +526,6 @@ pub(crate) fn resolve_attacker_fire(
     rules: &RuleSet,
     interner: &mut StringInterner,
     handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
-    resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
     fog: Option<&FogState>,
     occupancy: &OccupancyGrid,
     overlay_grid: Option<&mut OverlayGrid>,
@@ -570,7 +552,6 @@ pub(crate) fn resolve_attacker_fire(
         None,
         None,
         scenario_rng,
-        resource_nodes,
         overlay_grid,
         terrain,
         fixture_terrain.as_mut(),
@@ -616,7 +597,6 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
     house_order: &[InternedId],
     alliances: &HouseAllianceMap,
     sound_sink: Option<&mut Vec<SimSoundEvent>>,
-    resource_nodes: &mut BTreeMap<(u16, u16), ResourceNode>,
     overlay_grid: Option<&mut OverlayGrid>,
     overlay_registry: Option<&OverlayTypeRegistry>,
     terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
@@ -645,7 +625,6 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
         Some(houses),
         Some(main_rng),
         scenario_rng,
-        resource_nodes,
         overlay_grid,
         terrain,
         terrain_area_state,

@@ -37,8 +37,6 @@ pub use self::production_placement::{
     placement_preview_for_owner_with_overlays, placement_preview_for_owner_without_overlays,
     toggle_pause_for_owner_category,
 };
-#[cfg(test)]
-pub use self::production_queue::seed_resource_nodes_from_overlays;
 pub use self::production_queue::{
     build_options_for_owner, credits_for_owner, enqueue_default_unit_for_owner,
     has_strict_build_option_for_owner, power_balance_for_owner, queue_view_for_owner,
@@ -68,8 +66,6 @@ pub use self::war_factory_exit::tick_war_factory_exit_contacts;
 pub(in crate::sim) use self::factory_lifecycle::revalidate_and_step_factories;
 #[cfg(test)]
 pub(in crate::sim) use self::factory_lifecycle::construct_active_factory_fixture;
-#[cfg(test)]
-pub(crate) use self::production_economy::pick_best_resource_node;
 pub(in crate::sim) use self::production_queue::credits_entry_for_owner;
 pub(in crate::sim) use self::production_spawn::produced_unit_unlimbo_entry_at_resolved_cell;
 
