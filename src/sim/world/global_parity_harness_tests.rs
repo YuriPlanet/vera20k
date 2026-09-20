@@ -970,6 +970,19 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     let (_, final_scen, final_main, final_mapgen) =
         *recorded_streams.last().expect("final checkpoint recorded");
     let final_hash = *replayed.last().expect("at least one tick recorded");
+    // Schema 172 removed the refinery dock registry's hash folds. They were
+    // unframed, so an empty registry contributed no bytes: the pin below holds
+    // across that removal exactly when the refinery (id 2) holds no contact at
+    // the pinned tick.
+    assert!(
+        rep.substrate
+            .entities
+            .get(2)
+            .expect("harness refinery")
+            .radio_contacts
+            .is_empty(),
+        "a held refinery contact at the pinned tick would have moved the pin"
+    );
     // Bounded full08 causal probe: no AnimRuntime pause fold or legacy gap
     // sample occurs in this fixture. Omit ONLY the newly inserted replay-array
     // fold and Building operational/stuff markers; keep current state intact.

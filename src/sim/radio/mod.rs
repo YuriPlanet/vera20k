@@ -173,10 +173,11 @@ fn transmit_hello(
     );
     if response == RadioResponse::Roger {
         if let Some(sender) = sim.substrate.entities.get_mut(sender_sid) {
-            // A non-building sender holds capacity 1; the refinery FSM always
-            // BREAKs a prior dock before HELLOing a new one, so the self-evict
-            // path is dormant here (the evicted partner's BREAK cascade is a
-            // later-slice refinement, tracked with the broadcast-BREAK work).
+            // A non-building sender holds capacity 1. The miner FSM BREAKs its
+            // previous refinery before HELLOing another (`begin_return`, the
+            // MEGAMISSION retask, the redirect), so the self-evict below is not
+            // reached by that handshake. It evicts the sender's slot only; the
+            // evicted partner's own BREAK cascade is not modelled.
             let _ = sender.radio_contacts.insert_evicting(target_sid);
         }
     }

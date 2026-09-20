@@ -633,8 +633,7 @@ fn abort_unload_contact_lost(sim: &mut Simulation, snap: &mut MinerSnapshot, ref
     let commenced = matches!(sim.mission_commence_exact(snap.entity_id, now), Ok(true));
     if commenced {
         // Commence zeroed the handler cursor (== SearchOre); the dock
-        // bookkeeping goes with it, as on the state-4 exit: registry slot and
-        // pad, radio-bus BREAK, and the miner's live-contact mirror.
+        // handshake goes with it, as on the state-4 exit: BREAK both ends.
         miner_dock::break_contact(sim, snap.entity_id, ref_sid);
         snap.miner.reserved_refinery = None;
         snap.miner.dock_queued = false;
@@ -675,6 +674,19 @@ pub(super) fn handle_dock_sequence(
         }
         return;
     };
+
+    // Only before admission: a miner the refinery already admitted keeps its
+    // handshake across an owner change (a mind-controlled miner still unloads
+    // into the refinery owner's account).
+    if !miner_dock::has_contact(sim, ref_sid, snap.entity_id)
+        && !miner_dock::same_house(sim, ref_sid, snap.entity_id)
+    {
+        abort_invalid_refinery(sim, snap, Some(ref_sid));
+        if phase_before != snap.miner.dock_phase {
+            record_dock_phase(snap, phase_before, snap.miner.dock_phase);
+        }
+        return;
+    }
 
     match snap.miner.dock_phase {
         RefineryDockPhase::Approach => {

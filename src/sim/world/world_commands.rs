@@ -911,6 +911,11 @@ impl Simulation {
                 // until it is re-ordered. Without it the miner halts for a beat
                 // and then drives straight back to the ore field, ignoring the
                 // order outright.
+                //
+                // The radio break itself: the IDLE arm pushes BREAK to every
+                // link (`PUSH 3; CALL [vt+0x280]` at `0x004C75DC`). Only the
+                // miner's refinery handshake is modelled on that bus here.
+                crate::sim::miner::miner_dock::break_for_retask(self, *entity_id);
                 self.commit_stop_miner_guard(*entity_id);
                 true
             }
@@ -1852,6 +1857,9 @@ impl Simulation {
                 miner.target_ore_cell = Some((*target_rx, *target_ry));
                 // Clear in-progress movement so the miner re-paths to the new target.
                 e.movement_target = None;
+                // A harvest order is a MEGAMISSION like any other: it ends a
+                // refinery handshake in progress (`miner_dock::break_for_retask`).
+                crate::sim::miner::miner_dock::break_for_retask(self, *entity_id);
                 // Commit the Harvest mission and the MoveToOre cursor of
                 // record. Native (EventClass::Execute MEGAMISSION,
                 // disassembled 2026-09-05): the client's mission byte passes

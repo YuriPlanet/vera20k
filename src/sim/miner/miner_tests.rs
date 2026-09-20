@@ -2971,6 +2971,9 @@ fn unloading_credits_refinery_owner_under_mind_control() {
     let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 13, 11);
     spawn_refinery(&mut sim, 2, 10, 10);
 
+    // The refinery admitted the miner while both were Americans.
+    assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, miner_id));
+
     // Mind-control: rewrite the harvester's owner to a different house.
     let mc_owner = sim.interner.intern("Russians");
     {
@@ -2991,7 +2994,6 @@ fn unloading_credits_refinery_owner_under_mind_control() {
         miner.dock_phase = RefineryDockPhase::Unloading;
         miner.reserved_refinery = Some(2);
     }
-    crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, miner_id);
 
     let americans_before = credits_for_owner(&sim, "Americans");
     let russians_before = credits_for_owner(&sim, "Russians");
@@ -6957,10 +6959,11 @@ fn legacy_deposit_cooldown_passes_through_to_departing() {
     );
 }
 
-/// A miner killed while it holds the refinery's contact slot must free it at
-/// once, not when its death animation ends: the fatal lifecycle's exact-zero
-/// stage broadcasts BREAK to every contact. No per-frame sweep backs this up,
-/// so the dock frees only if that production stage runs.
+/// A miner killed while it holds the refinery's contact slot frees it at once.
+/// A voxel miner has no death animation, so the damage receiver uninits it in
+/// the same transaction (`immediate_uninit_ids` -> `uninit_with_rules` ->
+/// `techno_limbo_with_context`), whose `broadcast_break` reaches the refinery.
+/// No per-frame sweep backs this up.
 #[test]
 fn killed_occupant_releases_dock_to_queued_miner() {
     let mut sim = Simulation::new();
@@ -6973,34 +6976,131 @@ fn killed_occupant_releases_dock_to_queued_miner() {
     assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, occupant));
     assert!(!crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, waiter));
 
-    {
-        let corpse = sim.substrate.entities.get_mut(occupant).expect("occupant");
-        corpse.health.current = 0;
-        corpse.dying = true;
-    }
-    sim.apply_fatal_lifecycle_stage(
-        &rules,
-        crate::sim::combat::FatalLifecycleStage::PostMortemExactZero { killer_owner: None },
-        occupant,
-        EntityCategory::Unit,
-        crate::sim::world::UninitContext::with_rules(&rules),
-    );
+    sim.uninit_with_rules(occupant, &rules);
 
     assert!(!crate::sim::miner::miner_dock::has_contact(
         &sim, 2, occupant
     ));
     assert!(
-        !sim.substrate
-            .entities
-            .get(occupant)
-            .expect("corpse")
-            .radio_contacts
-            .contains(2)
-    );
-    assert!(
         crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, waiter),
-        "the waiter wins the freed slot on its next probe, during the death animation"
+        "the waiter wins the freed slot on its next probe"
     );
+}
+
+/// An object that keeps a corpse for its death animation is still Limbo'd
+/// natively at the moment it dies. The BREAK is sent at that edge, not when the
+/// animation ends, so the corpse never holds the dock.
+#[test]
+fn dying_corpse_break_frees_the_dock_before_its_animation_ends() {
+    let mut sim = Simulation::new();
+
+    let occupant = spawn_miner(&mut sim, 1, MinerKind::War, 14, 11);
+    let waiter = spawn_miner(&mut sim, 3, MinerKind::War, 14, 12);
+    spawn_refinery(&mut sim, 2, 10, 10);
+    assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, occupant));
+    crate::sim::miner::miner_dock::enter_dock(&mut sim, occupant, 2);
+
+    // What the damage receiver does for a unit with a death animation.
+    sim.substrate.entities.get_mut(occupant).unwrap().dying = true;
+    crate::sim::radio::broadcast_break(&mut sim, occupant);
+
+    let corpse = sim.substrate.entities.get(occupant).expect("corpse stays");
+    assert!(!corpse.radio_contacts.contains(2));
+    assert_eq!(corpse.dock_entered_with, None);
+    assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, waiter));
+}
+
+/// `refinery_hello` refuses another house for as long as that holds, so a
+/// reservation on a refinery the miner's house lost (engineer capture) must be
+/// dropped and reselected, not retried forever.
+#[test]
+fn reservation_on_a_captured_refinery_is_dropped_and_reselected() {
+    let mut sim = Simulation::new();
+    let rules = miner_rules();
+    // Beyond `HarvesterTooFarDistance`: the miner reserves the nearer refinery
+    // and drives, holding no contact yet.
+    let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 5, 10);
+    spawn_refinery(&mut sim, 2, 20, 10);
+    spawn_refinery(&mut sim, 3, 40, 10);
+    fill_and_return(&mut sim, miner_id);
+
+    tick_miners_n(&mut sim, &rules, 1);
+    assert_eq!(get_miner(&sim, miner_id).reserved_refinery, Some(2));
+    assert!(!crate::sim::miner::miner_dock::has_contact(
+        &sim, 2, miner_id
+    ));
+
+    let captor = sim.interner.intern("Russians");
+    sim.change_owner(2, captor);
+    // HARV state 2 re-evaluates its refinery only once its NavCom is spent, so
+    // finish the drive the fixture cannot perform.
+    {
+        let entity = sim.substrate.entities.get_mut(miner_id).unwrap();
+        entity.movement_target = None;
+        entity.navigation.nav_com = None;
+    }
+
+    let mut reselected = false;
+    for _ in 0..200 {
+        tick_miners_n(&mut sim, &rules, 1);
+        if get_miner(&sim, miner_id).reserved_refinery == Some(3) {
+            reselected = true;
+            break;
+        }
+    }
+    assert!(
+        reselected,
+        "the miner must give up the foreign refinery and pick its house's other one"
+    );
+    assert!(!crate::sim::miner::miner_dock::has_contact(
+        &sim, 2, miner_id
+    ));
+}
+
+/// `EventClass::Execute`'s MEGAMISSION arm (`0x004C72E8..0x004C7342`) and the
+/// IDLE arm (`0x004C75DC`) both BREAK the radio link, so a miner ordered away
+/// mid-handshake frees the refinery for the next miner.
+#[test]
+fn retasking_a_docking_miner_breaks_its_refinery_contact() {
+    for stop in [false, true] {
+        let mut sim = Simulation::new();
+        let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 14, 11);
+        let waiter = spawn_miner(&mut sim, 3, MinerKind::War, 14, 12);
+        spawn_refinery(&mut sim, 2, 10, 10);
+        {
+            let entity = sim.substrate.entities.get_mut(miner_id).unwrap();
+            let miner = entity.miner.as_mut().unwrap();
+            miner.reserved_refinery = Some(2);
+            miner.dock_phase = RefineryDockPhase::FaceSync;
+        }
+        assert!(
+            crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, miner_id)
+        );
+        crate::sim::miner::miner_dock::enter_dock(&mut sim, miner_id, 2);
+
+        if stop {
+            crate::sim::miner::miner_dock::break_for_retask(&mut sim, miner_id);
+        } else {
+            sim.queue_megamission_with_teardown(
+                miner_id,
+                crate::sim::mission::MissionType::Move,
+                crate::sim::mission::DockTeardown::All,
+            );
+        }
+
+        let entity = sim.substrate.entities.get(miner_id).unwrap();
+        assert!(!entity.radio_contacts.contains(2), "stop={stop}");
+        assert_eq!(entity.dock_entered_with, None, "stop={stop}");
+        assert_eq!(
+            entity.miner.as_ref().unwrap().dock_phase,
+            RefineryDockPhase::Approach,
+            "the handshake restarts from HELLO; stop={stop}"
+        );
+        assert!(
+            crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, waiter),
+            "stop={stop}"
+        );
+    }
 }
 
 /// A full miner whose reserved refinery enters its death animation must not

@@ -136,6 +136,9 @@ impl Simulation {
         mission: MissionType,
         teardown: DockTeardown,
     ) {
+        // The radio break precedes the Queue (`0x004C72E8..0x004C7342` run
+        // before `0x004C73B9`).
+        crate::sim::miner::miner_dock::break_for_retask(self, id);
         self.queue_mission_with_teardown(id, mission, teardown);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.suspended_attack_target = None;

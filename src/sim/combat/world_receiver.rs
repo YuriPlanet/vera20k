@@ -1392,6 +1392,12 @@ fn finish_concrete_death(
                 anim.switch_to(sequence);
             }
         }
+        // The corpse stays in the store for its death animation, but native
+        // Limbo has already run by now and with it the BREAK to every radio
+        // contact (`TechnoClass::Limbo`, see `techno_limbo_with_context`). Send
+        // it here so a dying object never keeps a dock slot through the
+        // animation; the later uninit repeats it against empty slots.
+        crate::sim::radio::broadcast_break(world, dead_id);
         effects.despawned_ids.push(dead_id);
     } else {
         effects.immediate_uninit_ids.push(dead_id);

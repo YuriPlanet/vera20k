@@ -622,8 +622,9 @@ pub struct GameEntity {
     pub radio_contacts: Contacts,
     /// Models the TechnoClass dock-entered flag (ENTER_DOCK(0x18) sets it,
     /// LEAVE_DOCK(0x19)/BREAK clears it). `Some(other_sid)` while this entity is
-    /// linked-and-entered at that dock partner; `None` otherwise. Written only
-    /// by the radio bus.
+    /// linked-and-entered at that dock partner; `None` otherwise. The radio
+    /// receivers set and clear it; teardown paths that reset an entity also
+    /// clear it.
     #[serde(default)]
     pub dock_entered_with: Option<u64>,
     /// Per-producer rally target cell for selected factory rally visuals.

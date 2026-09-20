@@ -10,10 +10,12 @@
 //! gamemd stores **no** wait-queue: a denied miner re-probes on demand and
 //! whichever re-probing miner wins a freed slot docks next (V3).
 //!
-//! The contact list and the dock-entered flag have one owner, the radio bus:
+//! The refinery handshake has one record, the radio state on the two objects:
 //! the refinery's `GameEntity::radio_contacts` and the miner's
-//! `dock_entered_with`, written only by [`radio::transmit`]. The functions here
-//! are the miner FSM's view of that state; nothing else stores it.
+//! `dock_entered_with`. The miner FSM reaches it only through the functions
+//! here, which go over [`radio::transmit`]. (Other mechanisms write
+//! `radio_contacts` for their own links, e.g. a factory exit; none of them
+//! touches a refinery.)
 //!
 //! ## Dependency rules
 //! - Part of sim/ -- no dependencies outside sim/.
@@ -88,6 +90,55 @@ pub(crate) fn would_admit(
             refinery.radio_contacts.contains(miner_sid)
                 || refinery.radio_contacts.len() < capacity.max(1)
         })
+}
+
+/// The refinery's HELLO ally gate as a predicate: `refinery_hello` answers
+/// NEGATORY to another house for as long as that holds, so a reservation on
+/// such a refinery can never complete. The FSM drops it and selects again, the
+/// same way it treats a refinery that died. Reached when an engineer captures
+/// the reserved refinery or the miner changes house mid-return.
+pub(crate) fn same_house(sim: &Simulation, refinery_sid: u64, miner_sid: u64) -> bool {
+    let entities = &sim.substrate.entities;
+    match (entities.get(refinery_sid), entities.get(miner_sid)) {
+        (Some(refinery), Some(miner)) => refinery.owner() == miner.owner(),
+        _ => false,
+    }
+}
+
+/// `EventClass::Execute`'s MEGAMISSION arm, `0x004C72E8..0x004C7342`: a unit
+/// that is not tethered (`+0x418` clear) transmits BREAK (`PUSH 3; CALL
+/// [vt+0x274]`, `0x004C72F8`); a tethered one does so only when its contact is
+/// a `Refinery=` building (`Type+0x16B3`, `0x004C732C`), and then also clears
+/// `+0x418` (`0x004C7342`). For a miner both arms end the refinery handshake,
+/// so a retasked miner frees the slot for the next one.
+///
+/// Scope: only the refinery contact the miner FSM owns. Other contacts keep
+/// their existing teardown owners (`DockTeardown`).
+pub(crate) fn break_for_retask(sim: &mut Simulation, miner_sid: u64) {
+    let Some(refinery_sid) = sim
+        .substrate
+        .entities
+        .get(miner_sid)
+        .and_then(|entity| entity.miner.as_ref())
+        .and_then(|miner| miner.reserved_refinery)
+    else {
+        return;
+    };
+    if !has_contact(sim, refinery_sid, miner_sid) && !has_entered(sim, refinery_sid, miner_sid) {
+        return;
+    }
+    break_contact(sim, miner_sid, refinery_sid);
+    if let Some(miner) = sim
+        .substrate
+        .entities
+        .get_mut(miner_sid)
+        .and_then(|entity| entity.miner.as_mut())
+    {
+        // The handshake restarts from HELLO when the miner next returns.
+        miner.dock_queued = false;
+        miner.dock_phase = crate::sim::miner::RefineryDockPhase::Approach;
+        miner.dock_enter_retry.clear();
+    }
 }
 
 /// Whether the 0x18 ENTER_DOCK handshake linked this miner to the refinery.

@@ -1432,7 +1432,9 @@ fn handle_return(
         return;
     };
 
-    let Some(dock) = refinery_dock_for_sid(sim, rules, ref_sid) else {
+    let dock = refinery_dock_for_sid(sim, rules, ref_sid)
+        .filter(|_| miner_dock::same_house(sim, ref_sid, snap.entity_id));
+    let Some(dock) = dock else {
         miner_dock::break_contact(sim, snap.entity_id, ref_sid);
         snap.miner.reserved_refinery = None;
         snap.miner.dock_queued = false;
@@ -1825,6 +1827,13 @@ fn begin_return(
     snap: &mut MinerSnapshot,
 ) {
     if let Some(rsid) = select_return_refinery(sim, rules, config, snap) {
+        // A miner holds one refinery contact at a time. HELLOing a new
+        // refinery over a live contact would evict the old one from the
+        // miner's single slot only, leaving the old refinery's slot taken
+        // until this miner died.
+        if let Some(previous) = snap.miner.reserved_refinery.filter(|&sid| sid != rsid) {
+            miner_dock::break_contact(sim, snap.entity_id, previous);
+        }
         snap.miner.reserved_refinery = Some(rsid);
         if try_issue_chrono_far_return_teleport(sim, rules, config, path_grid, snap, rsid) {
             return;
