@@ -1014,7 +1014,7 @@ pub fn build_sprite_atlas(
                         );
                         insert_anim_remap_frame_keys(&mut needed, name, count, anim_remap_keys);
                         effect_type_ids.insert(name.clone());
-                        log::info!("WorldEffect SHP {}: {} frames loaded", name, count);
+                        log::info!("Effect anim SHP {}: {} frames loaded", name, count);
                     }
                     Err(error) if required_cell_drawer => {
                         return abort_sprite_atlas_refresh(

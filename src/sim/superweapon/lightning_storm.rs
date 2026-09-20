@@ -818,7 +818,6 @@ Layer=ground
             }),
             "the bolt takes the (0, 1, 0x600, 0, 0) row"
         );
-        assert!(sim.world_effects.is_empty());
     }
 
     #[test]

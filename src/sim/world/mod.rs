@@ -1099,13 +1099,6 @@ pub struct Simulation {
     /// Distance in leptons below which a blocked unit stops instead of repathing.
     /// From CloseEnough= in [General]. Default 576 (~2.25 cells).
     pub close_enough: SimFixed,
-    /// Legacy world-position SHP animations. Every producer except the bridge
-    /// collapse `MetallicDebris=` spawn has moved to `AnimStore`; that one
-    /// remains because its types are native bouncers, an `AnimClass::AI` arm
-    /// the store lacks.
-    /// Ticked each frame, auto-removed when finished. Neither saved nor hashed.
-    #[serde(skip)]
-    pub world_effects: Vec<crate::sim::components::WorldEffect>,
     /// When true, newly spawned entities get a `DebugEventLog` allocated.
     /// Toggled by the debug inspector hotkey (X). Debug-only — not included in state hashing.
     #[serde(skip)]
@@ -2899,7 +2892,6 @@ impl Simulation {
             super_weapons_initialized: false,
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
             close_enough: SimFixed::from_num(576), // 2.25 cells × 256 lep/cell
-            world_effects: Vec::new(),
             debug_event_logging: false,
             input_delay_ticks: 2,
             quit_requested: false,
@@ -5694,8 +5686,6 @@ impl Simulation {
         // Advance building-down (undeploy) animations; spawn units when done.
         *spawned_entities |= self.tick_building_down(rules, overlay_registry);
 
-        // Tick world-effect animations and remove finished ones.
-        self.world_effects.retain_mut(|fx| !fx.tick());
 
         // EventClass dispatch is a Main_Tick tail rung: the complete live
         // Logic walk observes frame N's pre-command state, so an accepted

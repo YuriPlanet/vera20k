@@ -3183,7 +3183,7 @@ mod tests {
         occupancy_debug: String,
         occupancy_generation: u64,
         occupied_cell_count: usize,
-        event_lengths: [usize; 6],
+        event_lengths: [usize; 5],
     }
 
     fn stock_move_control() -> MissionControl {
@@ -4411,7 +4411,6 @@ mod tests {
                 sim.pending_smudge_requests.len(),
                 sim.bale_events.len(),
                 sim.bunker_wall_events.len(),
-                sim.world_effects.len(),
             ],
         }
     }

@@ -19,7 +19,8 @@ Worktree `.claude/worktrees/refactor-candidates-review-3de5a3`.
 | Animation: teleport WarpOut, superweapon invoke, Lightning Storm | Merged | PR #418 |
 | `resource_nodes` legacy ore map and the state it left write-only | Merged | PR #419 |
 | Animation: bridge collapse `BridgeExplosions=`; AnimStore delayed start edge | In review | branch `feature/bridge-explosions-animstore` |
-| Animation: `MetallicDebris=` on `WorldEffect`, muzzle flashes | Open, blocked | see below |
+| Animation: `WorldEffect` lane | In review (deleted) | same branch |
+| Animation: `MetallicDebris=` bouncers, muzzle flashes | Open, blocked | see below |
 | Move phases / Jumpjet destination | Open, overlaps other owners | see below |
 | Hand-built mover path facts | Owned elsewhere | see below |
 | Per-mover world scans | Partly done | see below |
@@ -44,13 +45,17 @@ Validation results of each candidate are recorded on its commits. Windows only.
 **Animation.** `AnimStore`/`AnimClass` (`sim/anim_class.rs`) is the native
 owner. Still outside it:
 
-- `WorldEffect` (`components.rs`) has one producer left, the bridge collapse
-  `MetallicDebris=` spawn. Those types are native bouncers (`Bouncer=yes`,
-  `RandomRate=`, `Damage=`), and AnimStore has no bouncer arm: RESIDUAL M11b
-  in `sim/anim_class.rs`, a native port (constructor RNG fork, landing damage,
-  `ExpireAnim=`) that moves the lockstep stream and nobody owns yet. The local
-  branch `feature/phase6-anim-bounce-damage` is an empty placeholder, 0 commits
-  ahead of main. `WorldEffect`, its tick and its draw path go with that port.
+- `WorldEffect` is deleted. Its last producer, the bridge collapse
+  `MetallicDebris=` spawn, pushed records whose `DBRIS*` sprites no atlas source
+  ever loaded, so the lane drew nothing. The gate and slot draws stay; the
+  debris is not constructed. Those types are native bouncers (`Bouncer=yes`,
+  `RandomRate=`, `Damage=`), and AnimStore has no bouncer arm: RESIDUAL M11b in
+  `sim/anim_class.rs`, a native port that moves the lockstep stream.
+  PRESERVE: the worktree `.claude/worktrees/phase6-audio-lane` (branch
+  `feature/phase6-anim-bounce-damage`, 0 commits ahead of main) holds about
+  1,650 uncommitted lines of parked bouncer/damage-arm work from 2026-09-03
+  across `anim_class.rs`, `bounce.rs`, `combat/mod.rs`, `world/mod.rs` and
+  `snapshot.rs`. Ownership is unresolved; do not delete it.
 - Garrison muzzle flashes (`components::AnimRuntime` + `GarrisonMuzzleFlash`,
   stepped in `app/presentation/building_anim.rs`) and `WeaponMuzzleFlash`
   (`fire_effects.rs`) are app-side and unhashed. Natively they are AnimClass

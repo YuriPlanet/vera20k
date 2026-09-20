@@ -29,8 +29,7 @@ use crate::sim::projectile::ProjectileCoord;
 use crate::util::fixed_math::SimFixed;
 
 use super::helpers::{
-    ANIM_DRAW_DEPTH_BIAS_PX, apply_shape_z_adjust, compute_sprite_depth,
-    compute_sprite_depth_params, in_view,
+    ANIM_DRAW_DEPTH_BIAS_PX, apply_shape_z_adjust, compute_sprite_depth_params, in_view,
 };
 
 /// Ordinary global/cell AnimClass palette ownership; explicit per-instance
@@ -80,20 +79,6 @@ fn terrain_object_is_render_visible(
         .terrain_objects
         .get(stable_id)
         .is_some_and(|terrain| terrain.is_live() && terrain.cell() == (object.rx, object.ry))
-}
-
-/// Project an AnimClass-like fixed world effect from its exact cell/subcell anchor.
-///
-/// Native `ObjectClass::DrawIt` passes the effect's CoordStruct directly through
-/// `CoordsToClient2`; it does not convert the effect to a terrain-tile origin first.
-pub(crate) fn world_effect_screen_position(
-    rx: u16,
-    ry: u16,
-    sub_x: SimFixed,
-    sub_y: SimFixed,
-    z: u8,
-) -> (f32, f32) {
-    crate::util::lepton::lepton_to_screen(rx, ry, sub_x, sub_y, z)
 }
 
 /// Body frame the native overlay draw selects for a non-bridge overlay cell.
@@ -218,101 +203,6 @@ fn overlay_display_identity(
         .flat_tiberium_display_overlay_id(tiberium_types, live_overlay_id, rx, ry)
         .unwrap_or(live_overlay_id);
     (display_overlay_id, overlay_data)
-}
-
-/// Build SpriteInstances for active world-position effects (warp sparkles, etc.).
-///
-/// Appends to the SHP instance list so they draw in the same depth-sorted pass.
-/// Each effect's current frame is looked up in the SHP atlas.
-pub(crate) fn build_world_effect_instances(state: &AppState, paged: &mut [Vec<SpriteInstance>]) {
-    let (sim, atlas) = match (
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        &state.match_state.match_presentation.sprite_atlas,
-    ) {
-        (Some(s), Some(a)) => (s, a),
-        _ => return,
-    };
-    let z = state.match_state.input.zoom_level;
-    let (cam_x, cam_y, sw, sh) = (
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-        state.render_width() as f32 / z,
-        state.render_height() as f32 / z,
-    );
-    for fx in &sim.world_effects {
-        let (center_x, center_y) =
-            world_effect_screen_position(fx.rx, fx.ry, fx.sub_x, fx.sub_y, fx.z);
-        if !in_view(
-            center_x - TILE_WIDTH / 2.0,
-            center_y - TILE_HEIGHT / 2.0,
-            TILE_WIDTH,
-            TILE_HEIGHT,
-            cam_x,
-            cam_y,
-            sw,
-            sh,
-            120.0,
-        ) {
-            continue;
-        }
-        let shp_name: &str = sim.interner.resolve(fx.shp_name);
-        let key = ShpSpriteKey {
-            palette_context: crate::render::sprite_atlas::ShpPaletteContext::GlobalAnim,
-            type_id: shp_name.to_string(),
-            facing: 0,
-            frame: fx.frame,
-            house_color: HouseColorIndex(0),
-        };
-        let Some(entry) = atlas.get(&key) else {
-            continue;
-        };
-        let depth_y: f32 = center_y + entry.canvas_rect[1] + entry.canvas_rect[3];
-        let base_depth: f32 = compute_sprite_depth(state, depth_y, fx.z);
-        let cfg: Option<&AnimTypeRuntimeConfig> = state
-            .rules()
-            .and_then(|rules| rules.art_registry.anim_runtime_config(shp_name));
-        // Anim SHP draws carry the type's ZAdjust= sort bias plus the
-        // constant -2px anim bias (negative = toward camera).
-        let type_z_adjust: i32 = cfg.map(|c| c.z_adjust).unwrap_or(0);
-        let world_height: f32 = state
-            .match_state
-            .match_presentation
-            .terrain_grid
-            .as_ref()
-            .map(|g| g.world_height)
-            .unwrap_or(1.0);
-        let depth: f32 = apply_shape_z_adjust(
-            base_depth,
-            type_z_adjust + ANIM_DRAW_DEPTH_BIAS_PX,
-            world_height,
-        );
-        let tint: [f32; 3] = state
-            .match_state
-            .match_presentation
-            .lighting
-            .grid()
-            .anim_tint_at((fx.rx, fx.ry), cfg);
-        let palette_light = anim_palette_light(state, (fx.rx, fx.ry), cfg, false);
-        // Source-pixel weight the native blitter family gives this frame:
-        // a fixed 25/50/75 stage from `Translucency=`, or the progressive
-        // `Translucent=yes` fade keyed on the frame against the type's End.
-        let alpha: f32 = anim_instance_alpha(cfg, i32::from(fx.frame), i32::from(fx.total_frames));
-        paged[entry.page as usize].push(SpriteInstance {
-            position: [center_x + entry.offset_x, center_y + entry.offset_y],
-            size: entry.pixel_size,
-            uv_origin: entry.uv_origin,
-            uv_size: entry.uv_size,
-            depth,
-            tint,
-            palette_light,
-            alpha,
-            ..Default::default()
-        });
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1608,7 +1498,7 @@ mod tests {
         anim_render_destination, apply_shape_z_adjust, garrison_flash_depth,
         ordinary_overlay_accepts_identity, ordinary_overlay_z, overlay_body_frame,
         overlay_display_identity, overlay_render_identity, terrain_object_is_render_visible,
-        weapon_muzzle_flash_key, world_effect_screen_position,
+        weapon_muzzle_flash_key,
     };
     use crate::map::overlay::TerrainObject;
     use crate::map::overlay_types::OverlayTypeRegistry;
@@ -2166,22 +2056,4 @@ mod tests {
         assert_eq!(anim_instance_alpha(None, 4, 8), 1.0);
     }
 
-    #[test]
-    fn world_effect_projection_preserves_exact_subcell_anchor() {
-        for (rx, ry, sub_x, sub_y, z) in [
-            (10, 10, 128, 128, 0),
-            (23, 20, 128, 128, 0),
-            (41, 17, 32, 224, 0),
-            (7, 13, 240, 48, 2),
-        ] {
-            let sub_x = SimFixed::from_num(sub_x);
-            let sub_y = SimFixed::from_num(sub_y);
-            assert_eq!(
-                world_effect_screen_position(rx, ry, sub_x, sub_y, z),
-                crate::util::lepton::lepton_to_screen(rx, ry, sub_x, sub_y, z),
-                "WorldEffect must use the native CoordStruct anchor at \
-                 ({rx},{ry},{sub_x:?},{sub_y:?},z={z})"
-            );
-        }
-    }
 }

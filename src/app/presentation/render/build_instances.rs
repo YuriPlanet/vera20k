@@ -302,7 +302,6 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
         &ground_order,
     );
     sort_by_depth_desc_with_pages(&mut unit, &mut unit_pages);
-    instances::build_world_effect_instances(state, &mut shp_paged);
     // Scheduler-owned AnimClass objects use their parsed native layer: Ground
     // joins the integer plan, Top appends to the flat page-tagged stream.
     instances::build_anim_class_instances(

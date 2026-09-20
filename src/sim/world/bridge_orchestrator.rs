@@ -632,38 +632,25 @@ const BRIDGE_DEBRIS_OUTER_GATE_EXCLUSIVE: u32 = 2_040_109_464;
 const BRIDGE_METALLIC_GATE_EXCLUSIVE: u32 = 0x3FFF_FFFF;
 const BRIDGE_JITTER_SPAN_LEPTONS: u64 = 50;
 const BRIDGE_JITTER_HALF_LEPTONS: i32 = 25;
-/// The gameplay frames a `MetallicDebris=` effect holds one image frame for.
-/// `BridgeExplosions=` are `AnimClass` objects and take their rate from their
-/// own type.
-///
-/// gamemd-derived: `AnimTypeClass::Constructor @ 0x00427530` seeds this to 1,
-/// and `AnimTypeClass::ReadINI @ 0x00427D00` overwrites it with `900 / Rate`
-/// when the section authors `Rate=`.
-///
-/// The frame-count fallback beside the debris spawn is `0`, not `20`:
-/// `AnimTypeClass::Constructor` sets `End` to 0 and `AnimClass::Constructor @
-/// 0x00421EA0` reads the SHP header only when `End == -1`, so an unbound SHP
-/// ends the anim immediately. Unreachable with retail assets.
-///
-/// The rest of the collapse is closed against `CellClass::BlowUpBridge @
-/// 0x0047DD70`, re-decompiled this pass: the outer 95% gate, both jitter draws,
-/// the 50% metallic gate, the metallic slot draw inside it, the `RandomRanged(1, 5)`
-/// start delay and the explosion slot draw all match, in order.
-///
-/// RESIDUAL (GSI-04.14) — two items remain, and the first is a SIM drift, not
-/// the presentation-only one pass 1 recorded.
-/// - `MetallicDebris=` entries resolve to `[DBRIS*]` AnimTypes carrying
-///   `RandomRate=220,600`, which `ReadINI` converts to a 1..1 pair; native's
-///   `AnimClass::Constructor` still runs `RandomRanged(1, 1)` for it, consuming
-///   a draw VERA does not. Those same types carry `Bouncer=yes`, `Damage=10/20`,
-///   `DamageRadius=50/80` and `Warhead=HE`, so retail's bridge debris bounces
-///   and hurts what it lands on; VERA's is inert.
-/// - Per-AnimType `Rate=` is not looked up for the debris, so a `[DBRIS*]`
-///   type authoring one animates at VERA's constant.
-/// - Trigger: every bridge span destroyed. Frequency: routine on maps with
-///   bridges. Downstream risk: the missing draw shifts the stream for every
-///   collapse, so it must land with the damage half rather than alone.
-const BRIDGE_EFFECT_FRAME_DELAY: u16 = 1;
+// The collapse fallout is closed against `CellClass::BlowUpBridge @
+// 0x0047DD70`: the outer 95% gate, both jitter draws, the 50% metallic gate, the
+// metallic slot draw inside it, the `RandomRanged(1, 5)` start delay and the
+// explosion slot draw all match, in order.
+//
+// RESIDUAL (GSI-04.14, M11b) — `MetallicDebris=` is not constructed.
+// - The entries resolve to `[DBRIS*]` AnimTypes with `Bouncer=yes`,
+//   `RandomRate=220,600`, `Damage=10/20`, `DamageRadius=50/80`, `Warhead=HE`
+//   and `ExpireAnim=`: retail's bridge debris bounces and hurts what it lands
+//   on. `AnimStore` has no bouncer arm (`sim::anim_class` module header), so
+//   VERA keeps the gate and slot draws and builds nothing. `ReadINI` converts
+//   the rate pair to 1..1 and native's `AnimClass::Constructor` still runs
+//   `RandomRanged(1, 1)` for it, a draw VERA does not take.
+// - The legacy effect list this replaced never drew the debris either: no
+//   atlas source lists `MetallicDebris=` names, so their sprites were never
+//   loaded and every record was skipped at draw time.
+// - Trigger: every bridge span destroyed. Frequency: routine on maps with
+//   bridges. Downstream risk: the missing draw shifts the stream for every
+//   collapse, so it must land with the damage half rather than alone.
 // Safety cap on the extent-measurement walk (Phase 1 of the bounded
 // walker). gamemd has no explicit cap — the off-bridge band check
 // terminates the walk — but a runaway count would only happen if the
@@ -1583,8 +1570,6 @@ pub(crate) fn refresh_bridge_zones_if_dirty(
 /// which drew 1 immediate BridgeExplosion + a 50% delayed BridgeExplosion
 /// — visible every collapse.
 fn spawn_bridge_debris(sim: &mut Simulation, rules: &RuleSet, cells: &BTreeSet<(u16, u16)>) {
-    use crate::sim::components::WorldEffect;
-
     let explosion_count = sim.bridge_explosions.len() as u32;
     let metallic_count = sim.metallic_debris.len() as u32;
 
@@ -1620,24 +1605,9 @@ fn spawn_bridge_debris(sim: &mut Simulation, rules: &RuleSet, cells: &BTreeSet<(
         // only happens when all three gates pass — short-circuit matches
         // the binary's call order.
         if metallic_pass && metallic_count > 0 {
-            let idx = sim.bridge_rng().next_range_u32(metallic_count) as usize;
-            let anim_id = sim.metallic_debris[idx];
-            let frames = rules
-                .effect_frame_count(sim.interner.resolve(anim_id))
-                .unwrap_or(0);
-            sim.world_effects.push(WorldEffect {
-                shp_name: anim_id,
-                rx,
-                ry,
-                sub_x,
-                sub_y,
-                z: deck_level,
-                frame: 0,
-                total_frames: frames,
-                frame_delay: BRIDGE_EFFECT_FRAME_DELAY,
-                elapsed_frames: 0,
-                translucent: true,
-            });
+            // The slot draw is kept for stream parity; the debris itself is
+            // not constructed (see the RESIDUAL on the debris block above).
+            let _slot = sim.bridge_rng().next_range_u32(metallic_count);
         }
 
         // Step 5 + 6: always BridgeExplosion, delayed 1-5 frames.
@@ -1664,11 +1634,23 @@ const BRIDGE_ANIM_DRAW_FLAGS: u32 = 0x600;
 /// `AnimClass::Start @ 0x00424CE0`; the store calls it, and plays the type's
 /// `Report=`, on the visit that counts the delay to zero.
 ///
-/// RESIDUAL: all four stock types author `Scorch=yes` and `Crater=yes`, which
-/// `AnimClass::Middle @ 0x00424F00` places from `Start`. The store does not
-/// run `Middle` (see `sim::anim_class`), and these producers queue no smudge
-/// rows, so a collapse leaves no scorch or crater. Visible after every bridge
-/// collapse; the legacy effect list did not place them either.
+/// RESIDUAL: all four stock types author `Scorch=yes` and `Crater=yes`.
+/// `AnimClass::Middle @ 0x00424F00` places them, behind a height gate
+/// (`vtable+0x1C8 < 0x1E`) and, with both keys set, one
+/// `RandomRanged(0, 0x7FFFFFFE)` for the pick. `Start` calls `Middle` when
+/// `AnimType+0x298` is zero, otherwise `AnimClass::AI` does at that frame; the
+/// value for these types is UNCHECKED. The store does not run `Middle` (see
+/// `sim::anim_class`) and these producers queue no smudge rows, so the hut
+/// walker explosions, which sit at cell level and should pass the gate, leave
+/// no scorch or crater and skip that draw; the `BlowUpBridge` ones sit a deck
+/// offset up and should fail it (offset value UNCHECKED). Downstream risk: one
+/// scenario draw per walker explosion. The legacy list took neither.
+///
+/// UNCHECKED: the store draws an anim during its start delay, so frame 0 shows
+/// for up to five frames before the sound; `AnimClass::DrawIt @ 0x00422CA0`
+/// shows no delay test, which suggests native does the same. The
+/// `BlowUpBridge` Z uses the deck level only while the cell still reports a
+/// deck, where native adds the offset unconditionally.
 fn bridge_explosion_descriptor(
     type_name: InternedId,
     cell: (u16, u16),
@@ -2658,10 +2640,11 @@ mod tests {
             let (rx, ry, _, _, level) = anims[0].world_coord.to_cell_sub_z();
             assert_eq!((rx, ry, level), (5, 5, 3));
             assert!(
-                sim.world_effects
+                sim.substrate
+                    .anims
                     .iter()
-                    .all(|fx| fx.shp_name == metallic_debris),
-                "only MetallicDebris stays on the legacy effect list"
+                    .all(|(_, anim)| anim.type_id != metallic_debris),
+                "MetallicDebris is drawn for but not constructed (RESIDUAL M11b)"
             );
         }
         assert_eq!(
@@ -2744,7 +2727,6 @@ mod tests {
             sim.sound_events.is_empty(),
             "a delayed anim plays its Report= when the delay expires, not at construction"
         );
-        assert!(sim.world_effects.is_empty());
         assert_eq!(
             sim.scenario_rng.logical_state(),
             predicted.logical_state(),
@@ -3369,12 +3351,18 @@ mod tests {
         cells.insert((5, 5));
         spawn_bridge_debris(&mut sim, &rules, &cells);
 
-        // No MetallicDebris effect must spawn when the verified 50% gate fails.
-        assert!(
-            !sim.world_effects
-                .iter()
-                .any(|fx| fx.shp_name == metallic_id),
-            "metallic gate failure must suppress MetallicDebris spawn"
+        // A failed 50% gate takes no MetallicDebris slot draw: outer gate,
+        // two jitters, the metallic gate, then the explosion's delay and slot.
+        let mut predicted = crate::sim::rng::SimRng::new(seed);
+        for _ in 0..4 {
+            predicted.next_range_u32_inclusive(0, NORMALIZED_RNG_MAX_INCLUSIVE);
+        }
+        predicted.next_range_u32_inclusive(1, 5);
+        predicted.next_range_u32(1);
+        assert_eq!(
+            sim.scenario_rng.logical_state(),
+            predicted.logical_state(),
+            "metallic gate failure must skip the MetallicDebris slot draw"
         );
     }
 
@@ -3407,11 +3395,18 @@ mod tests {
         cells.insert((5, 5));
         spawn_bridge_debris(&mut sim, &rules, &cells);
 
-        assert!(
-            sim.world_effects
-                .iter()
-                .any(|fx| fx.shp_name == metallic_id),
-            "BridgeVoxelMax=0 must not suppress standard BlowUpBridge metallic debris"
+        // A passed gate takes the slot draw whatever BridgeVoxelMax says.
+        let mut predicted = crate::sim::rng::SimRng::new(seed);
+        for _ in 0..4 {
+            predicted.next_range_u32_inclusive(0, NORMALIZED_RNG_MAX_INCLUSIVE);
+        }
+        predicted.next_range_u32(1);
+        predicted.next_range_u32_inclusive(1, 5);
+        predicted.next_range_u32(1);
+        assert_eq!(
+            sim.scenario_rng.logical_state(),
+            predicted.logical_state(),
+            "BridgeVoxelMax=0 must not suppress the BlowUpBridge metallic slot draw"
         );
     }
 
@@ -3437,7 +3432,7 @@ mod tests {
             baseline_state,
             "no RNG draws when BridgeExplosion metadata is absent"
         );
-        assert!(sim.world_effects.is_empty());
+        assert!(sim.substrate.anims.iter().next().is_none());
     }
 
     /// Task 11 — DropIn must NOT touch entities that aren't on the bridge

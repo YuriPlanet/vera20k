@@ -270,12 +270,6 @@ fn authoritative_effect_roots(rules: &RuleSet) -> BTreeSet<String> {
             insert(name);
         }
     }
-    for name in &rules.bridge_rules.explosions {
-        insert(name);
-    }
-    for name in &rules.general.metallic_debris {
-        insert(name);
-    }
     insert(&rules.general.iron_curtain_invoke_anim);
     insert(&rules.general.force_shield_invoke_anim);
     insert(&rules.general.ion_blast_anim);

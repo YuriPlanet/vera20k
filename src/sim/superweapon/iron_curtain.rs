@@ -165,7 +165,6 @@ Translucent=yes
             )),
             "AnimClass::Start plays the art Report="
         );
-        assert!(sim.world_effects.is_empty());
     }
 
     fn spawn(sim: &mut Simulation, id: u64, type_ref: &str, rx: u16, ry: u16, cat: EntityCategory) {

@@ -178,10 +178,6 @@ fn force_fire_detonation_builds_an_anim_instance_and_plays_its_report() {
     assert_eq!(anim.draw_flags, COMBAT_EXPLOSION_DRAW_FLAGS);
     assert_eq!(anim.z_adjust, COMBAT_EXPLOSION_Z_ADJUST);
     assert!(anim.start_sound_active);
-    assert!(
-        sim.world_effects.is_empty(),
-        "combat explosions no longer take the legacy world-effect path"
-    );
 
     let report = sim.interner.intern("EXPLOSION06");
     assert!(

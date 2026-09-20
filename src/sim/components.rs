@@ -839,9 +839,7 @@ pub struct WeaponMuzzleFlash {
 ///
 /// This preserves the fields passed to `AnimClass::Constructor` separately from
 /// presentation conveniences such as cached frame count and wall-clock frame
-/// delay. Not every legacy `WorldEffect` producer has been migrated to native
-/// rows yet; migrated paths attach this descriptor so parity-sensitive code can
-/// inspect the original constructor surface.
+/// delay, so parity-sensitive code can inspect the original constructor surface.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct AnimClassSpawnDescriptor {
     /// AnimType/SHP type interned ID.
@@ -899,57 +897,6 @@ impl AnimClassSpawnDescriptor {
             terrain_attached: false,
             draw_runtime: crate::sim::anim_class::AnimDrawRuntime::default(),
         }
-    }
-}
-
-/// A temporary one-shot SHP animation playing at a fixed world position.
-///
-/// Legacy lane, superseded by `sim::anim_class::AnimStore`. Its only remaining
-/// producer is the bridge collapse `MetallicDebris=` spawn
-/// (`world::bridge_orchestrator`), which stays here until the store has a
-/// bouncer arm; do not add new ones. The render loop draws these as flat
-/// ground-level sprites. They auto-remove when finished.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct WorldEffect {
-    /// SHP type interned ID (uppercase), e.g., "WARPOUT", "WARPIN", "FBALL1".
-    pub shp_name: InternedId,
-    /// World cell containing the effect's game-space anchor.
-    pub rx: u16,
-    pub ry: u16,
-    /// Sub-cell X anchor in leptons. `128` is the cell center.
-    pub sub_x: SimFixed,
-    /// Sub-cell Y anchor in leptons. `128` is the cell center.
-    pub sub_y: SimFixed,
-    /// Height level for depth sorting.
-    pub z: u8,
-    /// Current frame index.
-    pub frame: u16,
-    /// Total frame count in the SHP.
-    pub total_frames: u16,
-    /// Native gameplay frames between image-frame advances.
-    pub frame_delay: u16,
-    /// Reached gameplay frames accumulated toward the next image frame.
-    pub elapsed_frames: u16,
-    /// Whether the effect renders with alpha/translucency (art.ini Translucent=yes).
-    pub translucent: bool,
-}
-
-impl WorldEffect {
-    /// Advance the animation by one native gameplay frame. Returns true when
-    /// it has finished.
-    pub fn tick(&mut self) -> bool {
-        if self.total_frames == 0 {
-            return true;
-        }
-        if self.frame_delay == 0 {
-            return false;
-        }
-        self.elapsed_frames = self.elapsed_frames.saturating_add(1);
-        while self.elapsed_frames >= self.frame_delay && self.frame < self.total_frames {
-            self.elapsed_frames -= self.frame_delay;
-            self.frame += 1;
-        }
-        self.frame >= self.total_frames
     }
 }
 
@@ -1270,30 +1217,4 @@ mod tests {
         assert!(!r.is_neutral());
     }
 
-    #[test]
-    fn test_world_effect_tick_advances_and_finishes() {
-        use crate::sim::intern::test_intern;
-        let mut fx = WorldEffect {
-            shp_name: test_intern("WARPOUT"),
-            rx: 10,
-            ry: 10,
-            sub_x: crate::util::lepton::CELL_CENTER_LEPTON,
-            sub_y: crate::util::lepton::CELL_CENTER_LEPTON,
-            z: 0,
-            frame: 0,
-            total_frames: 3,
-            frame_delay: 2,
-            elapsed_frames: 0,
-            translucent: true,
-        };
-        assert!(!fx.tick());
-        assert_eq!(fx.frame, 0);
-        assert!(!fx.tick());
-        assert_eq!(fx.frame, 1);
-        for _ in 0..3 {
-            assert!(!fx.tick());
-        }
-        assert!(fx.tick());
-        assert_eq!(fx.frame, 3);
-    }
 }
