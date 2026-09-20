@@ -2379,7 +2379,7 @@ impl Simulation {
     /// This shared sale/death scheduling is still incomplete native behavior.
     ///
     /// Native ReceiveDamage4424A2 gates release4593A0 on reciprocal bunker
-    /// +2E4, not refinery contacts/on_pad. That release calls Power_On (+58),
+    /// +2E4, not refinery contacts. That release calls Power_On (+58),
     /// Force_Track (+70), a separate owner-speed setter and radio BREAK (+274),
     /// not Stop or Mark. Stock refinery death instead proceeds through pointer
     /// expiry/Limbo; subsequent contact-loss Unload73DEE0 has its own idle,
@@ -6137,9 +6137,6 @@ impl Simulation {
         // particular, ordinary object ReceiveDamage paths that arm a Team's
         // base-defense suspension occur only after this frame's Team visit.
         self.run_team_script_pass(rules);
-        if rules.is_some() {
-            crate::sim::miner::sweep_dead_dock_reservations(self);
-        }
         // The live pass commits each object's AI, movement and lifecycle effects
         // before advancing its cursor; later phases need only these outcomes.
         #[cfg(test)]

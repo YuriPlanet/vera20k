@@ -503,7 +503,9 @@ use crate::sim::world::Simulation;
 // 169 -> 170: aircraft dock indices widen from u8 to u32; save only reservation
 // slots and rebuild their reverse lookup, rejecting duplicate occupants on load.
 // 170 -> 171: save shared pixel-conversion bounds and retained HasEngineer.
-const SNAPSHOT_VERSION: u32 = 171;
+// 171 -> 172: remove the refinery dock registry from ProductionState; the radio
+// bus (entity contacts and the dock-entered flag) is the only contact record.
+const SNAPSHOT_VERSION: u32 = 172;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1634,7 +1636,6 @@ fn restore_object_references(
             slave_ids.retain(|id| entity_ids.contains(id));
             entity_ids.contains(master_id)
         });
-    sim.production.dock_reservations.cleanup_dead(&entity_ids);
     sim.production.airfield_docks.cleanup_dead(&entity_ids);
 
     // The produced-object link was validated above, so this legacy helper is
@@ -3400,7 +3401,7 @@ mod tests {
         // 164 -> 165: DriveTrackState::before_first_point, inserted mid-record.
         // 165 -> 166: Economy owns the sole house credit balance.
         // 170 -> 171: shared animation bounds and retained HasEngineer.
-        assert_eq!(super::SNAPSHOT_VERSION, 171);
+        assert_eq!(super::SNAPSHOT_VERSION, 172);
     }
 
     #[test]
@@ -3525,7 +3526,7 @@ mod tests {
 
     #[test]
     fn combined_bridge_membership_history_schema_rejects_separate_layouts() {
-        for version in 153..=170 {
+        for version in 153..=171 {
             let preamble = GameSnapshotPreamble {
                 product_magic: SNAPSHOT_PRODUCT_MAGIC,
                 envelope_version: SNAPSHOT_ENVELOPE_VERSION,
@@ -3534,7 +3535,7 @@ mod tests {
             let bytes = bincode::serialize(&preamble).expect("previous layout header");
             assert!(matches!(
                 GameSnapshot::load(&bytes),
-                Err(SnapshotError::VersionMismatch { expected: 171, found }) if found == version
+                Err(SnapshotError::VersionMismatch { expected: SNAPSHOT_VERSION, found }) if found == version
             ));
         }
     }

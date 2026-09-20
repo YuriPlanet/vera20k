@@ -1086,7 +1086,7 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
         .radio_contacts
         .clone();
     let sound_count_before = sim.sound_events.len();
-    assert!(!sim.production.dock_reservations.is_occupied(refinery_id));
+    assert!(!crate::sim::miner::miner_dock::test_support::dock_test_is_occupied(&sim, refinery_id));
 
     // The scan dispatch left the Rate epilogue on the dispatch timer, so ask for
     // the next dispatch explicitly — the gate under test is what that dispatch
@@ -1123,22 +1123,17 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
             .radio_contacts,
         refinery_contacts_before,
     );
-    assert!(!sim.production.dock_reservations.is_occupied(refinery_id));
-    assert!(
-        !sim.production
-            .dock_reservations
-            .has_contact(refinery_id, entity_id),
-    );
-    assert!(
-        !sim.production
-            .dock_reservations
-            .has_contact_entered(refinery_id, entity_id),
-    );
-    assert!(
-        !sim.production
-            .dock_reservations
-            .is_on_pad(refinery_id, entity_id),
-    );
+    assert!(!crate::sim::miner::miner_dock::test_support::dock_test_is_occupied(&sim, refinery_id));
+    assert!(!crate::sim::miner::miner_dock::has_contact(
+        &sim,
+        refinery_id,
+        entity_id
+    ),);
+    assert!(!crate::sim::miner::miner_dock::has_entered(
+        &sim,
+        refinery_id,
+        entity_id
+    ),);
     assert_eq!(sim.sound_events.len(), sound_count_before);
 }
 

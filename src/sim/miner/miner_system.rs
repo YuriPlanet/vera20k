@@ -13,12 +13,10 @@
 //!   sim/movement, sim/pathfinding, rules/.
 //! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
 
-use std::collections::BTreeSet;
-
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::MovementZone;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::miner::miner_dock::ContactAdmission;
+use crate::sim::miner::miner_dock::{self, ContactAdmission};
 use crate::sim::miner::{
     CargoBale, Miner, MinerConfig, MinerKind, MinerState, RefineryDockPhase, ResourceNode,
     ResourceType,
@@ -566,38 +564,6 @@ pub(super) struct MinerSnapshot {
     pub(super) debug_dock_events: Vec<(String, String)>,
 }
 
-/// Release dock reservations held by/on dying objects before the Harvest
-/// dispatches run, so queued miners promote without waiting through the death
-/// anim. Gated on a live dispatchable miner existing — matching the legacy
-/// global tick, whose sweep only ran when its snapshot list was non-empty
-/// (hash-identical when no miners are present).
-pub(crate) fn sweep_dead_dock_reservations(sim: &mut Simulation) {
-    let order = sim.live_object_order_snapshot();
-    sweep_dead_dock_reservations_for_keys(sim, &order);
-}
-
-fn sweep_dead_dock_reservations_for_keys(sim: &mut Simulation, order: &[u64]) {
-    let any_miner = order.iter().any(|&id| {
-        sim.substrate.entities.get(id).is_some_and(|e| {
-            !e.dying
-                && e.miner
-                    .as_ref()
-                    .is_some_and(|miner| miner.kind != MinerKind::Slave)
-        })
-    });
-    if !any_miner {
-        return;
-    }
-    let alive_sids: BTreeSet<u64> = sim
-        .substrate
-        .entities
-        .values()
-        .filter(|e| !e.dying)
-        .map(|e| e.stable_id())
-        .collect();
-    sim.production.dock_reservations.cleanup_dead(&alive_sids);
-}
-
 /// Build the dispatch snapshot for one live, non-dying, non-slave miner.
 /// Returns `None` when the object is not a dispatchable miner.
 pub(super) fn build_miner_snapshot(
@@ -748,7 +714,6 @@ pub(super) fn tick_miners_test_walk(
     } else {
         live_order
     };
-    sweep_dead_dock_reservations_for_keys(sim, &keys);
     for id in keys {
         super::harvest_mission::dispatch_harvest_for_object_with_resource_authority_for_tests(
             sim,
@@ -1467,10 +1432,10 @@ fn handle_return(
         return;
     };
 
-    let Some(dock) = refinery_dock_for_sid(sim, rules, ref_sid) else {
-        sim.production
-            .dock_reservations
-            .cancel_miner(ref_sid, snap.entity_id);
+    let dock = refinery_dock_for_sid(sim, rules, ref_sid)
+        .filter(|_| miner_dock::same_house(sim, ref_sid, snap.entity_id));
+    let Some(dock) = dock else {
+        miner_dock::break_contact(sim, snap.entity_id, ref_sid);
         snap.miner.reserved_refinery = None;
         snap.miner.dock_queued = false;
         snap.miner.dock_phase = RefineryDockPhase::Approach;
@@ -1862,6 +1827,13 @@ fn begin_return(
     snap: &mut MinerSnapshot,
 ) {
     if let Some(rsid) = select_return_refinery(sim, rules, config, snap) {
+        // A miner holds one refinery contact at a time. HELLOing a new
+        // refinery over a live contact would evict the old one from the
+        // miner's single slot only, leaving the old refinery's slot taken
+        // until this miner died.
+        if let Some(previous) = snap.miner.reserved_refinery.filter(|&sid| sid != rsid) {
+            miner_dock::break_contact(sim, snap.entity_id, previous);
+        }
         snap.miner.reserved_refinery = Some(rsid);
         if try_issue_chrono_far_return_teleport(sim, rules, config, path_grid, snap, rsid) {
             return;
@@ -1926,17 +1898,7 @@ fn try_begin_close_return_radio(
         return false;
     };
 
-    let admission =
-        sim.production
-            .dock_reservations
-            .hello_or_wait(ref_sid, snap.entity_id, dock_capacity);
-    super::miner_dock_sequence::bus_hello(
-        sim,
-        snap.entity_id,
-        ref_sid,
-        dock_capacity,
-        admission == ContactAdmission::Accepted,
-    );
+    let admission = miner_dock::hello(sim, snap.entity_id, ref_sid, dock_capacity);
 
     if admission == ContactAdmission::Accepted {
         if let Some(entity) = sim.substrate.entities.get_mut(snap.entity_id) {
@@ -2302,12 +2264,7 @@ fn find_docking_bay(
                 continue;
             };
             let capacity = obj.dock_contact_capacity() as usize;
-            if !wide
-                && !sim
-                    .production
-                    .dock_reservations
-                    .would_admit(sid, snap.entity_id, capacity)
-            {
+            if !wide && !miner_dock::would_admit(sim, sid, snap.entity_id, capacity) {
                 continue;
             }
             let (w, h) = foundation_dimensions(&obj.foundation);
@@ -2404,7 +2361,7 @@ fn find_docking_bay(
 ///   re-adds a popped passenger to the unit's own cargo), so a stock
 ///   refinery's +0x118 stays 0 and this "bay" gate is INERT for stock play:
 ///   the narrow-pass occupancy gate is the `Contacts[]` probe alone. Rust
-///   therefore applies no `on_pad` gate here;
+///   therefore models no bay-occupancy gate here;
 /// - otherwise 0.
 #[allow(clippy::too_many_arguments)]
 fn refinery_accepts_can_load(
@@ -2420,12 +2377,7 @@ fn refinery_accepts_can_load(
     if refinery.building_up.is_some() || refinery.building_down.is_some() {
         return false;
     }
-    if !wide
-        && !sim
-            .production
-            .dock_reservations
-            .would_admit(refinery.stable_id(), miner_sid, capacity)
-    {
+    if !wide && !miner_dock::would_admit(sim, refinery.stable_id(), miner_sid, capacity) {
         return false;
     }
     if unit_mz != MovementZone::Amphibious && harvester.naval != refinery_type.naval {
@@ -3679,9 +3631,7 @@ mod harvest_scan_dispatch_tests {
         assert_eq!(miner.dock_phase, RefineryDockPhase::MissionEnter);
         assert!(!miner.dock_queued);
         assert!(
-            sim.production
-                .dock_reservations
-                .has_contact(REFINERY_ID, MINER_ID),
+            crate::sim::miner::miner_dock::has_contact(&sim, REFINERY_ID, MINER_ID),
             "HELLO accepted on the same dispatch"
         );
         assert_eq!((entity.position.rx, entity.position.ry), (16, 11));
@@ -3718,9 +3668,11 @@ mod harvest_scan_dispatch_tests {
         ge.lifecycle.in_limbo = false;
         sim.substrate.entities.insert(ge);
         assert!(
-            sim.production
-                .dock_reservations
-                .try_reserve(REFINERY_ID, BLOCKER_ID)
+            crate::sim::miner::miner_dock::test_support::dock_test_hello(
+                sim,
+                REFINERY_ID,
+                BLOCKER_ID
+            )
         );
     }
 
@@ -3743,11 +3695,11 @@ mod harvest_scan_dispatch_tests {
         let miner = entity.miner.as_ref().expect("miner");
         assert_eq!(entity.miner_state(), Some(MinerState::ReturnToRefinery));
         assert!(miner.dock_queued);
-        assert!(
-            !sim.production
-                .dock_reservations
-                .has_contact(REFINERY_ID, MINER_ID)
-        );
+        assert!(!crate::sim::miner::miner_dock::has_contact(
+            &sim,
+            REFINERY_ID,
+            MINER_ID
+        ));
         let goal = entity
             .movement_target
             .as_ref()
@@ -3780,9 +3732,7 @@ mod harvest_scan_dispatch_tests {
         );
 
         // Slot frees: the next dispatch's HELLO is accepted and hands off.
-        sim.production
-            .dock_reservations
-            .cancel_miner(REFINERY_ID, BLOCKER_ID);
+        crate::sim::miner::miner_dock::break_contact(&mut sim, BLOCKER_ID, REFINERY_ID);
         sim.session.binary_frame += 20;
         tick_miners(&mut sim, &rules, &config, Some(&grid));
         let entity = sim.substrate.entities.get(MINER_ID).expect("miner");

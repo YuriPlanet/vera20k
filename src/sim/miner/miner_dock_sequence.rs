@@ -28,12 +28,11 @@ use crate::sim::pathfinding::PathGrid;
 use crate::sim::world::Simulation;
 use crate::util::fixed_math::SimFixed;
 
-use super::miner_dock::ContactAdmission;
+use super::miner_dock::{self, ContactAdmission};
 use super::miner_system::{MinerSnapshot, effective_purifier_count};
 use crate::sim::economy::apply_income_mult;
 use crate::sim::house_state::{house_state_for_owner_mut, income_ppm_for_owner};
 use crate::sim::production::{credits_entry_for_owner, foundation_dimensions};
-use crate::sim::radio::{self, RadioMessage, RadioPayload};
 
 /// Maximum diamond-ring radius for the post-unload exit-cell spiral search.
 /// gamemd's `FootClass::Find_Nearby_Passable_Cell` derives its cap from
@@ -164,76 +163,46 @@ fn clear_unload_cluster(snap: &mut MinerSnapshot) {
     clear_unload_timer_cluster(snap);
 }
 
-fn mark_refinery_contact(sim: &mut Simulation, miner_id: u64, ref_sid: u64) {
-    if let Some(entity) = sim.substrate.entities.get_mut(miner_id) {
-        entity.mark_live_contact_with(ref_sid);
+/// Abandon an unload in progress for a command that replaces the miner's
+/// mission directly instead of queueing it.
+///
+/// A queued order is released by the Unload mission's own contact gate
+/// (`abort_unload_contact_lost`). `Command::HarvestCell` assigns Harvest and
+/// rewrites the handler cursor on the spot, so that gate never runs again; the
+/// same clears have to happen here or the miner drives off wearing its
+/// UnloadingClass image with the unload latch set, which holds back every
+/// later queued order until its next dock completes. Does nothing outside an
+/// unload phase.
+pub(crate) fn abandon_unload_for_direct_retask(sim: &mut Simulation, miner_sid: u64) {
+    let Some(entity) = sim.substrate.entities.get_mut(miner_sid) else {
+        return;
+    };
+    let Some(miner) = entity.miner.as_mut() else {
+        return;
+    };
+    if !matches!(
+        miner.dock_phase,
+        RefineryDockPhase::Pivoting
+            | RefineryDockPhase::Unloading
+            | RefineryDockPhase::DepositCooldown
+            | RefineryDockPhase::Departing
+    ) {
+        return;
     }
-}
-
-fn clear_refinery_contact(sim: &mut Simulation, miner_id: u64, ref_sid: u64) {
-    if let Some(entity) = sim.substrate.entities.get_mut(miner_id) {
-        entity.clear_live_contact_with(ref_sid);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Radio-bus shadow of the dock handshake.
-//
-// The `RefineryDockContacts` registry stays the FSM's admission/entered
-// decision source (so every existing direct-setup test still observes the same
-// state). These helpers maintain the authoritative-eventually radio-bus state
-// (`ref.radio_contacts` + the miner's `dock_entered_with`) in lockstep; a later
-// slice retires the registry mirror and reads the bus directly.
-// ---------------------------------------------------------------------------
-
-/// Mirror the registry's HELLO admission onto the bus: widen the refinery's
-/// contact slots to `NumberOfDocks` (grow-only) and, **only when the registry
-/// accepted**, transmit HELLO so `ref.radio_contacts` tracks the same
-/// membership. Gating on the registry decision keeps the two stores in lockstep
-/// even when a test seeds the registry out-of-band (the bus does not
-/// independently admit during this transitional slice — Slice 8 flips that).
-pub(super) fn bus_hello(
-    sim: &mut Simulation,
-    miner_id: u64,
-    ref_sid: u64,
-    dock_capacity: usize,
-    accepted: bool,
-) {
-    if let Some(refinery) = sim.substrate.entities.get_mut(ref_sid) {
-        refinery.radio_contacts.set_capacity(dock_capacity);
-    }
-    if accepted {
-        let _ = radio::transmit(
-            sim,
-            miner_id,
-            ref_sid,
-            RadioMessage::Hello,
-            RadioPayload::default(),
-        );
-    }
-}
-
-/// ENTER_DOCK over the bus — sets the miner's `dock_entered_with`.
-pub(super) fn bus_enter_dock(sim: &mut Simulation, miner_id: u64, ref_sid: u64) {
-    let _ = radio::transmit(
-        sim,
-        miner_id,
-        ref_sid,
-        RadioMessage::EnterDock,
-        RadioPayload::default(),
-    );
-}
-
-/// BREAK over the bus — drops the contact on both ends and clears the miner's
-/// `dock_entered_with`.
-pub(super) fn bus_break(sim: &mut Simulation, miner_id: u64, ref_sid: u64) {
-    let _ = radio::transmit(
-        sim,
-        miner_id,
-        ref_sid,
-        RadioMessage::Break,
-        RadioPayload::default(),
-    );
+    miner.unload_active = false;
+    miner.unload_accumulator = 0;
+    miner.unload_timer_fired = false;
+    miner.unload_cluster_timer.clear();
+    miner.unload_cluster_scratch = 0;
+    miner.unload_cluster_repeat = 0;
+    miner.mission_deploy_timer.clear();
+    miner.dock_enter_retry.clear();
+    miner.dock_pivot_facing = None;
+    miner.dock_queued = false;
+    miner.dock_phase = RefineryDockPhase::Approach;
+    miner.exit_cell = None;
+    entity.display_type_override = None;
+    entity.facing_target = None;
 }
 
 fn tick_unload_accumulator(sim: &Simulation, snap: &mut MinerSnapshot) {
@@ -547,53 +516,34 @@ fn dock_abort_state_from_miner(miner: &super::Miner) -> MinerState {
 ///
 /// Native Sell44AAA4 and ReceiveDamage4424A2 call release4593A0 only through
 /// the reciprocal bunker link (+2E4), whose producer is gated by Bunker at
-/// 44B797..44B7A3. Refinery contacts/on_pad are not that link and cannot
+/// 44B797..44B7A3. Refinery contacts are not that link and cannot
 /// authorize Force_Track(0x47) or SetSpeedFraction(1). Native sale's radio0x17
 /// receiver737A98 and death's later contact-loss dispatch73DEE0 have distinct
 /// mission/scatter timing. This eager shared reset remains an unfinished
 /// VERA adapter; it does not implement either complete native sequence.
 pub(crate) fn interrupt_refinery_docked_miners(sim: &mut Simulation, ref_sid: u64) -> usize {
-    let candidates: Vec<u64> = sim
+    // The refinery's own contact slots name every miner it admitted, so no
+    // world scan is needed. Ascending id keeps the former visiting order.
+    let mut candidates: Vec<u64> = sim
         .substrate
         .entities
-        .keys_sorted()
-        .iter()
-        .copied()
-        .filter_map(|entity_id| {
-            let Some(entity) = sim.substrate.entities.get(entity_id) else {
-                return None;
-            };
-            let Some(miner) = entity.miner.as_ref() else {
-                return None;
-            };
-            if miner.reserved_refinery != Some(ref_sid)
-                || entity.miner_state() != Some(MinerState::Dock)
-            {
-                return None;
-            }
-            let is_on_pad = sim
-                .production
-                .dock_reservations
-                .is_on_pad(ref_sid, entity_id);
-            let has_contact = sim
-                .production
-                .dock_reservations
-                .has_contact(ref_sid, entity_id);
-            if is_on_pad || has_contact {
-                Some(entity_id)
-            } else {
-                None
-            }
+        .get(ref_sid)
+        .map(|refinery| refinery.radio_contacts.iter_live().collect())
+        .unwrap_or_default();
+    candidates.sort_unstable();
+    candidates.retain(|&entity_id| {
+        sim.substrate.entities.get(entity_id).is_some_and(|entity| {
+            entity.miner_state() == Some(MinerState::Dock)
+                && entity
+                    .miner
+                    .as_ref()
+                    .is_some_and(|miner| miner.reserved_refinery == Some(ref_sid))
         })
-        .collect();
+    });
 
     let mut interrupted = 0;
     for entity_id in candidates {
-        sim.production
-            .dock_reservations
-            .cancel_miner(ref_sid, entity_id);
-        bus_break(sim, entity_id, ref_sid);
-        clear_refinery_contact(sim, entity_id, ref_sid);
+        miner_dock::break_contact(sim, entity_id, ref_sid);
         let Some(entity) = sim.substrate.entities.get_mut(entity_id) else {
             continue;
         };
@@ -628,11 +578,7 @@ pub(crate) fn interrupt_refinery_docked_miners(sim: &mut Simulation, ref_sid: u6
 
 fn abort_invalid_refinery(sim: &mut Simulation, snap: &mut MinerSnapshot, ref_sid: Option<u64>) {
     if let Some(ref_sid) = ref_sid {
-        sim.production
-            .dock_reservations
-            .cancel_miner(ref_sid, snap.entity_id);
-        bus_break(sim, snap.entity_id, ref_sid);
-        clear_refinery_contact(sim, snap.entity_id, ref_sid);
+        miner_dock::break_contact(sim, snap.entity_id, ref_sid);
     }
 
     sim.cancel_drive_track(snap.entity_id);
@@ -657,11 +603,7 @@ fn abort_invalid_refinery(sim: &mut Simulation, snap: &mut MinerSnapshot, ref_si
 }
 
 fn abort_missing_unload_building(sim: &mut Simulation, snap: &mut MinerSnapshot, ref_sid: u64) {
-    sim.production
-        .dock_reservations
-        .cancel_miner(ref_sid, snap.entity_id);
-    bus_break(sim, snap.entity_id, ref_sid);
-    clear_refinery_contact(sim, snap.entity_id, ref_sid);
+    miner_dock::break_contact(sim, snap.entity_id, ref_sid);
 
     sim.cancel_drive_track(snap.entity_id);
     if let Some(entity) = sim.substrate.entities.get_mut(snap.entity_id) {
@@ -708,15 +650,15 @@ fn abort_missing_unload_building(sim: &mut Simulation, snap: &mut MinerSnapshot,
 /// same zeroed handler cursor the state-4 exit uses, and releases the miner's
 /// live contact and radio-bus slot exactly as that exit does.
 ///
-/// Residual (VERA-internal, gamemd equivalent UNCHECKED beyond the dispatch
-/// order): native runs the `In_Radio_Contact` check at `0x0073DEE7` BEFORE the
-/// `+0xBC` state dispatch, so states 3 (dumping) and 4 (exit) abandon the unload
-/// on contact loss as well. Rust asks only at `Pivoting`; `Unloading` and
-/// `Departing` never re-check. No production path currently drops a contact
-/// without also resetting the dock phase (`interrupt_docked_miners`,
-/// `abort_invalid_refinery`, `abort_missing_unload_building`), so the gap has
-/// no trigger today; a future contact-drop that leaves the phase in place would
-/// let the drain continue one gate longer than native.
+/// Native runs the `In_Radio_Contact` check at `0x0073DEE7` BEFORE the `+0xBC`
+/// state dispatch, so state 3 (dumping) abandons the unload on contact loss
+/// as well; `phase_unloading` asks on each of its due dispatches too. The
+/// trigger is a player retask: `miner_dock::break_for_retask` BREAKs the
+/// contact of a miner in an unload phase and leaves the phase alone so that
+/// this path, not a phase reset, ends the unload.
+///
+/// Residual: `Departing` does not re-check. It BREAKs the contact itself on
+/// its first dispatch, so a retask there only repeats that BREAK.
 fn abort_unload_contact_lost(sim: &mut Simulation, snap: &mut MinerSnapshot, ref_sid: u64) {
     sim.cancel_drive_track(snap.entity_id);
     if let Some(entity) = sim.substrate.entities.get_mut(snap.entity_id) {
@@ -733,13 +675,8 @@ fn abort_unload_contact_lost(sim: &mut Simulation, snap: &mut MinerSnapshot, ref
     let commenced = matches!(sim.mission_commence_exact(snap.entity_id, now), Ok(true));
     if commenced {
         // Commence zeroed the handler cursor (== SearchOre); the dock
-        // bookkeeping goes with it, as on the state-4 exit: registry slot and
-        // pad, radio-bus BREAK, and the miner's live-contact mirror.
-        sim.production
-            .dock_reservations
-            .cancel_miner(ref_sid, snap.entity_id);
-        bus_break(sim, snap.entity_id, ref_sid);
-        clear_refinery_contact(sim, snap.entity_id, ref_sid);
+        // handshake goes with it, as on the state-4 exit: BREAK both ends.
+        miner_dock::break_contact(sim, snap.entity_id, ref_sid);
         snap.miner.reserved_refinery = None;
         snap.miner.dock_queued = false;
         snap.miner.dock_phase = RefineryDockPhase::Approach;
@@ -779,6 +716,19 @@ pub(super) fn handle_dock_sequence(
         }
         return;
     };
+
+    // Only before admission: a miner the refinery already admitted keeps its
+    // handshake across an owner change (a mind-controlled miner still unloads
+    // into the refinery owner's account).
+    if !miner_dock::has_contact(sim, ref_sid, snap.entity_id)
+        && !miner_dock::same_house(sim, ref_sid, snap.entity_id)
+    {
+        abort_invalid_refinery(sim, snap, Some(ref_sid));
+        if phase_before != snap.miner.dock_phase {
+            record_dock_phase(snap, phase_before, snap.miner.dock_phase);
+        }
+        return;
+    }
 
     match snap.miner.dock_phase {
         RefineryDockPhase::Approach => {
@@ -909,21 +859,10 @@ fn phase_approach(
 
     // On ROGER it queues Mission_Enter for the next dispatch instead of jumping
     // straight to the accepted-cell move or unload pivot.
-    let admission =
-        sim.production
-            .dock_reservations
-            .hello_or_wait(ref_sid, snap.entity_id, dock_capacity);
-    bus_hello(
-        sim,
-        snap.entity_id,
-        ref_sid,
-        dock_capacity,
-        admission == ContactAdmission::Accepted,
-    );
+    let admission = miner_dock::hello(sim, snap.entity_id, ref_sid, dock_capacity);
 
     snap.miner.dock_queued = admission != ContactAdmission::Accepted;
     if admission == ContactAdmission::Accepted {
-        mark_refinery_contact(sim, snap.entity_id, ref_sid);
         // G5: the accepted HELLO queues Mission_Enter with the mission-epilogue
         // cadence; the first CAN_DOCK waits ~14-16f (arm), it does not collapse
         // to an always-due next-tick dispatch.
@@ -965,29 +904,8 @@ fn phase_mission_enter(
         return;
     }
 
-    let admission =
-        sim.production
-            .dock_reservations
-            .hello_or_wait(ref_sid, snap.entity_id, dock_capacity);
-    bus_hello(
-        sim,
-        snap.entity_id,
-        ref_sid,
-        dock_capacity,
-        admission == ContactAdmission::Accepted,
-    );
-    if admission == ContactAdmission::Accepted {
-        mark_refinery_contact(sim, snap.entity_id, ref_sid);
-    }
-    let already_entered = sim
-        .production
-        .dock_reservations
-        .has_contact_entered(ref_sid, snap.entity_id);
-    let pad_clear_or_self = !sim.production.dock_reservations.pad_occupied(ref_sid)
-        || sim
-            .production
-            .dock_reservations
-            .is_on_pad(ref_sid, snap.entity_id);
+    let admission = miner_dock::hello(sim, snap.entity_id, ref_sid, dock_capacity);
+    let already_entered = miner_dock::has_entered(sim, ref_sid, snap.entity_id);
     if admission != ContactAdmission::Accepted && !already_entered {
         snap.miner.dock_queued = true;
         if !is_adjacent_or_at((snap.rx, snap.ry), wait_queue) {
@@ -1007,10 +925,10 @@ fn phase_mission_enter(
         return;
     }
 
-    let can_start_enter_handshake =
-        (admission == ContactAdmission::Accepted || already_entered) && pad_clear_or_self;
-    snap.miner.dock_queued =
-        (admission != ContactAdmission::Accepted && !already_entered) || !pad_clear_or_self;
+    // Past the early return above the miner holds the contact or has already
+    // entered, so the 0x18 handshake may start as soon as it stands on the
+    // accepted cell.
+    snap.miner.dock_queued = false;
 
     let moving = sim
         .substrate
@@ -1019,14 +937,9 @@ fn phase_mission_enter(
         .is_some_and(|e| e.movement_target.is_some());
 
     if (snap.rx, snap.ry) == accepted_cell && !moving {
-        if can_start_enter_handshake {
-            sim.production
-                .dock_reservations
-                .mark_contact_entered(ref_sid, snap.entity_id);
-            bus_enter_dock(sim, snap.entity_id, ref_sid);
-            sync_dock_facing(sim, rules, snap);
-            snap.miner.dock_phase = RefineryDockPhase::FaceSync;
-        }
+        miner_dock::enter_dock(sim, snap.entity_id, ref_sid);
+        sync_dock_facing(sim, rules, snap);
+        snap.miner.dock_phase = RefineryDockPhase::FaceSync;
         schedule_enter_retry(sim, rules, snap);
         return;
     }
@@ -1132,10 +1045,6 @@ fn phase_face_sync(sim: &mut Simulation, rules: &RuleSet, snap: &mut MinerSnapsh
         snap.ry = entity.position.ry;
     }
 
-    sim.production
-        .dock_reservations
-        .mark_contact_entered(ref_sid, snap.entity_id);
-
     let accepted = sync_dock_facing(sim, rules, snap);
     if !enter_retry_due(sim, snap) {
         return;
@@ -1143,9 +1052,10 @@ fn phase_face_sync(sim: &mut Simulation, rules: &RuleSet, snap: &mut MinerSnapsh
 
     // L20: EnterDock(0x18) is one-per-0x0E-pass — send it only on a due Enter
     // dispatch, not every arrived tick (which spammed ~14-16 duplicates per
-    // wait window). The per-tick facing interpolation (sync_dock_facing) and
-    // the idempotent contact-entered mark stay ungated above.
-    bus_enter_dock(sim, snap.entity_id, ref_sid);
+    // wait window). The per-tick facing interpolation (sync_dock_facing)
+    // stays ungated above; the miner already carries the entered flag from the
+    // Mission_Enter handshake that moved it into this phase.
+    miner_dock::enter_dock(sim, snap.entity_id, ref_sid);
 
     if accepted {
         // L9: the accepted 0x16->0x15 handoff is still a Mission_Enter dispatch
@@ -1231,11 +1141,7 @@ fn phase_pivoting(
     // `RadioClass::In_Radio_Contact` (0x0065AE30, any non-null entry in the
     // `+0xE4`×`+0xE8` contact array; mislabeled `PathType__Has_Valid_Steps`)
     // BEFORE the facing gate. Contacts gone → the unload is abandoned.
-    if !sim
-        .production
-        .dock_reservations
-        .has_contact(ref_sid, snap.entity_id)
-    {
+    if !miner_dock::has_contact(sim, ref_sid, snap.entity_id) {
         abort_unload_contact_lost(sim, snap, ref_sid);
         return;
     }
@@ -1287,6 +1193,13 @@ fn phase_unloading(
     }
 
     if !mission_deploy_due(sim, snap) {
+        return;
+    }
+
+    // The same `In_Radio_Contact` gate as `phase_pivoting`: it precedes the
+    // state dispatch, so the dump state abandons on contact loss too.
+    if !miner_dock::has_contact(sim, ref_sid, snap.entity_id) {
+        abort_unload_contact_lost(sim, snap, ref_sid);
         return;
     }
 
@@ -1453,14 +1366,7 @@ fn phase_departing(sim: &mut Simulation, rules: &RuleSet, snap: &mut MinerSnapsh
     // bookkeeping and hand directly back to Harvest/SearchOre scheduling.
     // Do not seed ReleaseDockedHarvester effects here: no Force_Track(0x47),
     // no BunkerWallsDownSound, and no cached queue-cell destination.
-    sim.production
-        .dock_reservations
-        .release_on_pad(ref_sid, snap.entity_id);
-    sim.production
-        .dock_reservations
-        .release_contact(ref_sid, snap.entity_id);
-    bus_break(sim, snap.entity_id, ref_sid);
-    clear_refinery_contact(sim, snap.entity_id, ref_sid);
+    miner_dock::break_contact(sim, snap.entity_id, ref_sid);
 
     sim.cancel_drive_track(snap.entity_id);
     if let Some(entity) = sim.substrate.entities.get_mut(snap.entity_id) {

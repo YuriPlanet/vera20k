@@ -751,7 +751,7 @@ pub fn sell_building(sim: &mut Simulation, rules: &RuleSet, stable_id: u64) -> b
     // Existing VERA contact/reset adapter. Native sale separately broadcasts
     // radio0x17 at44AB68; its miner scatter/mission receiver is still incomplete.
     let interrupted_miners = crate::sim::miner::interrupt_refinery_docked_miners(sim, stable_id);
-    // This reciprocal bunker link is distinct from refinery contacts/on_pad.
+    // This reciprocal bunker link is distinct from refinery contacts.
     // Native44AAB0 ->4593A0 uses Power_On, Force_Track, a separate owner-speed
     // setter, link clear and radio BREAK. The current reveal/place adapter
     // below still awaits that release-order migration; run it before uninit.

@@ -1594,11 +1594,7 @@ mod tests {
                 saw_home_refinery = true;
             }
 
-            if sim
-                .production
-                .dock_reservations
-                .has_contact(refinery_sid, miner_sid)
-            {
+            if crate::sim::miner::miner_dock::has_contact(&sim, refinery_sid, miner_sid) {
                 saw_dock_reservation = true;
             }
 

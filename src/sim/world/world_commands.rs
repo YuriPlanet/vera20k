@@ -828,6 +828,20 @@ impl Simulation {
                 if !self.order_actor_admits(*entity_id) {
                     return false;
                 }
+                // The IDLE arm returns at `0x004C7504..0x004C750C` when the
+                // object's tether byte (`+0x418`) is set: a miner that has
+                // entered its dock ignores Stop and finishes unloading, and so
+                // does a vehicle still leaving its war factory (the other
+                // writer of `dock_entered_with`). Native also returns for
+                // current missions 0x12 and 0x13, which is not modelled.
+                if self
+                    .substrate
+                    .entities
+                    .get(*entity_id)
+                    .is_some_and(|entity| entity.dock_entered_with.is_some())
+                {
+                    return true;
+                }
                 // Retail breaks EVERY radio contact on Stop (it broadcasts the
                 // break message to the whole contact list), so the refinery,
                 // airfield and service-depot links all go at once. Cancelling
@@ -911,6 +925,12 @@ impl Simulation {
                 // until it is re-ordered. Without it the miner halts for a beat
                 // and then drives straight back to the ore field, ignoring the
                 // order outright.
+                //
+                // The radio break itself: the IDLE arm pushes BREAK to every
+                // link (`PUSH 3; CALL [vt+0x280]` at `0x004C75DC`). Only the
+                // miner's refinery handshake is modelled on that bus here.
+                // A tethered miner never gets here (see the top of this arm).
+                crate::sim::miner::miner_dock::break_for_retask(self, *entity_id);
                 self.commit_stop_miner_guard(*entity_id);
                 true
             }
@@ -1458,9 +1478,14 @@ impl Simulation {
                     .is_some_and(|refinery_id| previous_refinery != Some(refinery_id));
                 if explicit_refinery_changed {
                     if let Some(old_refinery) = previous_refinery {
-                        self.production
-                            .dock_reservations
-                            .cancel_miner(old_refinery, *entity_id);
+                        // BREAK both ends: the old refinery's slot frees for
+                        // the next miner, and this miner loses the contact
+                        // that would let it path through that refinery.
+                        crate::sim::miner::miner_dock::break_contact(
+                            self,
+                            *entity_id,
+                            old_refinery,
+                        );
                     }
                 }
                 // Update miner state in EntityStore.
@@ -1847,6 +1872,13 @@ impl Simulation {
                 miner.target_ore_cell = Some((*target_rx, *target_ry));
                 // Clear in-progress movement so the miner re-paths to the new target.
                 e.movement_target = None;
+                // A harvest order is a MEGAMISSION like any other: it ends a
+                // refinery handshake in progress (`miner_dock::break_for_retask`).
+                // This arm assigns the mission below instead of queueing it, so
+                // an unload in progress is abandoned here rather than by the
+                // Unload mission's contact gate.
+                crate::sim::miner::miner_dock::break_for_retask(self, *entity_id);
+                crate::sim::miner::abandon_unload_for_direct_retask(self, *entity_id);
                 // Commit the Harvest mission and the MoveToOre cursor of
                 // record. Native (EventClass::Execute MEGAMISSION,
                 // disassembled 2026-09-05): the client's mission byte passes
@@ -3581,7 +3613,7 @@ mod tests {
             miner.dock_queued = true;
             miner.dock_phase = RefineryDockPhase::Unloading;
         }
-        assert!(sim.production.dock_reservations.try_reserve(2, 1));
+        assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, 1));
 
         let applied = sim.apply_command(
             "Americans",
@@ -3611,7 +3643,15 @@ mod tests {
         );
         assert!(!miner.dock_queued);
         assert_eq!(miner.dock_phase, RefineryDockPhase::Approach);
-        assert!(!sim.production.dock_reservations.is_occupied(2));
+        // The redirect BREAKs both ends. A contact left on the miner would keep
+        // the old refinery's footprint enterable for it; one left on the
+        // refinery would refuse every later miner.
+        assert!(!crate::sim::miner::miner_dock::test_support::dock_test_is_occupied(&sim, 2));
+        let miner_entity = sim.substrate.entities.get(1).unwrap();
+        assert!(!miner_entity.radio_contacts.contains(2));
+        assert_eq!(miner_entity.dock_entered_with, None);
+        spawn_miner(&mut sim, 7);
+        assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, 7));
     }
 
     #[test]
