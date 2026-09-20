@@ -1873,9 +1873,19 @@ pub fn make_shp_candidates(
     candidates
 }
 
-/// Generate filename candidates for building animation SHPs.
+/// Generate filename candidates for animation SHPs.
 ///
-/// `repo-derived`: uses the anim section's own `Theater=` / `NewTheater=` flags.
+/// gamemd-derived, from the per-theater AnimType image reload (`0x00428CD6`
+/// onward) and `AnimTypeClass::LoadImageAndResolveFrameBounds @ 0x00427B50`:
+/// with `Theater=no` the file is `<Image or ID>.SHP`; when the type's own
+/// `NewTheater=` (`AnimType+0x237`) is set, `FUN_005F96B0` replaces the second
+/// letter with the theater's, but only for names matching `[GNCY][AT]`. If that
+/// file is missing, `FUN_005F9710` forces the second letter to `G`
+/// unconditionally and the load is retried. So `[GAPOWR_AD] Image=GAPOWR_A`,
+/// which authors no `NewTheater=`, still resolves to `GGPOWR_A.SHP`.
+///
+/// The theater-extension and plain-name candidates after those two are VERA
+/// leniency kept for `Theater=yes` rows and loose test assets.
 pub fn anim_shp_candidates(
     art: Option<&ArtRegistry>,
     anim_type: &str,
@@ -1890,13 +1900,22 @@ pub fn anim_shp_candidates(
     let uses_theater: bool = entry.map(|e| e.theater).unwrap_or(false);
     let mut candidates: Vec<String> = Vec::with_capacity(6);
 
-    if uses_new_theater {
-        let subbed: String = apply_theater_letter(&upper_image, theater_name);
-        push_shp_pair(&mut candidates, &subbed, theater_ext);
-
-        let generic: String = apply_generic_letter(&upper_image);
-        if generic != subbed && generic != upper_image {
-            push_candidate(&mut candidates, format!("{}.SHP", generic));
+    if !uses_theater {
+        let first: String = if uses_new_theater && takes_theater_letter(&upper_image) {
+            apply_theater_letter(&upper_image, theater_name)
+        } else {
+            upper_image.clone()
+        };
+        push_candidate(&mut candidates, format!("{}.SHP", first));
+        push_candidate(
+            &mut candidates,
+            format!("{}.SHP", apply_generic_letter(&upper_image)),
+        );
+        if uses_new_theater {
+            push_candidate(
+                &mut candidates,
+                format!("{}.{}", first, theater_ext.to_ascii_uppercase()),
+            );
         }
     }
 
@@ -2235,6 +2254,13 @@ fn push_shp_pair(candidates: &mut Vec<String>, base_name: &str, theater_ext: &st
         candidates,
         format!("{}.{}", base_name, theater_ext.to_ascii_uppercase()),
     );
+}
+
+/// `FUN_005F96B0`: the theater letter replaces the second character only when
+/// the first is `G`, `N`, `C` or `Y` and the second is `A` or `T`.
+fn takes_theater_letter(upper_name: &str) -> bool {
+    let mut chars = upper_name.chars();
+    matches!(chars.next(), Some('G' | 'N' | 'C' | 'Y')) && matches!(chars.next(), Some('A' | 'T'))
 }
 
 fn push_candidate(candidates: &mut Vec<String>, candidate: String) {

@@ -471,16 +471,43 @@ fn test_anim_candidates_use_anim_section_flags() {
     let image_id: String = reg.resolve_effective_image_id("CAOILD_A", "CAOILD_A");
     let candidates: Vec<String> =
         anim_shp_candidates(Some(&reg), "CAOILD_A", &image_id, "urb", "NEWURBAN");
+    // Native order: the theater-letter name, then the forced `G` name. The
+    // rest is VERA leniency.
     assert_eq!(
         candidates,
         vec![
             "CNOILDX.SHP",
-            "CNOILDX.URB",
             "CGOILDX.SHP",
+            "CNOILDX.URB",
             "CAOILDX.SHP",
             "CAOILDX.URB",
         ]
     );
+}
+
+/// `[GAPOWR_AD] Image=GAPOWR_A` authors no `NewTheater=`. The per-theater
+/// reload (`0x00428CD6`) then skips the theater letter, fails on
+/// `GAPOWR_A.SHP`, and `FUN_005F9710` forces the second letter to `G`
+/// unconditionally, which is the file retail ships.
+#[test]
+fn anim_candidates_force_the_generic_letter_without_new_theater() {
+    let reg = ArtRegistry::from_ini(&IniFile::from_str("[GAPOWR_AD]\nImage=GAPOWR_A\n"));
+    let image_id = reg.resolve_effective_image_id("GAPOWR_AD", "GAPOWR_AD");
+    let candidates = anim_shp_candidates(Some(&reg), "GAPOWR_AD", &image_id, "tem", "TEMPERATE");
+    assert_eq!(&candidates[..2], ["GAPOWR_A.SHP", "GGPOWR_A.SHP"]);
+}
+
+/// `FUN_005F96B0` substitutes only `[GNCY][AT]` names, so a `NewTheater=yes`
+/// type outside that pattern keeps its name before the `G` fallback.
+#[test]
+fn anim_theater_letter_needs_the_native_name_pattern() {
+    let reg = ArtRegistry::from_ini(&IniFile::from_str(
+        "[XAFOO]\nNewTheater=yes\n[YAGRND_B]\nNewTheater=yes\n",
+    ));
+    let plain = anim_shp_candidates(Some(&reg), "XAFOO", "XAFOO", "tem", "TEMPERATE");
+    assert_eq!(&plain[..2], ["XAFOO.SHP", "XGFOO.SHP"]);
+    let yuri = anim_shp_candidates(Some(&reg), "YAGRND_B", "YAGRND_B", "tem", "TEMPERATE");
+    assert_eq!(&yuri[..2], ["YTGRND_B.SHP", "YGGRND_B.SHP"]);
 }
 
 #[test]

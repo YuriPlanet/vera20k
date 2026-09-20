@@ -181,6 +181,9 @@ pub fn available_effect_anim_frame_count(
     }
 }
 
+/// Animation types `Simulation`'s cliff-collapse producer names literally.
+pub(crate) const CLIFF_COLLAPSE_ANIMS: [&str; 3] = ["XGRYMED1", "XGRYMED2", "XGRYSML1"];
+
 /// Every animation name the simulation can turn into an `AnimClass` instance,
 /// which the loader must bind before the match starts.
 ///
@@ -196,9 +199,6 @@ pub fn available_effect_anim_frame_count(
 /// `Explosion=`, 13 `DestroyAnim=`, plus the infantry-death family), which is
 /// why the binder that consumes it must tolerate the handful retail authors
 /// with no art section.
-/// Animation types `Simulation`'s cliff-collapse producer names literally.
-pub(crate) const CLIFF_COLLAPSE_ANIMS: [&str; 3] = ["XGRYMED1", "XGRYMED2", "XGRYSML1"];
-
 pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     let mut roots = BTreeSet::new();
     let mut insert = |name: &str| {

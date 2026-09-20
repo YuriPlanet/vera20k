@@ -364,8 +364,8 @@ pub(crate) fn load_with_launch(
         &map.header.theater,
     )
     .map_err(|error| format!("bind authoritative animation assets: {error}"))?;
-    // Combat explosions are AnimClass instances; tolerant pass, after the strict
-    // one, which rewrites the scheduler-owned set wholesale.
+    // Every other AnimClass producer and the building animations: tolerant pass,
+    // after the strict one, which rewrites the scheduler-owned set wholesale.
     let unbound_explosion_roots = art.bind_anim_class_assets(
         &crate::app::loading::init_helpers::tolerant_anim_class_roots(&rules, &art),
         &assets,

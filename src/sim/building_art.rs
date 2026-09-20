@@ -221,15 +221,26 @@ impl Simulation {
         descriptor.delay = delay;
         descriptor.loop_count = 1;
         descriptor.draw_flags = 0x1600;
-        let new_id = if self.native_unique_ids.is_some() {
+        let spawned = if self.native_unique_ids.is_some() {
             let native_id = self
                 .next_native_load_id()
                 .expect("installed native identity cursor");
             self.spawn_load_anim_at_world(&rules.art_registry, descriptor, world, native_id)
-                .expect("registered building AnimType must have its native runtime/asset state")
         } else {
             self.spawn_anim_at_world(rules, descriptor, world)
-                .expect("registered building AnimType must have its native runtime/asset state")
+        };
+        let new_id = match spawned {
+            Ok(new_id) => new_id,
+            Err(error) => {
+                // A registered AnimType whose sprite no archive holds. Native
+                // still constructs the object, with no image to draw; VERA's
+                // store refuses a type with no loader bounds, so the slot is
+                // emptied and nothing is drawn. The native id above is spent
+                // either way.
+                log::debug!("building {id} slot {slot} animation [{canonical}] not shown: {error}");
+                self.clear_building_anim_slot(id, slot);
+                return None;
+            }
         };
         let old = self.substrate.entities.get(id)?.building_anim_slots[usize::from(slot)];
         if let Some(frame) = old
@@ -649,6 +660,51 @@ mod slot_tests {
             restored.anim(replaced).unwrap().world_coord,
             sim.anim(replaced).unwrap().world_coord
         );
+    }
+
+    /// A registered AnimType whose art body was read but whose sprite no archive
+    /// holds (the tolerant binder skipped it) must leave the slot empty, not
+    /// panic. Retail reaches this for building animations whose files never
+    /// shipped; it used to abort the match when such a building changed state.
+    #[test]
+    fn unbound_registered_slot_animation_leaves_the_slot_empty() {
+        use crate::rules::native_processing::RulesLayerStack;
+        use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
+        let ini = IniFile::from_str(
+            "[BuildingTypes]\n0=B\n[B]\nStrength=100\n[Animations]\n0=EARLY\n1=GHOST\n",
+        );
+        let art_ini = IniFile::from_str(
+            "[B]\nActiveAnim=EARLY\nActiveAnimTwo=GHOST\n\
+             [EARLY]\nRate=300\nLoopCount=-1\n[GHOST]\nRate=300\nLoopCount=-1\n",
+        );
+        let processed = RulesLayerStack::new(ini)
+            .process_with_fixed_art(&art_ini)
+            .unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        let mut art = ArtRegistry::from_ini(&art_ini);
+        art.bind_anim_frame_count_for_test("EARLY", 40);
+        rules.merge_art_data(&art);
+        assert!(
+            rules
+                .art_registry
+                .anim_runtime_config("GHOST")
+                .is_some_and(|config| config.art_body_read && config.raw_shp_frame_count.is_none()),
+            "fixture: GHOST is registered and read, but has no sprite"
+        );
+        let (mut sim, _, id) = slot_test_fixture();
+
+        assert!(
+            sim.set_building_anim_slot(id, 3, false, false, 0, &rules)
+                .is_some()
+        );
+        assert!(
+            sim.set_building_anim_slot(id, 4, false, false, 0, &rules)
+                .is_none(),
+            "no sprite, no slot animation, no panic"
+        );
+        let slots = sim.substrate.entities.get(id).unwrap().building_anim_slots;
+        assert!(slots[3].is_some());
+        assert!(slots[4].is_none());
     }
 
     #[test]
