@@ -1,12 +1,12 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `4f2168c2dce4258b642d107949242f664a618c99` (2026-09-20), cargo-modules 0.26.0.
+Generated snapshot: `0dc620ab11fd9853c7590624705b0870a2b1dcd4` (2026-09-20), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
 External crates and the sysroot are excluded from the dependency graph.
-Contains **839 modules plus the crate root**, and **5312 distinct
+Contains **839 modules plus the crate root**, and **5309 distinct
 cross-module dependency edges**. Check this source commit against your checkout.
 <!-- module-map:provenance:end -->
 
@@ -631,7 +631,7 @@ sim::multiplayer_checksum -> map::entities; sim::game_entity; sim::intern; sim::
 sim::native_identity -> map::tubes; rules::ini_parser; sim::world
 sim::naval_base_placement -> map::entities; map::playfield; map::resolved_terrain; rules::locomotor_type; rules::object_type; rules::ruleset; sim::find_nearby_cell; sim::house_state; sim::intern; sim::pathfinding::core; sim::world
 sim::occupancy -> map::cell_index; map::entities; map::resolved_terrain; rules::object_type; sim::components; sim::entity_store; sim::game_entity; sim::intern; sim::movement::locomotor; util::fixed_math
-sim::ore_growth -> map::authored_overlay; map::basic; map::resolved_terrain; rules::overlay_types; rules::tiberium_type; sim::overlay_grid; sim::pathfinding::core; sim::rng; sim::scenario_session; sim::tiberium; util::native_x87
+sim::ore_growth -> map::authored_overlay; map::basic; map::resolved_terrain; rules::overlay_types; rules::tiberium_type; sim::overlay_grid; sim::rng; sim::scenario_session; sim::tiberium; util::native_x87
 sim::ore_twinkle -> map::authored_overlay; rules::overlay_types; rules::ruleset; rules::tiberium_type; sim::anim_class; sim::components; sim::world; util::fixed_math; util::lepton
 sim::overlay_grid -> map::authored_overlay; map::overlay; map::resolved_terrain; rules::overlay_types; sim::intern; sim::rng; util::lepton; util::native_x87
 sim::parity_digest -> sim::entity_store; sim::house_state; sim::intern
@@ -719,8 +719,8 @@ sim::superweapon::psychic_reveal -> rules::ruleset; sim::intern; sim::vision; si
 sim::team_script_vm -> rules::locomotor_type; rules::object_type; rules::ruleset; rules::team_ai_ini; sim::command; sim::intern; util::native_x87
 sim::team_script_vm::registry_install -> rules::locomotor_type; rules::ruleset; rules::team_ai_ini; sim::intern; sim::pathfinding::passability; sim::team_script_vm
 sim::terrain_object -> map::resolved_terrain; rules::ruleset; rules::terrain_object_type; rules::warhead_type; sim::combat; sim::combat::damage; sim::intern; sim::occupancy; sim::production::production_types; sim::terrain_spawn
-sim::terrain_spawn -> map::overlay; map::resolved_terrain; rules::overlay_types; rules::ruleset; rules::tiberium_type; sim::entity_store; sim::intern; sim::occupancy; sim::ore_growth; sim::overlay_grid; sim::pathfinding::core; sim::rng; sim::terrain_object; sim::tiberium; sim::world
-sim::tiberium -> map::entities; map::resolved_terrain; rules::overlay_types; rules::ruleset; rules::tiberium_type; sim::entity_store; sim::intern; sim::miner; sim::occupancy; sim::ore_growth; sim::overlay_grid; sim::pathfinding::core; sim::rng
+sim::terrain_spawn -> map::overlay; map::resolved_terrain; rules::overlay_types; rules::ruleset; rules::tiberium_type; sim::entity_store; sim::intern; sim::occupancy; sim::ore_growth; sim::overlay_grid; sim::rng; sim::terrain_object; sim::tiberium; sim::world
+sim::tiberium -> map::entities; map::resolved_terrain; rules::overlay_types; rules::ruleset; rules::tiberium_type; sim::entity_store; sim::intern; sim::miner; sim::occupancy; sim::ore_growth; sim::overlay_grid; sim::rng
 sim::tiberium_germinate -> map::authored_overlay; map::cell_index; map::resolved_terrain; rules::overlay_types; rules::tiberium_type; sim::ore_twinkle; sim::overlay_grid
 sim::timer -> -
 sim::transport_unload -> map::entities; rules::locomotor_type; rules::mission_data; rules::ruleset; rules::terrain_rules; sim::cell_rect; sim::find_nearby_cell; sim::game_entity; sim::mission::authority; sim::mission::retask; sim::mission::state; sim::movement::bump_crush; sim::movement::facing_class; sim::movement::locomotor; sim::movement::ready_producer; sim::passenger::departure; sim::pathfinding::core; sim::world
