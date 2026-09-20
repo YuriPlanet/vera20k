@@ -608,15 +608,15 @@ fn abort_missing_unload_building(sim: &mut Simulation, snap: &mut MinerSnapshot,
 /// same zeroed handler cursor the state-4 exit uses, and releases the miner's
 /// live contact and radio-bus slot exactly as that exit does.
 ///
-/// Residual (VERA-internal, gamemd equivalent UNCHECKED beyond the dispatch
-/// order): native runs the `In_Radio_Contact` check at `0x0073DEE7` BEFORE the
-/// `+0xBC` state dispatch, so states 3 (dumping) and 4 (exit) abandon the unload
-/// on contact loss as well. Rust asks only at `Pivoting`; `Unloading` and
-/// `Departing` never re-check. No production path currently drops a contact
-/// without also resetting the dock phase (`interrupt_docked_miners`,
-/// `abort_invalid_refinery`, `abort_missing_unload_building`), so the gap has
-/// no trigger today; a future contact-drop that leaves the phase in place would
-/// let the drain continue one gate longer than native.
+/// Native runs the `In_Radio_Contact` check at `0x0073DEE7` BEFORE the `+0xBC`
+/// state dispatch, so state 3 (dumping) abandons the unload on contact loss
+/// as well; `phase_unloading` asks on each of its due dispatches too. The
+/// trigger is a player retask: `miner_dock::break_for_retask` BREAKs the
+/// contact of a miner in an unload phase and leaves the phase alone so that
+/// this path, not a phase reset, ends the unload.
+///
+/// Residual: `Departing` does not re-check. It BREAKs the contact itself on
+/// its first dispatch, so a retask there only repeats that BREAK.
 fn abort_unload_contact_lost(sim: &mut Simulation, snap: &mut MinerSnapshot, ref_sid: u64) {
     sim.cancel_drive_track(snap.entity_id);
     if let Some(entity) = sim.substrate.entities.get_mut(snap.entity_id) {
@@ -1151,6 +1151,13 @@ fn phase_unloading(
     }
 
     if !mission_deploy_due(sim, snap) {
+        return;
+    }
+
+    // The same `In_Radio_Contact` gate as `phase_pivoting`: it precedes the
+    // state dispatch, so the dump state abandons on contact loss too.
+    if !miner_dock::has_contact(sim, ref_sid, snap.entity_id) {
+        abort_unload_contact_lost(sim, snap, ref_sid);
         return;
     }
 

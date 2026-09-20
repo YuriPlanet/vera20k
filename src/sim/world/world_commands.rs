@@ -828,6 +828,17 @@ impl Simulation {
                 if !self.order_actor_admits(*entity_id) {
                     return false;
                 }
+                // The IDLE arm returns at `0x004C7504..0x004C750C` when the
+                // object's tether byte (`+0x418`) is set: a miner that has
+                // entered its dock ignores Stop and finishes unloading.
+                if self
+                    .substrate
+                    .entities
+                    .get(*entity_id)
+                    .is_some_and(|entity| entity.dock_entered_with.is_some())
+                {
+                    return true;
+                }
                 // Retail breaks EVERY radio contact on Stop (it broadcasts the
                 // break message to the whole contact list), so the refinery,
                 // airfield and service-depot links all go at once. Cancelling
@@ -915,6 +926,7 @@ impl Simulation {
                 // The radio break itself: the IDLE arm pushes BREAK to every
                 // link (`PUSH 3; CALL [vt+0x280]` at `0x004C75DC`). Only the
                 // miner's refinery handshake is modelled on that bus here.
+                // A tethered miner never gets here (see the top of this arm).
                 crate::sim::miner::miner_dock::break_for_retask(self, *entity_id);
                 self.commit_stop_miner_guard(*entity_id);
                 true

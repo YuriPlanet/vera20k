@@ -396,6 +396,9 @@ fn war_miner_full_ore_payout_is_1000() {
         miner.dock_phase = RefineryDockPhase::Unloading;
         miner.reserved_refinery = Some(2);
     }
+    // The unload mission's In_Radio_Contact gate needs the admitted contact
+    // a real approach leaves behind.
+    assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, miner_id));
 
     let before = credits_for_owner(&sim, "Americans");
     // Tick enough times to fully unload: 40 bales * unload_interval=57 = 2280 ticks.
@@ -433,6 +436,9 @@ fn war_miner_full_gem_payout_is_2000() {
         miner.dock_phase = RefineryDockPhase::Unloading;
         miner.reserved_refinery = Some(2);
     }
+    // The unload mission's In_Radio_Contact gate needs the admitted contact
+    // a real approach leaves behind.
+    assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, miner_id));
 
     let before = credits_for_owner(&sim, "Americans");
     tick_miners_n(&mut sim, &rules, 2400);
@@ -468,6 +474,9 @@ fn chrono_miner_full_ore_payout_is_500() {
         miner.dock_phase = RefineryDockPhase::Unloading;
         miner.reserved_refinery = Some(2);
     }
+    // The unload mission's In_Radio_Contact gate needs the admitted contact
+    // a real approach leaves behind.
+    assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, miner_id));
 
     let before = credits_for_owner(&sim, "Americans");
     // 20 bales * unload_interval=57 = 1140 ticks.
@@ -504,6 +513,9 @@ fn chrono_miner_full_gem_payout_is_1000() {
         miner.dock_phase = RefineryDockPhase::Unloading;
         miner.reserved_refinery = Some(2);
     }
+    // The unload mission's In_Radio_Contact gate needs the admitted contact
+    // a real approach leaves behind.
+    assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, miner_id));
 
     let before = credits_for_owner(&sim, "Americans");
     tick_miners_n(&mut sim, &rules, 1200);
@@ -1601,6 +1613,9 @@ fn home_refinery_rebinds_after_unload() {
         miner.reserved_refinery = Some(2);
         miner.home_refinery = None; // Start without a home
     }
+    // The unload mission's In_Radio_Contact gate needs the admitted contact
+    // a real approach leaves behind.
+    assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, miner_id));
 
     // Tick until unload completes: 1 bale × unload_interval=57 ticks.
     tick_miners_n(&mut sim, &rules, 70);
@@ -7057,12 +7072,13 @@ fn reservation_on_a_captured_refinery_is_dropped_and_reselected() {
     ));
 }
 
-/// `EventClass::Execute`'s MEGAMISSION arm (`0x004C72E8..0x004C7342`) and the
-/// IDLE arm (`0x004C75DC`) both BREAK the radio link, so a miner ordered away
-/// mid-handshake frees the refinery for the next miner.
+/// `EventClass::Execute`'s MEGAMISSION arm (`0x004C72E8..0x004C7342`) BREAKs the
+/// radio link of an untethered unit, and of a tethered one whose contact is a
+/// refinery. A miner ordered away before the unload frees the refinery and
+/// restarts its handshake from HELLO.
 #[test]
-fn retasking_a_docking_miner_breaks_its_refinery_contact() {
-    for stop in [false, true] {
+fn megamission_before_the_unload_breaks_the_refinery_contact() {
+    for entered in [false, true] {
         let mut sim = Simulation::new();
         let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 14, 11);
         let waiter = spawn_miner(&mut sim, 3, MinerKind::War, 14, 12);
@@ -7071,34 +7087,150 @@ fn retasking_a_docking_miner_breaks_its_refinery_contact() {
             let entity = sim.substrate.entities.get_mut(miner_id).unwrap();
             let miner = entity.miner.as_mut().unwrap();
             miner.reserved_refinery = Some(2);
-            miner.dock_phase = RefineryDockPhase::FaceSync;
+            miner.dock_phase = if entered {
+                RefineryDockPhase::FaceSync
+            } else {
+                RefineryDockPhase::MissionEnter
+            };
         }
         assert!(
             crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, miner_id)
         );
-        crate::sim::miner::miner_dock::enter_dock(&mut sim, miner_id, 2);
-
-        if stop {
-            crate::sim::miner::miner_dock::break_for_retask(&mut sim, miner_id);
-        } else {
-            sim.queue_megamission_with_teardown(
-                miner_id,
-                crate::sim::mission::MissionType::Move,
-                crate::sim::mission::DockTeardown::All,
-            );
+        if entered {
+            crate::sim::miner::miner_dock::enter_dock(&mut sim, miner_id, 2);
         }
 
+        sim.queue_megamission_with_teardown(
+            miner_id,
+            crate::sim::mission::MissionType::Move,
+            crate::sim::mission::DockTeardown::All,
+        );
+
         let entity = sim.substrate.entities.get(miner_id).unwrap();
-        assert!(!entity.radio_contacts.contains(2), "stop={stop}");
-        assert_eq!(entity.dock_entered_with, None, "stop={stop}");
+        assert!(!entity.radio_contacts.contains(2), "entered={entered}");
+        assert_eq!(entity.dock_entered_with, None, "entered={entered}");
         assert_eq!(
             entity.miner.as_ref().unwrap().dock_phase,
             RefineryDockPhase::Approach,
-            "the handshake restarts from HELLO; stop={stop}"
+            "the handshake restarts from HELLO; entered={entered}"
         );
         assert!(
             crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, waiter),
-            "stop={stop}"
+            "entered={entered}"
+        );
+    }
+}
+
+/// A Move ordered mid-unload BREAKs the contact but leaves the unload phase to
+/// the Unload mission's own `In_Radio_Contact` gate (`0x0073DEE7`): the next
+/// dispatch drops the unload latch and image and commences the queued order.
+/// Resetting the phase instead would keep the latch, block the order's
+/// readiness and send the miner through a second dock.
+#[test]
+fn megamission_mid_unload_abandons_the_unload_and_commences_the_order() {
+    let mut sim = Simulation::new();
+    let rules = miner_rules();
+    let cargo = vec![(ResourceType::Ore, 25u16); 20];
+    let miner_id = spawn_queued_unload_miner(&mut sim, &cargo);
+    crate::sim::miner::miner_dock::enter_dock(&mut sim, miner_id, 2);
+
+    for _ in 0..200 {
+        tick_miners_n(&mut sim, &rules, 1);
+        let miner = get_miner(&sim, miner_id);
+        if miner.dock_phase == RefineryDockPhase::Unloading && miner.unload_active {
+            break;
+        }
+    }
+    let before = get_miner(&sim, miner_id);
+    assert_eq!(before.dock_phase, RefineryDockPhase::Unloading);
+    assert!(before.unload_active);
+    let cargo_before = before.cargo.len();
+    assert!(
+        cargo_before > 0,
+        "the order arrives with cargo still aboard"
+    );
+
+    sim.queue_megamission_with_teardown(
+        miner_id,
+        crate::sim::mission::MissionType::Move,
+        crate::sim::mission::DockTeardown::All,
+    );
+    assert!(!crate::sim::miner::miner_dock::has_contact(
+        &sim, 2, miner_id
+    ));
+    assert_eq!(
+        get_miner(&sim, miner_id).dock_phase,
+        RefineryDockPhase::Unloading,
+        "the retask leaves the unload phase for the contact gate to end"
+    );
+
+    let mut commenced = false;
+    for _ in 0..60 {
+        tick_miners_n(&mut sim, &rules, 1);
+        let entity = sim.substrate.entities.get(miner_id).unwrap();
+        if entity.mission.current().known() == Some(crate::sim::mission::MissionType::Move) {
+            commenced = true;
+            break;
+        }
+    }
+    assert!(
+        commenced,
+        "the queued Move must commence, not wait out a re-dock"
+    );
+    let entity = sim.substrate.entities.get(miner_id).unwrap();
+    let miner = entity.miner.as_ref().unwrap();
+    assert!(!miner.unload_active, "the unload latch is dropped");
+    assert_eq!(
+        entity.display_type_override, None,
+        "and the unload image with it"
+    );
+    assert_eq!(
+        miner.cargo.len(),
+        cargo_before,
+        "no further slot was dumped"
+    );
+    assert!(!crate::sim::miner::miner_dock::has_contact(
+        &sim, 2, miner_id
+    ));
+}
+
+/// The IDLE arm returns at `0x004C7504..0x004C750C` for a tethered object, so a
+/// miner that has entered its dock ignores Stop; an untethered one has every
+/// radio link broken (`0x004C75DC`).
+#[test]
+fn stop_breaks_an_untethered_refinery_contact_and_is_ignored_once_entered() {
+    for entered in [false, true] {
+        let mut sim = Simulation::new();
+        let rules = miner_rules();
+        let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 14, 11);
+        spawn_refinery(&mut sim, 2, 10, 10);
+        {
+            let entity = sim.substrate.entities.get_mut(miner_id).unwrap();
+            let miner = entity.miner.as_mut().unwrap();
+            miner.reserved_refinery = Some(2);
+            miner.dock_phase = RefineryDockPhase::MissionEnter;
+        }
+        assert!(
+            crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, miner_id)
+        );
+        if entered {
+            crate::sim::miner::miner_dock::enter_dock(&mut sim, miner_id, 2);
+        }
+
+        assert!(sim.apply_command(
+            "Americans",
+            &crate::sim::command::Command::Stop {
+                entity_id: miner_id
+            },
+            Some(&rules),
+            None,
+            &BTreeMap::new(),
+        ));
+
+        assert_eq!(
+            crate::sim::miner::miner_dock::has_contact(&sim, 2, miner_id),
+            entered,
+            "entered={entered}"
         );
     }
 }

@@ -112,8 +112,21 @@ pub(crate) fn same_house(sim: &Simulation, refinery_sid: u64, miner_sid: u64) ->
 /// `+0x418` (`0x004C7342`). For a miner both arms end the refinery handshake,
 /// so a retasked miner frees the slot for the next one.
 ///
+/// What follows the BREAK depends on the mission the miner is in. Before the
+/// unload (Harvest/Enter phases) the handshake simply restarts from HELLO the
+/// next time the miner returns. During the unload the phase is left alone:
+/// the Unload mission's own `In_Radio_Contact` gate (`0x0073DEE7`,
+/// `abort_unload_contact_lost`) finds the contact gone on its next dispatch,
+/// drops the unload latch and image and commences the queued order. Resetting
+/// the phase here instead would leave the latch set, which blocks the queued
+/// mission's readiness while Harvest re-docks the miner.
+///
 /// Scope: only the refinery contact the miner FSM owns. Other contacts keep
-/// their existing teardown owners (`DockTeardown`).
+/// their existing teardown owners (`DockTeardown`). Commands that write their
+/// mission outside the MEGAMISSION funnel (Guard, EjectBunker,
+/// UnloadPassengers, ToggleInfantryDeploy; see `mission::retask`) do not reach
+/// this yet, so a Guard order on a docking miner still holds the slot until
+/// the miner's next return.
 pub(crate) fn break_for_retask(sim: &mut Simulation, miner_sid: u64) {
     let Some(refinery_sid) = sim
         .substrate
@@ -134,10 +147,17 @@ pub(crate) fn break_for_retask(sim: &mut Simulation, miner_sid: u64) {
         .get_mut(miner_sid)
         .and_then(|entity| entity.miner.as_mut())
     {
-        // The handshake restarts from HELLO when the miner next returns.
-        miner.dock_queued = false;
-        miner.dock_phase = crate::sim::miner::RefineryDockPhase::Approach;
-        miner.dock_enter_retry.clear();
+        use crate::sim::miner::RefineryDockPhase as Phase;
+        let unloading = matches!(
+            miner.dock_phase,
+            Phase::Pivoting | Phase::Unloading | Phase::DepositCooldown | Phase::Departing
+        );
+        if !unloading {
+            // The handshake restarts from HELLO when the miner next returns.
+            miner.dock_queued = false;
+            miner.dock_phase = Phase::Approach;
+            miner.dock_enter_retry.clear();
+        }
     }
 }
 
