@@ -1458,9 +1458,14 @@ impl Simulation {
                     .is_some_and(|refinery_id| previous_refinery != Some(refinery_id));
                 if explicit_refinery_changed {
                     if let Some(old_refinery) = previous_refinery {
-                        self.production
-                            .dock_reservations
-                            .cancel_miner(old_refinery, *entity_id);
+                        // BREAK both ends: the old refinery's slot frees for
+                        // the next miner, and this miner loses the contact
+                        // that would let it path through that refinery.
+                        crate::sim::miner::miner_dock::break_contact(
+                            self,
+                            *entity_id,
+                            old_refinery,
+                        );
                     }
                 }
                 // Update miner state in EntityStore.
@@ -3581,7 +3586,7 @@ mod tests {
             miner.dock_queued = true;
             miner.dock_phase = RefineryDockPhase::Unloading;
         }
-        assert!(sim.production.dock_reservations.try_reserve(2, 1));
+        assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, 1));
 
         let applied = sim.apply_command(
             "Americans",
@@ -3611,7 +3616,15 @@ mod tests {
         );
         assert!(!miner.dock_queued);
         assert_eq!(miner.dock_phase, RefineryDockPhase::Approach);
-        assert!(!sim.production.dock_reservations.is_occupied(2));
+        // The redirect BREAKs both ends. A contact left on the miner would keep
+        // the old refinery's footprint enterable for it; one left on the
+        // refinery would refuse every later miner.
+        assert!(!crate::sim::miner::miner_dock::test_support::dock_test_is_occupied(&sim, 2));
+        let miner_entity = sim.substrate.entities.get(1).unwrap();
+        assert!(!miner_entity.radio_contacts.contains(2));
+        assert_eq!(miner_entity.dock_entered_with, None);
+        spawn_miner(&mut sim, 7);
+        assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, 7));
     }
 
     #[test]

@@ -25,7 +25,7 @@ pub(crate) use self::harvest_mission::dispatch_harvest_for_object;
 pub(crate) use self::miner_dock_sequence::interrupt_refinery_docked_miners;
 // Generic nearby-passable-cell search, reused by the tank-bunker exit placement.
 pub(crate) use self::miner_dock_sequence::find_nearby_passable_cell_with_index;
-pub(crate) use self::miner_system::{extract_bale, search_local_ore, sweep_dead_dock_reservations};
+pub(crate) use self::miner_system::{extract_bale, search_local_ore};
 
 #[cfg(test)]
 use std::collections::BTreeMap;

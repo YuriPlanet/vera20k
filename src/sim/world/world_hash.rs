@@ -1198,25 +1198,6 @@ impl Simulation {
             ry.hash(hasher);
         }
         self.production.default_ore_overlay_id.hash(hasher);
-        // Hash refinery radio/contact state.
-        for (&ref_sid, contacts) in &self.production.dock_reservations.contacts {
-            ref_sid.hash(hasher);
-            for &miner_sid in contacts {
-                miner_sid.hash(hasher);
-            }
-        }
-        // `waiting_retry_queue` removed in Slice 4 (V3-proven FIFO DRIFT — gamemd
-        // stores no wait-queue; rejected dockers re-probe on demand). The
-        // remaining `contacts`/`contact_entered`/`on_pad` folds are the
-        // transitional registry mirror, retired in a later slice.
-        for (&ref_sid, &miner_sid) in &self.production.dock_reservations.contact_entered {
-            ref_sid.hash(hasher);
-            miner_sid.hash(hasher);
-        }
-        for (&ref_sid, &miner_sid) in &self.production.dock_reservations.on_pad {
-            ref_sid.hash(hasher);
-            miner_sid.hash(hasher);
-        }
     }
 
     /// Hash the authoritative factory registry in the deterministic temporal sweep
