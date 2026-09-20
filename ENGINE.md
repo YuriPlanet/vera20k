@@ -45,6 +45,8 @@ not hand calculations or prior Rust. Avoid unqualified “VERIFIED”/“complet
 
 [Unicorn](tools/native_oracle.md) can help with native comparisons; use when useful.
 
+Use native executable comparisons when they resolve a concrete uncertainty that matters to gameplay.
+
 Preserve native comparisons as reproducible harnesses and results, recording binary
 identity and coverage limits. Link them to Rust tests where practical; parity claims
 must cite saved evidence and actual validation results.
