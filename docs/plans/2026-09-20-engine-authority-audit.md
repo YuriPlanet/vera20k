@@ -42,74 +42,99 @@ Open candidates or merely recorded cleanup remain unfinished work.
 | Rendering, sidebar/UI, audio | Read-only audit in progress | Open |
 | Rules, assets, shared utilities and binary entry points | Initial module inventory | Open |
 
-## Current draft checkpoint — 2026-09-20
+## PR415 readiness review — 2026-09-20
 
-The user requested publication of the accumulated work as a draft PR, followed by
-pausing the goal. This checkpoint is incomplete and not merge-ready. The candidate
-is based on `bd5928e6`, on `feature/track-state-authority`; fetched `origin/main`
-was `608eabf4` at publication preparation (three later policy/documentation commits).
-The separate main checkout was not changed.
+The user requested resolution of the published draft's merge blockers. This is a
+bounded delivery of the accumulated engine-ownership work, not completion of the
+whole-engine objective above. The candidate is on `feature/track-state-authority`;
+it includes `origin/main` at `608eabf4`. The separate main checkout was not changed.
 
-Implemented areas in this checkpoint:
+Implemented areas:
 
-- Signed 32-bit actual health and live Type Strength replace duplicated retained
-  maximum health; estimated health remains a separate native state owner.
-- Foot current/navigation coordinates and locomotor-specific physical height,
-  teleport restoration, and Drive/Ship track admission/continuation ownership.
-- Fresh Drive/Ship heading comparison uses the retained full 16-bit heading and
-  performs the turn in the same object turn before deferring track admission.
-- Dock slots are the serialized/hashed authority; the reverse lookup is rebuilt.
-- Building damaged state and 21 animation slots, signed power predicates, and
-  bounded storage/animation lifecycle work. Snapshot version is now 170.
-- Reproducible native comparison harnesses and corpora accompany the affected
-  mechanisms. Some evidence supports future integration, not completed migration.
+- Signed 32-bit actual health and live Type Strength replace retained maximum
+  health; estimated health remains a separate native state owner.
+- Foot current/navigation coordinates, locomotor-specific physical height and
+  teleport restoration; Drive/Ship track admission, continuation and full 16-bit
+  fresh heading comparison with same-turn Facing publication.
+- Dock slots are serialized authority, with a rebuilt reverse index and `u32`
+  pad indices through consumers, save and hash paths.
+- Building damaged state, 21 retained animation slots, bounded operational and
+  storage integration, authored NeedsEngineer shutdown and changed-owner resume,
+  and InfantryAbsorb slot selection.
+- Shared Building/Tile animation conversion bounds are explicit match/save/replay
+  inputs. The user selected this compatibility policy. Snapshot/hash schema 171
+  records those bounds and HasEngineer. The fixed rational conversion deliberately
+  omits native intermediate float32 rounding, under ENGINE.md's numeric policy.
+- Existing formation speed caps continue to limit live type speed. Fly height
+  feedback follows XY movement onto the destination terrain, allowing actual
+  landing there while preserving exact Z and save/restore continuation.
 
-### Actual validation
+### Replay regression disposition
 
-Latest full `cargo test -p vera20k --lib`: **9,132 passed, 4 failed, 134 ignored**
-(`.local/foot-coordinate-library-08.log`). The dense-position failure was then
-causally investigated against `bd5928e6`, independently reviewed, and its Rust
-regression fingerprint updated. The final exact dense-position test passed
-(**1 passed**; `.local/dense-final-validation.log`). The full suite was not rerun
-following that test-only change. Three replay baseline failures remain unresolved:
+All three baseline fixtures pass at `bd5928e6`. Frame-by-frame comparison covers
+17 Slice6, 201 bridge and 601 global states. Complete states of all three RNGs
+match at every captured frame; health values also match. Bridge positions are
+identical throughout. The intentional movement differences come from native
+fresh-turn admission, retained residual clearing and live type acceleration
+replacing a stale retask cache. Timer and target-speed publication changes are
+separately attributed. Historical pre-health-migration hashes remain archived
+receipts; they cannot be reconstructed by the current signed-health fold.
 
-- `sim::world::slice6_retask_tests::replay_hash_stable_through_slice6`
-- `sim::world::bridge_parity_harness_tests::bridge_crossing_replay_is_deterministic_and_baseline_stable`
-- `sim::world::global_parity_harness_tests::global_skirmish_replay_is_deterministic_and_baseline_stable`
+See [track regression notes](../research/TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md)
+for causal evidence, coverage and original executable harnesses. The global
+fixture also continues 16 frames beyond its old terminal boundary to check that
+an intermediate retired track resumes. These are Rust regression baselines, not
+native whole-scenario goldens.
 
-The 120-case `drive_fresh_turn` native comparison replay passed. The dense causal
-comparison and its limits are documented in
-[track regression notes](../research/TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md).
-This establishes a Rust regression explanation, not native whole-scenario parity.
-No final-candidate library Clippy, refreshed module map, supported-platform build
-matrix, or independent whole-diff acceptance is claimed. Local diagnostic logs
-and retail binaries are excluded from the PR.
+### Final validation
 
-### Required continuation before readiness
+- `cargo test -p vera20k --lib`: **9,145 passed, 0 failed, 134 ignored**,
+  final untraced run (`.local/pr415-blockers-library-04.log`). All three replay
+  fixtures and the new production regressions pass.
+- `cargo clippy -p vera20k --lib`: **passed**, with 1,215 warnings
+  (`.local/pr415-blockers-clippy-02.log`). The first normal build exposed a stray
+  `cfg(test)` on an infantry rendering helper; removing that attribute restores
+  its production caller without changing the already-tested function body.
+- The original `drive_fresh_turn`, `track_speed_native`,
+  `track_outer_entry_continuation` and `building_pixel_coordinates` corpora replay
+  successfully within their declared coverage.
+- Fresh independent read-only review accepted the actual final fixture gates,
+  causal attribution, Fly, formation speed, shared coordinates, Building slot
+  policies, docking, presentation consumers and the normal-build inclusion fix,
+  using the actual passing full-suite result.
+- `python tools/module_map.py` passed against committed source `3c212e74`: 840
+  modules and 5,336 dependency edges; reviewed the new admission/conversion/Fly edges.
 
-Resolve the three replay failures causally, complete the affected migrations, run
-final validation and refresh the dependency map, then obtain independent review.
-The whole-engine coverage ledger above remains open. In particular:
+Validation is local Windows. GitHub's CI workflow is manually disabled and has
+produced no run for this branch; no Linux/macOS execution is claimed. No repository
+CI configuration was changed. These results establish readiness for this bounded
+PR, not completion of the whole-engine coverage ledger.
 
-- Foot idle/destination, scanner callbacks, DistributedFire and estimated-health
-  producers/debits remain incomplete; persistent Facing ownership also remains open.
+### Scope and remaining work
+
+The coverage ledger above remains open. Adjacent unfinished migrations are not
+represented as completed by this PR:
+
+- Foot idle/destination and scanner callbacks, DistributedFire, estimated-health
+  producers/debits and persistent Facing ownership.
 - House aggregate storage, ordered Building registration, shared spending and
-  affordability, sale ordering, raw IncomeMult, and destruction scattering need
-  coherent production integration. Native corpora alone do not implement them.
-- Building animation-coordinate conversion currently differs from native float32
-  conversion and display-bound rejection for some ART offsets. Those positions can
-  feed damage. The deterministic compatibility policy is unresolved: explicit
-  shared conversion bounds/matrix versus rejection of display-dependent offsets.
-  No answer/default policy has been applied. This also affects Tile consumers.
-- Building body/timer ownership, Super/turret and constructor postlude,
-  HasPower/HasEngineer/temporal producers, and retained-slot repositioning remain
-  incomplete.
-- Snapshot 170 changes retained Building and dock state; save/restore tests cover
-  selected paths, not a claim of universal historical save compatibility.
+  affordability, sale ordering, raw IncomeMult and destruction scattering.
+- General Building body/timer ownership, Super/turret and constructor postlude,
+  HasPower/EMP/overpower/temporal producers. The existing shared cargo model does
+  not independently represent absorbed and garrisoned occupants for hybrid types.
+- Signed Infantry action records and AIAutoDeployFrameDelay are parser groundwork;
+  native pending-Stop/DoAction/stage/reload production migration is not implemented.
+- Arbitrary native saved Tactical matrices and historical snapshot import are not
+  supported. Version 171 rejects older layouts; restored-map/process prerequisites
+  remain explicit. The native replay format has no custom bounds extension.
 
-The sections below are historical mechanism notes and acceptance criteria. Their
-intermediate test counts and proposed next steps are superseded by this checkpoint.
-The local continuation packet is `.local/engine-authority-checkpoint.md`.
+[Building admission and coordinate policy](../research/BUILDING_SLOT_ADMISSION_AND_COORDINATES.md)
+describes native identities and intentional limits. Local diagnostic logs and
+retail binaries are excluded. Native corpus coverage does not establish universal
+native equivalence; Windows validation does not claim Linux/macOS execution.
+
+The sections below are historical mechanism notes. Their intermediate test counts,
+status and proposed next steps are superseded by this readiness review.
 
 ## Increment 1: one house wallet
 
