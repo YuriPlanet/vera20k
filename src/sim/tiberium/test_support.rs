@@ -4,16 +4,70 @@
 //! overlay and tiberium type registries. Tests seed ore the way a map does, by
 //! placing a tiberium overlay with a density byte, never through a side store.
 
+use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use crate::map::overlay_types::OverlayTypeRegistry;
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::entity_store::EntityStore;
+use crate::sim::intern::StringInterner;
 use crate::sim::miner::ResourceType;
+use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::overlay_grid::OverlayGrid;
+use crate::sim::tiberium::TiberiumPlacementObjectContext;
 use crate::sim::world::Simulation;
 
 /// Side length of the overlay grid [`place_tiberium`] creates on demand.
 pub(crate) const TEST_GRID_SIZE: u16 = 64;
+
+/// A flat clear map whose every cell accepts tiberium: the terrain half of a
+/// `NewTiberiumAdmission`.
+pub(crate) fn flat_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
+    let mut cells = Vec::with_capacity(usize::from(width) * usize::from(height));
+    for ry in 0..height {
+        for rx in 0..width {
+            cells.push(crate::sim::deploy_tests::clear_terrain_cell(rx, ry));
+        }
+    }
+    ResolvedTerrainGrid::from_cells(width, height, cells)
+}
+
+/// A world with no objects in it: the live-object half of a
+/// `NewTiberiumAdmission` for tests that are not about the object gate.
+pub(crate) struct NoLiveObjects {
+    entities: EntityStore,
+    occupancy: OccupancyGrid,
+    rules: RuleSet,
+    interner: StringInterner,
+    terrain_object_cells: BTreeMap<(u16, u16), u64>,
+}
+
+impl NoLiveObjects {
+    pub(crate) fn new() -> Self {
+        Self {
+            entities: EntityStore::new(),
+            occupancy: OccupancyGrid::new(),
+            rules: RuleSet::from_ini(&IniFile::from_str(
+                "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n",
+            ))
+            .expect("empty rules"),
+            interner: StringInterner::default(),
+            terrain_object_cells: BTreeMap::new(),
+        }
+    }
+
+    pub(crate) fn context(&self) -> TiberiumPlacementObjectContext<'_> {
+        TiberiumPlacementObjectContext::new(
+            &self.entities,
+            &self.occupancy,
+            &self.rules,
+            &self.interner,
+            &self.terrain_object_cells,
+        )
+    }
+}
 
 /// Stock-shaped `[Tiberiums]` and `[OverlayTypes]` sections: Riparius (ore,
 /// `Value=25`) on `TIB01..TIB20` at the native overlay indices 102..=121, and

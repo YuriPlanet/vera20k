@@ -27,7 +27,6 @@ use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::ore_growth::OreGrowthState;
 use crate::sim::overlay_grid::OverlayGrid;
-use crate::sim::pathfinding::PathGrid;
 use crate::sim::rng::SimRng;
 use crate::sim::terrain_object::{TerrainObjectState, mark_terrain_raw_occupation};
 use crate::sim::tiberium::{
@@ -210,7 +209,6 @@ pub struct TerrainSpawnContext<'a> {
     pub overlay_grid: Option<&'a mut OverlayGrid>,
     pub resolved_terrain: Option<&'a ResolvedTerrainGrid>,
     pub overlay_registry: Option<&'a OverlayTypeRegistry>,
-    pub path_grid: Option<&'a PathGrid>,
     pub ore_growth_state: Option<&'a mut OreGrowthState>,
     pub radar_dirty_cells: Option<&'a mut Vec<(u16, u16)>>,
     pub radar_dirty_generation: Option<&'a mut u64>,
@@ -233,7 +231,6 @@ impl<'a> TerrainSpawnContext<'a> {
             overlay_grid,
             resolved_terrain: None,
             overlay_registry: None,
-            path_grid: None,
             ore_growth_state: None,
             radar_dirty_cells: None,
             radar_dirty_generation: None,
@@ -253,11 +250,9 @@ impl<'a> TerrainSpawnContext<'a> {
         mut self,
         resolved_terrain: Option<&'a ResolvedTerrainGrid>,
         overlay_registry: Option<&'a OverlayTypeRegistry>,
-        path_grid: Option<&'a PathGrid>,
     ) -> Self {
         self.resolved_terrain = resolved_terrain;
         self.overlay_registry = overlay_registry;
-        self.path_grid = path_grid;
         self
     }
 
@@ -357,7 +352,6 @@ fn tick_terrain_spawner_one_inner(
         spawner_cells,
         ctx.resolved_terrain,
         ctx.overlay_registry,
-        ctx.path_grid,
         ctx.ore_growth_state.as_deref_mut(),
         ctx.rules.map(|rules| &rules.tiberium_types),
         ctx.binary_frame,
@@ -381,7 +375,6 @@ pub(crate) fn tick_terrain_object_ai(
     sim: &mut crate::sim::world::Simulation,
     stable_id: u64,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    path_grid: Option<&PathGrid>,
     overlay_registry: Option<&OverlayTypeRegistry>,
     spawner_cells: Option<&BTreeSet<(u16, u16)>>,
 ) {
@@ -433,7 +426,7 @@ pub(crate) fn tick_terrain_object_ai(
                 &sim.interner,
                 &production.terrain_object_cells,
             )
-            .with_validation_context(sim.resolved_terrain.as_ref(), overlay_registry, path_grid),
+            .with_validation_context(sim.resolved_terrain.as_ref(), overlay_registry),
     );
 }
 
@@ -446,7 +439,6 @@ fn try_spawn_ore(
     spawner_cells: &BTreeSet<(u16, u16)>,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    path_grid: Option<&PathGrid>,
     ore_growth_state: Option<&mut OreGrowthState>,
     tiberium_types: Option<&TiberiumTypeRegistry>,
     binary_frame: u32,
@@ -460,7 +452,7 @@ fn try_spawn_ore(
     let start_dir = rng.next_range_u32(8) as usize;
     let new_cell_admission = resolved_terrain
         .zip(live_context)
-        .map(|(terrain, objects)| NewTiberiumAdmission::runtime(terrain, path_grid, objects));
+        .map(|(terrain, objects)| NewTiberiumAdmission::runtime(terrain, objects));
     let mut ore_growth_state = ore_growth_state;
 
     for i in 0..8 {
@@ -592,8 +584,7 @@ fn place_tiberium_empty(
             source_object_cells,
             new_cell_admission,
             live_objects: new_cell_admission
-                .and_then(|admission| admission.live_objects())
-                .map(|objects| objects.object_view()),
+                .map(|admission| admission.live_objects().object_view()),
             rng,
             binary_frame,
             growth_enabled: true,
@@ -1024,7 +1015,7 @@ mod tests {
                         &self.interner,
                         &self.terrain_object_cells,
                     )
-                    .with_validation_context(Some(&self.terrain), Some(&self.registry), None),
+                    .with_validation_context(Some(&self.terrain), Some(&self.registry)),
             );
         }
 
@@ -1440,7 +1431,6 @@ SpreadPercentage=.06
             &spawner_cells,
             Some(&terrain),
             Some(&registry),
-            None,
             Some(&mut growth_state),
             Some(&tiberium_types),
             77,
@@ -1486,6 +1476,7 @@ SpreadPercentage=.06
         );
         let rules = RuleSet::from_ini(&ini).expect("rules");
         let overlay_grid = OverlayGrid::new(32, 32);
+        let terrain = resolved_grid(32, 32);
         let spawner_cells = BTreeSet::new();
 
         fn context_for<'a>(
@@ -1530,11 +1521,7 @@ SpreadPercentage=.06
                 &mut occupancy,
                 &terrain_object_cells,
             );
-            let admission = NewTiberiumAdmission::compatibility_without_native_context(
-                None,
-                None,
-                Some(context),
-            );
+            let admission = NewTiberiumAdmission::runtime(&terrain, context);
 
             assert_eq!(
                 can_accept_tiberium(
@@ -1556,8 +1543,9 @@ SpreadPercentage=.06
         let spawner_cells = BTreeSet::new();
         let mut spawning_terrain_cells = BTreeSet::new();
         spawning_terrain_cells.insert((12, 10));
-        let admission =
-            NewTiberiumAdmission::compatibility_without_native_context(None, None, None);
+        let terrain = resolved_grid(32, 32);
+        let no_objects = crate::sim::tiberium::test_support::NoLiveObjects::new();
+        let admission = NewTiberiumAdmission::runtime(&terrain, no_objects.context());
 
         assert!(can_accept_tiberium(
             (13, 10),

@@ -250,7 +250,6 @@ impl Simulation {
                 self,
                 id,
                 rules,
-                ctx.path_grid,
                 ctx.overlay_registry,
                 ctx.terrain_spawner_cells,
             );

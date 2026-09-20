@@ -66,8 +66,7 @@ use crate::sim::pathfinding::PathGrid;
 use crate::sim::world::Simulation;
 
 use super::miner_system::{
-    MinerSnapshot, build_miner_snapshot, commit_miner_snapshot,
-    process_miner_with_resource_authority,
+    MinerSnapshot, build_miner_snapshot, commit_miner_snapshot, process_miner,
 };
 use super::{MinerKind, MinerState};
 
@@ -77,43 +76,6 @@ use super::{MinerKind, MinerState};
 /// No-op for objects that are not live, dispatchable miners, and for miners
 /// whose dispatch timer is still pending.
 pub(crate) fn dispatch_harvest_for_object(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    config: &super::MinerConfig,
-    path_grid: Option<&PathGrid>,
-    overlay_registry: Option<&OverlayTypeRegistry>,
-    id: u64,
-) {
-    dispatch_harvest_for_object_with_resource_authority(
-        sim,
-        rules,
-        config,
-        path_grid,
-        overlay_registry,
-        id,
-    );
-}
-
-#[cfg(test)]
-pub(crate) fn dispatch_harvest_for_object_with_resource_authority_for_tests(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    config: &super::MinerConfig,
-    path_grid: Option<&PathGrid>,
-    overlay_registry: Option<&OverlayTypeRegistry>,
-    id: u64,
-) {
-    dispatch_harvest_for_object_with_resource_authority(
-        sim,
-        rules,
-        config,
-        path_grid,
-        overlay_registry,
-        id,
-    );
-}
-
-fn dispatch_harvest_for_object_with_resource_authority(
     sim: &mut Simulation,
     rules: &RuleSet,
     config: &super::MinerConfig,
@@ -183,18 +145,11 @@ fn dispatch_harvest_for_object_with_resource_authority(
     let Some(mut snap) = build_miner_snapshot(sim, rules, id) else {
         return;
     };
-    harvest_mission_step_with_resource_authority(
-        sim,
-        rules,
-        config,
-        path_grid,
-        overlay_registry,
-        &mut snap,
-    );
+    harvest_mission_step(sim, rules, config, path_grid, overlay_registry, &mut snap);
     commit_miner_snapshot(sim, &snap, now);
 }
 
-fn harvest_mission_step_with_resource_authority(
+fn harvest_mission_step(
     sim: &mut Simulation,
     rules: &RuleSet,
     config: &super::MinerConfig,
@@ -217,5 +172,5 @@ fn harvest_mission_step_with_resource_authority(
         );
     }
 
-    process_miner_with_resource_authority(sim, rules, config, path_grid, overlay_registry, snap);
+    process_miner(sim, rules, config, path_grid, overlay_registry, snap);
 }

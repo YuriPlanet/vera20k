@@ -19,7 +19,6 @@ use crate::sim::miner::ResourceType;
 use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::ore_growth::OreGrowthState;
 use crate::sim::overlay_grid::OverlayGrid;
-use crate::sim::pathfinding::PathGrid;
 use crate::sim::rng::SimRng;
 
 /// Mutable state needed to apply a shared tiberium reduction.
@@ -167,47 +166,27 @@ impl<'a> NativeCellObjectView<'a> {
     }
 }
 
-/// Proof that a caller selected an explicit new-cell admission policy.
-///
-/// Runtime placement can only construct this from both resolved map terrain
-/// and the live CellClass-style object view. The crate-private compatibility
-/// constructor keeps old non-native fixtures explicit without weakening the
-/// production boundary.
+/// What a new tiberium cell is admitted against: the resolved map terrain and
+/// the live CellClass-style object view. There is no admission without both.
 #[derive(Clone, Copy)]
 pub struct NewTiberiumAdmission<'a> {
-    resolved_terrain: Option<&'a ResolvedTerrainGrid>,
-    path_grid: Option<&'a PathGrid>,
-    live_objects: Option<TiberiumPlacementObjectContext<'a>>,
+    resolved_terrain: &'a ResolvedTerrainGrid,
+    live_objects: TiberiumPlacementObjectContext<'a>,
 }
 
 impl<'a> NewTiberiumAdmission<'a> {
     pub fn runtime(
         resolved_terrain: &'a ResolvedTerrainGrid,
-        path_grid: Option<&'a PathGrid>,
         live_objects: TiberiumPlacementObjectContext<'a>,
     ) -> Self {
         Self {
-            resolved_terrain: Some(resolved_terrain),
-            path_grid,
-            live_objects: Some(live_objects),
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn compatibility_without_native_context(
-        resolved_terrain: Option<&'a ResolvedTerrainGrid>,
-        path_grid: Option<&'a PathGrid>,
-        live_objects: Option<TiberiumPlacementObjectContext<'a>>,
-    ) -> Self {
-        Self {
             resolved_terrain,
-            path_grid,
             live_objects,
         }
     }
 
-    /// The live CellClass-style object view this admission carries, if any.
-    pub(crate) fn live_objects(&self) -> Option<TiberiumPlacementObjectContext<'a>> {
+    /// The live CellClass-style object view this admission carries.
+    pub(crate) fn live_objects(&self) -> TiberiumPlacementObjectContext<'a> {
         self.live_objects
     }
 }
@@ -260,22 +239,11 @@ pub(crate) fn can_place_new_tiberium(
     {
         return false;
     }
-    if let Some(terrain) = admission.resolved_terrain {
-        let Some(terrain_cell) = terrain.cell(cell.0, cell.1) else {
-            return false;
-        };
-        if !resolved_cell_accepts_tiberium(terrain_cell) {
-            return false;
-        }
-    } else if admission
-        .path_grid
-        .is_some_and(|grid| grid.cell(cell.0, cell.1).is_none())
-    {
+    let Some(terrain_cell) = admission.resolved_terrain.cell(cell.0, cell.1) else {
         return false;
-    }
-    !admission
-        .live_objects
-        .is_some_and(|objects| live_cell_rejects_tiberium(cell, objects))
+    };
+    resolved_cell_accepts_tiberium(terrain_cell)
+        && !live_cell_rejects_tiberium(cell, admission.live_objects)
 }
 
 /// Mutable state for the native `CellClass::PlaceTiberium` boundary.
@@ -455,9 +423,8 @@ pub fn reduce_tiberium(
         }
         _ => None,
     }) else {
-        // Cell overlay identity plus raw OverlayData is the only production
-        // authority. An incompletely initialized caller cannot substitute the
-        // serialized compatibility node map.
+        // Cell overlay identity plus raw OverlayData is the only authority; an
+        // incompletely initialized caller reduces nothing.
         return ReduceTiberiumOutcome::none();
     };
     let current = view.overlay_data;
@@ -790,7 +757,7 @@ SpreadPercentage=.06
             &interner,
             &terrain_object_cells,
         );
-        let runtime_admission = NewTiberiumAdmission::runtime(&terrain, None, live_objects);
+        let runtime_admission = NewTiberiumAdmission::runtime(&terrain, live_objects);
 
         let mut overlay = OverlayGrid::new(1, 1);
         let mut growth = OreGrowthState::new(1, 1);
@@ -850,8 +817,9 @@ SpreadPercentage=.06
         let expected_overlay = variants[expected_rng.next_range_u32(12) as usize];
         expected_rng.next_u32(); // AddToGrowthQueue priority.
         let source_cells = BTreeSet::new();
-        let compatibility_admission =
-            NewTiberiumAdmission::compatibility_without_native_context(None, None, None);
+        let terrain = test_support::flat_terrain(8, 8);
+        let no_objects = test_support::NoLiveObjects::new();
+        let admission = NewTiberiumAdmission::runtime(&terrain, no_objects.context());
         let mut radar_dirty = Vec::new();
         let mut radar_generation = 0;
         let mut tactical_dirty = Vec::new();
@@ -861,10 +829,10 @@ SpreadPercentage=.06
                 ore_growth_state: &mut growth,
                 overlay_registry: &overlay_registry,
                 tiberium_types: &tiberium_types,
-                resolved_terrain: None,
+                resolved_terrain: Some(&terrain),
                 source_object_cells: &source_cells,
-                new_cell_admission: Some(compatibility_admission),
-                live_objects: None,
+                new_cell_admission: Some(admission),
+                live_objects: Some(admission.live_objects().object_view()),
                 rng: &mut rng,
                 binary_frame: 40,
                 growth_enabled: true,
@@ -895,10 +863,10 @@ SpreadPercentage=.06
             ore_growth_state: &mut growth,
             overlay_registry: &overlay_registry,
             tiberium_types: &tiberium_types,
-            resolved_terrain: None,
+            resolved_terrain: Some(&terrain),
             source_object_cells: &source_cells,
-            new_cell_admission: Some(compatibility_admission),
-            live_objects: None,
+            new_cell_admission: Some(admission),
+            live_objects: Some(admission.live_objects().object_view()),
             rng: &mut rng,
             binary_frame: 40,
             growth_enabled: true,
@@ -1183,8 +1151,6 @@ SpreadPercentage=.06
         ];
 
         for (data, amount, removed, fully_removed, remaining_data) in cases {
-            // Deliberately contradictory legacy state proves it is not read or
-            // mirrored when the production overlay context is complete.
             let mut overlay = OverlayGrid::new(8, 8);
             overlay.place_overlay(4, 4, tib01, data);
             let mut growth = OreGrowthState::new(8, 8);

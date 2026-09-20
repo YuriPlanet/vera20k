@@ -3336,7 +3336,6 @@ impl Simulation {
     fn tick_ore_growth_rungs(
         &mut self,
         rules: &RuleSet,
-        path_grid: Option<&PathGrid>,
         overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     ) {
         // Native TiberiumClass drivers run before the main live-object vector,
@@ -3380,7 +3379,6 @@ impl Simulation {
                     grid,
                     registry,
                     &rules.tiberium_types,
-                    path_grid,
                     self.resolved_terrain.as_ref(),
                     &self.production.tiberium_spawning_terrain_cells,
                     Some(live_objects),
@@ -6070,7 +6068,7 @@ impl Simulation {
         // Harvest dispatches run.
         if let Some(rules) = rules {
             self.tick_scenario_lighting_transition(rules);
-            self.tick_ore_growth_rungs(rules, path_grid, overlay_registry);
+            self.tick_ore_growth_rungs(rules, overlay_registry);
             if self.session.game_options.super_weapons {
                 crate::sim::superweapon::tick_active_superweapon_effects(
                     self,

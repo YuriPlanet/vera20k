@@ -618,7 +618,7 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             .flatten();
         let clicked_friendly_refinery = clicked_friendly_refinery_id.is_some();
 
-        // Check if the clicked cell has a resource node (ore/gems).
+        // Check if the clicked cell holds tiberium (ore/gems).
         let clicked_ore = cell_context_enabled
             && match (
                 sim.overlay_grid.as_ref(),

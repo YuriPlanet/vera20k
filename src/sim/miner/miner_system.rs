@@ -703,7 +703,7 @@ pub(super) fn tick_miners_test_walk(
         live_order
     };
     for id in keys {
-        super::harvest_mission::dispatch_harvest_for_object_with_resource_authority_for_tests(
+        super::harvest_mission::dispatch_harvest_for_object(
             sim,
             rules,
             config,
@@ -714,7 +714,7 @@ pub(super) fn tick_miners_test_walk(
     }
 }
 
-pub(super) fn process_miner_with_resource_authority(
+pub(super) fn process_miner(
     sim: &mut Simulation,
     rules: &RuleSet,
     config: &MinerConfig,
@@ -927,8 +927,7 @@ fn handle_search_ore(
         // off between the save and the next cycle.
         let mut archive_hit = None;
         if let Some(archive) = snap.miner.last_harvest_cell {
-            let archive_has_ore =
-                resource_cell_present_with_authority(sim, rules, overlay_registry, archive);
+            let archive_has_ore = resource_cell_present(sim, rules, overlay_registry, archive);
             let archive_reachable = filter_ref.is_none_or(|f| f(archive));
             if archive_has_ore && archive_reachable {
                 archive_hit = Some(ScanOutcome::Archive(archive));
@@ -955,14 +954,13 @@ fn handle_search_ore(
         // swaps in a Drive piggyback. Only the inbound trip (ore → refinery)
         // uses the warp.
         archive_hit.unwrap_or_else(|| {
-            search_local_resource_with_authority(
+            search_local_resource(
                 sim,
                 rules,
                 overlay_registry,
                 (snap.rx, snap.ry),
                 config.long_scan_radius,
                 filter_ref,
-                config,
             )
             .map_or(ScanOutcome::NoOre, ScanOutcome::Found)
         })
@@ -1065,8 +1063,7 @@ fn handle_move_to_ore(
     };
 
     // Check if current target has been depleted.
-    let still_has_ore =
-        resource_cell_present_with_authority(sim, rules, overlay_registry, current_target);
+    let still_has_ore = resource_cell_present(sim, rules, overlay_registry, current_target);
     if !still_has_ore {
         snap.miner.target_ore_cell = None;
         snap.state = MinerState::SearchOre;
@@ -1105,14 +1102,13 @@ fn handle_move_to_ore(
     let new_target = {
         let scan_filter = build_scan_filter(sim, path_grid, snap);
         let filter_ref: Option<&dyn Fn((u16, u16)) -> bool> = scan_filter.as_deref();
-        search_local_resource_with_authority(
+        search_local_resource(
             sim,
             rules,
             overlay_registry,
             (snap.rx, snap.ry),
             config.long_scan_radius,
             filter_ref,
-            config,
         )
     };
     let target = new_target.unwrap_or(current_target);
@@ -1246,14 +1242,13 @@ fn handle_harvest(
     let continuation_target = {
         let scan_filter = build_scan_filter(sim, path_grid, snap);
         let filter_ref: Option<&dyn Fn((u16, u16)) -> bool> = scan_filter.as_deref();
-        search_local_resource_with_authority(
+        search_local_resource(
             sim,
             rules,
             overlay_registry,
             (snap.rx, snap.ry),
             config.local_continuation_radius,
             filter_ref,
-            config,
         )
     };
     if let Some(next_cell) = continuation_target {
@@ -1281,14 +1276,13 @@ fn save_archive_via_short_scan(
 ) {
     let scan_filter = build_scan_filter(sim, path_grid, snap);
     let filter_ref: Option<&dyn Fn((u16, u16)) -> bool> = scan_filter.as_deref();
-    snap.miner.last_harvest_cell = search_local_resource_with_authority(
+    snap.miner.last_harvest_cell = search_local_resource(
         sim,
         rules,
         overlay_registry,
         (snap.rx, snap.ry),
         config.local_continuation_radius,
         filter_ref,
-        config,
     );
 }
 
@@ -2504,15 +2498,6 @@ pub(crate) fn resource_cell_present(
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     cell: (u16, u16),
 ) -> bool {
-    resource_cell_present_with_authority(sim, rules, overlay_registry, cell)
-}
-
-fn resource_cell_present_with_authority(
-    sim: &Simulation,
-    rules: &RuleSet,
-    overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-    cell: (u16, u16),
-) -> bool {
     if let Some((grid, registry, types)) = native_tiberium_context(sim, rules, overlay_registry) {
         return crate::sim::tiberium::tiberium_cell_view(grid, registry, types, cell).is_some();
     }
@@ -2526,33 +2511,9 @@ pub(crate) fn search_local_resource(
     center: (u16, u16),
     radius: u16,
     filter: Option<&dyn Fn((u16, u16)) -> bool>,
-    config: &MinerConfig,
 ) -> Option<(u16, u16)> {
-    search_local_resource_with_authority(
-        sim,
-        rules,
-        overlay_registry,
-        center,
-        radius,
-        filter,
-        config,
-    )
-}
-
-fn search_local_resource_with_authority(
-    sim: &Simulation,
-    rules: &RuleSet,
-    overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-    center: (u16, u16),
-    radius: u16,
-    filter: Option<&dyn Fn((u16, u16)) -> bool>,
-    config: &MinerConfig,
-) -> Option<(u16, u16)> {
-    if let Some((grid, registry, types)) = native_tiberium_context(sim, rules, overlay_registry) {
-        return search_local_tiberium(grid, registry, types, center, radius, filter);
-    }
-    let _ = config;
-    None
+    let (grid, registry, types) = native_tiberium_context(sim, rules, overlay_registry)?;
+    search_local_tiberium(grid, registry, types, center, radius, filter)
 }
 
 fn search_local_tiberium(
@@ -3020,13 +2981,13 @@ mod harvest_scan_dispatch_tests {
 
         assert!(!resource_cell_present(&sim, &rules, None, (4, 4)));
         assert_eq!(
-            search_local_resource(&sim, &rules, None, (2, 2), 8, None, &config),
+            search_local_resource(&sim, &rules, None, (2, 2), 8, None),
             None,
             "without the overlay registry no cell can be classified as tiberium"
         );
         assert!(resource_cell_present(&sim, &rules, Some(&registry), (4, 4)));
         assert_eq!(
-            search_local_resource(&sim, &rules, Some(&registry), (2, 2), 8, None, &config,),
+            search_local_resource(&sim, &rules, Some(&registry), (2, 2), 8, None,),
             Some((4, 4)),
         );
     }

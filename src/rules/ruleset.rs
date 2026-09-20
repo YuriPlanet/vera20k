@@ -425,10 +425,11 @@ pub struct GeneralRules {
     /// Whether rich ore spreads to adjacent empty cells (TiberiumSpreads= in [General]).
     /// Default true. Can be overridden per-map in [SpecialFlags].
     pub tiberium_spreads: bool,
-    /// Minutes per full map growth scan cycle (GrowthRate= in [General]).
-    /// Fallback 2.0 minutes matches the engine constructor default; retail
-    /// rulesmd.ini always supplies its own (5), so the fallback only fires for
-    /// a non-retail INI missing the key. Controls how fast ore regenerates.
+    /// `GrowthRate=` in [General], in minutes. Fallback 2.0 matches the engine
+    /// constructor default; retail rulesmd.ini always supplies its own (5), so
+    /// the fallback only fires for a non-retail INI missing the key. Parsed for
+    /// rules fidelity only: VERA's growth runs on the per-Tiberium `Growth=`
+    /// timers and nothing reads this value.
     pub growth_rate_minutes: f32,
     /// Animation played when a unit warps in (WarpIn= in [General]).
     pub warp_in: AnimRef,

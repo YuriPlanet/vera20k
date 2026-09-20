@@ -1,7 +1,7 @@
 //! Acceptance tests for the miner (harvester) state machine system.
 //!
 //! Tests exercise the miner_system::tick_miners() pipeline with a minimal
-//! EntityStore: miner entity + refinery structure + resource nodes. Verifies
+//! EntityStore: miner entity + refinery structure + tiberium overlays. Verifies
 //! payout math, dock queuing, Chrono teleport rules, incremental unloading,
 //! local continuation, pip display, and refinery rebinding.
 
@@ -5394,7 +5394,7 @@ fn extract_max_node_remaining_zero() {
 // ==========================================================================
 
 /// Minimal stock-shaped tiberium rules plus an overlay registry so a miner
-/// test can run the production `ResourceQueryAuthority::OverlayGrid` path
+/// test can run the production overlay-grid resource path
 /// (real `CellClass::Reduce_Tiberium` shape, including the density-0 overlay).
 fn miner_rules_with_tiberium() -> (RuleSet, crate::map::overlay_types::OverlayTypeRegistry) {
     let mut text = String::from(

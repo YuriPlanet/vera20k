@@ -466,11 +466,6 @@ pub(crate) fn load_with_launch(
     if sim.path_grid().is_none() {
         return Err("headless post-map navigation is unavailable".to_string());
     }
-    // The production-side resource-node index is deliberately not seeded: its helper is
-    // `#[cfg(test)]`-gated. Map-placed entities now spawn, so a map that pre-places a
-    // miner would find no node index — a documented residual until the helper is
-    // promoted out of test gating. Ore is still present as map overlays.
-
     Ok(HeadlessScenario {
         runtime: crate::sim::runtime::SimRuntime {
             simulation: sim,

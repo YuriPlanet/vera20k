@@ -72,7 +72,10 @@ pub(super) enum HashFeature {
     AnimationAuthority = 171,
     /// Removes folds instead of adding them: the node-era tiberium scanner
     /// state and the fallback ore overlay id no longer exist. Earlier schemas
-    /// fold the constants a native-context sim always held there.
+    /// fold zero/empty/`None` in their place, which is what the pinned harness
+    /// fixtures held. A scenario finalized by the map loader held
+    /// `Some(first TIB* id)`, so this projection reproduces those fixtures' old
+    /// hashes, not an arbitrary pre-174 stream.
     RetiredTiberiumNodeState = 174,
 }
 

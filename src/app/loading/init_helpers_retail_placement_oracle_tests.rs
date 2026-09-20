@@ -391,9 +391,11 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
         })
         .collect();
     assert!(
-        overlay_before
-            .values()
-            .any(|(overlay_id, _)| overlay_id.is_some()),
+        overlay_before.values().any(|(overlay_id, _)| {
+            overlay_id
+                .and_then(|id| overlay_registry.flags(id))
+                .is_some_and(|flags| flags.tiberium)
+        }),
         "blocked retail footprint must contain a map ore overlay"
     );
     let preview = placement_preview_for_owner_without_overlays(

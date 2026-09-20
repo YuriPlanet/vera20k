@@ -430,9 +430,12 @@ const SLICE6_PRE_SUSTAINED_SIGHT_V142_HASH: u64 = 0x3378_724A_9514_52B4;
 const SLICE6_BASELINE_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 2458534358217456420;
 // Schema174 removes folds instead of adding them: OreGrowthState's node-era
 // scanner cursor, candidate lists and sample counters, and ProductionState's
-// fallback ore overlay id. A native-context sim never wrote any of them, so the
-// pre-174 projection folds their constants and must still equal the previous
-// current pin, asserted below. Rust hash-composition ratchet, not a native golden.
+// fallback ore overlay id. The pre-174 projection folds the values those fields
+// held IN THIS FIXTURE (zero, empty, None): it never ran the node-era scan, and
+// it seeds no terrain spawners, the one path that set the fallback id. It is not
+// a general reconstruction; a scenario finalized by the map loader held
+// Some(first TIB* id). The projection must still equal the previous current
+// pin, asserted below. Rust hash-composition ratchet, not a native golden.
 const SLICE6_BASELINE_HASH: u64 = 10437701875960042979;
 
 #[test]

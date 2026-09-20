@@ -41,8 +41,7 @@ fn retail_inactive_high_record_restamp_inventory() {
             &sim.interner,
             &sim.production.terrain_object_cells,
         );
-        let admission =
-            crate::sim::tiberium::NewTiberiumAdmission::runtime(terrain, sim.path_grid(), objects);
+        let admission = crate::sim::tiberium::NewTiberiumAdmission::runtime(terrain, objects);
         let inactive: Vec<_> = records
             .iter()
             .filter(|r| r.is_high() && !r.active)

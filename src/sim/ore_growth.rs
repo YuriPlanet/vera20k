@@ -23,7 +23,6 @@ use crate::map::overlay_types::OverlayTypeRegistry;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::tiberium_type::{TiberiumTypeId, TiberiumTypeRegistry};
 use crate::sim::overlay_grid::OverlayGrid;
-use crate::sim::pathfinding::PathGrid;
 use crate::sim::rng::SimRng;
 use crate::sim::tiberium::{
     NativeCellObjectView, NewTiberiumAdmission, PlaceTiberiumContext,
@@ -533,7 +532,7 @@ pub struct OreGrowthState {
 }
 
 impl OreGrowthState {
-    /// Create a new scanner for a map of the given dimensions.
+    /// Empty growth and spread state for a map of the given dimensions.
     pub fn new(map_width: u16, map_height: u16) -> Self {
         Self {
             total_cells: map_width as usize * map_height as usize,
@@ -985,7 +984,6 @@ impl OreGrowthState {
         overlay_grid: &mut OverlayGrid,
         overlay_registry: &OverlayTypeRegistry,
         tiberium_types: &TiberiumTypeRegistry,
-        path_grid: Option<&PathGrid>,
         resolved_terrain: Option<&ResolvedTerrainGrid>,
         source_object_cells: &BTreeSet<(u16, u16)>,
         live_objects: Option<TiberiumPlacementObjectContext<'_>>,
@@ -1014,7 +1012,7 @@ impl OreGrowthState {
         let mut stats = NativeSpreadProcessStats::default();
         let new_cell_admission = resolved_terrain
             .zip(live_objects)
-            .map(|(terrain, objects)| NewTiberiumAdmission::runtime(terrain, path_grid, objects));
+            .map(|(terrain, objects)| NewTiberiumAdmission::runtime(terrain, objects));
         for type_id in due_ids {
             stats.add(self.process_native_spread_for_type_with_placement(
                 type_id,
@@ -1101,9 +1099,7 @@ impl OreGrowthState {
                 let cells = native_rebuild_cells(self.native_rect, overlay_grid);
                 let occupied_cells = native_occupied_cells(
                     source_object_cells,
-                    new_cell_admission
-                        .and_then(|admission| admission.live_objects())
-                        .map(|objects| objects.object_view()),
+                    new_cell_admission.map(|admission| admission.live_objects().object_view()),
                 );
                 self.rebuild_spread_queue_for_type(
                     type_id,
@@ -1461,10 +1457,11 @@ impl OreGrowthState {
     }
 
     /// Hash persistent ore-growth scheduler state for replay/desync checks.
-    /// `retired_scanner_fold` reproduces the pre-174 stream: the map scanner's
-    /// cursor, two candidate lists and two sample counters sat here and were
-    /// never written by a native-context sim, so they folded as zero/empty.
-    /// Its three queue folds were unframed loops over always-empty stores.
+    /// `retired_scanner_fold` reproduces the pre-174 stream for a sim that
+    /// never ran the node-era scan (every sim with the overlay and tiberium
+    /// registries): the scanner's cursor, two candidate lists and two sample
+    /// counters sat here as zero/empty, and its three queue folds were unframed
+    /// loops over empty stores.
     pub fn hash_state(&self, hasher: &mut impl Hasher, retired_scanner_fold: bool) {
         if retired_scanner_fold {
             0usize.hash(hasher);
@@ -1690,9 +1687,7 @@ fn spread_tiberium_from_source(
         resolved_terrain,
         cell_has_native_object(
             source_object_cells,
-            admission
-                .live_objects()
-                .map(|objects| objects.object_view()),
+            Some(admission.live_objects().object_view()),
             (rx, ry),
         ),
         rx,
@@ -1720,9 +1715,7 @@ fn spread_tiberium_from_source(
             resolved_terrain,
             source_object_cells,
             new_cell_admission: Some(admission),
-            live_objects: admission
-                .live_objects()
-                .map(|objects| objects.object_view()),
+            live_objects: Some(admission.live_objects().object_view()),
             rng,
             binary_frame,
             growth_enabled: true,
@@ -2859,16 +2852,19 @@ SpreadPercentage=.06
             .spread_bitmap
             .insert((7, 7));
         let mut rng = SimRng::new(12);
+        let terrain = crate::sim::tiberium::test_support::flat_terrain(10, 10);
+        let no_objects = crate::sim::tiberium::test_support::NoLiveObjects::new();
 
         let stats = state.process_native_spread_for_type_with_placement(
             TiberiumTypeId(0),
             &mut overlay_grid,
             &overlay_registry,
             &tiberium_types,
-            None,
+            Some(&terrain),
             &BTreeSet::new(),
-            Some(NewTiberiumAdmission::compatibility_without_native_context(
-                None, None, None,
+            Some(NewTiberiumAdmission::runtime(
+                &terrain,
+                no_objects.context(),
             )),
             &mut rng,
             200,
@@ -2921,16 +2917,19 @@ SpreadPercentage=.06
             .insert((5, 5));
         let mut rng = SimRng::new(12);
         let before = rng.state();
+        let terrain = crate::sim::tiberium::test_support::flat_terrain(10, 10);
+        let no_objects = crate::sim::tiberium::test_support::NoLiveObjects::new();
 
         let stats = state.process_native_spread_for_type_with_placement(
             TiberiumTypeId(0),
             &mut overlay_grid,
             &overlay_registry,
             &tiberium_types,
-            None,
+            Some(&terrain),
             &BTreeSet::new(),
-            Some(NewTiberiumAdmission::compatibility_without_native_context(
-                None, None, None,
+            Some(NewTiberiumAdmission::runtime(
+                &terrain,
+                no_objects.context(),
             )),
             &mut rng,
             200,
@@ -3018,7 +3017,6 @@ SpreadPercentage=.06
             &mut overlay_grid,
             &overlay_registry,
             &tiberium_types,
-            None,
             Some(&terrain),
             &BTreeSet::new(),
             Some(live_objects),
@@ -3127,7 +3125,6 @@ SpreadPercentage=.06
             &mut overlay_grid,
             &overlay_registry,
             &tiberium_types,
-            None,
             Some(&terrain),
             &BTreeSet::new(),
             Some(live_objects),
@@ -3201,7 +3198,6 @@ SpreadPercentage=.06
             &mut overlay_grid,
             &overlay_registry,
             &tiberium_types,
-            None,
             Some(&terrain),
             &BTreeSet::new(),
             Some(live_objects),

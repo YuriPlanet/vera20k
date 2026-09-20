@@ -194,7 +194,7 @@ pub struct ProductionState {
     pub next_enqueue_order: u64,
     /// Ore growth/spread configuration resolved from merged INI sources.
     pub ore_growth_config: OreGrowthConfig,
-    /// Incremental scan state for ore growth/spread system.
+    /// Per-TiberiumClass growth and spread queues, bitmaps and timers.
     pub ore_growth_state: OreGrowthState,
     /// Slave Miner bindings: master entity stable_id → vec of slave entity stable_ids.
     /// Used to track which SLAV infantry belong to which deployed SMIN/YAREFN.
