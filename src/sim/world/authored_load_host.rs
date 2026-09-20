@@ -82,6 +82,12 @@ impl<'a> SimulationAuthoredLoadHost<'a> {
         // VERA resolves the exact newly reached map animation root lazily,
         // before the native constructor can consume an ID. This preserves the
         // load failure boundary without binding unused theater declarations.
+        //
+        // RESIDUAL: the roots are the whole bound set, tolerantly bound types
+        // included, and this pass is strict over their `Next=`/`TrailerAnim=`
+        // chains. A tolerantly bound type whose chained type has no sprite
+        // would fail the load here. Trigger: modded art only; none of retail's
+        // nine chain keys starts from a tolerant root. Effect: map load error.
         self.art.bind_scheduler_anim_assets(
             &roots,
             self.assets,

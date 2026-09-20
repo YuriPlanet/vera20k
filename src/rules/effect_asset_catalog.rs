@@ -254,11 +254,10 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
 /// Report how many `anim_class_roots` the tolerant binder could not bind.
 ///
 /// The binder already emits a per-name `warn!`, but a per-name line is invisible
-/// in aggregate: a data change that breaks ten roots reads the same as retail's
-/// standing few unless the count is stated once. Retail's combat-explosion
-/// roots alone leave three unbound (`MININUKE - ADDED 11/30`, `GTPOWEXP`,
-/// `TSTLEXP` — see `ArtRegistry::bind_anim_class_assets`); the teleport,
-/// superweapon and lightning roots were not counted against retail.
+/// in aggregate unless the count is stated once. Retail's standing count on a
+/// TEMPERATE map is 35, all building animation names: 28 belong to art sections
+/// no `[BuildingTypes]` entry uses, 7 to real buildings whose files no archive
+/// holds. A data change shows up as a different number.
 pub fn log_unbound_combat_explosion_roots(unbound: usize) {
     if unbound == 0 {
         return;

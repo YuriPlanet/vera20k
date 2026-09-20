@@ -516,8 +516,11 @@ pub(crate) fn load_neutral_tech_types(
 ///
 /// Building animations belong here, not in the strict scheduler closure. Art
 /// defines building sections no rules list names and whose sprites retail never
-/// shipped (`[CAARAY]` with `ActiveAnim=CAARAY_A`), so requiring every art
-/// building animation made every retail map fail to load.
+/// shipped (`[CAARAY]` with `ActiveAnim=CAARAY_A`), and a few real buildings
+/// name animations no archive holds (`GAGAP_A`, `GAREFNL4`), so requiring every
+/// art building animation made every retail map fail to load. (Most of the
+/// names that first failed were a separate resolver fault, since fixed in
+/// `art_data::anim_shp_candidates`.)
 pub(crate) fn tolerant_anim_class_roots(rules: &RuleSet, art: &ArtRegistry) -> Vec<String> {
     let mut roots = crate::rules::effect_asset_catalog::anim_class_roots(rules);
     roots.extend(

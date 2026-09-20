@@ -1875,14 +1875,18 @@ pub fn make_shp_candidates(
 
 /// Generate filename candidates for animation SHPs.
 ///
-/// gamemd-derived, from the per-theater AnimType image reload (`0x00428CD6`
-/// onward) and `AnimTypeClass::LoadImageAndResolveFrameBounds @ 0x00427B50`:
-/// with `Theater=no` the file is `<Image or ID>.SHP`; when the type's own
-/// `NewTheater=` (`AnimType+0x237`) is set, `FUN_005F96B0` replaces the second
-/// letter with the theater's, but only for names matching `[GNCY][AT]`. If that
-/// file is missing, `FUN_005F9710` forces the second letter to `G`
-/// unconditionally and the load is retried. So `[GAPOWR_AD] Image=GAPOWR_A`,
-/// which authors no `NewTheater=`, still resolves to `GGPOWR_A.SHP`.
+/// gamemd-derived. `AnimTypeClass::LoadImageAndResolveFrameBounds @
+/// 0x00427B50` builds `<Image or ID>.SHP` for a `Theater=no` type, passes it to
+/// `FUN_005F96B0` (which replaces the second letter with the theater's, only
+/// for names matching `[GNCY][AT]`, and does nothing for theater `-1`, the
+/// value `ReadINI` passes), loads it, and on a miss lets `FUN_005F9710` force
+/// the second letter to `G` unconditionally and retries. The two callers that
+/// pass a real theater gate the 96B0 call on the type's own `NewTheater=`
+/// (`AnimType+0x237`): the lazy image fetch for `DemandLoad` types at
+/// `0x00428C30` (gate at `0x00428CD6`) and the save/load tail at `0x00428935`.
+/// So `[GAPOWR_AD] Image=GAPOWR_A`, which authors no `NewTheater=`, still
+/// resolves to `GGPOWR_A.SHP`. UNCHECKED: which routine reloads `NewTheater`
+/// images when a scenario's theater is set; it was not identified.
 ///
 /// The theater-extension and plain-name candidates after those two are VERA
 /// leniency kept for `Theater=yes` rows and loose test assets.

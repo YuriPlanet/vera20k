@@ -237,6 +237,14 @@ impl Simulation {
                 // store refuses a type with no loader bounds, so the slot is
                 // emptied and nothing is drawn. The native id above is spent
                 // either way.
+                //
+                // RESIDUAL: natively the slot stays occupied by that invisible
+                // object. `set_building_damage_state` revisits occupied slots
+                // only, so a building whose damaged animation is unbound does
+                // not get its normal animation back after repair, and the
+                // unbound type takes no stable id. Retail reach: `CAMOV01`,
+                // `CAMOV02`, `NAPSYA` (all `TechLevel=-1`); none authors
+                // `RandomRate=`, so no draw is skipped.
                 log::debug!("building {id} slot {slot} animation [{canonical}] not shown: {error}");
                 self.clear_building_anim_slot(id, slot);
                 return None;
