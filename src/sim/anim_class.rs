@@ -1,11 +1,13 @@
 //! Scheduler-owned ordinary SHP animation objects.
 //!
 //! `AnimStore` owns animation storage while `world::LogicVector` owns live AI
-//! order. This module implements only the verified ordinary non-bouncer
-//! AnimClass lifecycle needed by building damage fire: constructor/reveal,
-//! first-AI guard, logic-frame timing, loops, reverse/ping-pong, Next, trailer,
-//! sound identity, conceal, and deferred deletion — plus the combat-explosion
-//! producer.
+//! order. This module implements the verified ordinary non-bouncer AnimClass
+//! lifecycle: constructor/reveal, first-AI guard, start delay and its `Start`
+//! edge, logic-frame timing, loops, reverse/ping-pong, Next, trailer, sound
+//! identity, owner attachment, conceal, and deferred deletion. Its producers
+//! are building slots and damage fires, tile and crate animations, combat
+//! explosions, teleport warps, superweapon invokes, Lightning Storm bolts,
+//! bridge collapse explosions, wakes and ore twinkles.
 //!
 //! ## Residuals — two `AnimClass::AI` arms are not built
 //!

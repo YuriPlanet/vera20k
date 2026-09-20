@@ -107,12 +107,6 @@ impl EffectAssetCatalog {
         self.entry(name).map(|counts| counts.available)
     }
 
-    /// Alias spelling for callers that need to distinguish this value from the
-    /// literal SHP header count.
-    pub fn available_frame_count(&self, name: &str) -> Option<u16> {
-        self.effect_frame_count(name)
-    }
-
     /// Literal unsigned SHP header frame count.
     ///
     /// Particle animation-state parity can consume this independently of the
@@ -123,8 +117,9 @@ impl EffectAssetCatalog {
         self.entry(name).map(|counts| counts.raw)
     }
 
-    /// Iterate entries in canonical asset-name order.
-    pub fn iter(&self) -> impl Iterator<Item = (&str, EffectAssetFrameCounts)> {
+    /// Entries in canonical asset-name order.
+    #[cfg(test)]
+    fn iter(&self) -> impl Iterator<Item = (&str, EffectAssetFrameCounts)> {
         self.entries
             .iter()
             .map(|(name, counts)| (name.as_str(), *counts))

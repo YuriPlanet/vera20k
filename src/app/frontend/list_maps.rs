@@ -89,19 +89,6 @@ pub fn list_available_maps() -> Result<Vec<MapMenuEntry>> {
     Ok(maps)
 }
 
-pub fn list_skirmish_scenario_records() -> Result<Vec<SkirmishScenarioRecord>> {
-    list_skirmish_scenario_records_with_csf(None)
-}
-
-pub fn list_skirmish_scenario_records_with_csf(
-    csf: Option<&CsfFile>,
-) -> Result<Vec<SkirmishScenarioRecord>> {
-    let config: GameConfig = GameConfig::load()?;
-    let ra2_dir: PathBuf = config.paths.ra2_dir;
-    let mut assets = AssetManager::new(&ra2_dir).ok();
-    list_skirmish_scenario_records_from_sources(&ra2_dir, assets.as_mut(), csf)
-}
-
 /// Populate the native Choose Map sources through the retained process VFS.
 ///
 /// Loose YRO archives become registered while this scan runs and therefore
@@ -145,15 +132,6 @@ fn list_skirmish_scenario_records_from_sources(
     append_loose_yro_records(&mut records, ra2_dir, assets.as_deref_mut(), csf)?;
     append_loose_yrm_records(&mut records, ra2_dir)?;
 
-    Ok(records)
-}
-
-pub fn list_loose_skirmish_scenario_records() -> Result<Vec<SkirmishScenarioRecord>> {
-    let config: GameConfig = GameConfig::load()?;
-    let ra2_dir: PathBuf = config.paths.ra2_dir;
-    let mut records = Vec::new();
-    append_loose_yro_records(&mut records, &ra2_dir, None, None)?;
-    append_loose_yrm_records(&mut records, &ra2_dir)?;
     Ok(records)
 }
 

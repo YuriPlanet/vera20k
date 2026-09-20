@@ -220,6 +220,7 @@ fn decode_hover_kind_with_id(encoded: u64) -> HoverTargetKindWithId {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn compute_click_selection_snapshot(
     entities: &EntityStore,
     encounter_order: &[u64],
@@ -464,6 +465,7 @@ fn is_drawn_for_local_owner(
 /// A rectangle that caught something but nothing eligible — a box over an enemy
 /// patrol, say — returns an empty list, because the native clear runs before the
 /// per-object filter does.
+#[cfg(test)]
 pub(crate) fn compute_box_selection_snapshot(
     entities: &EntityStore,
     preflight_order: &[u64],
@@ -570,6 +572,7 @@ pub(crate) fn compute_box_selection_snapshot_with_playfield(
 /// and expand each selected type through its deploy/undeploy links. Screen
 /// escalation happens in the same invocation when no visible unselected match
 /// exists, including the all-visible-already-selected case.
+#[cfg(test)]
 pub(crate) fn compute_type_select_tap(
     entities: &EntityStore,
     screen_order: &[u64],
@@ -768,6 +771,7 @@ fn type_select_final_admissions(
 /// Exact-type group mutation used while TypeSelect is held over one picked
 /// object. Link types and the dynamic CanBeSelectedNow virtual are deliberately
 /// absent from this path.
+#[cfg(test)]
 pub(crate) fn compute_type_select_click_mutation(
     entities: &EntityStore,
     scope_order: &[u64],
@@ -843,6 +847,7 @@ pub(crate) fn compute_type_select_click_mutation_with_playfield(
 /// Held TypeSelect bandbox: anchors inside the rectangle contribute their own
 /// exact type IDs; those IDs are then expanded over the current screen/map
 /// scope without deploy-link or dynamic-gate expansion.
+#[cfg(test)]
 pub(crate) fn compute_type_select_box_mutation(
     entities: &EntityStore,
     screen_order: &[u64],

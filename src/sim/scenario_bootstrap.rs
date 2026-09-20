@@ -1846,6 +1846,7 @@ pub(crate) fn starting_unit_prefers_vehicle(spent: i32, budget: i32) -> bool {
     spent < budget.wrapping_sub(budget / 3)
 }
 
+#[cfg(test)]
 pub(crate) fn seed_starting_extra_units(
     sim: &mut Simulation,
     slots: &[NormalizedSkirmishSlot],

@@ -2770,8 +2770,8 @@ pub struct RuleSet {
     /// Ordered native registry receipt: whether this type actually reached a
     /// successful fixed-ART ReadINI before the final rules pass completed.
     pub anim_type_art_read_states: Vec<(String, bool)>,
-    /// GPU-independent SHP frame counts used by authoritative world-effect
-    /// and particle timing. Bound once from the active assets and ART data.
+    /// GPU-independent SHP frame counts used by particle timing. Bound once
+    /// from the active assets and ART data.
     effect_assets: crate::rules::effect_asset_catalog::EffectAssetCatalog,
     /// Raw terrain SHP counts used by authoritative TIBTRE animation timing.
     /// Presentation keeps its separate body-frame projection.
@@ -4236,8 +4236,8 @@ impl RuleSet {
         self.rebuild_animation_sequences(Some(infantry_sequences));
     }
 
-    /// Resolve authoritative world-effect and particle SHP frame counts from
-    /// the active theater assets without constructing a renderer atlas.
+    /// Resolve particle image SHP frame counts from the active theater assets
+    /// without constructing a renderer atlas.
     pub fn bind_effect_assets(
         &mut self,
         asset_manager: &crate::assets::asset_manager::AssetManager,
@@ -4271,16 +4271,10 @@ impl RuleSet {
             );
     }
 
-    /// Authoritative consumer-visible SHP frame count for a world effect or
-    /// particle image. Lookup is case-insensitive and does not intern names.
+    /// Consumer-visible SHP frame count for a particle image. Lookup is
+    /// case-insensitive and does not intern names.
     pub fn effect_frame_count(&self, name: &str) -> Option<u16> {
         self.effect_assets.effect_frame_count(name)
-    }
-
-    /// Literal SHP header frame count retained for parity investigation where
-    /// the native particle body/shadow policy is still UNCHECKED.
-    pub fn raw_effect_frame_count(&self, name: &str) -> Option<u16> {
-        self.effect_assets.raw_frame_count(name)
     }
 
     /// Raw SHP header count used by `TerrainClass::AI` midpoint timing.

@@ -2072,8 +2072,8 @@ impl DeathEffects {
 /// - Trigger: every death that reaches either SHP arm — in gamemd, 324 of the
 ///   356 stock sections that throw (of 439 authoring `MaxDebris=` in gamemd's
 ///   own spelling, 83 author 0).
-/// - Player effect: the debris sprite plays where the wreck stood instead of
-///   tumbling outward, and its `Damage=`/`Warhead=` on landing is not applied.
+/// - Player effect: no debris chunk appears at all, and its
+///   `Damage=`/`Warhead=` on landing is not applied.
 /// - Frequency: continuous — every building death (no `[BuildingTypes]` section
 ///   authors `DebrisTypes=`, so all 292 that throw land here) plus 18 of the 50
 ///   registered `[VehicleTypes]` that throw and 11 of the 12 `[AircraftTypes]`.

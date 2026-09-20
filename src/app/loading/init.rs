@@ -1400,23 +1400,11 @@ mod map_wall_owner_candidate_tests {
         };
         sim.radiation
             .apply_detonation(detonation, 0, &rules.radiation, None);
-        let old_epoch = crate::app::presentation::radiation_light::radiation_light_epoch(
-            &sim.radiation,
-            &rules.radiation,
-        );
         let first = derive_lighting_view(&LightingConfig::default(), Some(&sim), Some(&rules), 2);
         assert_eq!(first.point_lights.len(), 1);
 
         sim.radiation
             .apply_detonation(detonation, 0, &rules.radiation, None);
-        assert_eq!(
-            crate::app::presentation::radiation_light::radiation_light_epoch(
-                &sim.radiation,
-                &rules.radiation,
-            ),
-            old_epoch,
-            "the former center-plus-step epoch cannot see a same-cell rearm"
-        );
         let merged = derive_lighting_view(&LightingConfig::default(), Some(&sim), Some(&rules), 2);
         assert_eq!(merged.point_lights.len(), 1);
         assert_ne!(first.fingerprint, merged.fingerprint);

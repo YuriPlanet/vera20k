@@ -85,7 +85,20 @@ mod tests {
     /// records and the projected entries always describe the same scenario.
     #[test]
     fn scenario_catalog_indices_cannot_drift() {
-        let records = crate::app::frontend::list_maps::list_loose_skirmish_scenario_records()
+        // Records from the production scan when a retail install is present;
+        // the projection invariant below holds for an empty list too.
+        let records = crate::util::config::GameConfig::load()
+            .ok()
+            .and_then(|config| {
+                let mut assets =
+                    crate::assets::asset_manager::AssetManager::new(&config.paths.ra2_dir).ok()?;
+                crate::app::frontend::list_maps::list_skirmish_scenario_records_with_assets(
+                    &config.paths.ra2_dir,
+                    &mut assets,
+                    None,
+                )
+                .ok()
+            })
             .unwrap_or_default();
         let mut catalog = ScenarioCatalog::from_records(records);
         let assert_projection = |catalog: &ScenarioCatalog| {

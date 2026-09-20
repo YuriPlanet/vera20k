@@ -108,6 +108,7 @@ pub(crate) struct LineOfFireInputs<'a> {
 
 impl<'a> LineOfFireInputs<'a> {
     /// Terrain-only inputs: cliffs are still evaluated, walls cannot be.
+    #[cfg(test)]
     pub(crate) const fn terrain_only() -> Self {
         Self {
             overlay_grid: None,

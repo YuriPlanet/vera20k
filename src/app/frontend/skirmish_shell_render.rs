@@ -887,10 +887,14 @@ mod tests {
     #[ignore]
     fn official_pkt_backed_skirmish_map_preview_decodes_from_mix_and_fits_right_panel() {
         let config = crate::util::config::GameConfig::load().expect("game config");
-        let assets =
+        let mut assets =
             crate::assets::asset_manager::AssetManager::new(&config.paths.ra2_dir).expect("assets");
-        let records =
-            crate::app::frontend::list_maps::list_skirmish_scenario_records().expect("scenario records");
+        let records = crate::app::frontend::list_maps::list_skirmish_scenario_records_with_assets(
+            &config.paths.ra2_dir,
+            &mut assets,
+            None,
+        )
+        .expect("scenario records");
         let record = records
             .iter()
             .find(|record| {
