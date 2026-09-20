@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Force_Track no-overlay calls and supplied post-crate continuations, bunker separate speed write, and Drive Process applied-fraction prefix before current-speed getter",
+  "assumptions": [
+    "Original Drive/base constructor and unchanged Unit/Drive vtables; supplied disjoint owner/class memory, owner alive/limbo/occupation flags and finite speed fractions",
+    "All72 Drive selectors and both retained reversed values; null-coordinate cases include arbitrary signed selectors, retained null/non-null heads and negative residual",
+    "Map uses supplied32x32 allocated flat cells at level2, no overlays, raw ground0x400/deck0x800, optional structural bridge flag; remaining fixed-stride slots are null and shared dummy has overlay-1",
+    "NullCoord XYZ0, ground-level104, Unit raw bridge offset416 and ambient x87 control0E7F are supplied runtime state, not full startup/map/type construction",
+    "Full-call rows execute Crate pickup original no-overlay early return. Separate continuation rows explicitly supply AL, alive/limbo, head and valid after that return; crate effect bodies and producers of those mutations are outside coverage",
+    "Eight supplied selector1 handoff continuations displace retained head from original supplied destination, with both reversed values and structural planes; handoff Transform reloads retained XY and owner-height Z, final mark retains supplied XYZ",
+    "Bunker rows start after original facing selection/GetCoords/non-null-interface admission, with supplied selected67..70 and full XYZ; original virtual calls and SetSpeedFraction execute, but complete bunker mission and subsequent Process do not",
+    "Read-only instruction/memory-write observers record publication order, actual raw-put XYZ, all Drive/Foot writes and changed raw cells; Force calls/continuations assert entire Foot memory unchanged relative to initial or explicitly supplied post-crate state respectively",
+    "Process4B0F20 stops before original owner GetCurrentSpeed call4B1274. Supplied UnitType Accelerates and Passive bytes, raw speed8, slowdown0, deceleration1/16, acceleration1/32, no linked members/transport/slowdown flags; current-speed getter and later movement excluded"
+  ],
+  "substitutions": [
+    "No patched instructions, custom virtual tables or control-flow-changing hooks; all reached callees execute original bytes",
+    "Only separately labeled post-crate continuation rows replace AL and declared owner/head state at the stopped4B0D20 boundary; retained CPU frame/locals and subsequent native instructions execute unchanged"
+  ],
+  "entry_points": {
+    "force_track": "0x004B0C40",
+    "drive_constructor": "0x004AF540",
+    "common_constructor": "0x0055A6C0",
+    "map_query": "0x00565730",
+    "crate_dispatch": "0x00481A00",
+    "apply_occupation": "0x004B0AD0",
+    "transform": "0x004B4780",
+    "unit_raw_put": "0x007441B0",
+    "ground_height": "0x00578080",
+    "bunker_call_begin": "0x00459190",
+    "bunker_call_end": "0x004591C4",
+    "owner_speed_set": "0x004D3710",
+    "post_crate": "0x004B0D20",
+    "process_prefix": "0x004B0F20",
+    "before_current_speed_call": "0x004B1274"
+  },
+  "payload_sha256": "132a9502db4786f625f97856517f4e34d8bb2ed944041551014d477fc6306978"
+}

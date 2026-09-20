@@ -711,10 +711,7 @@ mod map_wall_owner_candidate_tests {
                     0,
                     0,
                     owner,
-                    Health {
-                        current: 100,
-                        max: 100,
-                    },
+                    Health { current: 100 },
                     kind,
                     EntityCategory::Structure,
                     0,
@@ -1220,10 +1217,7 @@ mod map_wall_owner_candidate_tests {
             0,
             0,
             owner,
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             type_ref,
             EntityCategory::Structure,
             0,
@@ -1263,6 +1257,8 @@ mod map_wall_owner_candidate_tests {
         sim.power_states.insert(
             owner,
             PowerState {
+                total_output: 0,
+                total_drain: 100,
                 is_low_power: true,
                 ..PowerState::default()
             },
@@ -1273,10 +1269,9 @@ mod map_wall_owner_candidate_tests {
         assert_eq!(offline.point_lights, lit.point_lights);
         assert_eq!(lit.fingerprint, offline.fingerprint);
 
-        sim.power_states
-            .get_mut(&owner)
-            .expect("power state")
-            .is_low_power = false;
+        let power = sim.power_states.get_mut(&owner).expect("power state");
+        power.total_output = 100;
+        power.is_low_power = false;
         let restored = derive_lighting_view(&config, Some(&sim), Some(&rules), 2);
         assert_eq!(restored.point_lights.len(), 1);
         assert_eq!(lit.fingerprint, restored.fingerprint);
@@ -1314,6 +1309,8 @@ mod map_wall_owner_candidate_tests {
         sim.power_states.insert(
             captured_owner,
             PowerState {
+                total_output: 0,
+                total_drain: 100,
                 is_low_power: true,
                 ..PowerState::default()
             },
@@ -1323,10 +1320,9 @@ mod map_wall_owner_candidate_tests {
         assert_eq!(captured_offline.point_lights, before_capture.point_lights);
         assert_eq!(before_capture.fingerprint, captured_offline.fingerprint);
 
-        sim.power_states
-            .get_mut(&captured_owner)
-            .expect("captured owner power state")
-            .is_low_power = false;
+        let power = sim.power_states.get_mut(&captured_owner).expect("captured owner power state");
+        power.total_output = 100;
+        power.is_low_power = false;
         let captured_online = derive_lighting_view(&config, Some(&sim), Some(&rules), 2);
         assert_eq!(captured_online.point_lights.len(), 1);
         assert_eq!(before_capture.fingerprint, captured_online.fingerprint);
@@ -1683,7 +1679,7 @@ fn replay_launch_generated_construction(
 pub(crate) struct RandomMapEntityProjection {
     owner: String,
     type_id: String,
-    health: u16,
+    health: i32,
     cell: (u16, u16),
     facing: u8,
     category: crate::map::entities::EntityCategory,
@@ -1879,6 +1875,7 @@ impl MapLoadInitial {
             .expect("retail generated-map rules")
             .into_parts();
         let mut art = ArtRegistry::from_ini(&art_ini);
+        art.apply_anim_type_read_states(&rules.anim_type_art_read_states);
         rules.merge_art_data(&mut art);
         rules.art_registry = art.clone();
         rules.general.resolve_art_rates(&art_ini);
@@ -1911,10 +1908,15 @@ impl MapLoadInitial {
             || theater_ext_for(&map_data.header.theater),
             |td| td.extension,
         );
-        let scheduler_roots = scheduler_anim_roots(
+        let mut scheduler_roots = scheduler_anim_roots(
             &rules,
             &overlay_registry,
             resolved_terrain.tile_animations(),
+        );
+        scheduler_roots.extend(
+            art.building_anim_roots()
+                .into_iter()
+                .filter(|name| rules.anim_type_names.contains(name)),
         );
         art.bind_scheduler_anim_assets(
             &scheduler_roots,
@@ -2523,6 +2525,7 @@ pub(crate) fn load_map_from_initial(
     let mut art = Some(ArtRegistry::from_ini(&fixed_art_ini));
     let art_ini = Some(fixed_art_ini);
     if let (Some(r), Some(a)) = (rules.as_mut(), art.as_mut()) {
+        a.apply_anim_type_read_states(&r.anim_type_art_read_states);
         r.merge_art_data(a);
         // Eagerly populate per-anim SHP frame dimensions so the smudge
         // dispatcher can size-filter without falling back to the (30, 30)
@@ -2711,12 +2714,17 @@ pub(crate) fn load_map_from_initial(
     // have resolved, but before any atlas or AnimClass construction. Missing
     // tile art is a load error rather than a silently invisible map feature.
     if let (Some(r), Some(a)) = (rules.as_mut(), art.as_mut()) {
-        let roots = scheduler_anim_roots(
+        let mut roots = scheduler_anim_roots(
             r,
             &overlay_registry,
             resolved_terrain
                 .as_ref()
                 .map_or(&[], |terrain| terrain.tile_animations()),
+        );
+        roots.extend(
+            a.building_anim_roots()
+                .into_iter()
+                .filter(|name| r.anim_type_names.contains(name)),
         );
         a.bind_scheduler_anim_assets(
             &roots,

@@ -1,20 +1,12 @@
-//! Receiver pipeline: armor divides -> immunity gates -> Verses kernel ->
-//! building min-1 -> overkill clamp -> classify. Pure over caller-built views.
-//!
-//! Stage order verified against TechnoClass::ReceiveDamage (0x00701900) +
-//! ObjectClass::ReceiveDamage (0x005f5390):
-//!   1. country-armor DIVIDE (folds Techno+0x158), ftol
-//!   2. VeteranArmor DIVIDE (Rules+0x688), ftol
-//!   3. defender min-1
-//!   4. immunity gates (TypeImmune is checked HERE, after the divides)
-//!   5. Verses kernel (falloff -> Verses -> MaxDamage cap)
-//!   6. building min-1 (Building && !CanC4), applied to the kernel output
-//!   7. overkill clamp to remaining HP
-//!   8. classify (Yellow = integer Strength>>1; Red = double Strength*ratio)
+//! Receiver preparation: Techno armor/gates and Object entry/kernel.
+//! Object's mutable packet rewrite, HP commit and native return classification
+//! live in combat::object_health and execute once after this preparation.
+//! The represented order follows Techno701900 and Object5F5390; defense math
+//! below retains its explicitly documented older host-f64 boundary.
 
 use super::gates::evaluate_gates;
 use super::kernel::apply_warhead_damage;
-use super::{CombatMods, DamageGate, DamageOutcome, DamageState, ImmunityInputs, TargetDamageView};
+use super::{CombatMods, DamageGate, DamageOutcome, ImmunityInputs, TargetDamageView};
 
 /// Unmigrated defense-stage host-f64 conversion. This saturating cast does not
 /// implement native7C5F00's signed64/low32 contract. The shared warhead kernel
@@ -24,7 +16,7 @@ fn ftol(v: f64) -> i32 {
     v as i32
 }
 
-/// Full receiver pipeline. `condition_red_ratio` = Rules+0x1708 (~0.25).
+/// Prepare the receiver packet without committing HP or predicting its result.
 /// `cell_spread`/`percent_at_max`/`verses_f64` are the warhead's decoded kernel
 /// inputs (see kernel::apply_warhead_damage). `distance_leptons` is the impact
 /// distance in the kernel lepton unit (256 leptons/cell).
@@ -40,12 +32,11 @@ pub(crate) fn receive_damage(
     distance_leptons: i32,
     scenario_no_damage: bool,
     max_damage: i32,
-    condition_red_ratio: f64,
 ) -> DamageOutcome {
     let unaffected = DamageOutcome {
+        apply_object_damage: false,
         hp_delta: 0,
         post_object_damage: None,
-        state: DamageState::Unaffected,
         psychedelic_value: None,
         invulnerability_impact_damage: None,
         reached_survivor_postlude: false,
@@ -94,9 +85,9 @@ pub(crate) fn receive_damage(
                 max_damage,
             );
             return DamageOutcome {
+                apply_object_damage: false,
                 hp_delta: 0,
                 post_object_damage: None,
-                state: DamageState::Damaged,
                 psychedelic_value: Some(psychedelic_value),
                 invulnerability_impact_damage: None,
                 reached_survivor_postlude: false,
@@ -123,7 +114,7 @@ pub(crate) fn receive_damage(
     // `ignoreDefenses`. That distinction is the whole point here: VERA's two
     // `ignore_defenses` callers are the C4 and Ivan expiry receivers, which is
     // exactly the same-blast cascade this gate exists to stop.
-    if target.current_hp < 1 || (!gates.ignore_defenses && target.object_immune) {
+    if target.current_hp < 1 || dmg == 0 || (!gates.ignore_defenses && target.object_immune) {
         return DamageOutcome {
             post_object_damage: Some(dmg),
             reached_survivor_postlude: true,
@@ -132,7 +123,7 @@ pub(crate) fn receive_damage(
     }
 
     // Verses kernel (falloff -> Verses -> cap; also re-runs the D1/D2 early-outs).
-    let mut delta = if gates.ignore_defenses {
+    let delta = if gates.ignore_defenses {
         dmg
     } else {
         apply_warhead_damage(
@@ -147,71 +138,16 @@ pub(crate) fn receive_damage(
         )
     };
 
-    // Building min-1 (ObjectClass::ReceiveDamage, post-Verses, Building && !CanC4).
-    // MUST run before the sign/zero dispatch: a building whose Verses collapses
-    // to zero, or whose packet was negative, is rewritten to positive one.
-    if target.is_building && !target.can_c4 {
-        delta = delta.max(1);
-    }
-    // Healing path (delta < 0): caller adds back, clamped to strength elsewhere.
-    if delta < 0 {
-        return DamageOutcome {
-            hp_delta: delta,
-            post_object_damage: Some(delta),
-            state: classify(target, delta, condition_red_ratio),
-            psychedelic_value: None,
-            invulnerability_impact_damage: None,
-            reached_survivor_postlude: true,
-        };
-    }
-    if delta == 0 {
-        return DamageOutcome {
-            post_object_damage: Some(0),
-            reached_survivor_postlude: true,
-            ..unaffected
-        };
-    }
-
-    // Overkill clamp: damage never exceeds remaining HP.
-    if delta > target.current_hp {
-        delta = target.current_hp;
-    }
-
+    // Object HP mutation, Building minimum, packet clamp and return-code
+    // classification belong to object_health::commit, after preparation.
     DamageOutcome {
+        apply_object_damage: true,
         hp_delta: delta,
         post_object_damage: Some(delta),
-        state: classify(target, delta, condition_red_ratio),
         psychedelic_value: None,
         invulnerability_impact_damage: None,
         reached_survivor_postlude: true,
     }
-}
-
-/// Health-state classification. Yellow uses integer `Strength >> 1` (the state
-/// crossing, NOT the ConditionYellow ratio); Red uses `Strength * red_ratio`
-/// (Rules+0x1708) compared in DOUBLE precision (verified: no ftol on the Red
-/// threshold). Dead when post-hit HP reaches 0.
-///
-/// NB the ConditionYellow ratio (Rules+0x1700) is a SEPARATE mechanism used by
-/// the health-bar/smoke/fear gate (IsYellowHP), distinct from this integer
-/// state crossing — do not unify them at the cutover.
-fn classify(target: &TargetDamageView, delta: i32, red_ratio: f64) -> DamageState {
-    let prev = target.current_hp;
-    let post = prev - delta; // delta may be negative (heal) => post > prev
-    if post <= 0 {
-        return DamageState::Dead;
-    }
-    // Red: double multiply + double compare (no integer truncation).
-    let red = target.strength as f64 * red_ratio;
-    if red < prev as f64 && (post as f64) < red {
-        return DamageState::Red;
-    }
-    // Yellow: integer Strength>>1 (arithmetic shift).
-    let yellow = target.strength >> 1;
-    if yellow <= prev && post < yellow {
-        return DamageState::Yellow;
-    }
-    DamageState::Damaged
 }
 
 #[cfg(test)]
@@ -220,16 +156,12 @@ mod tests {
     use crate::sim::combat::damage::{ArmorClass, CombatMods, ImmunityInputs, TargetDamageView};
 
     const MAXD: i32 = 10000;
-    const RED: f64 = 0.25;
 
-    fn tgt(strength: i32, hp: i32) -> TargetDamageView {
+    fn tgt(_strength: i32, hp: i32) -> TargetDamageView {
         TargetDamageView {
             armor: ArmorClass(5),
-            strength,
             current_hp: hp,
             object_immune: false,
-            is_building: false,
-            can_c4: false,
         }
     }
     fn allow() -> ImmunityInputs {
@@ -260,10 +192,8 @@ mod tests {
             0,
             false,
             MAXD,
-            RED,
         );
         assert_eq!(dead.hp_delta, 0);
-        assert_eq!(dead.state, DamageState::Unaffected);
         // Pre-kernel: the two armour divides are no-ops here, so 400 survives
         // whole rather than being scaled by the 0.25 Verses entry.
         assert_eq!(dead.post_object_damage, Some(400));
@@ -292,10 +222,8 @@ mod tests {
             0,
             false,
             MAXD,
-            RED,
         );
         assert_eq!(out.hp_delta, 0);
-        assert_eq!(out.state, DamageState::Unaffected);
     }
 
     /// One HP is still alive, so the gate must not fire.
@@ -312,15 +240,13 @@ mod tests {
             0,
             false,
             MAXD,
-            RED,
         );
-        assert_eq!(alive.hp_delta, 1);
-        assert_eq!(alive.state, DamageState::Dead);
+        assert_eq!(alive.hp_delta, 100);
     }
 
     #[test]
-    fn overkill_clamped_to_remaining_hp() {
-        // 500 incoming vs 50-HP target reports 50, not 500.
+    fn overkill_stays_uncommitted_until_object_owner() {
+        // Preparation retains500; the Object commit caps its mutable packet to50.
         let o = receive_damage(
             500,
             0.0,
@@ -332,52 +258,8 @@ mod tests {
             0,
             false,
             MAXD,
-            RED,
         );
-        assert_eq!(o.hp_delta, 50);
-        assert_eq!(o.state, DamageState::Dead);
-    }
-
-    #[test]
-    fn yellow_uses_integer_strength_halved() {
-        // Strength 100 => yellow at >>1 = 50. Full-HP target, 60 damage:
-        // prev=100, post=40, crosses 50 => Yellow (not the 0.25 ratio).
-        let o = receive_damage(
-            60,
-            0.0,
-            1.0,
-            &verses(1.0),
-            &tgt(100, 100),
-            &CombatMods::default(),
-            &allow(),
-            0,
-            false,
-            MAXD,
-            RED,
-        );
-        assert_eq!(o.hp_delta, 60);
-        assert_eq!(o.state, DamageState::Yellow);
-    }
-
-    #[test]
-    fn red_uses_double_condition_ratio() {
-        // Strength 100, red ratio 0.25 => red threshold 25.0 (double, no ftol).
-        // Target at 30 HP, 10 damage: post=20; 25<30 && 20<25 => Red.
-        let o = receive_damage(
-            10,
-            0.0,
-            1.0,
-            &verses(1.0),
-            &tgt(100, 30),
-            &CombatMods::default(),
-            &allow(),
-            0,
-            false,
-            MAXD,
-            RED,
-        );
-        assert_eq!(o.hp_delta, 10);
-        assert_eq!(o.state, DamageState::Red);
+        assert_eq!(o.hp_delta, 500);
     }
 
     #[test]
@@ -398,7 +280,6 @@ mod tests {
             0,
             false,
             MAXD,
-            RED,
         );
         assert_eq!(o.hp_delta, 40);
     }
@@ -421,7 +302,6 @@ mod tests {
             0,
             false,
             MAXD,
-            RED,
         );
         assert_eq!(o.hp_delta, 40);
     }
@@ -445,34 +325,8 @@ mod tests {
             0,
             false,
             MAXD,
-            RED,
         );
         assert_eq!(o.hp_delta, 1);
-    }
-
-    #[test]
-    fn building_min_one_after_verses() {
-        // Building (no CanC4): tiny Verses collapses the kernel to 0, but the
-        // building floor (run BEFORE the zero-check) raises it to 1.
-        let bldg = TargetDamageView {
-            is_building: true,
-            ..tgt(1000, 1000)
-        };
-        let o = receive_damage(
-            10,
-            0.0,
-            1.0,
-            &verses(0.0001),
-            &bldg,
-            &CombatMods::default(),
-            &allow(),
-            0,
-            false,
-            MAXD,
-            RED,
-        );
-        assert_eq!(o.hp_delta, 1);
-        assert_eq!(o.state, DamageState::Damaged);
     }
 
     #[test]
@@ -489,10 +343,8 @@ mod tests {
             0,
             false,
             MAXD,
-            RED,
         );
         assert_eq!(o.hp_delta, 0);
-        assert_eq!(o.state, DamageState::Unaffected);
     }
 
     #[test]
@@ -513,10 +365,8 @@ mod tests {
             0,
             false,
             MAXD,
-            RED,
         );
         assert_eq!(o.hp_delta, 0);
-        assert_eq!(o.state, DamageState::Damaged);
         assert_eq!(o.psychedelic_value, Some(100));
     }
 
@@ -537,10 +387,8 @@ mod tests {
             0,
             false,
             MAXD,
-            RED,
         );
         assert_eq!(o.hp_delta, 0);
-        assert_eq!(o.state, DamageState::Unaffected);
         assert_eq!(o.invulnerability_impact_damage, Some(200));
     }
 }

@@ -1104,7 +1104,7 @@ pub fn classify_drive_crush_phase(
 /// next `Process_Movement` decrements it and skips the move while it is
 /// positive. This is a hardcoded constant, **not** `[AI] BlockagePathDelay`,
 /// which is a different (60-frame) timer with a different consumer.
-pub const POST_SCATTER_WAIT_FRAMES: u16 = 10;
+pub const POST_SCATTER_WAIT_FRAMES: i32 = 10;
 
 // The full-infantry-cell force-scatter helpers used to live here and are gone
 // with the clause that called them: the three-infantry-bit test is real but the

@@ -8,7 +8,7 @@ use crate::sim::world::Simulation;
 pub(crate) struct BaseDefenseResponseTraceEntry {
     pub(crate) site: BaseDefenseResponseCallSite,
     pub(crate) victim_id: u64,
-    pub(crate) health: u16,
+    pub(crate) health: i32,
     pub(crate) last_attacker_house_index: i32,
 }
 

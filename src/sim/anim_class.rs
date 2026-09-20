@@ -277,92 +277,6 @@ pub fn anim_translucency_selection(input: AnimTranslucencyInput) -> AnimTransluc
     AnimTranslucencyResult { draw: true, flags }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct BuildingAnimPowerFlags {
-    pub powered: bool,
-    pub powered_light: bool,
-    pub powered_effect: bool,
-    pub powered_special: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BuildingAnimSlotAction {
-    None,
-    Pause,
-    Destroy,
-    DestroyMarkEffectReplay,
-    PlayActiveSlot3,
-    PlayLowPowerSlot19,
-    PlaySuperLowPowerSlot20,
-    ReplayPoweredSpecial,
-}
-
-pub fn building_storage_fill_level(stored_amount: f64, capacity: i32) -> i32 {
-    if capacity <= 0 {
-        return 0;
-    }
-    let stored = stored_amount.trunc() as i32;
-    ((f64::from(stored.wrapping_mul(4)) / f64::from(capacity)) + 0.5)
-        .trunc()
-        .clamp(0.0, 3.0) as i32
-}
-
-/// `BuildingClass__UpdateAnimVisibilityStates` @ 0x004547c0 action projection.
-pub fn unpowered_building_anim_actions(
-    slot: usize,
-    has_anim: bool,
-    flags: BuildingAnimPowerFlags,
-    storage_active_gate: bool,
-    active_slot3_powered: bool,
-    super_low_power_available: bool,
-) -> Vec<BuildingAnimSlotAction> {
-    if !has_anim {
-        return vec![BuildingAnimSlotAction::None];
-    }
-    if flags.powered {
-        return vec![BuildingAnimSlotAction::Pause];
-    }
-    if flags.powered_light {
-        let mut actions = vec![BuildingAnimSlotAction::Destroy];
-        if slot == 10 && storage_active_gate && active_slot3_powered {
-            actions.push(BuildingAnimSlotAction::PlayActiveSlot3);
-        }
-        return actions;
-    }
-    if flags.powered_effect {
-        let mut actions = vec![BuildingAnimSlotAction::DestroyMarkEffectReplay];
-        if slot == 16 && super_low_power_available {
-            actions.push(BuildingAnimSlotAction::PlaySuperLowPowerSlot20);
-        }
-        return actions;
-    }
-    vec![BuildingAnimSlotAction::None]
-}
-
-pub fn powered_special_actions(
-    records: &[BuildingAnimPowerFlags],
-    restoring: bool,
-    low_power_available: bool,
-) -> Vec<(usize, BuildingAnimSlotAction)> {
-    let mut actions = Vec::new();
-    if restoring {
-        actions.push((19, BuildingAnimSlotAction::Destroy));
-    } else if low_power_available {
-        actions.push((19, BuildingAnimSlotAction::PlayLowPowerSlot19));
-    }
-    actions.extend(records.iter().enumerate().filter_map(|(slot, flags)| {
-        flags.powered_special.then_some((
-            slot,
-            if restoring {
-                BuildingAnimSlotAction::ReplayPoweredSpecial
-            } else {
-                BuildingAnimSlotAction::Destroy
-            },
-        ))
-    }));
-    actions
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AnimRuntime {
     pub current_frame: i32,
@@ -374,6 +288,9 @@ pub struct AnimRuntime {
     pub first_ai_guard: bool,
     pub constructor_reverse: bool,
     pub inactive: bool,
+    /// Anim+19E, pause/resume425260/425270. The absolute frame timer keeps running.
+    #[serde(default)]
+    pub paused: bool,
 }
 
 /// Per-instance `AnimClass::DrawIt` bytes that are independent of the art
@@ -436,6 +353,11 @@ pub struct AnimObject {
     #[serde(skip)]
     pub in_logic_vector: bool,
     pub owner_entity: Option<u64>,
+    /// Derived reverse index of Building+55C's slot reference, rebuilt on load.
+    /// Native Anim+118 suppresses its independent draw; the building draws it.
+    /// This is not the distinct Anim+CC Object-owner attachment.
+    #[serde(skip)]
+    pub building_slot: Option<(u64, u8)>,
     pub start_sound_active: bool,
     pub stop_sound_id: Option<InternedId>,
 }
@@ -642,7 +564,7 @@ impl Simulation {
     /// Returns `None` when the art type never bound (no art section or no SHP,
     /// see `ArtRegistry::bind_combat_explosion_anim_assets`); native mints a
     /// default `AnimTypeClass` in that case whose `End` stays 0, so the anim
-    /// dies on its first AI visit and draws nothing.
+    /// retains its first-AI guard, expires on a later visit, and draws nothing.
     ///
     /// RESIDUAL — the impact Z arrives as the producer's coarse height-level
     /// byte, not exact leptons. `ExplosionEffect` carries that byte while its
@@ -744,12 +666,14 @@ impl Simulation {
                 first_ai_guard: true,
                 constructor_reverse: descriptor.reverse,
                 inactive: false,
+                paused: false,
             },
             draw_runtime: descriptor.draw_runtime,
             use_cell_drawer: descriptor.use_cell_drawer,
             terrain_attached: descriptor.terrain_attached,
             in_logic_vector: false,
             owner_entity: None,
+            building_slot: None,
             start_sound_active: false,
             stop_sound_id,
         };
@@ -821,12 +745,14 @@ impl Simulation {
                 first_ai_guard: true,
                 constructor_reverse: descriptor.reverse,
                 inactive: false,
+                paused: false,
             },
             draw_runtime: descriptor.draw_runtime,
             use_cell_drawer: descriptor.use_cell_drawer,
             terrain_attached: descriptor.terrain_attached,
             in_logic_vector: false,
             owner_entity: None,
+            building_slot: None,
             start_sound_active: false,
             stop_sound_id,
         };
@@ -953,12 +879,14 @@ impl Simulation {
                 first_ai_guard: true,
                 constructor_reverse: false,
                 inactive: false,
+                paused: false,
             },
             draw_runtime: AnimDrawRuntime::default(),
             use_cell_drawer: false,
             terrain_attached: false,
             in_logic_vector: false,
             owner_entity: None,
+            building_slot: None,
             start_sound_active: false,
             stop_sound_id,
         };
@@ -1117,6 +1045,10 @@ impl Simulation {
                 anim.runtime.delay_remaining -= 1;
                 return;
             }
+            //42449B: power pause follows first-AI/delay gates and precedes timer advance.
+            if anim.runtime.paused {
+                return;
+            }
             if anim.runtime.rate_reload == 0 {
                 return;
             }
@@ -1211,6 +1143,43 @@ impl Simulation {
         } else {
             self.conceal_anim(id);
             self.substrate.pending_delete.push(id);
+        }
+    }
+
+    /// Building451A2C and ClearAnimSlot451E40 use scalar deletion: the old
+    /// object is gone before the replacement pointer is installed. Keep this
+    /// separate from an animation's ordinary deferred Destroy operation.
+    pub(crate) fn scalar_delete_building_anim(&mut self, id: AnimId) {
+        // Anim VT7E3354+20 ->426590 ->4228E0 releases sound handles but
+        // never reaches Destroy4255B0 or its StopSound playback. The slot was
+        // cleared by the caller before these synchronous destructor effects.
+        let world = self.anim_absolute_coord(id);
+        let sound_active = self.anim(id).is_some_and(|anim| anim.start_sound_active);
+        self.detach_anim_from_owner(id);
+        self.clear_building_anim_reference(id);
+        if sound_active && let Some(world) = world {
+            self.sound_events.push(SimSoundEvent::AnimationStopped {
+                anim_id: id,
+                stop_sound_id: None,
+                world,
+            });
+        }
+        self.conceal_anim(id);
+        self.substrate.pending_delete.retain(|queued| *queued != id);
+        self.substrate.anims.remove(id);
+    }
+
+    pub(crate) fn clear_building_anim_reference(&mut self, id: AnimId) {
+        let slot = self
+            .substrate
+            .anims
+            .get_mut(id)
+            .and_then(|anim| anim.building_slot.take());
+        if let Some((owner, slot)) = slot
+            && let Some(entity) = self.substrate.entities.get_mut(owner)
+            && entity.building_anim_slots[usize::from(slot)] == Some(id)
+        {
+            entity.building_anim_slots[usize::from(slot)] = None;
         }
     }
 
@@ -1552,11 +1521,10 @@ impl Simulation {
     }
 
     pub(crate) fn update_building_damage_fire(&mut self, building_id: u64, rules: &RuleSet) {
-        let Some((current, maximum, type_ref, position, prior_state, category)) =
+        let Some((current, type_ref, position, prior_state, category)) =
             self.substrate.entities.get(building_id).map(|entity| {
                 (
                     entity.health.current,
-                    entity.health.max,
                     entity.type_ref(),
                     entity.position.clone(),
                     entity.damage_fire_state_active,
@@ -1572,18 +1540,19 @@ impl Simulation {
         let Some(object_type) = self.object_type(type_ref, rules) else {
             return;
         };
+        let maximum = object_type.strength;
         let can_be_occupied = object_type.can_be_occupied;
         let image = object_type.image.clone();
         let foundation = object_type.foundation.clone();
         let ratio = if can_be_occupied {
-            rules.general.damage_fire_occupied_ratio
+            rules.general.condition_red
         } else {
-            rules.general.damage_fire_ordinary_ratio
+            rules.general.condition_yellow
         };
-        let active = maximum > 0
-            && current > 0
-            && i64::from(current) * i64::from(ratio.denominator)
-                <= i64::from(maximum) * i64::from(ratio.numerator);
+        // Building43FC39..43FC84: CanBeOccupied selects red versus yellow;
+        // TEST AH,0x41 includes unordered, with no HP/Strength positivity gate.
+        let active = crate::sim::components::Health { current }.compare_ratio(maximum, ratio)
+            != crate::util::native_x87::MaskedX87Ordering::Greater;
         if active == prior_state {
             return;
         }
@@ -1809,6 +1778,9 @@ fn effective_bounds(
     type_name: &str,
     config: &AnimTypeRuntimeConfig,
 ) -> Result<(i32, i32), AnimSpawnError> {
+    if !config.art_body_read {
+        return Ok((config.end, config.loop_end));
+    }
     let raw = config
         .raw_shp_frame_count
         .ok_or_else(|| AnimSpawnError::UnboundType(type_name.to_string()))?;
@@ -1910,9 +1882,6 @@ mod long_tail_contract_tests {
         assert_eq!(directional_tumble_frame(5, 7, 14), 4);
         assert_eq!(settled_bounce_frame(5), 41);
         assert_eq!(bounce_spawn_count(true, 4, 2, 3), 5);
-        assert_eq!(building_storage_fill_level(12.9, 100), 0);
-        assert_eq!(building_storage_fill_level(13.0, 100), 1);
-        assert_eq!(building_storage_fill_level(63.0, 100), 3);
         assert_eq!(
             anim_translucency_selection(AnimTranslucencyInput {
                 base_flags: 0,
@@ -1930,41 +1899,6 @@ mod long_tail_contract_tests {
                 draw: true,
                 flags: 6
             }
-        );
-    }
-
-    #[test]
-    fn yr_power_slot_actions_are_ordered() {
-        assert_eq!(
-            unpowered_building_anim_actions(
-                10,
-                true,
-                BuildingAnimPowerFlags {
-                    powered_light: true,
-                    ..Default::default()
-                },
-                true,
-                true,
-                false,
-            ),
-            vec![
-                BuildingAnimSlotAction::Destroy,
-                BuildingAnimSlotAction::PlayActiveSlot3
-            ]
-        );
-        let records = [
-            BuildingAnimPowerFlags::default(),
-            BuildingAnimPowerFlags {
-                powered_special: true,
-                ..Default::default()
-            },
-        ];
-        assert_eq!(
-            powered_special_actions(&records, false, true),
-            vec![
-                (19, BuildingAnimSlotAction::PlayLowPowerSlot19),
-                (1, BuildingAnimSlotAction::Destroy),
-            ]
         );
     }
 }
@@ -1998,9 +1932,16 @@ mod tests {
     }
 
     fn damage_fire_fixture(can_be_occupied: bool) -> (Simulation, RuleSet, u64) {
+        damage_fire_fixture_with_strength(can_be_occupied, 100)
+    }
+
+    fn damage_fire_fixture_with_strength(
+        can_be_occupied: bool,
+        strength: i32,
+    ) -> (Simulation, RuleSet, u64) {
         let rules_ini = IniFile::from_str(&format!(
             "[BuildingTypes]\n0=TESTBLD\n\n\
-             [TESTBLD]\nStrength=100\nImage=TESTART\nCanBeOccupied={}\n\n\
+             [TESTBLD]\nStrength={strength}\nImage=TESTART\nCanBeOccupied={}\n\n\
              [General]\nDamageFireTypes=FIRE01,FIRE02,FIRE03\n\n\
              [AudioVisual]\nConditionYellow=50%\nConditionRed=25%\n",
             if can_be_occupied { "yes" } else { "no" },
@@ -2033,10 +1974,7 @@ mod tests {
             0,
             0,
             owner,
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             type_ref,
             EntityCategory::Structure,
             0,
@@ -2047,6 +1985,35 @@ mod tests {
         sim.substrate.entities.insert(building);
         sim.reveal(id);
         (sim, rules, id)
+    }
+
+    #[test]
+    fn original_health_ratio_corpus_drives_damage_fire_update() {
+        for row in crate::sim::health_ratio_fixture::rows() {
+            for occupied in [false, true] {
+                let (mut sim, mut rules, id) =
+                    damage_fire_fixture_with_strength(occupied, row.input.strength);
+                rules.general.condition_yellow = row.input.yellow();
+                rules.general.condition_red = row.input.red();
+                sim.substrate.entities.get_mut(id).unwrap().health.current = row.input.current;
+                sim.update_building_damage_fire(id, &rules);
+                let building = sim.substrate.entities.get(id).unwrap();
+                let expected = if occupied {
+                    row.output.damage_fire_occupied
+                } else {
+                    row.output.damage_fire_ordinary
+                };
+                assert_eq!(
+                    building.damage_fire_state_active, expected,
+                    "{row:?}, occupied={occupied}"
+                );
+                assert_eq!(
+                    building.damage_fire_anim_ids.iter().flatten().count(),
+                    if expected { 2 } else { 0 },
+                    "{row:?}"
+                );
+            }
+        }
     }
 
     fn runtime_rules(art_text: &str, frame_counts: &[(&str, i32)]) -> RuleSet {
@@ -3121,7 +3088,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_health_clears_owned_anims_and_stop_is_idempotent() {
+    fn repaired_health_clears_owned_anims_and_stop_is_idempotent() {
         let (mut sim, rules, building_id) = damage_fire_fixture(false);
         sim.substrate
             .entities
@@ -3136,7 +3103,7 @@ mod tests {
             .get_mut(building_id)
             .unwrap()
             .health
-            .current = 0;
+            .current = 100;
 
         sim.update_building_damage_fire(building_id, &rules);
         sim.update_building_damage_fire(building_id, &rules);

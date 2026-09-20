@@ -3,6 +3,194 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 
+#[derive(serde::Deserialize)]
+struct NativeSequenceCorpus {
+    names: Vec<String>,
+    cases: Vec<NativeSequenceRow>,
+}
+
+#[derive(serde::Deserialize)]
+struct NativeSequenceRow {
+    sequence: Option<String>,
+    before: Vec<[i32; 5]>,
+    after: Vec<[i32; 5]>,
+    layers: Vec<std::collections::BTreeMap<String, Option<String>>>,
+}
+
+fn native_sequence_entry(record: [i32; 5]) -> InfantrySequenceEntry {
+    let hints = [
+        FacingHint::N,
+        FacingHint::NE,
+        FacingHint::E,
+        FacingHint::SE,
+        FacingHint::S,
+        FacingHint::SW,
+        FacingHint::W,
+        FacingHint::NW,
+    ];
+    InfantrySequenceEntry {
+        start_frame: record[0],
+        frames_per_facing: record[1],
+        facings: record[2],
+        facing_hint: usize::try_from(record[3])
+            .ok()
+            .and_then(|i| hints.get(i).copied()),
+    }
+}
+
+#[test]
+fn signed_action_records_match_original_partial_reader_corpus() {
+    let corpus: NativeSequenceCorpus = serde_json::from_str(include_str!(
+        "../../tools/spatial_oracle/infantry_sequence_rules.json"
+    ))
+    .unwrap();
+    assert_eq!(corpus.names, NATIVE_SEQUENCE_NAMES);
+    assert_eq!(corpus.cases.len(), 76);
+    for (case, row) in corpus.cases.into_iter().enumerate() {
+        let mut records: Vec<_> = row.before.into_iter().map(native_sequence_entry).collect();
+        if row.sequence.is_some() {
+            for layer in &row.layers {
+                for (index, name) in NATIVE_SEQUENCE_NAMES.iter().enumerate() {
+                    if let Some(Some(value)) = layer.get(*name) {
+                        read_sequence_value(value, &mut records[index]);
+                    }
+                }
+            }
+        }
+        let expected: Vec<_> = row.after.into_iter().map(native_sequence_entry).collect();
+        assert_eq!(
+            records, expected,
+            "original523D00 case {case}: {:?}",
+            row.layers
+        );
+    }
+}
+
+#[test]
+fn catalog_preserves_signed_actions_and_distinct_ready_guard() {
+    use crate::rules::animation_sequence::build_animation_sequence_catalog;
+    use crate::rules::art_data::ArtRegistry;
+    use crate::rules::ruleset::RuleSet;
+
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=TEST\n[TEST]\nImage=TEST\n",
+    ))
+    .unwrap();
+    let art = IniFile::from_str(
+        "[TEST]\nSequence=ArbitraryActions\n[ArbitraryActions]\nReady=7,1,1\nGuard=91,2,2\nDeploy=-8,65536,-3,S\n",
+    );
+    rules.art_registry = ArtRegistry::from_ini(&art);
+    let registry = parse_infantry_sequence_registry(&art);
+    let catalog = build_animation_sequence_catalog(&rules, Some(&registry));
+    let set = &catalog["TEST"];
+    assert_eq!(set.infantry_action(0).unwrap().start_frame, 7);
+    assert_eq!(set.infantry_action(1).unwrap().start_frame, 91);
+    assert_eq!(
+        *set.infantry_action(27).unwrap(),
+        InfantrySequenceEntry {
+            start_frame: -8,
+            frames_per_facing: 65536,
+            facings: -3,
+            facing_hint: Some(FacingHint::S),
+        }
+    );
+    assert_eq!(
+        *set.infantry_action(31).unwrap(),
+        InfantrySequenceEntry::default()
+    );
+
+    // No u16 draw entry can represent this bank. It still owns action data.
+    let signed_only = IniFile::from_str("[ArbitraryActions]\nDeploy=-8,65536,-3\n");
+    let registry = parse_infantry_sequence_registry(&signed_only);
+    let catalog = build_animation_sequence_catalog(&rules, Some(&registry));
+    assert_eq!(
+        catalog["TEST"]
+            .infantry_action(27)
+            .unwrap()
+            .frames_per_facing,
+        65536
+    );
+    let missing = build_animation_sequence_catalog(&rules, None);
+    for action in 0..42 {
+        assert_eq!(
+            *missing["TEST"].infantry_action(action).unwrap(),
+            InfantrySequenceEntry::default()
+        );
+    }
+}
+
+#[test]
+fn projected_partial_sequence_reads_retain_prior_fields() {
+    let mut ini = IniFile::from_str("");
+    ini.merge_rules_projection(&IniFile::from_str("[Actions]\nDeploy=1,2,3,S\n"));
+    ini.merge_rules_projection(&IniFile::from_str("[Actions]\nDeploy=9\n"));
+    let registry = parse_infantry_sequence_registry(&ini);
+    let set = build_sequence_set(&registry["ACTIONS"]);
+    assert_eq!(
+        *set.infantry_action(27).unwrap(),
+        InfantrySequenceEntry {
+            start_frame: 9,
+            frames_per_facing: 2,
+            facings: 3,
+            facing_hint: Some(FacingHint::S),
+        }
+    );
+}
+
+#[test]
+fn auto_deploy_difficulty_vector_matches_original_retained_reader() {
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+    #[derive(serde::Deserialize)]
+    struct Row {
+        prior: Vec<i32>,
+        raw: Option<String>,
+        output: Vec<i32>,
+    }
+    let rows: Vec<Row> = serde_json::from_str(include_str!(
+        "../../tools/spatial_oracle/infantry_deploy_rules.json"
+    ))
+    .unwrap();
+    assert_eq!(rows.len(), 42);
+    for row in rows {
+        let mut projected = IniFile::from_str("");
+        if !row.prior.is_empty() {
+            let prior = row
+                .prior
+                .iter()
+                .map(i32::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            projected.merge_rules_projection(&IniFile::from_str(&format!(
+                "[General]\nAIAutoDeployFrameDelay={prior}\n"
+            )));
+        }
+        let mut patch = IniFile::from_str("[General]\nFixture=1\n");
+        if let Some(raw) = &row.raw {
+            // Supply the exact ReadString payload, including whitespace that
+            // the physical INI loader discards before this caller boundary.
+            patch
+                .projection_section_mut("General")
+                .set("AIAutoDeployFrameDelay", raw);
+        }
+        let mut layers = RulesLayerStack::new(projected);
+        layers.push(RulesLayerKind::Scenario, patch);
+        let rules = crate::rules::ruleset::RuleSet::from_rules_layers(&layers).unwrap();
+        assert_eq!(
+            rules.general.ai_auto_deploy_frame_delay, row.output,
+            "prior={:?}, raw={:?}",
+            row.prior, row.raw
+        );
+    }
+    let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nAIAutoDeployFrameDelay=-1,65536,2147483648\n",
+    ))
+    .unwrap();
+    assert_eq!(
+        rules.general.ai_auto_deploy_frame_delay,
+        [-1, 65536, i32::MIN]
+    );
+}
+
 #[test]
 fn test_parse_sequence_value_basic() {
     let entry: InfantrySequenceEntry =
@@ -74,16 +262,38 @@ fn test_parse_sequence_value_zero_frames() {
 }
 
 #[test]
-fn test_parse_sequence_value_too_few_fields() {
-    assert!(parse_sequence_value("8,6").is_none());
-    assert!(parse_sequence_value("8").is_none());
+fn partial_sequence_reads_keep_unconverted_constructor_fields() {
+    assert_eq!(
+        parse_sequence_value("8,6").unwrap(),
+        InfantrySequenceEntry {
+            start_frame: 8,
+            frames_per_facing: 6,
+            ..InfantrySequenceEntry::default()
+        }
+    );
+    assert_eq!(
+        parse_sequence_value("8").unwrap(),
+        InfantrySequenceEntry {
+            start_frame: 8,
+            ..InfantrySequenceEntry::default()
+        }
+    );
     assert!(parse_sequence_value("").is_none());
 }
 
 #[test]
 fn test_parse_sequence_value_invalid_number() {
-    assert!(parse_sequence_value("abc,6,6").is_none());
-    assert!(parse_sequence_value("8,xyz,6").is_none());
+    assert_eq!(
+        parse_sequence_value("abc,6,6").unwrap(),
+        InfantrySequenceEntry::default()
+    );
+    assert_eq!(
+        parse_sequence_value("8,xyz,6").unwrap(),
+        InfantrySequenceEntry {
+            start_frame: 8,
+            ..InfantrySequenceEntry::default()
+        }
+    );
 }
 
 #[test]

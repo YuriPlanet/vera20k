@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Walk post-PerCell survival/destination completion75BE42..75BF64, including actual Infantry51AA40, Foot4D94B0, Foot speed4D3710 and WalkStop75ADA0. Does not execute prior movement/PerCell or final Mark1.",
+  "assumptions": [
+    "Interior entry retains EBP=Walk object, EBX=&head and ECX=owner. Default cleared head and paid-completion latch0 reflect earlier75BE11/75BE18; replacement-head variants supply post-PerCell mutations. Callbacks before75BE42 are not emulated.",
+    "Original Infantry vtable and actual Walk constructor. Ordinary type/House, no bunker/transport/team, default empty radio contacts with explicit nonnull-contact variants, live NavCom sentinel, existing queue2,3,4,5 and NavQueue count2. No map lookup needed by the ordinary null setter.",
+    "CurrentXYZ, retained head and live post-PerCell destination are supplied independently. Cases cover null, cell mismatch, signed height bounds including INT_MIN wrap, low16 XY alias/negative division, replacement heads, human Doing refusal, current/queued Enter and radio-contact queue preservation, lifecycle exits and signed timer values.",
+    "Native timer middle words777/888 are retained and observed, not assumed paddingzero. Foot retries supplied0xffffffff. Startup FPCW0E7F and height104 are supplied."
+  ],
+  "substitutions": [
+    "Only OS InterlockedIncrement/Decrement imports emulate their integer operation and stdcall cleanup. No gameplay callback is substituted."
+  ],
+  "entry_points": {
+    "completion": "0x0075BE42",
+    "infantry_setter": "0x0051AA40",
+    "foot_setter": "0x004D94B0",
+    "walk_stop": "0x0075ADA0",
+    "foot_speed": "0x004D3710"
+  },
+  "payload_sha256": "bc9e13ddc807280f527351b38eb4d73c11dbd5c72a6afe0252b77921b4dc7b8b"
+}

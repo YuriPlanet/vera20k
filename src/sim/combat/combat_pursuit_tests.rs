@@ -48,12 +48,9 @@ fn make_sim(entities: Vec<GameEntity>) -> (Simulation, PathGrid) {
     (sim, grid)
 }
 
-fn make_unit(id: u64, type_ref: &str, owner: &str, rx: u16, ry: u16, hp: u16) -> GameEntity {
+fn make_unit(id: u64, type_ref: &str, owner: &str, rx: u16, ry: u16, hp: i32) -> GameEntity {
     let mut e = GameEntity::test_default(id, type_ref, owner, rx, ry);
-    e.health = Health {
-        current: hp,
-        max: hp,
-    };
+    e.health = Health { current: hp };
     e
 }
 
@@ -1030,8 +1027,8 @@ fn walk_null_setter_matches_original_caller_rows() {
             e.radio_contacts.insert(victim);
         }
         e.movement_target = Some(MovementTarget::default());
-        e.navigation.path_runtime.start_movement(0, 5, false);
-        e.navigation.path_runtime.start_blocked(0, 6, false);
+        e.navigation.path_runtime.start_movement(0, 5);
+        e.navigation.path_runtime.start_blocked(0, 6);
         e.navigation.path_runtime.path_blocked = true;
         let loco = e.locomotor.as_mut().unwrap();
         loco.set_walk_destination(Some(DriveCoord {

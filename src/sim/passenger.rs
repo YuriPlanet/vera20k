@@ -316,8 +316,8 @@ pub fn can_dock_occupier_garrison(
     }
     if is_at_or_below_red_hp(
         building.health.current,
-        building.health.max,
-        rules.general.condition_red_x1000,
+        building_obj.strength,
+        rules.general.condition_red,
     ) {
         return false;
     }
@@ -622,10 +622,15 @@ fn resolved_civilian_garrison_owner(sim: &mut Simulation) -> InternedId {
     neutral
 }
 
-fn is_at_or_below_red_hp(current: u16, max: u16, condition_red_x1000: i64) -> bool {
-    let current_x1000 = current as i64 * 1000;
-    let threshold_x1000 = max.max(1) as i64 * condition_red_x1000;
-    current_x1000 <= threshold_x1000
+// Object5F5CD0, reached from CanDock457D8F and ejection45821A, tests
+// ratio with AH41 then separately requires signed actual HP>0.
+fn is_at_or_below_red_hp(current: i32, strength: i32, condition_red: f64) -> bool {
+    use crate::util::native_x87::MaskedX87Ordering::{Equal, Less, Unordered};
+    current > 0
+        && matches!(
+            crate::sim::components::Health { current }.compare_ratio(strength, condition_red),
+            Less | Equal | Unordered
+        )
 }
 
 fn reconcile_civilian_garrison_owner_for_building(
@@ -651,8 +656,8 @@ fn reconcile_civilian_garrison_owner_for_building(
                     !cargo.is_empty()
                         && is_at_or_below_red_hp(
                             building.health.current,
-                            building.health.max,
-                            rules.general.condition_red_x1000,
+                            sim.object_type(building.type_ref(), rules)?.strength,
+                            rules.general.condition_red,
                         ),
                 ))
             })
@@ -846,9 +851,9 @@ fn process_unloading_transport(sim: &mut Simulation, rules: &RuleSet, transport_
                             pax_id,
                             dest,
                             scatter_speed,
-                            movement::DestinationTiming::new(
+                            movement::DestinationTiming::from_rules(
                                 sim.session.binary_frame,
-                                sim.blockage_path_delay_ticks,
+                                rules.into(),
                             ),
                         );
                         break;
@@ -880,6 +885,20 @@ fn process_unloading_transport(sim: &mut Simulation, rules: &RuleSet, transport_
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn original_health_ratio_corpus_matches_garrison_red_predicate() {
+        for row in crate::sim::health_ratio_fixture::rows() {
+            assert_eq!(
+                super::is_at_or_below_red_hp(
+                    row.input.current,
+                    row.input.strength,
+                    row.input.red()
+                ),
+                row.output.garrison_red,
+                "{row:?}"
+            );
+        }
+    }
     use super::*;
     use crate::map::entities::EntityCategory;
     use crate::rules::ini_parser::IniFile;
@@ -987,6 +1006,8 @@ ConditionYellow=50%
         ge.owner = owner_id;
         ge.type_ref = type_id;
         let obj = rules.object(type_ref).expect("type exists");
+        ge.health.current = obj.strength;
+        ge.estimated_health = crate::sim::estimated_health::EstimatedHealth::from_raw(obj.strength);
         ge.passenger_role = PassengerRole::Transport {
             cargo: PassengerCargo::new(obj.max_number_occupants, 1),
         };
@@ -1375,7 +1396,6 @@ ConditionYellow=50%
         let pax = place_inside_garrison(&mut sim, &rules, bldg, "E1", "Americans");
 
         if let Some(building) = sim.substrate.entities.get_mut(bldg) {
-            building.health.max = 400;
             building.health.current = 100;
             if let Some(cargo) = building.passenger_role.cargo_mut() {
                 cargo.garrison_fire_index = 3;
@@ -1521,7 +1541,6 @@ ConditionYellow=50%
         );
 
         if let Some(building) = sim.substrate.entities.get_mut(bldg) {
-            building.health.max = 400;
             building.health.current = 100;
             if let Some(cargo) = building.passenger_role.cargo_mut() {
                 cargo.garrison_fire_index = 3;
@@ -1553,7 +1572,6 @@ ConditionYellow=50%
         assert!(!sim.live_object_order_snapshot().contains(&pax));
 
         if let Some(building) = sim.substrate.entities.get_mut(bldg) {
-            building.health.max = 400;
             building.health.current = 100;
             if let Some(cargo) = building.passenger_role.cargo_mut() {
                 cargo.garrison_fire_index = 3;
@@ -1587,7 +1605,6 @@ ConditionYellow=50%
                 .entities
                 .get_mut(bldg)
                 .expect("building exists");
-            building.health.max = 400;
             building.health.current = 100;
         }
 

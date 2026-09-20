@@ -56,6 +56,8 @@ use crate::util::fixed_math::{SIM_ONE, SimFixed, facing_from_delta_int};
 pub(crate) mod at_coord;
 mod cell_arrival;
 mod drive_locomotion;
+mod foot_mark;
+mod foot_coordinate;
 pub(crate) mod ground_pose;
 pub(crate) mod infantry_entry;
 pub(crate) mod locomotor_owner;
@@ -72,9 +74,14 @@ pub(crate) use navcom::set_walk_destination_coord;
 mod path_markers;
 pub(crate) mod ready_producer;
 pub(crate) mod slope_transition;
-mod track_head;
+pub(crate) mod track_head;
+mod track_entry;
+mod track_fresh_dispatch;
 mod track_host;
 pub(crate) mod track_process;
+mod track_speed;
+pub(crate) mod track_turn;
+pub(crate) mod track_speed_native;
 pub(crate) mod walk_head;
 mod walk_host;
 mod walk_path;
@@ -102,17 +109,12 @@ pub mod turret;
 
 pub use facing_class::FacingClass;
 
-// The drive-locomotor "Process" presence marker, consumed read-only by the
-// per-object AI shell (sim/world/techno_ai.rs, Slice S1) to observe that the
-// locomotor would process AFTER mission dispatch. Behavior-neutral re-export.
 #[cfg(test)]
 pub(crate) use drive_locomotion::owner_current_speed_from_fraction;
 // NOT test-gated: `techno_common_pre`'s DisguiseWhenStill check
 // (sim/world/techno_ai.rs) consumes this in every build; a 2026-08-14
 // warning-cleanup gate on it broke release-only compilation.
 pub(crate) use drive_locomotion::drive_locomotor_is_moving;
-#[cfg(test)]
-pub(crate) use drive_locomotion::{DriveProcessOutcome, process_drive_locomotion_shell};
 
 // Re-export command functions so callers can use `movement::issue_move_command` etc.
 pub use movement_commands::{
@@ -128,105 +130,10 @@ pub(crate) use movement_path::{
     path_search_used_zone_grid_marker, reset_path_search_used_zone_grid_marker,
 };
 pub(crate) use movement_tick::sync_formation_speeds_after_live_pass;
+pub(crate) use navcom::set_destination_internal_cell;
 // Legacy batch tick used by focused movement fixtures.
 #[cfg(test)]
 pub(crate) use movement_tick::tick_movement_with_grids;
-
-/// Install the active-YR `DriveLocomotion::Force_Track` state for a flat-ground
-/// unit. The caller supplies head offsets from the unit's current cell origin;
-/// and the caller's raw Z (native Force_Track4B0C40 copies the full XYZ).
-/// The stored head is an exact absolute lepton coordinate.
-pub(crate) fn install_forced_drive_track(
-    entity: &mut crate::sim::game_entity::GameEntity,
-    cell_occupation: &mut crate::sim::occupancy::CellOccupationGrid,
-    mut forced: drive_track::ForcedDriveTrackState,
-    head_z_leptons: i32,
-) -> bool {
-    if entity.occupancy_list_layer() != Some(locomotor::MovementLayer::Ground) {
-        return false;
-    }
-
-    let absolute_x = i32::from(entity.position.rx) * 256 + forced.track.head_offset_x;
-    let absolute_y = i32::from(entity.position.ry) * 256 + forced.track.head_offset_y;
-    let target_rx = absolute_x.div_euclid(256);
-    let target_ry = absolute_y.div_euclid(256);
-    let (Ok(target_rx), Ok(target_ry)) = (u16::try_from(target_rx), u16::try_from(target_ry))
-    else {
-        return false;
-    };
-
-    let head = crate::sim::components::DriveCoord {
-        x: absolute_x,
-        y: absolute_y,
-        z: head_z_leptons,
-    };
-    let footprint = crate::sim::components::DriveOccupationFootprint {
-        rx: target_rx,
-        ry: target_ry,
-        layer: locomotor::MovementLayer::Ground,
-    };
-
-    // Captured before the Drive borrow. The early return above already
-    // established the mover is on the ground plane.
-    let current_cell = (entity.position.rx, entity.position.ry);
-    let current_layer = locomotor::MovementLayer::Ground;
-    let entity_stable_id = entity.stable_id();
-
-    let drive = entity
-        .drive_locomotion
-        .get_or_insert_with(crate::sim::components::DriveLocomotionRuntime::default);
-    // Force_Track preserves DriveLocomotion's integer movement residual. The
-    // detached forced cursor mirrors that canonical owner field for snapshots.
-    forced.track.residual = drive.track.residual;
-    drive.pending_track_occupation = false;
-    drive.destination = Some(head);
-    drive.head_to = Some(head);
-    drive
-        .track
-        .select_forced(i32::from(forced.turn_track_index));
-    drive.track_valid = true;
-    drive.target_speed_fraction = SIM_ONE;
-    // OPEN Process-host timing: native Force_Track4B0D52 changes the class
-    // target only; the subsequent ProcessTrack owns the applied-speed write.
-    entity.foot_speed.applied_fraction = SIM_ONE;
-    entity.foot_speed.cached_current_speed =
-        drive_locomotion::owner_current_speed_from_fraction(forced.speed, SIM_ONE);
-    // Force_Track directly installs the new head mark. Its active retail callers
-    // enter with no old head — but nothing in this function's signature enforces
-    // that, and a caller that reached a mid-curve mover would otherwise strand
-    // both of that curve's claims: a head cell and a forward handoff cell that
-    // nothing occupies and every later mover is refused entry to.
-    // `Apply_Track_Occupation_Mode` releases the pair together on mode 0, so
-    // release them here before installing the replacement.
-    crate::sim::occupancy::drop_drive_handoff_occupation(
-        &mut entity.foot_occupation_enabled,
-        drive,
-        cell_occupation,
-        entity_stable_id,
-        current_cell,
-        current_layer,
-    );
-    crate::sim::occupancy::clear_drive_head_to_occupation_for_replacement(
-        &mut entity.foot_occupation_enabled,
-        drive,
-        cell_occupation,
-        entity_stable_id,
-        current_cell,
-        current_layer,
-    );
-    cell_occupation.mark_vehicle_on_layer(
-        footprint.rx,
-        footprint.ry,
-        entity_stable_id,
-        footprint.layer,
-    );
-    drive.occupation_head_to = Some(footprint);
-
-    entity.drive_track = None;
-    entity.forced_drive_track = Some(forced);
-    entity.facing_target = None;
-    true
-}
 
 // ---------------------------------------------------------------------------
 // Constants — shared across movement submodules via `super::`
@@ -357,14 +264,38 @@ impl MoverPathFacts {
     }
 }
 
-/// Movement timing/threshold config derived from rules.ini [General] section.
+/// Invocation-local movement delays from [AI] and threshold from [General].
 /// Separate from `PathfindingContext` because `find_move_path` doesn't need these.
 #[derive(Clone, Copy)]
-pub(super) struct MovementConfig {
+pub(crate) struct MovementConfig {
     pub binary_frame: u32,
     pub close_enough: SimFixed,
-    pub path_delay_ticks: u16,
-    pub blockage_path_delay_ticks: u16,
+    pub path_delay_ticks: i32,
+    pub blockage_path_delay_ticks: i32,
+}
+
+impl MovementConfig {
+    /// Invocation-local projection. Rules remain the configuration authority;
+    /// timers retain their own signed duration after a reached native store.
+    pub(crate) fn from_rules(
+        binary_frame: u32,
+        close_enough: SimFixed,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+    ) -> Self {
+        let defaults;
+        let general = if let Some(rules) = rules {
+            &rules.general
+        } else {
+            defaults = crate::rules::ruleset::GeneralRules::default();
+            &defaults
+        };
+        Self {
+            binary_frame,
+            close_enough,
+            path_delay_ticks: general.path_delay_ticks(),
+            blockage_path_delay_ticks: general.blockage_path_delay_ticks,
+        }
+    }
 }
 
 /// Snapshot of mover properties taken before the inner movement loop.
@@ -377,7 +308,6 @@ pub(super) struct MoverSnapshot {
     pub movement_zone: MovementZone,
     pub omni_crusher: bool,
     pub regular_crusher: bool,
-    pub drive_accelerates: bool,
     pub owner: InternedId,
     /// `TechnoClass::Is_Armed @ 0x00701120` (vtable `+0x2AC`). An unarmed mover
     /// leaves the wall arm through the shared epilogue at `0x0073FCD0`.
@@ -536,9 +466,9 @@ pub(crate) fn locomotor_end_gate_context(
         loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Drive
     });
     let owner_moving = if active_is_drive {
-        drive_locomotion::drive_locomotor_is_moving(entity) || entity.forced_drive_track.is_some()
+        drive_locomotion::drive_locomotor_is_moving(entity)
     } else {
-        entity.movement_target.is_some() || entity.forced_drive_track.is_some()
+        entity.movement_target.is_some()
     };
     locomotion::piggyback::EndGateContext {
         owner_moving,
@@ -676,3 +606,6 @@ mod movement_bridge_retail_tests;
 mod movement_tests;
 #[cfg(test)]
 mod prone_speed_tests;
+
+#[cfg(test)]
+mod foot_timer_migration_tests;

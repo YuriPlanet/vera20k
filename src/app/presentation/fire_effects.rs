@@ -529,10 +529,7 @@ mod tests {
                 0,
                 0,
                 owner,
-                Health {
-                    current: 125,
-                    max: 125,
-                },
+                Health { current: 125 },
                 e1,
                 EntityCategory::Infantry,
                 0,

@@ -135,7 +135,7 @@ impl MaskedX87Chop53 {
         }
     }
 
-    fn neg(value: Value) -> Value {
+    fn neg_value(value: Value) -> Value {
         match value {
             Value::Finite(value) => Value::Finite(X87Chop53::neg(value)),
             Value::Infinity { negative } => Value::Infinity {
@@ -146,6 +146,11 @@ impl MaskedX87Chop53 {
                 payload,
             },
         }
+    }
+
+    /// FCHS toggles sign, including infinities, zero and quiet NaNs.
+    pub fn neg(value: MaskedX87Value) -> MaskedX87Value {
+        MaskedX87Value(Self::neg_value(value.0))
     }
 
     pub fn add(lhs: MaskedX87Value, rhs: MaskedX87Value) -> MaskedX87Value {
@@ -173,7 +178,7 @@ impl MaskedX87Chop53 {
         // FSUB propagates an input NaN without negating that NaN's sign.
         match Self::propagated_nan(lhs.0, rhs.0) {
             Some(nan) => MaskedX87Value(nan),
-            None => Self::add(lhs, MaskedX87Value(Self::neg(rhs.0))),
+            None => Self::add(lhs, MaskedX87Value(Self::neg_value(rhs.0))),
         }
     }
 
@@ -263,6 +268,27 @@ impl MaskedX87Chop53 {
         match value.0 {
             Value::Finite(value) => X87Chop53::ftol_i32_low_masked(value),
             Value::Infinity { .. } | Value::NaN { .. } => 0,
+        }
+    }
+
+    /// FSTP binary64 with masked exceptions and chop. Finite overflow saturates
+    /// to signed maximum finite; nonfinite values retain their quiet payload.
+    /// Native70CF69 is one production spill consumer.
+    pub fn store_f64_masked_chop(value: MaskedX87Value) -> NativeF64Bits {
+        match value.0 {
+            Value::Finite(finite) => match X87Chop53::store_f64(finite) {
+                Ok(bits) => bits,
+                Err(super::NativeX87Error::StoreOverflow { format: "f64" }) => {
+                    NativeF64Bits::from_bits((u64::from(finite.sign) << 63) | 0x7fef_ffff_ffff_ffff)
+                }
+                Err(error) => unreachable!("binary64 masked store: {error:?}"),
+            },
+            Value::Infinity { negative } => {
+                NativeF64Bits::from_bits((u64::from(negative) << 63) | 0x7ff0_0000_0000_0000)
+            }
+            Value::NaN { negative, payload } => NativeF64Bits::from_bits(
+                (u64::from(negative) << 63) | 0x7ff0_0000_0000_0000 | (payload >> 11),
+            ),
         }
     }
 }

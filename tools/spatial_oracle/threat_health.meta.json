@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original70CF58 health ratio/spill,70D0A0 distance tail/ftol,708A9F retaliation comparison",
+  "assumptions": [
+    "672 supplied health/Strength/coefficient/previous/distance combinations; signed HP and Strength include0 and extremes",
+    "PC53/chop0E7F; copied Unit vtable retains original741490 type getter; original5F5C60 divides with no zero guard",
+    "Entry70CF58 supplies prior accumulator and D; second slice70D0A0 supplies distance beyond range and E, then returns into originalftol",
+    "49 comparison rows use originalFLD6FDBCD to supply attacker ST0 and memory current score, execute708A9F..A8 C0 branch; quiet NaN only",
+    "Does not execute prior A/B/C weapon-selection terms, coordinate/sqrt distance, eligibility, full scorer or full retaliation/scanner",
+    "Stored spill bits and low32 result are original execution observations; no host-side score golden"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "health": "0x0070CF58",
+    "tail": "0x0070D0A0",
+    "comparison": "0x00708A9F"
+  },
+  "original_slices": [
+    {
+      "start": "0070CF58",
+      "end_exclusive": "0070CF6D",
+      "hex": "8bcee8018deeffdc4c244085dbdc442410dd5c2410",
+      "sha256": "b0a383a8b805c1006c7337ff9abb95eaae59d2c9711e8980014d8483c7c969a0"
+    },
+    {
+      "start": "0070D0A0",
+      "end_exclusive": "0070D0D0",
+      "hex": "8b7c240cb9000000002bc75f0f98c1495e23c85b894c2400db442400dc4c2444dc442404dc05904e7f008be55dc20800",
+      "sha256": "12834b8dc68636f5c97ae0542f56863a92aa2384337a19a419840774c04db7b7"
+    },
+    {
+      "start": "005F5C60",
+      "end_exclusive": "005F5C80",
+      "hex": "83ec08db416c8b01dd5c2400ff9088000000db80a0000000dc7c240083c408c3",
+      "sha256": "095a50e9e65fad30ddd3ce677f851db5066fd7a8a020e3b2df16bd35d632b953"
+    },
+    {
+      "start": "00741490",
+      "end_exclusive": "00741497",
+      "hex": "8b81c4060000c3",
+      "sha256": "8b3b8079858d27e0a2380dbf780c211a99983f17c0b4c448ea6f3209d7858320"
+    },
+    {
+      "start": "007C5F00",
+      "end_exclusive": "007C5F3D",
+      "hex": "83ec0cd93c248d4424048b142481e2ffff00003b15802d8200750bdf388b50048b0083c40cc38b15802d8200891424d92c24df388b50048b0083c40cc3",
+      "sha256": "164aed30b9c92bf114a2f5a68baa9084c30054087c4a03daa7ffbe8a6d7757ba"
+    },
+    {
+      "start": "00708A9F",
+      "end_exclusive": "00708AAA",
+      "hex": "dc5c2410dfe0f6c401756d",
+      "sha256": "791b5e06b9c8fc30034cfee0ae28616c5547051071b1d6e1159bc1238f8805ce"
+    },
+    {
+      "start": "006FDBCD",
+      "end_exclusive": "006FDBD3",
+      "hex": "dd8088010000",
+      "sha256": "5164e5c08c285baa6e64076a25b42f551c86cf3df1365c97c2ce9e02ff7756a6"
+    }
+  ],
+  "payload_sha256": "0654a974241632321fbfb5638d2946fc93f3c7b09b943da791acdfb7332bbf37"
+}

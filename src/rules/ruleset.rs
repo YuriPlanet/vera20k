@@ -17,15 +17,15 @@
 //!   rules/weapon_type, rules/warhead_type.
 //! - No dependencies on sim/, render/, ui/, etc.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
 use crate::rules::combat_damage::CombatDamageDefaults;
 use crate::rules::crate_rules::CrateRules;
 use crate::rules::error::RulesError;
-use crate::rules::ini_parser::{IniFile};
-use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerStack};
+use crate::rules::ini_parser::IniFile;
 use crate::rules::mission_data::MissionControl;
+use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerStack};
 use crate::rules::object_type::{BuildCategory, FactoryType, ObjectCategory, ObjectType};
 use crate::rules::particle_system_type::{
     ParticleSystemType, ParticleSystemTypeId, PendingParticleSystemType,
@@ -241,13 +241,6 @@ pub struct ParachuteRenderConfig {
     /// Whether to use the unit/Convert palette instead of the standard anim
     /// palette. From art.ini `AltPalette=`. NOT owner-tinted.
     pub alt_palette: bool,
-}
-
-/// Global gameplay constants from `[General]` that affect vision, gap generators, etc.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DamageFireHealthRatio {
-    pub numerator: i32,
-    pub denominator: i32,
 }
 
 /// Convert RulesClass `[AudioVisual] SavourDelay` minutes to the signed timer's
@@ -466,15 +459,10 @@ pub struct GeneralRules {
     pub tree_targeting: bool,
     /// Health ratio threshold below which the bar turns yellow (ConditionYellow= in [AudioVisual]).
     /// Default 0.5 (50%).
-    pub condition_yellow: f32,
-    /// `condition_yellow` pre-scaled to integer x1000 for deterministic sim comparisons.
-    pub condition_yellow_x1000: i64,
+    pub condition_yellow: f64,
     /// Health ratio threshold below which the bar turns red (ConditionRed= in [AudioVisual]).
     /// Default 0.25 (25%).
-    pub condition_red: f32,
-    /// `condition_red` pre-scaled to integer ×1000 for deterministic sim comparisons.
-    /// Computed once at parse time: `(condition_red * 1000.0) as i64`.
-    pub condition_red_x1000: i64,
+    pub condition_red: f64,
     /// `[General] CloakingStages=` — native signed progress divisor. The
     /// constructor and stock rules both use 9.
     pub cloaking_stages: i32,
@@ -509,14 +497,6 @@ pub struct GeneralRules {
     /// would use if the key were missing) is UNCHECKED; stock `rulesmd.ini`
     /// always supplies the key, so the fallback below only ever serves fixtures.
     pub idle_action_frequency_x1000: i64,
-    /// Exact integer cutoff used by ordinary-building damage fire after the
-    /// startup validator certifies stock `ConditionYellow=50%`.
-    pub damage_fire_ordinary_ratio: DamageFireHealthRatio,
-    /// Exact integer cutoff used by occupiable-building damage fire after the
-    /// startup validator certifies stock `ConditionRed=25%`.
-    pub damage_fire_occupied_ratio: DamageFireHealthRatio,
-    condition_yellow_native: f64,
-    condition_red_native: f64,
     /// `ConditionRedSparkingProbability=` ([General]) — per-tick probability that
     /// the `AI_Update` damage-Spark particle system spawns while health is below
     /// ConditionRed. Default **0.02** (verified `RulesClass__Constructor`; stock INI
@@ -951,14 +931,17 @@ pub struct GeneralRules {
     pub reload_rate_ticks: u32,
 
     // -- Movement delay timers --
-    /// Ticks between pathfinding retry attempts (PathDelay= in [General]).
-    /// INI value is in minutes; converted to ticks: minutes × 60 × 15.
-    /// Default: 0.01 min = 9 ticks. While counting down, pathfinding is not called.
-    pub path_delay_ticks: u16,
+    /// Retained [AI] PathDelay double, in minutes (Rules+1760).
+    /// Convert at the timer producer with the native PC53 multiply/ftol.
+    pub path_delay: f64,
     /// Ticks to wait when blocked by a friendly unit before aggressive repath
-    /// (BlockagePathDelay= in [General]). INI value is in frames (directly).
+    /// ([AI] BlockagePathDelay). Native signed dword, in frames directly.
     /// When this timer expires, the unit re-pathfinds with urgency=2 (scatter).
-    pub blockage_path_delay_ticks: u16,
+    pub blockage_path_delay_ticks: i32,
+    /// [General] AIAutoDeployFrameDelay, native signed DynamicVector at
+    /// Rules+E2C (data+E30), indexed Hard/Normal/Easy by Infantry52155C.
+    /// Constructor666932..666961 leaves it empty; stock15,25,100 is authored.
+    pub ai_auto_deploy_frame_delay: Vec<i32>,
 
     // -- Cell scatter eligibility (CellClass::Scatter_Objects) --
     /// `PlayerScatter=` from `[CombatDamage]` — when set, an *unforced* cell
@@ -1248,9 +1231,7 @@ impl Default for GeneralRules {
             infantry_blink_disguise_time: 0,
             tree_targeting: false,
             condition_yellow: 0.5,
-            condition_yellow_x1000: 500,
             condition_red: 0.25,
-            condition_red_x1000: 250,
             cloaking_stages: 9,
             cloak_delay_frames: 18,
             cloak_sound: None,
@@ -1258,16 +1239,6 @@ impl Default for GeneralRules {
             upgrade_elite_sound: None,
             elite_flash_timer: 0,
             idle_action_frequency_x1000: STOCK_IDLE_ACTION_FREQUENCY_X1000,
-            damage_fire_ordinary_ratio: DamageFireHealthRatio {
-                numerator: 1,
-                denominator: 2,
-            },
-            damage_fire_occupied_ratio: DamageFireHealthRatio {
-                numerator: 1,
-                denominator: 4,
-            },
-            condition_yellow_native: 0.5,
-            condition_red_native: 0.25,
             condition_red_sparking_probability: 0.02,
             condition_yellow_sparking_probability: 0.01,
             condition_red_spark_threshold: damage_spark_spawn_threshold(0.02),
@@ -1366,9 +1337,10 @@ impl Default for GeneralRules {
             // ReloadRate=.3 min = 18 sec = 270 ticks at 15 Hz.
             reload_rate_ticks: 270,
             // PathDelay=.01 min = 0.6 sec = 9 ticks at 15 Hz.
-            path_delay_ticks: 9,
+            path_delay: 0.016,
             // BlockagePathDelay=60 frames (directly in frames, not minutes).
             blockage_path_delay_ticks: 60,
+            ai_auto_deploy_frame_delay: Vec::new(),
             // RulesClass constructor clears PlayerScatter and stores 3 into
             // [IQ] Scatter; stock rulesmd overrides the latter with 2.
             player_scatter: false,
@@ -1649,6 +1621,18 @@ const VETERAN_RATIO_DEFAULT: f64 = 3.0;
 const VETERAN_CAP_DEFAULT: f64 = 2.0;
 
 impl GeneralRules {
+    /// Drive4B3A65, Ship6A30B4 and Foot/Walk's timer producers retain the
+    /// configured double until FLD/FMUL900/ftol7C5F00. In particular, authored
+    /// decimal .01 is parsed through float by ReadDouble5283D0 and converts to
+    /// 8, while 1% converts to9. No clamp, round-to-nearest or u16 narrowing.
+    pub fn path_delay_ticks(&self) -> i32 {
+        use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
+        X87::ftol_i32_low_masked(X87::mul(
+            X87::load_f64(NativeF64Bits::from_bits(self.path_delay.to_bits())),
+            X87::load_i32(900),
+        ))
+    }
+
     pub fn infantry_death_anim(&self, inf_death: u8) -> Option<&str> {
         self.infantry_death_anims
             .get(usize::from(inf_death))
@@ -1664,20 +1648,40 @@ impl GeneralRules {
             .section("IQ")
             .and_then(|section| section.get_i32("Production"))
             .unwrap_or(defaults.iq_production);
+        // RulesProcess668F56 reaches ReadAudioVisual6691E0 independently of
+        // ReadGeneral.66B34B/66B372 pass AudioVisual to5283D0 and store raw
+        // doubles in Rules+1708/+1700; a missing General section cannot skip them.
+        let audio_visual = ini.section("AudioVisual");
+        let condition_yellow_native = audio_visual
+            .map(|s| s.read_double("ConditionYellow", 0.5))
+            .unwrap_or(0.5);
+        let condition_red_native = audio_visual
+            .map(|s| s.read_double("ConditionRed", 0.25))
+            .unwrap_or(0.25);
+        // Rules ReadAI6739E5..673A31 is independent of ReadGeneral.
+        // Constructor66760E..66761E supplies PathDelay0.016 and blockage60.
+        let ai = ini.section("AI");
+        let path_delay = ai
+            .map(|s| s.read_double("PathDelay", defaults.path_delay))
+            .unwrap_or(defaults.path_delay);
+        let blockage_path_delay_ticks = ai
+            .map(|s| s.read_int("BlockagePathDelay", defaults.blockage_path_delay_ticks))
+            .unwrap_or(defaults.blockage_path_delay_ticks);
         let Some(general) = ini.section("General") else {
             return Self {
                 iq_production,
+                condition_yellow: condition_yellow_native,
+                condition_red: condition_red_native,
+                path_delay,
+                blockage_path_delay_ticks,
                 ..defaults
             };
         };
-        // ConditionYellow/ConditionRed live in [AudioVisual], not [General].
-        let audio_visual = ini.section("AudioVisual");
         // Combat-only globals are read in the late [CombatDamage] pass.
         let combat_damage = ini.section("CombatDamage");
         // AI IQ thresholds live in their own [IQ] read.
         let iq = ini.section("IQ");
         // Base-planning/credit controls live in the independent [AI] read.
-        let ai = ini.section("AI");
         // Genetic Mutator warhead references are read by [SpecialWeapons].
         let special_weapons = ini.section("SpecialWeapons");
         // INI parser already strips everything after `;` (Westwood comment
@@ -1712,14 +1716,6 @@ impl GeneralRules {
                 .unwrap_or("ELECTRO")
                 .to_string(),
         );
-        let condition_yellow_native = audio_visual
-            .map(|s| s.read_double("ConditionYellow", 0.5))
-            .unwrap_or(0.5);
-        let condition_red_native = audio_visual
-            .map(|s| s.read_double("ConditionRed", 0.25))
-            .unwrap_or(0.25);
-        let condition_yellow_f32 = condition_yellow_native as f32;
-        let condition_red_f32 = condition_red_native as f32;
         // [General] damage-Spark spawn probabilities (verified ctor defaults
         // 0.02/0.01; stock INI omits them). Raw doubles, not percentages. Bound
         // before `Self` so each band feeds both its stored value and its derived
@@ -1971,10 +1967,8 @@ impl GeneralRules {
             tree_targeting: combat_damage
                 .and_then(|section| section.get_bool("TreeTargeting"))
                 .unwrap_or(false),
-            condition_yellow: condition_yellow_f32,
-            condition_yellow_x1000: (condition_yellow_f32 as f64 * 1000.0) as i64,
-            condition_red: condition_red_f32,
-            condition_red_x1000: (condition_red_f32 as f64 * 1000.0) as i64,
+            condition_yellow: condition_yellow_native,
+            condition_red: condition_red_native,
             cloaking_stages: general.get_i32("CloakingStages").unwrap_or(9),
             cloak_delay_frames: (general.read_double("CloakDelay", 0.02) * 900.0)
                 .trunc()
@@ -2009,16 +2003,6 @@ impl GeneralRules {
                 })
                 .unwrap_or(STOCK_IDLE_ACTION_FREQUENCY_X1000 as f64 / 1000.0)
                 * 1000.0) as i64,
-            damage_fire_ordinary_ratio: DamageFireHealthRatio {
-                numerator: 1,
-                denominator: 2,
-            },
-            damage_fire_occupied_ratio: DamageFireHealthRatio {
-                numerator: 1,
-                denominator: 4,
-            },
-            condition_yellow_native,
-            condition_red_native,
             building_garrisoned_sound: audio_visual
                 .and_then(|s| s.get("BuildingGarrisonedSound"))
                 .map(str::trim)
@@ -2364,20 +2348,14 @@ impl GeneralRules {
                         .max(1.0) as u32
                 })
                 .unwrap_or(defaults.reload_rate_ticks),
-            // PathDelay= is in minutes. Convert to ticks: minutes * 60 * 15.
-            path_delay_ticks: general
-                .get_f32("PathDelay")
-                .map(|minutes| {
-                    (minutes * 60.0 * (crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND as f32))
-                        .round()
-                        .max(1.0) as u16
-                })
-                .unwrap_or(defaults.path_delay_ticks),
-            // BlockagePathDelay= is directly in frames (ticks).
-            blockage_path_delay_ticks: general
-                .get_i32("BlockagePathDelay")
-                .map(|frames| frames.max(1) as u16)
-                .unwrap_or(defaults.blockage_path_delay_ticks),
+            path_delay,
+            blockage_path_delay_ticks,
+            // ReadGeneral670235..670267 uses the same475D70 signed vector
+            // reader as the existing Recalc difficulty tables below.
+            ai_auto_deploy_frame_delay: read_retained_difficulty_vector(
+                general,
+                "AIAutoDeployFrameDelay",
+            ),
             // PlayerScatter belongs to the [CombatDamage] read, IQ Scatter to
             // the [IQ] read; neither is a [General] key.
             player_scatter: combat_damage
@@ -2779,6 +2757,12 @@ pub struct RuleSet {
     /// Retained art.ini registry. Populated by the app loading path (`app::loading::init`) after `merge_art_data`
     /// so dispatchers (e.g. smudge spawning) can read per-anim spawn flags.
     pub art_registry: crate::rules::art_data::ArtRegistry,
+    /// Existing AnimTypes for Building451890's lookup-only427CB0 gate.
+    /// Membership is independent of a same-named art section or loaded SHP.
+    pub anim_type_names: BTreeSet<String>,
+    /// Ordered native registry receipt: whether this type actually reached a
+    /// successful fixed-ART ReadINI before the final rules pass completed.
+    pub anim_type_art_read_states: Vec<(String, bool)>,
     /// GPU-independent SHP frame counts used by authoritative world-effect
     /// and particle timing. Bound once from the active assets and ART data.
     effect_assets: crate::rules::effect_asset_catalog::EffectAssetCatalog,
@@ -2855,6 +2839,30 @@ fn parse_native_type_list_source_tokens(value: &str) -> Vec<String> {
 /// `0x00670585..0x006705B7`, AIExtraRefineries `0x006705F9..0x0067062A`, and
 /// the three BaseDefenseCounts vectors `0x00670013..0x006700BE`. The reader has
 /// a native `char[512]` buffer, whole-buffer trim, comma `strtok`, and CRT atoi.
+fn read_retained_difficulty_vector(
+    section: &crate::rules::ini_parser::IniSection,
+    key: &str,
+) -> Vec<i32> {
+    // ReadGeneral670232..67026C copies the existing vector before475D70.
+    // Missing/empty ReadString retains it; a nonempty delimiter-only value
+    // replaces it with an empty vector. Original42-row deploy-rules corpus.
+    let mut result = Vec::new();
+    let mut read = |value: &str| {
+        let copied = crate::rules::ini_value::truncate_bytes(value, 511);
+        if !crate::rules::ini_value::strtrim_ascii(copied).is_empty() {
+            result = parse_native_difficulty_int_vector(value);
+        }
+    };
+    if let Some(values) = section.projected_values(key) {
+        for value in values {
+            read(value);
+        }
+    } else if let Some(value) = section.get(key) {
+        read(value);
+    }
+    result
+}
+
 fn parse_native_difficulty_int_vector(value: &str) -> Vec<i32> {
     const NATIVE_PAYLOAD_BYTES: usize = 511;
 
@@ -2921,10 +2929,15 @@ impl RuleSet {
         let content_hash = processed.content_hash();
         let crate_rules = processed.crate_rules().clone();
         let powerups = processed.powerups().clone();
+        let anim_type_art_read_states = processed
+            .anim_type_art_read_states()
+            .map(|(name, read)| (name.to_owned(), read))
+            .collect();
         let ini = processed.into_projection_discarding_native_receipt();
         let mut rules = Self::from_projected_ini(&ini)?;
         rules.crate_rules = crate_rules;
         rules.powerups = powerups;
+        rules.anim_type_art_read_states = anim_type_art_read_states;
         rules.source_ini_hash = content_hash;
         Ok(rules)
     }
@@ -2935,6 +2948,10 @@ impl RuleSet {
         let mut rules = Self::from_projected_ini(processed.ini())?;
         rules.crate_rules = processed.crate_rules().clone();
         rules.powerups = processed.powerups().clone();
+        rules.anim_type_art_read_states = processed
+            .anim_type_art_read_states()
+            .map(|(name, read)| (name.to_owned(), read))
+            .collect();
         rules.source_ini_hash = processed.content_hash();
         Ok(rules)
     }
@@ -2947,6 +2964,14 @@ impl RuleSet {
     /// sometimes references sections that don't exist.
     pub fn from_ini(ini: &IniFile) -> Result<Self, RulesError> {
         Self::from_rules_layers(&RulesLayerStack::new(ini.clone()))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_ini_with_fixed_art_for_test(
+        ini: &IniFile,
+        art: &IniFile,
+    ) -> Result<Self, RulesError> {
+        Self::from_processed_rules(&RulesLayerStack::new(ini.clone()).process_with_fixed_art(art)?)
     }
 
     fn from_projected_ini(ini: &IniFile) -> Result<Self, RulesError> {
@@ -3017,22 +3042,6 @@ impl RuleSet {
             .section("SpecialFlags")
             .and_then(|section| section.get_bool("InitialVeteran"))
             .unwrap_or(false);
-        if general.condition_yellow_native != 0.5 {
-            return Err(RulesError::InvalidValue {
-                section: "AudioVisual".to_string(),
-                key: "ConditionYellow".to_string(),
-                expected: "50% (the currently certified damage-fire ratio)".to_string(),
-                value: general.condition_yellow_native.to_string(),
-            });
-        }
-        if general.condition_red_native != 0.25 {
-            return Err(RulesError::InvalidValue {
-                section: "AudioVisual".to_string(),
-                key: "ConditionRed".to_string(),
-                expected: "25% (the currently certified damage-fire ratio)".to_string(),
-                value: general.condition_red_native.to_string(),
-            });
-        }
         let terrain_rules: TerrainRules = TerrainRules::from_ini(ini);
         let tiberium_types = TiberiumTypeRegistry::from_ini(ini);
         let bridge_rules: BridgeRules = BridgeRules::from_ini(ini);
@@ -3539,6 +3548,14 @@ impl RuleSet {
             voxel_anim_types_by_name,
             smudge_types: SmudgeTypeRegistry::from_rules_ini(ini),
             art_registry: crate::rules::art_data::ArtRegistry::empty(),
+            anim_type_art_read_states: Vec::new(),
+            anim_type_names: ini
+                .section("Animations")
+                .into_iter()
+                .flat_map(|section| section.get_values())
+                .map(|name| name.to_ascii_uppercase())
+                .filter(|name| !name.is_empty())
+                .collect(),
             effect_assets: crate::rules::effect_asset_catalog::EffectAssetCatalog::default(),
             terrain_spawner_assets:
                 crate::rules::terrain_asset_catalog::TerrainSpawnerAssetCatalog::default(),
@@ -3771,7 +3788,75 @@ impl RuleSet {
             })
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
+        self.hash_building_body_config(&mut hasher);
+        self.hash_building_slot_config(&mut hasher);
         hasher.finish()
+    }
+
+    /// Slot constructors consume selected names, offsets and the common runtime
+    /// metadata. Canonical ordering makes ART section insertion order irrelevant.
+    fn hash_building_slot_config(&self, hasher: &mut impl Hasher) {
+        b"building-slot-config-v1".hash(hasher);
+        self.anim_type_names.hash(hasher);
+        self.anim_type_art_read_states.hash(hasher);
+        self.art_registry.scheduler_anim_types().hash(hasher);
+        let mut types = self.anim_type_names.clone();
+        types.extend(self.art_registry.scheduler_anim_types().iter().cloned());
+        for name in types {
+            name.hash(hasher);
+            self.art_registry.anim_runtime_config(&name).hash(hasher);
+        }
+        let buildings = self
+            .object_list
+            .iter()
+            .filter(|object| object.category == ObjectCategory::Building)
+            .map(|object| (object.id.to_ascii_uppercase(), object))
+            .collect::<BTreeMap<_, _>>();
+        for (name, object) in buildings {
+            name.hash(hasher);
+            object.powered.hash(hasher);
+            object.powered_special.hash(hasher);
+            let entry = self
+                .art_registry
+                .resolve_metadata_entry(&object.id, &object.image);
+            entry
+                .map(|e| e.building_anim_power)
+                .unwrap_or([Default::default(); 21])
+                .hash(hasher);
+            entry.is_some_and(|e| e.is_anim_delayed_fire).hash(hasher);
+            entry.is_some_and(|e| e.silo_damage).hash(hasher);
+            let mut slots = self
+                .art_registry
+                .resolve_metadata_entry(&object.id, &object.image)
+                .map(|entry| entry.building_anims.iter().collect::<Vec<_>>())
+                .unwrap_or_default();
+            slots.sort_by_key(|config| config.native_slot);
+            slots.hash(hasher);
+        }
+    }
+
+    /// Effective body inputs used by the receiver's native43EF90 frame guard.
+    /// Parser provenance: tools/spatial_oracle/building_body_rules.json.
+    fn hash_building_body_config(&self, hasher: &mut impl Hasher) {
+        b"building-body-config-v1".hash(hasher);
+        self.object_list
+            .iter()
+            .filter(|object| object.category == ObjectCategory::Building)
+            .map(|object| {
+                let art = self
+                    .art_registry
+                    .resolve_metadata_entry(&object.id, &object.image);
+                (
+                    object.id.to_ascii_uppercase(),
+                    (
+                        object.firestorm_wall,
+                        art.map_or(9, |entry| entry.building_gate_stages),
+                        art.map_or([[0, 1, 0]; 4], |entry| entry.building_body_ranges),
+                    ),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(hasher);
     }
 
     /// FireAt's Building Height input: native BuildingRead4610D8..461101
@@ -4008,6 +4093,8 @@ impl RuleSet {
     /// Without this, all buildings would be 1x1 which breaks placement and rendering.
     pub fn merge_art_data(&mut self, art: &crate::rules::art_data::ArtRegistry) {
         self.art_registry = art.clone();
+        self.art_registry
+            .apply_anim_type_read_states(&self.anim_type_art_read_states);
         // ObjectRead 5F933B/5F962E precedes BulletRead 46C1E8. On a fresh
         // type the Object image defaults to its ID, even though Bullet's later
         // missing-Image read clears its separate rendering name. An explicit
@@ -4090,7 +4177,7 @@ impl RuleSet {
                 // anchor) keep firing. Otherwise zero-padding would silently
                 // shift refinery dock positions, which is out of scope here.
                 if !entry.pads.is_empty() {
-                    let n = obj.number_of_docks as usize;
+                    let n = obj.number_of_docks.max(0) as usize;
                     obj.pads = entry.pads.iter().take(n).copied().collect();
                     while obj.pads.len() < n {
                         obj.pads.push(crate::rules::object_type::DockPad {
@@ -6373,30 +6460,20 @@ DefaultSparkSystem=SparkSys
     }
 
     #[test]
-    fn damage_fire_thresholds_accept_only_the_certified_stock_ratios() {
-        let stock = IniFile::from_str(
-            "[General]\nDamageFireTypes=FIRE01\n\n[AudioVisual]\nConditionYellow=50%\nConditionRed=25%\n",
+    fn damage_fire_thresholds_use_the_same_authored_double_as_other_health_readers() {
+        let ini = IniFile::from_str(
+            "[General]\nDamageFireTypes=FIRE01\n[AudioVisual]\nConditionYellow=49%\nConditionRed=13%\n",
         );
-        let rules = RuleSet::from_ini(&stock).expect("stock thresholds");
+        let rules = RuleSet::from_ini(&ini).expect("native thresholds are not stock-only");
+        let section = ini.section("AudioVisual").unwrap();
         assert_eq!(
-            rules.general.damage_fire_ordinary_ratio,
-            DamageFireHealthRatio {
-                numerator: 1,
-                denominator: 2,
-            }
+            rules.general.condition_yellow,
+            section.read_double("ConditionYellow", 0.5)
         );
         assert_eq!(
-            rules.general.damage_fire_occupied_ratio,
-            DamageFireHealthRatio {
-                numerator: 1,
-                denominator: 4,
-            }
+            rules.general.condition_red,
+            section.read_double("ConditionRed", 0.25)
         );
-
-        let unsupported = IniFile::from_str(
-            "[General]\nDamageFireTypes=FIRE01\n\n[AudioVisual]\nConditionYellow=49%\nConditionRed=25%\n",
-        );
-        assert!(RuleSet::from_ini(&unsupported).is_err());
     }
 
     #[test]
@@ -6432,6 +6509,25 @@ DefaultSparkSystem=SparkSys
         ));
         assert_eq!(g.condition_red_sparking_probability, f64::from(0.05_f32));
         assert_eq!(g.condition_yellow_sparking_probability, f64::from(0.03_f32));
+    }
+
+    #[test]
+    fn health_conditions_retain_the_native_double_without_scaled_copies() {
+        let ini = IniFile::from_str("[AudioVisual]\nConditionYellow=37%\nConditionRed=13%\n");
+        let general = GeneralRules::from_ini(&ini);
+        let section = ini.section("AudioVisual").unwrap();
+        assert_eq!(
+            general.condition_yellow.to_bits(),
+            section.read_double("ConditionYellow", 0.5).to_bits()
+        );
+        assert_eq!(
+            general.condition_red.to_bits(),
+            section.read_double("ConditionRed", 0.25).to_bits()
+        );
+        assert_ne!(
+            general.condition_yellow.to_bits(),
+            f64::from(general.condition_yellow as f32).to_bits()
+        );
     }
 
     #[test]
@@ -6619,10 +6715,13 @@ ZAdjust=-10
     #[test]
     fn merge_art_propagates_add_remove_occupy() {
         let mut layers = RulesLayerStack::new(IniFile::from_str(&make_test_rules()));
-        layers.push(crate::rules::native_processing::RulesLayerKind::Scenario, IniFile::from_str(
-            "[BuildingTypes]\n0=GAREFN\n\
+        layers.push(
+            crate::rules::native_processing::RulesLayerKind::Scenario,
+            IniFile::from_str(
+                "[BuildingTypes]\n0=GAREFN\n\
              [GAREFN]\nName=Refinery\nCost=2000\nFoundation=4x3\n",
-        ));
+            ),
+        );
         let art_text = "[GAREFN]\nFoundation=4x3\nCanHideThings=no\nOccupyHeight=4\nAddOccupy1=-1,0\nAddOccupy2=-1,-1\nRemoveOccupy1=3,1\n";
         let mut rules: RuleSet = RuleSet::from_rules_layers(&layers).expect("rules parse");
         let art_ini: IniFile = IniFile::from_str(art_text);
@@ -6641,10 +6740,13 @@ ZAdjust=-10
     #[test]
     fn merge_art_propagates_infantry_crawls_without_building_side_effects() {
         let mut layers = RulesLayerStack::new(IniFile::from_str(&make_test_rules()));
-        layers.push(crate::rules::native_processing::RulesLayerKind::Scenario, IniFile::from_str(
-            "[E1]\nName=GI\nImage=GI\nStrength=125\nArmor=flak\nSpeed=4\n\
+        layers.push(
+            crate::rules::native_processing::RulesLayerKind::Scenario,
+            IniFile::from_str(
+                "[E1]\nName=GI\nImage=GI\nStrength=125\nArmor=flak\nSpeed=4\n\
              [GAPOWR]\nName=Power\nStrength=750\nArmor=wood\nFoundation=2x2\n",
-        ));
+            ),
+        );
         let mut rules = RuleSet::from_rules_layers(&layers).expect("rules parse");
         let art_ini = IniFile::from_str(
             "[GI]\nCrawls=yes\nFireUp=2\nFireProne=3\nSecondaryFire=4\nSecondaryProne=5\n\n[GAPOWR]\nCrawls=yes\nFireUp=9\n",
@@ -7318,6 +7420,91 @@ ZAdjust=-10
         assert_eq!(defaults.infantry_death_anim(3), Some("S_BANG34"));
         assert_eq!(defaults.infantry_death_anim(5), Some("ELECTRO"));
         assert_eq!(defaults.infantry_death_anim(10), Some("BRUTDIE"));
+    }
+
+    #[test]
+    fn simulation_config_hash_covers_registered_slot_names_offsets_and_runtime() {
+        let ini =
+            IniFile::from_str("[BuildingTypes]\n0=B\n[B]\nImage=BODY\n[Animations]\n0=N\n1=D\n");
+        let make = |slot: &str, runtime: &str| {
+            let art_ini = IniFile::from_str(&format!(
+                "[BODY]\nActiveAnim=N\n{slot}\n[N]\n{runtime}\n[D]\n"
+            ));
+            let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art_ini).unwrap();
+            let art = crate::rules::art_data::ArtRegistry::from_ini(&art_ini);
+            rules.merge_art_data(&art);
+            rules
+        };
+        let original = make("", "Rate=900");
+        for (slot, runtime) in [
+            ("ActiveAnimDamaged=D", "Rate=900"),
+            ("ActiveAnimX=1", "Rate=900"),
+            ("ActiveAnimY=-1", "Rate=900"),
+            ("ActiveAnimZAdjust=7", "Rate=900"),
+            ("ActiveAnimYSort=2", "Rate=900"),
+            ("", "Rate=450"),
+            ("", "RandomRate=900,300"),
+            ("", "Next=D"),
+        ] {
+            let changed = make(slot, runtime);
+            assert_eq!(original.source_ini_hash(), changed.source_ini_hash());
+            assert_ne!(
+                original.simulation_config_hash(),
+                changed.simulation_config_hash(),
+                "{slot}, {runtime}"
+            );
+        }
+        let mut changed = make("", "Rate=900");
+        changed.anim_type_names.insert("ADDED".into());
+        assert_ne!(
+            original.simulation_config_hash(),
+            changed.simulation_config_hash()
+        );
+    }
+
+    #[test]
+    fn simulation_config_hash_covers_effective_building_body_art() {
+        use crate::rules::art_data::ArtRegistry;
+        let ini = IniFile::from_str("[BuildingTypes]\n0=BUILD\n[BUILD]\nImage=BODY\nGate=yes\n");
+        let make = |art: &str| {
+            let mut rules = RuleSet::from_ini(&ini).unwrap();
+            rules.merge_art_data(&ArtRegistry::from_ini(&IniFile::from_str(art)));
+            rules
+        };
+        let defaults =
+            "GateStages=9\nAnimIdle=0,1,0\nAnimActive=0,1,0\nAnimAux1=0,1,0\nAnimAux2=0,1,0\n";
+        let original = make(&format!("[BODY]\n{defaults}"));
+        let reordered = make(&format!("[UNUSED]\nGateStages=-1\n[BODY]\n{defaults}"));
+        assert_eq!(
+            original.simulation_config_hash(),
+            reordered.simulation_config_hash(),
+            "unused art and section insertion order do not alter resolved body inputs"
+        );
+        assert_eq!(
+            make("[UNUSED]\nGateStages=99\n").simulation_config_hash(),
+            original.simulation_config_hash(),
+            "missing metadata and explicit constructor defaults are equivalent"
+        );
+        for changed in [
+            "GateStages=-1\n",
+            "AnimIdle=-1,1,0\n",
+            "AnimActive=0,2147483647,0\n",
+            "AnimAux1=0,1,-2\n",
+            "AnimAux2=65536,1,0\n",
+        ] {
+            let changed = make(&format!("[BODY]\n{changed}"));
+            assert_eq!(original.source_ini_hash(), changed.source_ini_hash());
+            assert_ne!(
+                original.simulation_config_hash(),
+                changed.simulation_config_hash()
+            );
+        }
+        let mut firestorm = make(&format!("[BODY]\n{defaults}"));
+        firestorm.object_list[0].firestorm_wall = true;
+        assert_ne!(
+            original.simulation_config_hash(),
+            firestorm.simulation_config_hash()
+        );
     }
 
     #[test]

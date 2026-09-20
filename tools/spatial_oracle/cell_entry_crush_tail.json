@@ -1,0 +1,2243 @@
+{
+  "cases": [
+    {
+      "calls": [],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [],
+        "name": "latch_no_raw",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 0,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [],
+        "name": "latch_infantry_bits_only",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 29,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [],
+        "name": "latch_vehicle_no_unit",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [],
+        "name": "preserve_accumulator_1",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 1
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 1
+    },
+    {
+      "calls": [],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [],
+        "name": "preserve_accumulator_2",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 2
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [],
+        "name": "preserve_accumulator_3",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 3
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 3
+    },
+    {
+      "calls": [],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [],
+        "name": "preserve_accumulator_4",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 4
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 4
+    },
+    {
+      "calls": [],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [],
+        "name": "preserve_accumulator_5",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 5
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 5
+    },
+    {
+      "calls": [],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [],
+        "name": "preserve_accumulator_6",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 6
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 6
+    },
+    {
+      "calls": [],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [],
+        "name": "preserve_accumulator_7",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 7
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 7
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": false,
+            "timer": "none"
+          }
+        ],
+        "name": "predicate_0000_none",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": false,
+            "timer": "active"
+          }
+        ],
+        "name": "predicate_0000_active",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": false,
+            "timer": "expired"
+          }
+        ],
+        "name": "predicate_0000_expired",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": false,
+            "timer": "none"
+          }
+        ],
+        "name": "predicate_0001_none",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": false,
+            "timer": "active"
+          }
+        ],
+        "name": "predicate_0001_active",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": false,
+            "timer": "expired"
+          }
+        ],
+        "name": "predicate_0001_expired",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": true,
+            "timer": "none"
+          }
+        ],
+        "name": "predicate_0010_none",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": true,
+            "timer": "active"
+          }
+        ],
+        "name": "predicate_0010_active",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": true,
+            "timer": "expired"
+          }
+        ],
+        "name": "predicate_0010_expired",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": true,
+            "timer": "none"
+          }
+        ],
+        "name": "predicate_0011_none",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": true,
+            "timer": "active"
+          }
+        ],
+        "name": "predicate_0011_active",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": true,
+            "timer": "expired"
+          }
+        ],
+        "name": "predicate_0011_expired",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": false,
+            "timer": "none"
+          }
+        ],
+        "name": "predicate_0100_none",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": false,
+            "timer": "active"
+          }
+        ],
+        "name": "predicate_0100_active",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": false,
+            "timer": "expired"
+          }
+        ],
+        "name": "predicate_0100_expired",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": false,
+            "timer": "none"
+          }
+        ],
+        "name": "predicate_0101_none",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": false,
+            "timer": "active"
+          }
+        ],
+        "name": "predicate_0101_active",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": false,
+            "timer": "expired"
+          }
+        ],
+        "name": "predicate_0101_expired",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": true,
+            "timer": "none"
+          }
+        ],
+        "name": "predicate_0110_none",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": true,
+            "timer": "active"
+          }
+        ],
+        "name": "predicate_0110_active",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": true,
+            "timer": "expired"
+          }
+        ],
+        "name": "predicate_0110_expired",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": true,
+            "timer": "none"
+          }
+        ],
+        "name": "predicate_0111_none",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": true,
+            "timer": "active"
+          }
+        ],
+        "name": "predicate_0111_active",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": true,
+            "timer": "expired"
+          }
+        ],
+        "name": "predicate_0111_expired",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": false,
+            "timer": "none"
+          }
+        ],
+        "name": "predicate_1000_none",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": false,
+            "timer": "active"
+          }
+        ],
+        "name": "predicate_1000_active",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": false,
+            "timer": "expired"
+          }
+        ],
+        "name": "predicate_1000_expired",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": false,
+            "timer": "none"
+          }
+        ],
+        "name": "predicate_1001_none",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": false,
+            "timer": "active"
+          }
+        ],
+        "name": "predicate_1001_active",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": false,
+            "timer": "expired"
+          }
+        ],
+        "name": "predicate_1001_expired",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": true,
+            "timer": "none"
+          }
+        ],
+        "name": "predicate_1010_none",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": true,
+            "timer": "active"
+          }
+        ],
+        "name": "predicate_1010_active",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": true,
+            "timer": "expired"
+          }
+        ],
+        "name": "predicate_1010_expired",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": true,
+            "timer": "none"
+          }
+        ],
+        "name": "predicate_1011_none",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": true,
+            "timer": "active"
+          }
+        ],
+        "name": "predicate_1011_active",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": false,
+            "name": "unit",
+            "resistant": true,
+            "timer": "expired"
+          }
+        ],
+        "name": "predicate_1011_expired",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": false,
+            "timer": "none"
+          }
+        ],
+        "name": "predicate_1100_none",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": false,
+            "timer": "active"
+          }
+        ],
+        "name": "predicate_1100_active",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": false,
+            "timer": "expired"
+          }
+        ],
+        "name": "predicate_1100_expired",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": false,
+            "timer": "none"
+          }
+        ],
+        "name": "predicate_1101_none",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": false,
+            "timer": "active"
+          }
+        ],
+        "name": "predicate_1101_active",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": false,
+            "timer": "expired"
+          }
+        ],
+        "name": "predicate_1101_expired",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": true,
+            "timer": "none"
+          }
+        ],
+        "name": "predicate_1110_none",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": true,
+            "timer": "active"
+          }
+        ],
+        "name": "predicate_1110_active",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": false,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": true,
+            "timer": "expired"
+          }
+        ],
+        "name": "predicate_1110_expired",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": true,
+            "timer": "none"
+          }
+        ],
+        "name": "predicate_1111_none",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": true,
+            "timer": "active"
+          }
+        ],
+        "name": "predicate_1111_active",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "allied": true,
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "resistant": true,
+            "timer": "expired"
+          }
+        ],
+        "name": "predicate_1111_expired",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "mover"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "category": "unit",
+            "name": "mover",
+            "self": true
+          },
+          {
+            "category": "unit",
+            "name": "enemy"
+          }
+        ],
+        "name": "first_self",
+        "omni": true,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "first"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "category": "unit",
+            "name": "first"
+          },
+          {
+            "category": "unit",
+            "crushable": true,
+            "name": "second"
+          }
+        ],
+        "name": "first_uncrushable",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "first"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "category": "unit",
+            "crushable": true,
+            "name": "first"
+          },
+          {
+            "category": "unit",
+            "name": "second"
+          }
+        ],
+        "name": "first_crushable",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "category": "infantry",
+            "name": "infantry"
+          },
+          {
+            "category": "unit",
+            "crushable": true,
+            "name": "unit"
+          }
+        ],
+        "name": "skip_infantry",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [
+          {
+            "category": "unit",
+            "crushable": true,
+            "name": "unit"
+          }
+        ],
+        "ground": [],
+        "name": "deck_unit_is_not_ground_unit",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "deck",
+        "deck": [
+          {
+            "category": "unit",
+            "name": "deck"
+          }
+        ],
+        "ground": [
+          {
+            "category": "unit",
+            "crushable": true,
+            "name": "unit"
+          }
+        ],
+        "name": "deck_raw_still_queries_ground",
+        "omni": false,
+        "raw_deck": 32,
+        "raw_ground": 0,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "deck",
+        "deck": [
+          {
+            "category": "unit",
+            "crushable": true,
+            "name": "unit"
+          }
+        ],
+        "ground": [],
+        "name": "deck_raw_no_ground_unit",
+        "omni": false,
+        "raw_deck": 32,
+        "raw_ground": 0,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 2
+    },
+    {
+      "calls": [],
+      "input": {
+        "bits_layer": "deck",
+        "deck": [],
+        "ground": [],
+        "name": "unselected_ground_raw_ignored",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [],
+        "name": "unselected_deck_raw_ignored",
+        "omni": false,
+        "raw_deck": 32,
+        "raw_ground": 0,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "deck": 0,
+          "function": "get_unit"
+        },
+        {
+          "function": "is_crushable_by",
+          "target": "unit"
+        }
+      ],
+      "input": {
+        "bits_layer": "ground",
+        "deck": [],
+        "ground": [
+          {
+            "category": "unit",
+            "crushable": true,
+            "name": "unit",
+            "reverse_allied": true
+          }
+        ],
+        "name": "only_target_considers_mover_allied",
+        "omni": false,
+        "raw_deck": 0,
+        "raw_ground": 32,
+        "running_code": 0
+      },
+      "object_and_cell_memory_unchanged": true,
+      "result": 0
+    }
+  ]
+}

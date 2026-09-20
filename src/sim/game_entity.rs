@@ -22,9 +22,9 @@ use crate::sim::cloak_disguise::{CloakRuntime, DisguiseRuntime};
 use crate::sim::combat::combat_weapon::WeaponSlot;
 use crate::sim::combat::{AttackTarget, TargetKind};
 use crate::sim::components::{
-    BridgeOccupancy, BuildingAnimOverlays, BuildingDown, BuildingUp, C4PlantState,
-    DriveLocomotionRuntime, HarvestOverlay, Health, MovementTarget, NavigationState, OrderIntent,
-    PendingC4Detonation, Position, RockingState, ShipLocomotionRuntime, VoxelAnimation,
+    BridgeOccupancy, BuildingDown, BuildingUp, C4PlantState, DriveLocomotionRuntime,
+    HarvestOverlay, Health, MovementTarget, NavigationState, OrderIntent, PendingC4Detonation,
+    Position, RockingState, ShipLocomotionRuntime, VoxelAnimation,
 };
 use crate::sim::debug_event_log::{DebugEventKind, DebugEventLog};
 use crate::sim::deploy::DeployPhase;
@@ -33,7 +33,6 @@ use crate::sim::docking::building_dock::DockState;
 use crate::sim::intern::InternedId;
 use crate::sim::miner::Miner;
 use crate::sim::mission::{MissionCom, MissionLeafState, MissionTimer, MissionType};
-use crate::sim::movement::drive_track::{DriveTrackState, ForcedDriveTrackState};
 use crate::sim::movement::drop_pod_movement::DropPodState;
 use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::movement::rocket_movement::RocketState;
@@ -380,13 +379,12 @@ pub struct GameEntity {
     /// When `Some`, the entity is rotating in place and should not advance position.
     /// Infantry always turn instantly (RA2 behavior), so this stays `None` for them.
     pub facing_target: Option<u8>,
-    /// Binary-frame body-rotation interpolator, active only while turning in place
-    /// toward `facing_target`. Mirrors gamemd's hull `FacingClass` (the body
-    /// PrimaryFacing turned by the drive locomotor at the unit's rules `ROT=`):
-    /// turn duration is `abs(delta_8bit) / ROT` binary frames, frame-count based —
-    /// NOT millisecond based. `facing` (the u8 above) stays the authoritative
-    /// rendered/logic heading and is refreshed from this each tick; this is
-    /// cleared to `None` whenever no in-place rotation is in progress.
+    /// Binary-frame hull FacingClass shared by movement and combat. Combat can
+    /// retain an arbitrary16-bit heading without a movement `facing_target`;
+    /// fresh Drive/Ship admission must use that full sample, not the `facing`
+    /// byte used for display. Movement's completed byte-target adapter still
+    /// retires this state; migrating all lifecycle writers to persistent native
+    /// Facing ownership remains required.
     #[serde(default)]
     pub body_facing: Option<crate::sim::movement::FacingClass>,
     /// Persistent FootClass body-animation counter (`FootClass+0x538`).
@@ -402,6 +400,9 @@ pub struct GameEntity {
     owner: InternedId,
     /// Current and maximum hit points.
     pub health: Health,
+    /// Object+70: signed damage reservations/recovery, not an actual-HP cache.
+    /// Native constructors and map admission seed this from admitted health.
+    pub(crate) estimated_health: crate::sim::estimated_health::EstimatedHealth,
     /// rules.ini section name (e.g., "HTNK", "E1", "GAPOWR") — interned for zero-cost clones.
     #[cfg(test)]
     pub(crate) type_ref: InternedId,
@@ -670,13 +671,29 @@ pub struct GameEntity {
     pub building_up: Option<BuildingUp>,
     /// Reverse build-up animation — building is undeploying into a mobile unit.
     pub building_down: Option<BuildingDown>,
-    /// Active one-shot building animation overlays (e.g., ConYard crane).
-    pub building_anim_overlays: Option<BuildingAnimOverlays>,
-    /// Health-derived damaged variant selection for building animation overlays.
-    /// This is not native BuildingClass+0x534 (the construction/idle animation
-    /// state), and must not gate occupied building body frames.
+    /// Retained Building+6E6 animation-transition flag (saved454469).
+    /// Selfheal and arbitrary health writes do not refresh this value.
     #[serde(default)]
     pub building_damage_state_active: bool,
+    /// Building+55C's 21 retained AnimClass references. AnimStore owns the
+    /// animation objects and their scheduler/timers; these are slot identities.
+    #[serde(default)]
+    pub building_anim_slots: [Option<u64>; 21],
+    /// Building+5B0: effect slots marked for replay by4547C0, cleared by4545D0.
+    #[serde(default)]
+    pub building_anim_effect_replay: [bool; 21],
+    /// Retained raw StorageClass slots and last refinery animation tier.
+    #[serde(default)]
+    pub(crate) building_storage: crate::sim::building_art::BuildingStorage,
+    /// Building+6C8: last4555D0 result, sampled for every Building by43FB20.
+    #[serde(default)]
+    pub building_last_operational: bool,
+    /// Building+6EA, constructor43B996 true; distinct from operational6C8.
+    #[serde(default = "default_true")]
+    pub building_stuff_enabled: bool,
+    /// Building+6E4: OnConstructionComplete's one-time allocation guard.
+    #[serde(default)]
+    pub building_actually_placed: bool,
     /// Persisted type fact needed to recreate the owned light on later Unlimbo.
     #[serde(default)]
     pub spotlight_capable: bool,
@@ -777,18 +794,12 @@ pub struct GameEntity {
     /// Psychedelic/chaos runtime, separate from reversible mind control.
     #[serde(default)]
     pub berserk: BerserkState,
-    /// Active drive track curve state — present when a Drive vehicle is
-    /// following a pre-computed curved path between cells.
-    pub drive_track: Option<DriveTrackState>,
     /// DriveLocomotion destination/head-to state separate from curve stepping.
     #[serde(default)]
     pub drive_locomotion: Option<DriveLocomotionRuntime>,
     /// ShipLocomotion destination/head-to and target speed state.
     #[serde(default)]
     pub ship_locomotion: Option<ShipLocomotionRuntime>,
-    /// One-shot forced drive track, independent of normal path movement.
-    #[serde(default)]
-    pub forced_drive_track: Option<ForcedDriveTrackState>,
     /// Docking state machine — present when unit is approaching, waiting,
     /// or servicing at a repair depot.
     pub dock_state: Option<DockState>,
@@ -929,10 +940,6 @@ pub struct GameEntity {
     /// Writers/readers are owned by sim::mcv_deploy (gamemd 0x007393C0).
     #[serde(default)]
     pub(crate) mcv_deploy_pending: bool,
-    /// Drive Process +0x5E rotation-edge latch, currently consumed by MCV
-    /// PerCellProcess(0). Retained across replacement orders and save/load.
-    #[serde(default)]
-    pub(crate) mcv_drive_was_rotating: bool,
     /// Infantry fear/prone runtime. `None` for non-infantry entities.
     #[serde(default)]
     pub infantry: Option<InfantryRuntime>,
@@ -1250,6 +1257,9 @@ impl GameEntity {
             body_frame_counter: 0,
             owner,
             health,
+            estimated_health: crate::sim::estimated_health::EstimatedHealth::from_raw(
+                health.current,
+            ),
             type_ref,
             category,
             foundation: default_foundation(),
@@ -1307,8 +1317,13 @@ impl GameEntity {
             last_fire_frame: NATIVE_LAST_FIRE_FRAME_INIT,
             building_up: None,
             building_down: None,
-            building_anim_overlays: None,
             building_damage_state_active: false,
+            building_anim_slots: [None; 21],
+            building_anim_effect_replay: [false; 21],
+            building_storage: Default::default(),
+            building_last_operational: false,
+            building_stuff_enabled: true,
+            building_actually_placed: false,
             spotlight_capable: false,
             building_light: None,
             damage_fire_state_active: false,
@@ -1338,10 +1353,8 @@ impl GameEntity {
             invulnerability: None,
             mind_controlled: false,
             berserk: BerserkState::default(),
-            drive_track: None,
             drive_locomotion: None,
             ship_locomotion: None,
-            forced_drive_track: None,
             dock_state: None,
             aircraft_ammo: None,
             aircraft_mission: None,
@@ -1380,7 +1393,6 @@ impl GameEntity {
             bunker_runtime: None,
             deploy_state: None,
             mcv_deploy_pending: false,
-            mcv_drive_was_rotating: false,
             infantry: if category == EntityCategory::Infantry {
                 Some(InfantryRuntime::new())
             } else {
@@ -1511,23 +1523,6 @@ impl GameEntity {
         self.radio_contacts.remove(other_stable_id);
     }
 
-    /// Refresh the scoped building damaged-state visual gate from current HP.
-    ///
-    /// Returns true when the stored gate changed. Non-structures cannot carry
-    /// this building visual state and are forced inactive.
-    pub fn refresh_building_damage_state_gate(&mut self, condition_yellow_x1000: i64) -> bool {
-        let previous = self.building_damage_state_active;
-        let active = if self.category == EntityCategory::Structure && self.health.max > 0 {
-            let current = self.health.current as i64;
-            let max = self.health.max as i64;
-            current * 1000 <= max * condition_yellow_x1000
-        } else {
-            false
-        };
-        self.building_damage_state_active = active;
-        previous != active
-    }
-
     /// Runtime movement/path layer with Ground as the fallback.
     ///
     /// This is not the object-list selector. Use `occupancy_list_layer` when
@@ -1583,10 +1578,7 @@ impl GameEntity {
             0, // z = ground level
             0, // facing = north
             crate::sim::intern::test_intern(owner),
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             crate::sim::intern::test_intern(type_ref),
             EntityCategory::Unit,
             0, // veterancy = rookie
@@ -1642,7 +1634,6 @@ mod tests {
         assert_eq!(e.position.z, 0);
         assert_eq!(e.facing, 0);
         assert_eq!(e.health.current, 100);
-        assert_eq!(e.health.max, 100);
         assert_eq!(e.category, EntityCategory::Unit);
         assert_eq!(e.veterancy, 0);
         assert_eq!(e.vision_range, 5);
@@ -1659,7 +1650,6 @@ mod tests {
         assert!(e.barrel_facing.is_none());
         assert!(e.miner.is_none());
         assert!(e.order_intent.is_none());
-        assert!(!e.building_damage_state_active);
         assert!(!e.on_bridge);
         assert!(
             !e.in_playfield,
@@ -1694,93 +1684,6 @@ mod tests {
             Some(MovementLayer::Ground),
             "list layer must follow on_bridge when off the deck"
         );
-    }
-
-    fn building_damage_state_entity(current: u16, max: u16) -> GameEntity {
-        let mut entity = GameEntity::test_default(10, "GAPOWR", "Americans", 4, 5);
-        entity.category = EntityCategory::Structure;
-        entity.health = Health { current, max };
-        entity
-    }
-
-    #[test]
-    fn building_damage_state_non_structure_stays_false_even_below_yellow() {
-        let mut entity = GameEntity::test_default(10, "MTNK", "Americans", 4, 5);
-        entity.health = Health {
-            current: 25,
-            max: 100,
-        };
-
-        assert!(!entity.refresh_building_damage_state_gate(500));
-        assert!(!entity.building_damage_state_active);
-    }
-
-    #[test]
-    fn building_damage_state_structure_above_yellow_stays_false() {
-        let mut entity = building_damage_state_entity(51, 100);
-
-        assert!(!entity.refresh_building_damage_state_gate(500));
-        assert!(!entity.building_damage_state_active);
-    }
-
-    #[test]
-    fn building_damage_state_structure_exactly_at_yellow_sets_true() {
-        let mut entity = building_damage_state_entity(50, 100);
-
-        assert!(entity.refresh_building_damage_state_gate(500));
-        assert!(entity.building_damage_state_active);
-    }
-
-    #[test]
-    fn building_damage_state_structure_below_yellow_sets_true() {
-        let mut entity = building_damage_state_entity(49, 100);
-
-        assert!(entity.refresh_building_damage_state_gate(500));
-        assert!(entity.building_damage_state_active);
-    }
-
-    #[test]
-    fn building_damage_state_repaired_above_yellow_clears_true() {
-        let mut entity = building_damage_state_entity(49, 100);
-        entity.building_damage_state_active = true;
-        entity.health.current = 51;
-
-        assert!(entity.refresh_building_damage_state_gate(500));
-        assert!(!entity.building_damage_state_active);
-    }
-
-    #[test]
-    fn building_damage_state_zero_max_health_clears_false() {
-        let mut entity = building_damage_state_entity(0, 0);
-        entity.building_damage_state_active = true;
-
-        assert!(entity.refresh_building_damage_state_gate(500));
-        assert!(!entity.building_damage_state_active);
-    }
-
-    #[test]
-    fn building_damage_state_serde_round_trip_preserves_true() {
-        let mut entity = building_damage_state_entity(40, 100);
-        entity.building_damage_state_active = true;
-
-        let json = serde_json::to_string(&entity).expect("serialize entity");
-        let restored: GameEntity = serde_json::from_str(&json).expect("deserialize entity");
-
-        assert!(restored.building_damage_state_active);
-    }
-
-    #[test]
-    fn building_damage_state_serde_default_absent_field_is_false() {
-        let mut value =
-            serde_json::to_value(building_damage_state_entity(40, 100)).expect("serialize entity");
-        value
-            .as_object_mut()
-            .expect("entity serializes to object")
-            .remove("building_damage_state_active");
-
-        let restored: GameEntity = serde_json::from_value(value).expect("deserialize entity");
-
-        assert!(!restored.building_damage_state_active);
     }
 
     #[test]

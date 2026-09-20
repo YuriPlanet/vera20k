@@ -53,7 +53,7 @@ impl Simulation {
         if entity.lifecycle.cell_marked && height >= 2 * GROUND_LEVEL_HEIGHT_LEPTONS {
             return None;
         }
-        let coordinate = match self.infantry_navigation_coordinate(id) {
+        let coordinate = match self.foot_navigation_coordinate(id) {
             Ok(coordinate) => coordinate,
             Err(error) => return Some(Err(error)),
         };
@@ -101,56 +101,6 @@ impl Simulation {
                 })
             },
         ))
-    }
-
-    /// Foot4DBDF0 (+4C), including its TubeClass exit override. This query
-    /// precedes the hut/alive/navigation gates, even for pending Uninit rows.
-    pub(crate) fn infantry_navigation_coordinate(&self, id: u64) -> Result<DriveCoord, String> {
-        let e = self
-            .substrate
-            .entities
-            .get(id)
-            .ok_or("Infantry coordinate owner disappeared")?;
-        if let Some(state) = e.low_bridge_tube_state {
-            // Walk75B3FC/Drive4B1380 install Foot+684; Infantry51BA8D
-            // retires it. The query reads Tube+28 exit, not the path cursor.
-            let tube = self
-                .resolved_terrain
-                .as_ref()
-                .and_then(|terrain| terrain.tube(state.tube_id))
-                .ok_or("Infantry coordinate references a missing active TubeClass")?;
-            return Ok(DriveCoord {
-                x: i32::from(tube.exit.0 as i16) * 256 + 128,
-                y: i32::from(tube.exit.1 as i16) * 256 + 128,
-                z: 0,
-            });
-        }
-        let loco = e
-            .locomotor
-            .as_ref()
-            .ok_or("Infantry coordinate requires the active Infantry locomotor")?;
-        let raw = ground_pose::position_world_coord(&e.position);
-        match loco.active_kind() {
-            LocomotorKind::Walk => Ok(loco.step_head().unwrap_or(raw)),
-            // Teleport+18/55ACA0 copies linked owner+9C exactly.
-            LocomotorKind::Teleport => Ok(raw),
-            LocomotorKind::Jumpjet => {
-                let state = loco
-                    .jumpjet_runtime()
-                    .ok_or("Jumpjet payload does not match active class")?;
-                let coordinate = state.coordinate(raw);
-                Ok(
-                    if coordinate == crate::sim::movement::jumpjet_movement::JumpjetRuntime::NULL {
-                        raw
-                    } else {
-                        coordinate
-                    },
-                )
-            }
-            other => Err(format!(
-                "Infantry coordinate requires the {other:?} +18 receiver"
-            )),
-        }
     }
 }
 

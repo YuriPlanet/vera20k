@@ -335,9 +335,7 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
     // both production call sites always pass a resolved owner and interner.
     let owner_is_local = |entity: &crate::sim::game_entity::GameEntity| -> bool {
         match (local_owner, interner) {
-            (Some(owner), Some(names)) => {
-                names.resolve(entity.owner()).eq_ignore_ascii_case(owner)
-            }
+            (Some(owner), Some(names)) => names.resolve(entity.owner()).eq_ignore_ascii_case(owner),
             _ => true,
         }
     };
@@ -413,7 +411,8 @@ pub(crate) fn band_rect_contains_drawn_object(
         if !entity.lifecycle.object_alive || entity.lifecycle.in_limbo {
             return false;
         }
-        let (sx, sy) = crate::app::presentation::instances::interpolated_screen_position_entity(entity);
+        let (sx, sy) =
+            crate::app::presentation::instances::interpolated_screen_position_entity(entity);
         if !(sx >= min_x && sx <= max_x && sy >= min_y && sy <= max_y) {
             return false;
         }
@@ -898,7 +897,8 @@ pub(crate) fn compute_type_select_box_mutation_with_playfield(
         let Some(entity) = entities.get(id) else {
             continue;
         };
-        let (sx, sy) = crate::app::presentation::instances::interpolated_screen_position_entity(entity);
+        let (sx, sy) =
+            crate::app::presentation::instances::interpolated_screen_position_entity(entity);
         if !entity.lifecycle.object_alive || sx < min_x || sx > max_x || sy < min_y || sy > max_y {
             continue;
         }
@@ -978,7 +978,8 @@ fn entities_in_rect(
             let entity = entities.get(*entity)?;
             // Rectangle first, the way the native walk does it: the per-object
             // filter only runs for objects the box actually covers.
-            let (sx, sy) = crate::app::presentation::instances::interpolated_screen_position_entity(entity);
+            let (sx, sy) =
+                crate::app::presentation::instances::interpolated_screen_position_entity(entity);
             if !(sx >= min_x && sx <= max_x && sy >= min_y && sy <= max_y) {
                 return None;
             }
@@ -1128,8 +1129,12 @@ fn click_hits_foundation(
     bridge_height_map: Option<&TacticalBridgeInverseMap>,
 ) -> bool {
     let (fw, fh) = crate::rules::foundation::foundation_dimensions(foundation);
-    let (click_rx, click_ry) =
-        crate::app::match_runtime::sim_tick::world_point_to_cell(world_x, world_y, height_map, bridge_height_map);
+    let (click_rx, click_ry) = crate::app::match_runtime::sim_tick::world_point_to_cell(
+        world_x,
+        world_y,
+        height_map,
+        bridge_height_map,
+    );
     let crx = click_rx as i32;
     let cry = click_ry as i32;
     let brx = entity_rx as i32;
@@ -1199,15 +1204,12 @@ pub(crate) fn pick_entity_at_point(
                 .cloak
                 .as_ref()
                 .is_some_and(|cloak| cloak.is_fully_cloaked())
-            && !fog_state.has_sensor_for_house(
-                owner_id,
-                entity.position.rx,
-                entity.position.ry,
-            )
+            && !fog_state.has_sensor_for_house(owner_id, entity.position.rx, entity.position.ry)
         {
             continue;
         }
-        let (sx, sy) = crate::app::presentation::instances::interpolated_screen_position_entity(entity);
+        let (sx, sy) =
+            crate::app::presentation::instances::interpolated_screen_position_entity(entity);
         let distance = pick_distance_sq(sx - world_x, sy - world_y) as i32;
         if distance < PICK_DISTANCE_THRESHOLD as i32
             && best.is_none_or(|(_, best_distance)| distance < best_distance)
@@ -1307,10 +1309,7 @@ mod tests {
             0,
             0,
             owner,
-            Health {
-                current: 1000,
-                max: 1000,
-            },
+            Health { current: 1000 },
             type_ref,
             EntityCategory::Structure,
             0,
@@ -1391,10 +1390,7 @@ mod tests {
             0,
             0,
             owner,
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             type_ref,
             category,
             0,
@@ -1420,15 +1416,7 @@ mod tests {
         let mut interner = StringInterner::new();
         let owner = interner.intern("Americans");
         let type_ref = interner.intern("GI");
-        let mut entity = item83_entity(
-            1,
-            5,
-            5,
-            owner,
-            type_ref,
-            EntityCategory::Infantry,
-            false,
-        );
+        let mut entity = item83_entity(1, 5, 5, owner, type_ref, EntityCategory::Infantry, false);
         let entities = EntityStore::new();
 
         assert!(
@@ -1806,8 +1794,9 @@ mod tests {
             EntityCategory::Unit,
             false,
         ));
-        let (x, y) =
-            crate::app::presentation::instances::interpolated_screen_position_entity(entities.get(1).unwrap());
+        let (x, y) = crate::app::presentation::instances::interpolated_screen_position_entity(
+            entities.get(1).unwrap(),
+        );
 
         let mutation = compute_type_select_box_mutation(
             &entities,

@@ -606,7 +606,8 @@ fn locomotor_is_moving(entity: &GameEntity) -> bool {
     }) {
         super::drive_locomotion::drive_locomotor_is_moving(entity)
     } else {
-        entity.movement_target.is_some() || entity.forced_drive_track.is_some()
+        entity.movement_target.is_some()
+            || crate::sim::movement::track_head::committed_track_head(entity).is_some()
     }
 }
 
@@ -878,10 +879,7 @@ mod tests {
             0,
             0,
             crate::sim::intern::test_intern("Americans"),
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             crate::sim::intern::test_intern("MTNK"),
             EntityCategory::Unit,
             0,

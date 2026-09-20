@@ -1,0 +1,8544 @@
+[
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": false,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": -2147483648,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 0,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 0,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0",
+        "004547C0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": true,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0",
+        "004547C0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": true,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0",
+        "004547C0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": true,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0",
+        "004547C0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": true,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0",
+        "004547C0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": true,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": false,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": true,
+      "outage": 0,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0",
+        "004547C0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": true,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0",
+        "004547C0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": true,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": false,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": true,
+      "outage": 10,
+      "output": 0,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0",
+        "004547C0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": true,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0",
+        "004545D0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0",
+        "004545D0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0",
+        "004545D0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [
+        "004549B0",
+        "004545D0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": false
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0",
+        "004545D0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": false,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0",
+        "004545D0"
+      ],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": true,
+      "outage": 0,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": true,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "drain": 100,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0",
+        "004547C0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": true,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": false,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [],
+      "deleted": [],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "operational": false,
+      "paused": false,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "drain": 100,
+      "old": true,
+      "outage": 10,
+      "output": 200,
+      "powered": true,
+      "special": true
+    },
+    "output": {
+      "calls": [
+        "004549B0",
+        "004547C0"
+      ],
+      "deleted": [
+        10
+      ],
+      "occupied": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "operational": false,
+      "paused": true,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N19",
+          "retained_flag": 0,
+          "slot": 19
+        }
+      ]
+    }
+  }
+]

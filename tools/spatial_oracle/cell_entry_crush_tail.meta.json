@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Unit Can_Enter_Cell supplied post-walk crush-latch continuation, including first GROUND Unit predicate and unchanged object/cell memory",
+  "assumptions": [
+    "Entry73FC24 receives supplied EBP accumulator0..7 and successful crush latch1; preceding object walk, terrain/layer selection and production of those values are excluded",
+    "Captured raw byte and vehicle latch are supplied from the declared selected ground/deck plane, matching73F0ED..109/73F32C..348; original tail performs no fresh raw lookup",
+    "Active-game global1; real Unit7F5C70/Infantry7EB058 vtables, supplied linked lists, Techno abstract flag1, type pointers and owner houses; no constructors or full scenario load",
+    "Current frame100; timer start90 with duration0/10/20; Unit deploy-immunity byte0; unsigned wrap and paused timer cases excluded",
+    "Mover type Crusher1 and OmniCrusher0/1; targets vary Crushable, OmniCrushResistant, directional enemy/allied house and active/expired timer; no building/aircraft target coverage",
+    "Entire fixture object/cell memory must remain unchanged. Observation records original GetUnit ground arguments and IsCrushableBy receiver; no PerCell execution or kills",
+    "Primary live consumer is Unit vtable7F5E1C (slot1AC); Drive Process4B1C3E dispatches its return via4B2608. Full CanEnter/Drive/PerCell parity is not claimed"
+  ],
+  "substitutions": [
+    "No patched instructions, custom vtables, substituted callees or control-flow-changing hooks; prior continuation inputs are explicitly supplied"
+  ],
+  "entry_points": {
+    "unit_can_enter": "0x0073F0A0",
+    "post_walk": "0x0073FC24",
+    "crush_tail": "0x0073FCF6",
+    "get_unit": "0x0047EBA0",
+    "is_crushable_by": "0x005F6CD0",
+    "is_ally_by_object": "0x004F9A90",
+    "invulnerability_slot": "0x0041BF40"
+  },
+  "payload_sha256": "811485479d77d5a2143229ea1638f2b07a71b36048a83c7573ad3c43b11b0461"
+}

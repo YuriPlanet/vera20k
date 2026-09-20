@@ -1158,10 +1158,7 @@ mod tests {
             0,
             0,
             local,
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             type_ref,
             EntityCategory::Unit,
             0,

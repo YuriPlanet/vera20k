@@ -1,0 +1,2432 @@
+{
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "scope": "147 complete authentic Techno refund wrapper executions and14 complete authentic Building survivor count executions. No callbacks replaced. 18 additional repair numeric-fragment rows execute original ADD and completion ranges only; depot callback/notification region6F4D5F..6F4DE5 is omitted and its mutations are not covered. Ordinary sale credit-call snippets are byte evidence only. No full sale lifecycle, human-field producer, survivor spawning, native cost admission or Rust parity claim.",
+  "assumptions": [
+    "Supplied signed actual/estimate/type Strength and authored type Cost401. Fields varied independently with same type and owner configuration.",
+    "Authentic Building and BuildingType vtables. Native GetType, Building actual cost, owner/country cost multipliers, owner human selector, refund float spill, native ftol all execute. PC53/chop0xE7F.",
+    "Cost modifiers all1; Soylent0; FreeUnit0; SeparateAircrafttrue; fixture Pad/Dock distinct; RefundPercent.5; game mode0. Owner null or nonnull +1EC true/false, +1EDfalse.",
+    "Survivor fixture side0/divisor500, typeCrewed+CCDtrue, building+6E0/+6E3false. These raw fixtures do not certify game/map admission for zero or negative health/type Strength."
+  ],
+  "substitutions": [
+    "Repair fragment entry state is supplied; depot callback/notification interval omitted without claiming its behavior."
+  ],
+  "refund_rows": [
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": -2147483648,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": -2147483648,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": -2147483648,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": -20,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": -20,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": -20,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 0,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 0,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 0,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 1,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 1,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 1,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 65535,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 65535,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 65535,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 65536,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 65536,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 65536,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 2147483647,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 2147483647,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 2147483647,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": -2147483648,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": -2147483648,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": -2147483648,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": -20,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": -20,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": -20,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 0,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 0,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 0,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 1,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 1,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 1,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 65535,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 65535,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 65535,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 65536,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 65536,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 65536,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 2147483647,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 2147483647,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 2147483647,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": -2147483648,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": -2147483648,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": -2147483648,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": -20,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": -20,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": -20,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 0,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 0,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 0,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 1,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 1,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 1,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 65535,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 65535,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 65535,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 65536,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 65536,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 65536,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 2147483647,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 2147483647,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 2147483647,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": -2147483648,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": -2147483648,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": -2147483648,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": -20,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": -20,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": -20,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 0,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 0,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 0,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 1,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 1,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 1,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 65535,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 65535,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 65535,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 65536,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 65536,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 65536,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 2147483647,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 2147483647,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 2147483647,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": -2147483648,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": -2147483648,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": -2147483648,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": -20,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": -20,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": -20,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 0,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 0,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 0,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 1,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 1,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 1,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 65535,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 65535,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 65535,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 65536,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 65536,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 65536,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 2147483647,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 2147483647,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 2147483647,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": -2147483648,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": -2147483648,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": -2147483648,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": -20,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": -20,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": -20,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": 0,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": 0,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": 0,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": 1,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": 1,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": 1,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": 65535,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": 65535,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": 65535,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": 65536,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": 65536,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": 65536,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": 2147483647,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": 2147483647,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": 2147483647,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": -2147483648,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": -2147483648,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": -2147483648,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": -20,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": -20,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": -20,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": 0,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": 0,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": 0,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": 1,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": 1,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": 1,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": 65535,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": 65535,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": 65535,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": 65536,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": 65536,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": 65536,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": 2147483647,
+        "owner": "null",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": 2147483647,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 200,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": 2147483647,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 401,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "ffffff7f"
+      }
+    }
+  ],
+  "survivor_rows": [
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 2147483647,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 1,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": -2147483648,
+        "strength": 2147483647,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 1,
+      "unchanged": {
+        "actual_estimate": "00000080b3ffffff",
+        "strength": "ffffff7f"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 65536,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 1,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": -20,
+        "strength": 65536,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 1,
+      "unchanged": {
+        "actual_estimate": "ecffffffb3ffffff",
+        "strength": "00000100"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 65535,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 1,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 0,
+        "strength": 65535,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 1,
+      "unchanged": {
+        "actual_estimate": "00000000b3ffffff",
+        "strength": "ffff0000"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 1,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 1,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 1,
+        "strength": 1,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 1,
+      "unchanged": {
+        "actual_estimate": "01000000b3ffffff",
+        "strength": "01000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 0,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 1,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65535,
+        "strength": 0,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 1,
+      "unchanged": {
+        "actual_estimate": "ffff0000b3ffffff",
+        "strength": "00000000"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": -20,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 1,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 65536,
+        "strength": -20,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 1,
+      "unchanged": {
+        "actual_estimate": "00000100b3ffffff",
+        "strength": "ecffffff"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": -2147483648,
+        "owner": "human",
+        "cost": 401
+      },
+      "result": 1,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "00000080"
+      }
+    },
+    {
+      "input": {
+        "hp": 2147483647,
+        "strength": -2147483648,
+        "owner": "nonhuman",
+        "cost": 401
+      },
+      "result": 1,
+      "unchanged": {
+        "actual_estimate": "ffffff7fb3ffffff",
+        "strength": "00000080"
+      }
+    }
+  ],
+  "repair_fragment_rows": [
+    {
+      "input": {
+        "kind": "building",
+        "hp": 70000,
+        "strength": 100000,
+        "estimate": -20,
+        "step": 4
+      },
+      "actual_estimate": [
+        70004,
+        -16
+      ],
+      "complete": false
+    },
+    {
+      "input": {
+        "kind": "building",
+        "hp": 2147483646,
+        "strength": 2147483647,
+        "estimate": 2147483645,
+        "step": 4
+      },
+      "actual_estimate": [
+        -2147483646,
+        -2147483647
+      ],
+      "complete": false
+    },
+    {
+      "input": {
+        "kind": "building",
+        "hp": -20,
+        "strength": -10,
+        "estimate": -50,
+        "step": 4
+      },
+      "actual_estimate": [
+        -16,
+        -46
+      ],
+      "complete": false
+    },
+    {
+      "input": {
+        "kind": "building",
+        "hp": -12,
+        "strength": -10,
+        "estimate": -50,
+        "step": 4
+      },
+      "actual_estimate": [
+        -10,
+        -10
+      ],
+      "complete": true
+    },
+    {
+      "input": {
+        "kind": "building",
+        "hp": 100,
+        "strength": 100,
+        "estimate": -50,
+        "step": 4
+      },
+      "actual_estimate": [
+        100,
+        100
+      ],
+      "complete": true
+    },
+    {
+      "input": {
+        "kind": "building",
+        "hp": 0,
+        "strength": 0,
+        "estimate": -50,
+        "step": 4
+      },
+      "actual_estimate": [
+        0,
+        0
+      ],
+      "complete": true
+    },
+    {
+      "input": {
+        "kind": "building",
+        "hp": -1,
+        "strength": 0,
+        "estimate": -50,
+        "step": 4
+      },
+      "actual_estimate": [
+        0,
+        0
+      ],
+      "complete": true
+    },
+    {
+      "input": {
+        "kind": "building",
+        "hp": 1,
+        "strength": 0,
+        "estimate": -50,
+        "step": 4
+      },
+      "actual_estimate": [
+        0,
+        0
+      ],
+      "complete": true
+    },
+    {
+      "input": {
+        "kind": "building",
+        "hp": 99,
+        "strength": 100,
+        "estimate": -50,
+        "step": 4
+      },
+      "actual_estimate": [
+        100,
+        100
+      ],
+      "complete": true
+    },
+    {
+      "input": {
+        "kind": "depot",
+        "hp": 70000,
+        "strength": 100000,
+        "estimate": -20,
+        "step": 8
+      },
+      "actual_estimate": [
+        70008,
+        -12
+      ],
+      "complete": false
+    },
+    {
+      "input": {
+        "kind": "depot",
+        "hp": 2147483646,
+        "strength": 2147483647,
+        "estimate": 2147483645,
+        "step": 8
+      },
+      "actual_estimate": [
+        -2147483642,
+        -2147483643
+      ],
+      "complete": false
+    },
+    {
+      "input": {
+        "kind": "depot",
+        "hp": -20,
+        "strength": -10,
+        "estimate": -50,
+        "step": 8
+      },
+      "actual_estimate": [
+        -10,
+        -10
+      ],
+      "complete": true
+    },
+    {
+      "input": {
+        "kind": "depot",
+        "hp": -12,
+        "strength": -10,
+        "estimate": -50,
+        "step": 8
+      },
+      "actual_estimate": [
+        -4,
+        -42
+      ],
+      "complete": false
+    },
+    {
+      "input": {
+        "kind": "depot",
+        "hp": 100,
+        "strength": 100,
+        "estimate": -50,
+        "step": 8
+      },
+      "actual_estimate": [
+        100,
+        100
+      ],
+      "complete": true
+    },
+    {
+      "input": {
+        "kind": "depot",
+        "hp": 0,
+        "strength": 0,
+        "estimate": -50,
+        "step": 8
+      },
+      "actual_estimate": [
+        0,
+        0
+      ],
+      "complete": true
+    },
+    {
+      "input": {
+        "kind": "depot",
+        "hp": -1,
+        "strength": 0,
+        "estimate": -50,
+        "step": 8
+      },
+      "actual_estimate": [
+        0,
+        0
+      ],
+      "complete": true
+    },
+    {
+      "input": {
+        "kind": "depot",
+        "hp": 1,
+        "strength": 0,
+        "estimate": -50,
+        "step": 8
+      },
+      "actual_estimate": [
+        0,
+        0
+      ],
+      "complete": true
+    },
+    {
+      "input": {
+        "kind": "depot",
+        "hp": 99,
+        "strength": 100,
+        "estimate": -50,
+        "step": 8
+      },
+      "actual_estimate": [
+        100,
+        100
+      ],
+      "complete": true
+    }
+  ],
+  "original_bytes": [
+    {
+      "start": "0x70ada0",
+      "end": "0x70adc0",
+      "hex": "568bf18b06ff90840000008b8e1c0200008b106a00518bc8ff92b80000005ec3",
+      "sha256": "804786aec32bb7ffb75429c9167b407863041a6cb339fd6a219eef0434f75a91"
+    },
+    {
+      "start": "0x711f60",
+      "end": "0x712039",
+      "hex": "83ec08a1e071880056578bf1dd80381700008a442418d95c240884c07408c74424080000803f8b7c241485ff0f8484000000568bcfe8569edfffd95c2418568bcfe80a9fdfff8b8614060000d95c240c85c0894424147415db442414d84c2418e83b3f0b005f5e83c408c208008b168bceff92ac00000089442414db442414d84c240cd84c2418e8143f0b008bf08bcf89742418e83797dfff84c0740fdb442418d84c2408e8f63e0b008bf08bc65f5e83c408c208008b068bceff90ac00000089442418db442418d84c2408e8cf3e0b005f5e83c408c20800",
+      "sha256": "18b9041de8dd746dadc898f5fadc91a70ed2fea6d58310e8f849e68a0015050c"
+    },
+    {
+      "start": "0x50b730",
+      "end": "0x50b753",
+      "hex": "a138b2a80085c08a81ec010000751384c0750d8a81ed01000084c0750332c0c3b001c3",
+      "sha256": "82b880a6951afa4453901f755e53e1ca844a0c87dce771e9bb4ffdf624d570e6"
+    },
+    {
+      "start": "0x44a19e",
+      "end": "0x44a1b5",
+      "hex": "8b55008bcdff92bc0200008b8d1c02000050e89bf70a00",
+      "sha256": "d8af972a123d55b98d171da9a2669880e78cd9d964073ba2e5328920cee75113"
+    },
+    {
+      "start": "0x44a210",
+      "end": "0x44a227",
+      "hex": "8b55008bcdff92bc0200008b8d1c02000050e829f70a00",
+      "sha256": "ff260d35c3b91f1b2cb1973a0661ca182c12291cbc44e25eb9a95683275199ce"
+    },
+    {
+      "start": "0x451330",
+      "end": "0x4513ce",
+      "hex": "56578bf98a87e006000084c00f85870000008b8f200500008a81cd0c000084c074778b971c0200008b82e801000085c0750da1e07188008bb0f8140000eb2283f801750da1e07188008bb0fc140000eb1083f8027543a1e07188008bb00015000085f674348a87e306000084c0740203f68b016a0052ff90b800000099f7fe83f8017d085fb8010000005ec383f8057e0a5fb8050000005ec333c05f5ec3",
+      "sha256": "f85dca0947aae61f62d9359f08f9e273aebc8cae535a410000050b6c08ca1a2e"
+    },
+    {
+      "start": "0x4508a8",
+      "end": "0x4508d7",
+      "hex": "8b5e6c8b7e708b962005000003dd03fd895e6c897e708b82a00000008bcb3bc87c0d89466c894670c686e806000000",
+      "sha256": "a965246f6fd2b40c1005e92efe8289f2ee47b36136149d3f0b5ef8af0874ff0c"
+    },
+    {
+      "start": "0x6f4d4d",
+      "end": "0x6f4d62",
+      "hex": "8b566c8b4e7003d703cf85f689566c894e70744a8a",
+      "sha256": "9ae65328734cf0130049f4c2c2c6a2c613eb7cddb317f1123af18d1721b4e0d9"
+    },
+    {
+      "start": "0x6f4de5",
+      "end": "0x6f4e24",
+      "hex": "8bcee8740ef0ff8b0de0718800dc99f8160000dfe0f6c401740e5f5eb8010000005b83c40cc20c008b168bceff92840000008b80a00000005f89466c894670",
+      "sha256": "733ed7998b0381395d379659fff7a60390e03e8efa35b2031e98ef2089a55546"
+    },
+    {
+      "start": "0x5f5339",
+      "end": "0x5f537a",
+      "hex": "db416c8b01dd5c2400ff9088000000db80a00000008b0de0718800dc7c2400dc99f8160000dfe0f6c4017515b80a00000083c408c20c008b116a02ff9224010000",
+      "sha256": "3455abdf8d38691d7dea9afed29a3084290a34dd73c3cc6ffb0590a93930f841"
+    }
+  ],
+  "vslots": {
+    "0x7e4178": "a0ad7000",
+    "0x7e3f40": "70326f00",
+    "0x7e4628": "601f7100",
+    "0x7e461c": "50ed4500"
+  }
+}

@@ -786,10 +786,23 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         "immediately preceding main hash changed beyond schema159 composition"
     );
     let pre_foot_runtime_hash = rep.state_hash_without_foot_path_runtime_v160();
+    println!(
+        "[schema168 bridge] pre168={:016X}",
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(168))
+    );
     println!("[schema160] pre160={pre_foot_runtime_hash:016X} current={final_hash:016X}");
     assert_eq!(
         pre_foot_runtime_hash, BRIDGE_HARNESS_FINAL_HASH_PRE_FOOT_PATH_RUNTIME_V160,
         "immediately preceding main hash changed beyond schema160 composition"
+    );
+    // This fixture has fully retired its sole ordinary track and never calls
+    // Force_Track. Both removed options were absent in5777c115. The strict
+    // pre167 projection restores only their two original absence tags; exact
+    // equality here is the proof needed before changing the current hash pin.
+    assert_eq!(
+        rep.state_hash_without_track_authority_v167(),
+        0xF199_544D_CF92_A3DA,
+        "schema166 bridge receipt must hold with only obsolete absence tags restored",
     );
     assert_eq!(
         final_hash, BRIDGE_HARNESS_FINAL_HASH,

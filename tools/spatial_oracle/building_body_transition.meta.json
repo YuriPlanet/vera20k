@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Whole Building43EF90 body frame and442B37 receiver second animation transition",
+  "assumptions": [
+    "PC53/chop masked exceptions; original Building vtable copied byte-for-byte and original getters execute",
+    "Before/after HP and full frame/type data are supplied; no full ReceiveDamage or body-state-producer claim",
+    "All16 Gate/LaserFence/FirestormWall/CanBeOccupied priority combinations and state-1/0/1/2",
+    "Statezero includes original mission getter and queued mission fallback, Gate and mission19 reflections",
+    "Raw signed32 frame fields and EAX are retained; no u16 narrowing in native comparison",
+    "NaN/infinity thresholds and extreme frame inputs do not claim parser or normal gameplay reachability",
+    "Receiver slice stops at442BE5 before unrelated later receiver effects"
+  ],
+  "substitutions": [
+    "ArtFixture451890 allocation hook records arguments and supplies a pointer; no original code is patched; no full animation allocation/lifecycle claim"
+  ],
+  "entry_points": {
+    "GetCurrentFrame": "0x0043EF90",
+    "receiver_second_transition": "0x00442B37"
+  },
+  "original_slices": [
+    {
+      "start": "0043EF90",
+      "end_exclusive": "0043F174",
+      "hex": "568bf1578b86200500008bbef80000008a88bf16000084c974098b86180600005f5ec38a88c016000084c974098b861c0600005f5ec38b8e3405000085c9755c8a88b716000084c974138b88080f00008b90040f000003ca2bcf498bf98b168bceff928401000083f8130f856f0100008b86340500008b8e200500008d04408b9481080f00008bb481040f00008d048103d62bd74a8bfa8bc75f5ec38a887b15000084c90f84830000008b068bce33ffff900804000085c07e05bf020000008bcee80a6c1b008b0de0718800dc9908170000dfe0f6c441752d8b168bceff92840000008b883406000085c97e1a8bcee8dc6b1b00a1e0718800dc9800170000dfe0f6c4417401478b8e2005000083b934060000ff0f85c500000083ff030f85bc000000bf010000008bc75f5ec38a88b716000084c98bce742de8926b1b008b15e0718800dc9a00170000dfe0f6c44174108b86200500005f5e8b80f816000040c35f33c05ec3e8656b1b008b0de0718800dc9900170000dfe0f6c441746183be34050000017506478bc75f5ec38bb6200500008b86140f00008b8e100f00008b961c0f000003c18b8e200f000003ca3bc17f028bc18b8e380f00008b96340f000003ca3bc17f028bc18b8e440f00008b96400f000003ca3bc17f028bc103f88bc75f5ec3",
+      "sha256": "d0737717f60aec8c22c00e7fc6ef28fac09aff34aaa686c50265e41b20d69b14"
+    },
+    {
+      "start": "00442B37",
+      "end_exclusive": "00442BE5",
+      "hex": "8bcee852c4ffff394424400f849d0000008bcec6868000000001e80a311b008b0de0718800dc9900170000dfe0f6c4417407bb01000000eb0233db389ee6060000746b8d965c05000033ed889ee606000033ff895424108b442410833800743784db740f8b8e200500008d840f5c0f0000eb0d8b96200500008d84174c0f000085c07413803800740e6a006a005355508bcee8c2ec00008b54241083c7444583c20481ff94050000895424107ca9",
+      "sha256": "ec7d3b84a5994a08419ff5ec499ca5d1bf1b976bea93f83231c2fc4282b50b2f"
+    },
+    {
+      "start": "005B3040",
+      "end_exclusive": "005B3052",
+      "hex": "8b81ac00000083f8ff75068b81b4000000c3",
+      "sha256": "cfce1e37c7cceebe9363a67af6ad524e1bc0cbea00568486da7519da5d499f86"
+    },
+    {
+      "start": "004581F0",
+      "end_exclusive": "004581F7",
+      "hex": "8b8194060000c3",
+      "sha256": "564ebb84ca6e79155f5bcbd5917cd3a80cf9908a34c6d218597ad274f50c971f"
+    },
+    {
+      "start": "00459EE0",
+      "end_exclusive": "00459EE7",
+      "hex": "8b8120050000c3",
+      "sha256": "e14f94839512c1779785a7c447f5ebab5bc4995dddc9c24e2bc5b22aab8db3d0"
+    },
+    {
+      "start": "006F3270",
+      "end_exclusive": "006F3278",
+      "hex": "8b01ffa088000000",
+      "sha256": "b7655f4aae69b7187b779cdc966f345e6a878c6ce4f756b676a079015b791f42"
+    },
+    {
+      "start": "005F5C60",
+      "end_exclusive": "005F5C80",
+      "hex": "83ec08db416c8b01dd5c2400ff9088000000db80a0000000dc7c240083c408c3",
+      "sha256": "095a50e9e65fad30ddd3ce677f851db5066fd7a8a020e3b2df16bd35d632b953"
+    },
+    {
+      "start": "00451890",
+      "end_exclusive": "004518CF",
+      "hex": "83ec24538b5c243455568bf157389ee6060000742a889ee606000033ff8dae5c050000837d0000740d6a006a0053578bcee88afeffff4783c50483ff157ce4",
+      "sha256": "9d98824bb404809138948490f097ec7475b10a245e4c5a27ddc29852efbac72a"
+    }
+  ],
+  "original_vtable_entries": {
+    "084": "006F3270",
+    "088": "00459EE0",
+    "184": "005B3040",
+    "408": "004581F0"
+  },
+  "payload_sha256": "eb455b42ec8be740259bcffa6a59332402d31cc99a87858f6ae76db4fabda6ca"
+}

@@ -31,6 +31,10 @@ use crate::util::fixed_math::SimFixed;
 /// Values mirror the stock `rulesmd.ini` sections named in the survey:
 /// `[V3]` L7740, `[DRED]` L8125, `[CARRIER]` L7255.
 fn make_spawner_rules() -> RuleSet {
+    make_spawner_rules_with_hornet_strength(75)
+}
+
+fn make_spawner_rules_with_hornet_strength(strength: i32) -> RuleSet {
     let text = "\
 [General]
 BuildSpeed=0.75
@@ -235,7 +239,11 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 [CMISLEWH]
 Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 ";
-    RuleSet::from_ini(&IniFile::from_str(text)).expect("spawner rules should parse")
+    let text = text.replace(
+        "[HORNET]\nName=Hornet\nStrength=75",
+        &format!("[HORNET]\nName=Hornet\nStrength={strength}"),
+    );
+    RuleSet::from_ini(&IniFile::from_str(&text)).expect("spawner rules should parse")
 }
 
 fn empty_height_map() -> BTreeMap<(u16, u16), u8> {
@@ -1176,6 +1184,56 @@ fn gsi_13_07_count_docked_spawns_accepts_only_states_zero_and_six() {
     ] {
         manager.slots[0].state = state;
         assert_eq!(manager.count_docked_spawns(), expected, "state {state:?}");
+    }
+}
+
+#[test]
+fn reload_due_restores_actual_and_estimated_health_from_child_type() {
+    for strength in [75, 100_000, -7, 0, i32::MAX, i32::MIN] {
+        let rules = make_spawner_rules_with_hornet_strength(strength);
+        let mut sim = flat_sim();
+        let carrier = sim
+            .spawn_object(
+                "CARRIER",
+                "Americans",
+                10,
+                10,
+                0,
+                &rules,
+                &empty_height_map(),
+            )
+            .expect("spawn carrier and docked wing");
+        let manager = sim
+            .substrate
+            .entities
+            .get_mut(carrier)
+            .unwrap()
+            .spawn_manager
+            .as_mut()
+            .unwrap();
+        let child = manager.slots[0].spawn.unwrap();
+        manager.slots[0].state = SpawnSlotState::Reloading;
+        manager.slots[0].timer = SpawnTimer::ready();
+        manager.update_timer = SpawnTimer::ready();
+        let aircraft = sim.substrate.entities.get_mut(child).unwrap();
+        aircraft.health.current = 1;
+        aircraft.estimated_health = crate::sim::estimated_health::EstimatedHealth::from_raw(-123);
+        let strength = rules.object("HORNET").unwrap().strength;
+
+        tick_spawn_managers(&mut sim, &rules, &[carrier], None);
+
+        let aircraft = sim.substrate.entities.get(child).unwrap();
+        assert_eq!(aircraft.health.current, strength);
+        assert_eq!(aircraft.estimated_health.get(), strength);
+        let manager = sim
+            .substrate
+            .entities
+            .get(carrier)
+            .unwrap()
+            .spawn_manager
+            .as_ref()
+            .unwrap();
+        assert_eq!(manager.slots[0].state, SpawnSlotState::ReadyDocked);
     }
 }
 

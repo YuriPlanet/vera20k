@@ -547,7 +547,8 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
         .expect("accepted command spawned stock GAPOWR");
     assert_eq!(placed.category, EntityCategory::Structure);
     assert_eq!(placed.foundation, "2x2");
-    assert_eq!((placed.health.current, placed.health.max), (750, 750));
+    assert_eq!(placed.health.current, 750);
+    assert_eq!(rules.object("GAPOWR").unwrap().strength, 750);
     assert!(placed.lifecycle.cell_marked);
     assert!(placed.in_logic_vector);
     assert!(placed.building_up.is_some());

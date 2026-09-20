@@ -16,8 +16,9 @@
 //! `IDLE_SCATTER_INTERVAL` — is asserted with no address and is unverified.
 //! Trigger: any cell-blocked scatter. Player effect: idle units displace by
 //! VERA's own rule. Frequency: every building placement and terrain change.
-//! Downstream risk: `Scatter_Objects` is the verified mechanism and caps its
-//! collected list at ten; this file does not model that at all.
+//! Downstream risk: native Cell481670 snapshots the whole selected list,
+//! growing capacity by ten through40CE50 (481727..33; owned flag40CED5).
+//! Ten is not a recipient cap. This file does not model that receiver.
 //!
 //! ## Original engine behavior
 //! The original walks a global foundation offset table (350 entries of `(dx, dy)`

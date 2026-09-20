@@ -1,0 +1,252 @@
+[
+  {
+    "input": {
+      "current": 25,
+      "existing": false,
+      "name": false,
+      "total": 0
+    },
+    "output": {
+      "deletions": [],
+      "fault": null,
+      "frame": null,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "existing": true,
+      "name": false,
+      "total": 0
+    },
+    "output": {
+      "deletions": [
+        10
+      ],
+      "fault": null,
+      "frame": null,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "existing": false,
+      "name": true,
+      "total": 0
+    },
+    "output": {
+      "deletions": [],
+      "fault": null,
+      "frame": null,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "existing": true,
+      "name": true,
+      "total": 0
+    },
+    "output": {
+      "deletions": [
+        10
+      ],
+      "fault": null,
+      "frame": null,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "existing": false,
+      "name": false,
+      "total": 0
+    },
+    "output": {
+      "deletions": [],
+      "fault": null,
+      "frame": null,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "existing": true,
+      "name": false,
+      "total": 0
+    },
+    "output": {
+      "deletions": [
+        10
+      ],
+      "fault": null,
+      "frame": null,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "existing": false,
+      "name": true,
+      "total": 0
+    },
+    "output": {
+      "deletions": [],
+      "fault": null,
+      "frame": null,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "existing": true,
+      "name": true,
+      "total": 0
+    },
+    "output": {
+      "deletions": [
+        10
+      ],
+      "fault": null,
+      "frame": null,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "existing": false,
+      "name": false,
+      "total": 25
+    },
+    "output": {
+      "deletions": [],
+      "fault": "00450D81",
+      "frame": null,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "existing": true,
+      "name": false,
+      "total": 25
+    },
+    "output": {
+      "deletions": [],
+      "fault": null,
+      "frame": 1,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "existing": false,
+      "name": true,
+      "total": 25
+    },
+    "output": {
+      "deletions": [],
+      "fault": null,
+      "frame": 1,
+      "replacements": [
+        {
+          "damaged": 1,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "D10",
+          "retained_flag": 1,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 25,
+      "existing": true,
+      "name": true,
+      "total": 25
+    },
+    "output": {
+      "deletions": [],
+      "fault": null,
+      "frame": 1,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "existing": false,
+      "name": false,
+      "total": 25
+    },
+    "output": {
+      "deletions": [],
+      "fault": "00450D81",
+      "frame": null,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "existing": true,
+      "name": false,
+      "total": 25
+    },
+    "output": {
+      "deletions": [],
+      "fault": null,
+      "frame": 1,
+      "replacements": []
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "existing": false,
+      "name": true,
+      "total": 25
+    },
+    "output": {
+      "deletions": [],
+      "fault": null,
+      "frame": 1,
+      "replacements": [
+        {
+          "damaged": 0,
+          "extra": 0,
+          "garrisoned": 0,
+          "name": "N10",
+          "retained_flag": 0,
+          "slot": 10
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "current": 75,
+      "existing": true,
+      "name": true,
+      "total": 25
+    },
+    "output": {
+      "deletions": [],
+      "fault": null,
+      "frame": 1,
+      "replacements": []
+    }
+  }
+]

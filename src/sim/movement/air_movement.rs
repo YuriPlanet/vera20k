@@ -138,11 +138,13 @@ pub fn issue_air_move_command(
     entity_id: u64,
     target: (u16, u16),
     speed: SimFixed,
+    timing: super::DestinationTiming,
 ) -> bool {
     let Some(entity) = entities.get(entity_id) else {
         return false;
     };
     if (entity.position.rx, entity.position.ry) == target {
+        timing.accept(entities.get_mut(entity_id).expect("accepted aircraft"));
         return true;
     }
 
@@ -160,7 +162,7 @@ pub fn issue_air_move_command(
     let Some(entity) = entities.get_mut(entity_id) else {
         return false;
     };
-    entity.navigation.path_runtime = crate::sim::components::FootPathRuntime::default();
+    timing.accept(entity);
     entity.movement_target = Some(movement);
 
     // Trigger takeoff if on the ground.
@@ -238,7 +240,13 @@ pub fn tick_air_movement(
         };
 
         let air_phase_before = loco.air_phase;
+        let altitude_before = loco.altitude;
         tick_altitude(loco, dt);
+        super::foot_coordinate::publish_altitude_change(
+            &mut entity.position,
+            altitude_before,
+            loco.altitude,
+        );
         let air_phase_after = loco.air_phase;
         if air_phase_after != air_phase_before {
             let from = format!("{:?}", air_phase_before);
@@ -443,7 +451,13 @@ pub fn tick_air_movement(
         }
         if let Some(ref mut loco) = entity.locomotor {
             let idle_phase_before = loco.air_phase;
+            let altitude_before = loco.altitude;
             tick_altitude(loco, dt);
+            super::foot_coordinate::publish_altitude_change(
+                &mut entity.position,
+                altitude_before,
+                loco.altitude,
+            );
             let idle_phase_after = loco.air_phase;
             if idle_phase_after != idle_phase_before {
                 let from = format!("{:?}", idle_phase_before);
@@ -583,7 +597,13 @@ mod tests {
         entity.locomotor = Some(make_fly_loco());
         entities.insert(entity);
 
-        let ok = issue_air_move_command(&mut entities, 1, (20, 15), SimFixed::from_num(10));
+        let ok = issue_air_move_command(
+            &mut entities,
+            1,
+            (20, 15),
+            SimFixed::from_num(10),
+            crate::sim::movement::DestinationTiming::new(0, 60),
+        );
         assert!(ok);
 
         // Should have a MovementTarget with final_goal set.
@@ -606,7 +626,13 @@ mod tests {
         entity.locomotor = Some(make_fly_loco());
         entities.insert(entity);
 
-        let ok = issue_air_move_command(&mut entities, 1, (10, 10), SimFixed::from_num(10));
+        let ok = issue_air_move_command(
+            &mut entities,
+            1,
+            (10, 10),
+            SimFixed::from_num(10),
+            crate::sim::movement::DestinationTiming::new(0, 60),
+        );
         assert!(ok);
         // No MovementTarget should be added — already at goal.
         let e = entities.get(1).expect("has entity");

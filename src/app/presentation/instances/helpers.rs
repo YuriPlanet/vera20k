@@ -596,10 +596,7 @@ mod tests {
             0,
             0,
             enemy_owner,
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             mobile_type,
             EntityCategory::Unit,
             0,
@@ -613,10 +610,7 @@ mod tests {
             0,
             0,
             enemy_owner,
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             building_type,
             EntityCategory::Structure,
             0,

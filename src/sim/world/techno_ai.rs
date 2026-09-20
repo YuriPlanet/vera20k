@@ -366,7 +366,7 @@ impl Simulation {
         // Building43FB20 samples its operational edge before delayed Health0
         // cleanup. A live dying-animation diversion must not skip that edge.
         if let Some(rules) = rules {
-            self.visit_building_gap(id, rules);
+            self.visit_building_operational(id, rules);
         }
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -474,6 +474,14 @@ fn techno_ai_shell(
     rules: Option<&RuleSet>,
     ctx: ObjectAiCtx<'_>,
 ) {
+    // Techno6F9F6E..9F precedes promotion, missions and acquisition for every
+    // Techno category. object_ai_visit_one excludes the entry-active Tube leaf
+    // before this common owner. Actual health and this retained estimate differ.
+    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+        entity
+            .estimated_health
+            .recover(i32::from(entity.health.current), sim.session.binary_frame);
+    }
     match category {
         EntityCategory::Unit => {
             unit_techno_bracket(sim, id, rules, ctx);
@@ -503,17 +511,15 @@ fn techno_ai_shell(
         }
         EntityCategory::Structure => {
             if let Some(rules) = rules {
+                // Building43FC39 damage-fire and43FD2C ProduceCash precede
+                // the shared Techno call at43FE56. A yellow-crossing selfheal
+                // must not retire damage fire one native frame early.
+                sim.update_building_damage_fire(id, rules);
+                crate::sim::credit_income::produce_cash_step(sim, id, rules);
+                sim.update_building_storage_anims(id, rules);
                 veterancy_promotion_step(sim, id, rules);
-                // The common-body drain blocks (`TechnoClass::AI_Update
-                // 0x006FA14B`): a `Drainable=yes` building is the stock
-                // victim, so its money leaves here.
                 crate::sim::credit_income::drain_common_step(sim, id, rules);
                 self_heal_step(sim, id, rules);
-                sim.update_building_damage_fire(id, rules);
-                // `BuildingClass::Update @ 0x0043FD2C..0x0043FDD6`: the
-                // ProduceCash timer (oil-derrick income). Sits in Update's
-                // own body ahead of the mission dispatch that follows.
-                crate::sim::credit_income::produce_cash_step(sim, id, rules);
             }
             // Buildings run the SAME common Techno AI body units do — it is the
             // only acquisition path a base defence has. Same order: off-mission
@@ -688,15 +694,11 @@ fn refresh_mover_speed_after_promotion(sim: &mut Simulation, id: u64, rules: &Ru
 /// when the eligibility virtual (`vtable+0x294` → `FUN_0070BE80`) holds,
 /// `Health += 1` — a raw `INC` on `+0x6C`, no amount key.
 ///
-/// RESIDUAL — the tail after the increment (`0x006FA75A..0x006FA78D`:
-/// health-ratio compare against `Rules+0x1700`, the `vtable+0x1C8` special
-/// state test, and a `vtable+0xF8` call on the object at `+0x310`) is the
-/// damaged-smoke/anim teardown once the ratio climbs back over the yellow
-/// line. UNCHECKED here; VERA's damage-state presentation derives from
-/// health each frame, so the visible smoke follows the heal on its own.
-/// Trigger: any self-healing object crossing ConditionYellow upward.
-/// Frequency: every elite infantryman that heals from red. Downstream risk:
-/// none in `sim/` — the tail writes no gameplay state.
+/// The reached tail marks attached smoke done above ConditionYellow, retaining
+/// the pointer until expiry. Building+6E6 and animation slots remain unchanged.
+/// Original corpus: building_art_transition.json. After non-Greater health,
+/// virtual1C8 is Object GetHeight5F5F40, which also retires smoke below -10
+/// leptons relative to the live ground surface and explicit OnBridge offset.
 fn self_heal_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -719,8 +721,9 @@ fn self_heal_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         return;
     }
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.health.current = entity.health.current.saturating_add(1);
+        entity.health.current = entity.health.current.wrapping_add(1);
     }
+    sim.retire_damage_smoke_after_self_heal(id, rules);
 }
 
 /// `AircraftClass::AI @ 0x00414D4D..0x00414DA1`, read from the disassembly:
@@ -919,20 +922,30 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
-    let cur = entity.health.current as i64;
-    let max = entity.health.max as i64;
     let type_ref = entity.type_ref();
     let live_until_in = entity.damage_particle_live_until;
     let Some(obj) = rules.object(sim.interner.resolve(type_ref)) else {
         return;
     };
 
+    use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
+    let health_ratio = entity.health.ratio(obj.strength);
+    let below = |threshold: f64| {
+        matches!(
+            X87::compare(
+                health_ratio,
+                X87::load_f64(NativeF64Bits::from_bits(threshold.to_bits()))
+            ),
+            MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
+        )
+    };
+
     // Outer gate. Check the cheap, near-always-false `emits_damage_spark` first so
     // the common path (every stock vehicle) exits before building the Spark list.
-    // `HealthRatio < ConditionYellow` reproduced as the project's integer
-    // cross-multiply (`GetHealthRatio` is current/max; STRICT `<` per the binary).
+    // 6FACF3..FE tests x87 C0: strict Less or Unordered. The red selector
+    // at6FADDA..E5 uses the same predicate on the signed live-Strength ratio.
     // The `vtable+0x1c8() > -10` special-state term is unmodelled here → pass.
-    let below_yellow = cur * 1000 < max * rules.general.condition_yellow_x1000;
+    let below_yellow = below(rules.general.condition_yellow);
     if !(obj.emits_damage_spark() && below_yellow) {
         return;
     }
@@ -951,7 +964,7 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
     }
     let spark_count = spark_lifetimes.len() as u32;
     // Band select needs ConditionRed; bind once (both gate and draw read it).
-    let below_red = cur * 1000 < max * rules.general.condition_red_x1000;
+    let below_red = below(rules.general.condition_red);
 
     // `+0x308`-equivalent live-system gate. Resolve expiry lazily here (the only
     // observable effect of the hold is gating draws, which only happen under this
@@ -1691,15 +1704,12 @@ mod tests {
     use crate::sim::mission::{
         MissionCom, MissionControl, MissionDispatchTimer, MissionId, MissionType,
     };
-    use crate::sim::movement::drive_track::begin_forced_turn_track;
     use crate::sim::movement::locomotion::LocomotorSlot;
     use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
     use crate::sim::movement::tube_movement::LowBridgeTubeMovementState;
-    use crate::sim::movement::{DriveProcessOutcome, process_drive_locomotion_shell};
     use crate::sim::rng::SimRngLogicalState;
     use crate::sim::snapshot::GameSnapshot;
     use crate::sim::world::SimulationRngState;
-    use crate::util::fixed_math::SimFixed;
 
     /// Build a test entity of a specific category (`test_default` makes a Unit).
     fn entity_of(id: u64, category: EntityCategory) -> GameEntity {
@@ -2467,10 +2477,17 @@ mod tests {
         }
         let scout = sim.substrate.entities.get(1).expect("scout present");
         assert!(
-            scout.health.current < scout.health.max,
+            scout.health.current
+                < rules
+                    .object(sim.interner.resolve(scout.type_ref()))
+                    .unwrap()
+                    .strength,
             "an unordered base defence must actually shoot what it picks up: {}/{}",
             scout.health.current,
-            scout.health.max,
+            rules
+                .object(sim.interner.resolve(scout.type_ref()))
+                .unwrap()
+                .strength,
         );
     }
 
@@ -2538,10 +2555,17 @@ mod tests {
         );
         let enemy = sim.substrate.entities.get(2).expect("enemy present");
         assert!(
-            enemy.health.current < enemy.health.max,
+            enemy.health.current
+                < rules
+                    .object(sim.interner.resolve(enemy.type_ref()))
+                    .unwrap()
+                    .strength,
             "and it must actually open fire: {}/{}",
             enemy.health.current,
-            enemy.health.max,
+            rules
+                .object(sim.interner.resolve(enemy.type_ref()))
+                .unwrap()
+                .strength,
         );
     }
 
@@ -2571,6 +2595,7 @@ mod tests {
 
     #[test]
     fn a_passively_acquired_target_actually_gets_shot() {
+        let rules = passive_rules();
         // Acquire AND fire. Everything else here stops at "a target is
         // installed"; this is the one that proves the round trip reaches damage.
         // Both tanks are armed and neither is ordered to do anything.
@@ -2578,13 +2603,28 @@ mod tests {
         let allied = sim.substrate.entities.get(1).expect("allied tank present");
         let soviet = sim.substrate.entities.get(2).expect("soviet tank present");
         assert!(
-            allied.health.current < allied.health.max || soviet.health.current < soviet.health.max,
+            allied.health.current
+                < rules
+                    .object(sim.interner.resolve(allied.type_ref()))
+                    .unwrap()
+                    .strength
+                || soviet.health.current
+                    < rules
+                        .object(sim.interner.resolve(soviet.type_ref()))
+                        .unwrap()
+                        .strength,
             "a passively acquired target must actually be fired on: \
              allied {}/{}, soviet {}/{}",
             allied.health.current,
-            allied.health.max,
+            rules
+                .object(sim.interner.resolve(allied.type_ref()))
+                .unwrap()
+                .strength,
             soviet.health.current,
-            soviet.health.max,
+            rules
+                .object(sim.interner.resolve(soviet.type_ref()))
+                .unwrap()
+                .strength,
         );
     }
 
@@ -2711,10 +2751,7 @@ mod tests {
             0,
             0,
             owner_ref,
-            crate::sim::components::Health {
-                current: 100,
-                max: 100,
-            },
+            crate::sim::components::Health { current: 100 },
             type_ref,
             category,
             0,
@@ -2820,6 +2857,7 @@ mod tests {
         sim.power_states.insert(
             owner,
             crate::sim::power_system::PowerState {
+                total_drain: 100,
                 is_low_power: true,
                 ..Default::default()
             },
@@ -2837,7 +2875,7 @@ mod tests {
         sim.power_states
             .get_mut(&owner)
             .expect("power state present")
-            .is_low_power = false;
+            .total_output = 100;
         sim.substrate
             .entities
             .get_mut(1)
@@ -3130,7 +3168,6 @@ mod tests {
         AircraftPath,
         SpecialLocomotorPath,
         ActiveTube,
-        ForcedTrack,
         ClassSpecialPath,
         LifecyclePath,
         MissingDriveRuntime,
@@ -4401,9 +4438,9 @@ mod tests {
         if entity.low_bridge_tube_state.is_some() {
             return Err(HostTraceError::ActiveTube);
         }
-        if entity.forced_drive_track.is_some() {
-            return Err(HostTraceError::ForcedTrack);
-        }
+        // Ordinary and forced descriptors share the same Drive Process host.
+        // This inert shell trace only records that boundary; track state does
+        // not select another pre-Foot path or make the shell out of scope.
         if gates.class_special_pre_foot_path {
             return Err(HostTraceError::ClassSpecialPath);
         }
@@ -4699,10 +4736,9 @@ mod tests {
             }
         }
 
-        if matches!(
-            process_drive_locomotion_shell(&entity),
-            DriveProcessOutcome::Processed
-        ) {
+        // This trace records admission only; real Process execution belongs
+        // to the live object-turn host and has separate integration coverage.
+        if entity.drive_locomotion.is_some() {
             events.push(HostTraceEvent::DriveProcessMarker);
         } else {
             events.push(HostTraceEvent::NullLocomotorInvariant);
@@ -5357,6 +5393,62 @@ mod tests {
     }
 
     #[test]
+    fn checkpoint_a_shared_drive_host_accepts_ordinary_and_forced_descriptors_without_executing_them()
+     {
+        for forced in [false, true] {
+            let mut sim = ordinary_drive_host_sim(13);
+            // The trace-only fixture supplies Logic order but remains in
+            // constructor Limbo. Real Force admission requires a revealed
+            // owner; publish it through the lifecycle transaction first.
+            assert!(matches!(
+                sim.reveal(ORDINARY_DRIVE_HOST_ID),
+                crate::sim::world::RevealOutcome::Revealed { .. }
+            ));
+            let head = DriveCoord::cell(8, 7, 731);
+            if forced {
+                assert!(sim.force_drive_track(ORDINARY_DRIVE_HOST_ID, 0x47, head));
+            } else {
+                let drive = sim
+                    .substrate
+                    .entities
+                    .get_mut(ORDINARY_DRIVE_HOST_ID)
+                    .unwrap()
+                    .drive_locomotion
+                    .as_mut()
+                    .unwrap();
+                drive.head_to = Some(head);
+                drive.track.turn_index = 0;
+                drive.track.cursor = 12;
+                drive.track.residual = 5;
+            }
+            let before = sim
+                .substrate
+                .entities
+                .get(ORDINARY_DRIVE_HOST_ID)
+                .unwrap()
+                .drive_locomotion
+                .clone();
+            let trace = ordinary_drive_host_trace_ok(&sim, 120, HostTraceGates::ordinary());
+            assert_eq!(
+                trace
+                    .events
+                    .iter()
+                    .filter(|event| **event == HostTraceEvent::DriveProcessMarker)
+                    .count(),
+                1
+            );
+            assert_eq!(
+                sim.substrate
+                    .entities
+                    .get(ORDINARY_DRIVE_HOST_ID)
+                    .unwrap()
+                    .drive_locomotion,
+                before
+            );
+        }
+    }
+
+    #[test]
     fn checkpoint_a_ordinary_drive_host_rejects_out_of_scope_fixtures() {
         let control = stock_move_control();
         let ordinary = HostTraceGates::ordinary();
@@ -5424,30 +5516,6 @@ mod tests {
             120,
             ordinary,
             HostTraceError::ActiveTube,
-        );
-
-        let mut forced_track = ordinary_drive_host_sim(13);
-        forced_track
-            .substrate
-            .entities
-            .get_mut(ORDINARY_DRIVE_HOST_ID)
-            .unwrap()
-            .forced_drive_track = begin_forced_turn_track(0, 0, 0, SimFixed::from_num(1), false);
-        assert!(
-            forced_track
-                .substrate
-                .entities
-                .get(ORDINARY_DRIVE_HOST_ID)
-                .unwrap()
-                .forced_drive_track
-                .is_some()
-        );
-        assert_ordinary_drive_host_error(
-            &forced_track,
-            &control,
-            120,
-            ordinary,
-            HostTraceError::ForcedTrack,
         );
 
         let mut miner = ordinary_drive_host_sim(13);
@@ -5664,10 +5732,7 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
             0,
             0,
             owner,
-            crate::sim::components::Health {
-                current: 100,
-                max: 100,
-            },
+            crate::sim::components::Health { current: 100 },
             type_ref,
             EntityCategory::Unit,
             0,
@@ -5687,10 +5752,7 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
             0,
             0,
             owner,
-            crate::sim::components::Health {
-                current: 100,
-                max: 100,
-            },
+            crate::sim::components::Health { current: 100 },
             type_ref,
             EntityCategory::Aircraft,
             0,
@@ -5712,10 +5774,7 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
             0,
             0,
             owner,
-            crate::sim::components::Health {
-                current: 100,
-                max: 100,
-            },
+            crate::sim::components::Health { current: 100 },
             type_ref,
             EntityCategory::Infantry,
             0,
@@ -5934,10 +5993,7 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
             0,
             0,
             owner,
-            crate::sim::components::Health {
-                current: 100,
-                max: 100,
-            },
+            crate::sim::components::Health { current: 100 },
             type_ref,
             EntityCategory::Structure,
             0,
@@ -5986,10 +6042,7 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
             0,
             0,
             owner,
-            crate::sim::components::Health {
-                current: 100,
-                max: 100,
-            },
+            crate::sim::components::Health { current: 100 },
             fact_type,
             EntityCategory::Structure,
             0,
@@ -6084,10 +6137,7 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
             0, // z = ground level
             0, // facing = north
             owner,
-            crate::sim::components::Health {
-                current: 100,
-                max: 100,
-            },
+            crate::sim::components::Health { current: 100 },
             type_ref,
             EntityCategory::Unit,
             0, // veterancy = rookie
@@ -6256,7 +6306,7 @@ BuildSpeed=0.75\nMultipleFactory=0.7\nLowPowerPenaltyModifier=1.25\n\
 MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\
 ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={yellow_prob}\n\n\
 [InfantryTypes]\n1=CYB\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\n\
-[CYB]\nCyborg=yes\nDamageParticleSystems={dps}\n\n{systems}\n"
+[CYB]\nStrength=100\nCyborg=yes\nDamageParticleSystems={dps}\n\n{systems}\n"
         );
         RuleSet::from_ini(&IniFile::from_str(&text)).expect("cyborg test rules parse")
     }
@@ -6264,8 +6314,8 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
     /// Insert a unit whose type resolves to the Cyborg infantry "CYB". The entity
     /// category is `Unit` (the only arm hosting `techno_common_post` today); the
     /// gate keys off the TYPE's `emits_damage_spark`, so this exercises the draw
-    /// path. `current`/`max` set the health band.
-    fn insert_cyborg_unit(sim: &mut Simulation, id: u64, current: u16, max: u16) {
+    /// path. Live CYB Strength100 and the supplied actual HP set the health band.
+    fn insert_cyborg_unit(sim: &mut Simulation, id: u64, current: i32) {
         let owner = sim.interner.intern("Americans");
         let type_ref = sim.interner.intern("CYB");
         let e = GameEntity::new_at_frame_zero_for_test(
@@ -6275,7 +6325,7 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
             0,
             0,
             owner,
-            crate::sim::components::Health { current, max },
+            crate::sim::components::Health { current },
             type_ref,
             EntityCategory::Unit,
             0,
@@ -6298,7 +6348,7 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
         // 60/100 = above ConditionYellow (0.5): the outer gate fails → zero draws.
         let rules = cyborg_rules("1.0", "1.0", "SparkA,SparkB", TWO_SPARK_SYSTEMS);
         let mut sim = Simulation::new();
-        insert_cyborg_unit(&mut sim, 1, 60, 100);
+        insert_cyborg_unit(&mut sim, 1, 60);
         let scen = sim.scenario_rng.state();
         let main = sim.main_rng.state();
         techno_common_post(&mut sim, 1, Some(&rules));
@@ -6317,7 +6367,7 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
         // one draw (the prob-roll), no list-pick, no live system armed.
         let rules = cyborg_rules("0.0", "0.0", "SparkA,SparkB", TWO_SPARK_SYSTEMS);
         let mut sim = Simulation::new();
-        insert_cyborg_unit(&mut sim, 1, 20, 100); // below red
+        insert_cyborg_unit(&mut sim, 1, 20); // below red
         let mut expect = sim.scenario_rng.clone();
         let main = sim.main_rng.state();
         techno_common_post(&mut sim, 1, Some(&rules));
@@ -6341,7 +6391,7 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
         // list-pick (n(0,1)) consumes a second draw, and the hold arms to tick+5.
         let rules = cyborg_rules("1.0", "1.0", "SparkA,SparkB", TWO_SPARK_SYSTEMS);
         let mut sim = Simulation::new();
-        insert_cyborg_unit(&mut sim, 1, 20, 100);
+        insert_cyborg_unit(&mut sim, 1, 20);
         let tick = sim.session.tick;
         let mut expect = sim.scenario_rng.clone();
         let main = sim.main_rng.state();
@@ -6367,7 +6417,7 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
         // draw (gamemd RandomRanged min==max), so a successful roll is ONE draw.
         let rules = cyborg_rules("1.0", "1.0", "SparkA,SmokeA", ONE_SPARK_ONE_SMOKE_SYSTEMS);
         let mut sim = Simulation::new();
-        insert_cyborg_unit(&mut sim, 1, 20, 100);
+        insert_cyborg_unit(&mut sim, 1, 20);
         let tick = sim.session.tick;
         let mut expect = sim.scenario_rng.clone();
         techno_common_post(&mut sim, 1, Some(&rules));
@@ -6391,7 +6441,7 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
         // live_until expires it and rolling resumes.
         let rules = cyborg_rules("1.0", "1.0", "SparkA,SparkB", TWO_SPARK_SYSTEMS);
         let mut sim = Simulation::new();
-        insert_cyborg_unit(&mut sim, 1, 20, 100);
+        insert_cyborg_unit(&mut sim, 1, 20);
         techno_common_post(&mut sim, 1, Some(&rules)); // spawn → live_until = 5
         assert_eq!(live_until(&sim, 1), 5);
 
@@ -6424,7 +6474,7 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
         // inner gate (Spark count > 0) fails → zero draws, even at prob 1.0.
         let rules = cyborg_rules("1.0", "1.0", "SmokeA", SMOKE_ONLY_SYSTEMS);
         let mut sim = Simulation::new();
-        insert_cyborg_unit(&mut sim, 1, 20, 100);
+        insert_cyborg_unit(&mut sim, 1, 20);
         let scen = sim.scenario_rng.state();
         techno_common_post(&mut sim, 1, Some(&rules));
         assert_eq!(sim.scenario_rng.state(), scen, "no Spark system → no draw");
@@ -6467,10 +6517,7 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
             0,
             0,
             owner,
-            crate::sim::components::Health {
-                current: 20,
-                max: 100,
-            },
+            crate::sim::components::Health { current: 20 },
             type_ref,
             EntityCategory::Unit,
             0,
@@ -6499,7 +6546,7 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
             "[ParticleSystems]\n1=SparkA\n\n[SparkA]\nBehavesLike=Spark\nLifetime=-1\n",
         );
         let mut sim = Simulation::new();
-        insert_cyborg_unit(&mut sim, 1, 20, 100);
+        insert_cyborg_unit(&mut sim, 1, 20);
         techno_common_post(&mut sim, 1, Some(&rules)); // success → permanent hold
         assert_eq!(
             live_until(&sim, 1),
@@ -6523,3 +6570,7 @@ mod veterancy_tests;
 
 #[path = "bounce_terrain.rs"]
 mod bounce_terrain;
+
+#[cfg(test)]
+#[path = "techno_ai/signed_health_tests.rs"]
+mod signed_health_tests;

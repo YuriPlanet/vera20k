@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original529CA0 ReadCoord and unchanged sscanf/INI lookup for DockingOffset0. Explicit supplied default and exact fixture pointers; not full BuildingType46492E caller or layer/array ownership.",
+  "assumptions": [
+    "INI cached TEST section and native CRC indexes supplied using existing Fixture; actual original string truncation/trim/scan run.",
+    "Malformed partial scans can retain overwritten argument words (section pointer, key CRC, default pointer) in outputs. Those outputs certify only this exact ABI fixture; they are not portable numeric defaults or permission to invent prior-component retention."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "read_coord": "0x00529CA0",
+    "scan": "0x007CA530"
+  },
+  "payload_sha256": "70c8c3eb85cd6a2097a7e5a900f6062672a1097eeb1a445cafd00734ea7ef213"
+}

@@ -1,0 +1,5567 @@
+{
+  "rows": [
+    {
+      "input": {
+        "current": -2147483648,
+        "red_bits": "3fd0000000000000",
+        "strength": -2147483648,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": -2147483648,
+        "red_bits": "3fd0000000000000",
+        "strength": -1,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": -2147483648,
+        "red_bits": "3fd0000000000000",
+        "strength": 0,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": -2147483648,
+        "red_bits": "3fd0000000000000",
+        "strength": 1,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": -2147483648,
+        "red_bits": "3fd0000000000000",
+        "strength": 100,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": -2147483648,
+        "red_bits": "3fd0000000000000",
+        "strength": 65536,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": -2147483648,
+        "red_bits": "3fd0000000000000",
+        "strength": 2147483647,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": -1,
+        "red_bits": "3fd0000000000000",
+        "strength": -2147483648,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": -1,
+        "red_bits": "3fd0000000000000",
+        "strength": -1,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": -1,
+        "red_bits": "3fd0000000000000",
+        "strength": 0,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": -1,
+        "red_bits": "3fd0000000000000",
+        "strength": 1,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": -1,
+        "red_bits": "3fd0000000000000",
+        "strength": 100,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": -1,
+        "red_bits": "3fd0000000000000",
+        "strength": 65536,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": -1,
+        "red_bits": "3fd0000000000000",
+        "strength": 2147483647,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "3fd0000000000000",
+        "strength": -2147483648,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "3fd0000000000000",
+        "strength": -1,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "3fd0000000000000",
+        "strength": 0,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "3fd0000000000000",
+        "strength": 1,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "3fd0000000000000",
+        "strength": 100,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "3fd0000000000000",
+        "strength": 65536,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "3fd0000000000000",
+        "strength": 2147483647,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "3fd0000000000000",
+        "strength": -2147483648,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "3fd0000000000000",
+        "strength": -1,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "3fd0000000000000",
+        "strength": 0,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "3fd0000000000000",
+        "strength": 1,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "3fd0000000000000",
+        "strength": 100,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "3fd0000000000000",
+        "strength": 65536,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "3fd0000000000000",
+        "strength": 2147483647,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 25,
+        "red_bits": "3fd0000000000000",
+        "strength": -2147483648,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 25,
+        "red_bits": "3fd0000000000000",
+        "strength": -1,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 25,
+        "red_bits": "3fd0000000000000",
+        "strength": 0,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 25,
+        "red_bits": "3fd0000000000000",
+        "strength": 1,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 25,
+        "red_bits": "3fd0000000000000",
+        "strength": 100,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 25,
+        "red_bits": "3fd0000000000000",
+        "strength": 65536,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 25,
+        "red_bits": "3fd0000000000000",
+        "strength": 2147483647,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 50,
+        "red_bits": "3fd0000000000000",
+        "strength": -2147483648,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 50,
+        "red_bits": "3fd0000000000000",
+        "strength": -1,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 50,
+        "red_bits": "3fd0000000000000",
+        "strength": 0,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 50,
+        "red_bits": "3fd0000000000000",
+        "strength": 1,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 50,
+        "red_bits": "3fd0000000000000",
+        "strength": 100,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 1,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 50,
+        "red_bits": "3fd0000000000000",
+        "strength": 65536,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 50,
+        "red_bits": "3fd0000000000000",
+        "strength": 2147483647,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 65536,
+        "red_bits": "3fd0000000000000",
+        "strength": -2147483648,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 65536,
+        "red_bits": "3fd0000000000000",
+        "strength": -1,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 65536,
+        "red_bits": "3fd0000000000000",
+        "strength": 0,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 65536,
+        "red_bits": "3fd0000000000000",
+        "strength": 1,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 65536,
+        "red_bits": "3fd0000000000000",
+        "strength": 100,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 65536,
+        "red_bits": "3fd0000000000000",
+        "strength": 65536,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 65536,
+        "red_bits": "3fd0000000000000",
+        "strength": 2147483647,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 2147483647,
+        "red_bits": "3fd0000000000000",
+        "strength": -2147483648,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 2147483647,
+        "red_bits": "3fd0000000000000",
+        "strength": -1,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 2147483647,
+        "red_bits": "3fd0000000000000",
+        "strength": 0,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 2147483647,
+        "red_bits": "3fd0000000000000",
+        "strength": 1,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 2147483647,
+        "red_bits": "3fd0000000000000",
+        "strength": 100,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 2147483647,
+        "red_bits": "3fd0000000000000",
+        "strength": 65536,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 2147483647,
+        "red_bits": "3fd0000000000000",
+        "strength": 2147483647,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "bfe0000000000000",
+        "strength": 0,
+        "yellow_bits": "bfe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "bfe0000000000000",
+        "strength": 0,
+        "yellow_bits": "bfe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": -1,
+        "red_bits": "bfe0000000000000",
+        "strength": 0,
+        "yellow_bits": "bfe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 50,
+        "red_bits": "bfe0000000000000",
+        "strength": 100,
+        "yellow_bits": "bfe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "bfe0000000000000",
+        "strength": 3,
+        "yellow_bits": "bfe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "bfe0000000000000",
+        "strength": 100,
+        "yellow_bits": "bfe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "3fd5555555555555",
+        "strength": 0,
+        "yellow_bits": "3fd5555555555555"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "3fd5555555555555",
+        "strength": 0,
+        "yellow_bits": "3fd5555555555555"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": -1,
+        "red_bits": "3fd5555555555555",
+        "strength": 0,
+        "yellow_bits": "3fd5555555555555"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 50,
+        "red_bits": "3fd5555555555555",
+        "strength": 100,
+        "yellow_bits": "3fd5555555555555"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "3fd5555555555555",
+        "strength": 3,
+        "yellow_bits": "3fd5555555555555"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "3fd5555555555555",
+        "strength": 100,
+        "yellow_bits": "3fd5555555555555"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "3fe0000000000001",
+        "strength": 0,
+        "yellow_bits": "3fe0000000000001"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "3fe0000000000001",
+        "strength": 0,
+        "yellow_bits": "3fe0000000000001"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": -1,
+        "red_bits": "3fe0000000000001",
+        "strength": 0,
+        "yellow_bits": "3fe0000000000001"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 50,
+        "red_bits": "3fe0000000000001",
+        "strength": 100,
+        "yellow_bits": "3fe0000000000001"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "3fe0000000000001",
+        "strength": 3,
+        "yellow_bits": "3fe0000000000001"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "3fe0000000000001",
+        "strength": 100,
+        "yellow_bits": "3fe0000000000001"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "3fdfffffffffffff",
+        "strength": 0,
+        "yellow_bits": "3fdfffffffffffff"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "3fdfffffffffffff",
+        "strength": 0,
+        "yellow_bits": "3fdfffffffffffff"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": -1,
+        "red_bits": "3fdfffffffffffff",
+        "strength": 0,
+        "yellow_bits": "3fdfffffffffffff"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 50,
+        "red_bits": "3fdfffffffffffff",
+        "strength": 100,
+        "yellow_bits": "3fdfffffffffffff"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "3fdfffffffffffff",
+        "strength": 3,
+        "yellow_bits": "3fdfffffffffffff"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "3fdfffffffffffff",
+        "strength": 100,
+        "yellow_bits": "3fdfffffffffffff"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "7ff0000000000000",
+        "strength": 0,
+        "yellow_bits": "7ff0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "7ff0000000000000",
+        "strength": 0,
+        "yellow_bits": "7ff0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": -1,
+        "red_bits": "7ff0000000000000",
+        "strength": 0,
+        "yellow_bits": "7ff0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 50,
+        "red_bits": "7ff0000000000000",
+        "strength": 100,
+        "yellow_bits": "7ff0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "7ff0000000000000",
+        "strength": 3,
+        "yellow_bits": "7ff0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "7ff0000000000000",
+        "strength": 100,
+        "yellow_bits": "7ff0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "fff0000000000000",
+        "strength": 0,
+        "yellow_bits": "fff0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "fff0000000000000",
+        "strength": 0,
+        "yellow_bits": "fff0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": -1,
+        "red_bits": "fff0000000000000",
+        "strength": 0,
+        "yellow_bits": "fff0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 50,
+        "red_bits": "fff0000000000000",
+        "strength": 100,
+        "yellow_bits": "fff0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "fff0000000000000",
+        "strength": 3,
+        "yellow_bits": "fff0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "fff0000000000000",
+        "strength": 100,
+        "yellow_bits": "fff0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "7ff8000000000001",
+        "strength": 0,
+        "yellow_bits": "7ff8000000000001"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "7ff8000000000001",
+        "strength": 0,
+        "yellow_bits": "7ff8000000000001"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": -1,
+        "red_bits": "7ff8000000000001",
+        "strength": 0,
+        "yellow_bits": "7ff8000000000001"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 50,
+        "red_bits": "7ff8000000000001",
+        "strength": 100,
+        "yellow_bits": "7ff8000000000001"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "7ff8000000000001",
+        "strength": 3,
+        "yellow_bits": "7ff8000000000001"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 0,
+        "red_bits": "7ff8000000000001",
+        "strength": 100,
+        "yellow_bits": "7ff8000000000001"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "3fb9999999999999",
+        "strength": 10,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "3f9999999999999a",
+        "strength": 10,
+        "yellow_bits": "3fb9999999999999"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 1,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 1,
+        "red_bits": "7ff8000000000001",
+        "strength": 100,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": false,
+        "damage_fire_occupied": true,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": true,
+        "generic_art_damaged": true,
+        "navigation_category": 0,
+        "occupied_body_frames": [
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 50,
+        "red_bits": "3fd0000000000000",
+        "strength": 100,
+        "yellow_bits": "7ff8000000000001"
+      },
+      "output": {
+        "bunker_wall_damaged": true,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": true,
+        "drive_speed_bits": "3fe8000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": true,
+        "navigation_category": 1,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 1,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 3,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": true,
+        "refinery_special_damaged": true,
+        "ship_speed_bits": "3fe8000000000000",
+        "smoke_above_yellow": false
+      }
+    },
+    {
+      "input": {
+        "current": 16777217,
+        "red_bits": "3fd0000000000000",
+        "strength": 33554432,
+        "yellow_bits": "3fe0000000000000"
+      },
+      "output": {
+        "bunker_wall_damaged": false,
+        "cloak_above_red": true,
+        "damage_fire_occupied": false,
+        "damage_fire_ordinary": false,
+        "drive_speed_bits": "3ff0000000000000",
+        "garrison_red": false,
+        "generic_art_damaged": false,
+        "navigation_category": 2,
+        "occupied_body_frames": [
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": -1
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": -1
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 0
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 0
+          },
+          {
+            "frame": 0,
+            "occupants": 0,
+            "tech_level": 5
+          },
+          {
+            "frame": 2,
+            "occupants": 8,
+            "tech_level": 5
+          }
+        ],
+        "refinery_active_damaged": false,
+        "refinery_special_damaged": false,
+        "ship_speed_bits": "3ff0000000000000",
+        "smoke_above_yellow": true
+      }
+    }
+  ],
+  "schema_version": 2
+}

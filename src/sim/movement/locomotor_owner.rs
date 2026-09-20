@@ -8,7 +8,6 @@
 //! lifetime here. The generic piggyback gate and other class policies stay with
 //! their existing owners. These helpers do not mutate Cell occupation.
 
-use super::drive_track::{DriveTrackState, ForcedDriveTrackState};
 use super::locomotor::LocomotorState;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::components::DriveLocomotionRuntime;
@@ -16,8 +15,6 @@ use crate::sim::game_entity::GameEntity;
 
 fn clear_drive_instance(entity: &mut GameEntity) {
     entity.drive_locomotion = None;
-    entity.drive_track = None;
-    entity.forced_drive_track = None;
 }
 
 pub(crate) fn begin_drive_for_teleporter(entity: &mut GameEntity, binary_frame: u32) -> bool {
@@ -74,11 +71,17 @@ pub(crate) fn try_end_drive_at_foot_idle(entity: &mut GameEntity) -> bool {
 /// The caller has already evaluated its END gate, at its own required point in
 /// the callback sequence. Keep that timing separate from the instance transfer.
 pub(crate) fn restore_admitted_primary(entity: &mut GameEntity) -> bool {
+    let physical = super::foot_coordinate::current_coordinate(entity);
     let Some(locomotor) = entity.locomotor.as_mut() else {
         return false;
     };
     let retired_drive = locomotor.active_kind() == LocomotorKind::Drive;
     let restored = locomotor.restore_primary_from_piggyback();
+    if restored {
+        // END transfers the controller without moving Object+9C. Restored
+        // altitude is controller state, not an addition to this exact XYZ.
+        entity.position.exact_z_leptons = Some(physical.z);
+    }
     if restored && retired_drive {
         clear_drive_instance(entity);
     }
@@ -92,8 +95,6 @@ pub(crate) fn restore_admitted_primary(entity: &mut GameEntity) -> bool {
 pub(crate) struct DriveActivationSnapshot {
     locomotor: Option<LocomotorState>,
     drive: Option<DriveLocomotionRuntime>,
-    curve: Option<DriveTrackState>,
-    forced: Option<ForcedDriveTrackState>,
     path_replay: crate::sim::components::FootPathQueue,
     path_runtime: crate::sim::components::FootPathRuntime,
     foot_speed: crate::sim::components::FootSpeedState,
@@ -105,8 +106,6 @@ impl DriveActivationSnapshot {
         Self {
             locomotor: entity.locomotor.clone(),
             drive: entity.drive_locomotion.clone(),
-            curve: entity.drive_track.clone(),
-            forced: entity.forced_drive_track.clone(),
             path_replay: entity.navigation.path_replay.clone(),
             path_runtime: entity.navigation.path_runtime,
             foot_speed: entity.foot_speed.clone(),
@@ -117,8 +116,6 @@ impl DriveActivationSnapshot {
     pub(crate) fn restore(self, entity: &mut GameEntity) {
         entity.locomotor = self.locomotor;
         entity.drive_locomotion = self.drive;
-        entity.drive_track = self.curve;
-        entity.forced_drive_track = self.forced;
         entity.navigation.path_replay = self.path_replay;
         entity.navigation.path_runtime = self.path_runtime;
         entity.foot_speed = self.foot_speed;

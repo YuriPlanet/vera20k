@@ -344,19 +344,122 @@ mod real_cell_bridge_hash_schema_tests {
     }
 }
 
-fn hash_drive_track_state(
-    state: &crate::sim::movement::drive_track::DriveTrackState,
+/// The two removed Option payloads could disagree with the retained class.
+/// Only independently established absent-payload, pending=false fixtures have
+/// a projection.
+/// Reject current evidence of an active or partially retired track, rather
+/// than inventing the former geometry/cursor/speed. A destination or retained
+/// residual alone is not an active track: native keeps those independently.
+#[cfg(test)]
+fn assert_retired_track_projection_is_bounded(entity: &crate::sim::game_entity::GameEntity) {
+    let idle_progress = |track: &crate::sim::components::TrackProgress| {
+        track.turn_index == -1 && matches!(track.cursor, -1 | 0)
+    };
+    let drive_absent = entity.drive_locomotion.as_ref().is_none_or(|drive| {
+        idle_progress(&drive.track)
+            && drive.head_to.is_none()
+            && !drive.track_valid
+            && !drive.turn_latched
+            && drive.occupation_head_to.is_none()
+            && drive.occupation_handoff.is_none()
+    });
+    let ship_absent = entity.ship_locomotion.as_ref().is_none_or(|ship| {
+        !ship.track_valid
+            && !ship.turn_latched
+            && idle_progress(&ship.track)
+            && ship.head_to.is_none()
+            && ship.occupation_head_to.is_none()
+            && ship.occupation_handoff.is_none()
+    });
+    assert!(
+        drive_absent && ship_absent,
+        "pre-v167 detached-track projection requires an independently established absent payload; entity {} retains active track state that cannot recover the obsolete representation",
+        entity.stable_id(),
+    );
+}
+
+/// Schema166 derived Hash included a pending=false field immediately after
+/// TrackProgress. References hash their values; deriving these former payload
+/// layouts and mapping the original Options preserves both field order and
+/// Option discriminants. This bounded fixture projection cannot recover an
+/// old pending=true obligation or either removed detached executor.
+#[cfg(test)]
+fn hash_retained_track_classes_before_167(
+    entity: &crate::sim::game_entity::GameEntity,
     hasher: &mut impl Hasher,
 ) {
-    state.raw_track_index.hash(hasher);
-    state.point_index.hash(hasher);
-    state.residual.hash(hasher);
-    state.transform_flags.hash(hasher);
-    state.head_offset_x.hash(hasher);
-    state.head_offset_y.hash(hasher);
-    state.cell_offset_x.hash(hasher);
-    state.cell_offset_y.hash(hasher);
-    state.target_facing.hash(hasher);
+    use crate::sim::components::{
+        DriveCoord, DriveOccupationFootprint, DriveTurnState, TrackProgress,
+    };
+    use crate::util::fixed_math::SimFixed;
+
+    #[derive(Hash)]
+    struct DriveSchema166<'a> {
+        destination: &'a Option<DriveCoord>,
+        head_to: &'a Option<DriveCoord>,
+        turn: &'a DriveTurnState,
+        track: &'a TrackProgress,
+        pending_track_occupation: bool,
+        end_permitted: &'a bool,
+        track_valid: &'a bool,
+        target_speed_fraction: &'a SimFixed,
+        occupation_head_to: &'a Option<DriveOccupationFootprint>,
+        occupation_handoff: &'a Option<DriveOccupationFootprint>,
+    }
+    #[derive(Hash)]
+    struct ShipSchema166<'a> {
+        destination: &'a Option<DriveCoord>,
+        head_to: &'a Option<DriveCoord>,
+        track: &'a TrackProgress,
+        pending_track_occupation: bool,
+        target_speed_fraction: &'a SimFixed,
+        occupation_head_to: &'a Option<DriveOccupationFootprint>,
+        occupation_handoff: &'a Option<DriveOccupationFootprint>,
+    }
+
+    entity
+        .drive_locomotion
+        .as_ref()
+        .map(|drive| DriveSchema166 {
+            destination: &drive.destination,
+            head_to: &drive.head_to,
+            turn: &drive.turn,
+            track: &drive.track,
+            pending_track_occupation: false,
+            end_permitted: &drive.end_permitted,
+            track_valid: &drive.track_valid,
+            target_speed_fraction: &drive.target_speed_fraction,
+            occupation_head_to: &drive.occupation_head_to,
+            occupation_handoff: &drive.occupation_handoff,
+        })
+        .hash(hasher);
+    entity
+        .ship_locomotion
+        .as_ref()
+        .map(|ship| ShipSchema166 {
+            destination: &ship.destination,
+            head_to: &ship.head_to,
+            track: &ship.track,
+            pending_track_occupation: false,
+            target_speed_fraction: &ship.target_speed_fraction,
+            occupation_head_to: &ship.occupation_head_to,
+            occupation_handoff: &ship.occupation_handoff,
+        })
+        .hash(hasher);
+}
+
+fn hash_retained_track_classes(
+    entity: &crate::sim::game_entity::GameEntity,
+    _schema: HashSchema,
+    hasher: &mut impl Hasher,
+) {
+    #[cfg(test)]
+    if !_schema.includes(HashFeature::TrackAuthority) {
+        hash_retained_track_classes_before_167(entity, hasher);
+        return;
+    }
+    entity.drive_locomotion.hash(hasher);
+    entity.ship_locomotion.hash(hasher);
 }
 
 /// Fold the `MissionCom` mission component into the state hash.
@@ -461,6 +564,17 @@ impl Simulation {
     /// components in stable-entity-ID order (EntityStore keys_sorted) for determinism.
     pub fn state_hash(&self) -> u64 {
         self.state_hash_with_schema(HashSchema::Current)
+    }
+
+    /// Test-only schema166 provenance for fixtures whose two detached track
+    /// options were independently established to be absent and both pending
+    /// flags false. Restores those positional fields without reconstructing
+    /// removed runtime state.
+    /// Active retained tracks are rejected; neither their former ordinary
+    /// geometry copy nor a separate forced executor can be recovered here.
+    #[cfg(test)]
+    pub(crate) fn state_hash_without_track_authority_v167(&self) -> u64 {
+        self.state_hash_with_schema(HashSchema::Before(167))
     }
 
     /// Project out schema159's Cell lists/Sight0 and later gated layouts.
@@ -609,7 +723,7 @@ impl Simulation {
         self.state_hash_with_schema(HashSchema::Before(115))
     }
 
-    fn state_hash_with_schema(&self, schema: HashSchema) -> u64 {
+    pub(super) fn state_hash_with_schema(&self, schema: HashSchema) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
 
         self.session.tick.hash(&mut hasher);
@@ -665,6 +779,9 @@ impl Simulation {
             self.hash_terminal_score_snapshot(&mut hasher);
         }
         self.hash_production(&mut hasher);
+        if schema.includes(HashFeature::AircraftDockState) {
+            self.production.airfield_docks.hash_state(&mut hasher);
+        }
         self.hash_power_states(&mut hasher);
         self.hash_fog_and_alliances(&mut hasher, schema);
         self.hash_bridge_state(&mut hasher);
@@ -1162,6 +1279,9 @@ impl Simulation {
             state.total_output.hash(hasher);
             state.total_drain.hash(hasher);
             state.power_blackout_remaining.hash(hasher);
+            if state.has_drained_power_source {
+                b"House.DrainedPowerSource".hash(hasher);
+            }
         }
     }
 
@@ -1393,6 +1513,18 @@ impl Simulation {
     fn hash_entities(&self, hasher: &mut impl Hasher, schema: HashSchema) {
         for entity in self.substrate.entities.values() {
             entity.stable_id().hash(hasher);
+            if schema.includes(HashFeature::AircraftDockState) {
+                // Both mission and legacy ammo FSMs still execute. Hash their
+                // actual saved state until their ownership migration retires one.
+                if let Some(ammo) = entity.aircraft_ammo.as_ref() {
+                    b"aircraft-ammo-v170".hash(hasher);
+                    ammo.hash(hasher);
+                }
+                if let Some(mission) = entity.aircraft_mission.as_ref() {
+                    b"aircraft-mission-v170".hash(hasher);
+                    mission.hash(hasher);
+                }
+            }
             if schema.includes(HashFeature::CreditIncome) {
                 // GSI-09.01: the `BuildingClass+0x6D0/+0x6D8` ProduceCash
                 // timer and the `TechnoClass+0x1CC/+0x1D0` drain link pair.
@@ -1481,6 +1613,32 @@ impl Simulation {
                 0u8.hash(hasher);
             }
             entity.body_frame_counter.hash(hasher);
+            // Building+6E6 is retained transition state, independent of HP.
+            if entity.building_damage_state_active {
+                b"building-damage-state-v1".hash(hasher);
+            }
+            if entity.building_actually_placed
+                || entity.building_anim_slots.iter().any(Option::is_some)
+                || (schema.includes_building_power_integration()
+                    && entity.building_anim_effect_replay.iter().any(|v| *v))
+            {
+                b"building-anim-slots-v1".hash(hasher);
+                entity.building_actually_placed.hash(hasher);
+                entity.building_anim_slots.hash(hasher);
+                if schema.includes_building_power_integration() {
+                    entity.building_anim_effect_replay.hash(hasher);
+                }
+            }
+            if entity.building_storage != Default::default() {
+                b"building-storage-v1".hash(hasher);
+                entity.building_storage.hash(hasher);
+            }
+            if schema.includes_building_power_integration() && entity.building_last_operational {
+                b"building-operational-v1".hash(hasher);
+            }
+            if schema.includes_building_power_integration() && !entity.building_stuff_enabled {
+                b"building-stuff-disabled-v1".hash(hasher);
+            }
             if schema.includes(HashFeature::EntityAnimation)
                 && let Some(animation) = entity.animation.as_ref()
             {
@@ -1490,27 +1648,11 @@ impl Simulation {
                 animation.elapsed_frames.hash(hasher);
                 animation.finished.hash(hasher);
             }
-            if schema.includes(HashFeature::BuildingAnimOverlays)
-                && let Some(overlays) = entity.building_anim_overlays.as_ref()
-            {
-                b"building-anim-overlays-v1".hash(hasher);
-                overlays.anims.len().hash(hasher);
-                for anim in &overlays.anims {
-                    self.interner
-                        .resolve(anim.anim_type)
-                        .to_ascii_uppercase()
-                        .hash(hasher);
-                    anim.frame.hash(hasher);
-                    anim.loop_start.hash(hasher);
-                    anim.loop_end.hash(hasher);
-                    anim.rate_logic_frames.hash(hasher);
-                    anim.elapsed_logic_frames.hash(hasher);
-                    anim.finished.hash(hasher);
-                }
-            }
             entity.owner().hash(hasher);
             entity.health.current.hash(hasher);
-            entity.health.max.hash(hasher);
+            if schema.includes(HashFeature::EstimatedHealth) {
+                entity.estimated_health.get().hash(hasher);
+            }
             entity.type_ref().hash(hasher);
             (entity.category as u8).hash(hasher);
             entity.foundation.hash(hasher);
@@ -1547,7 +1689,6 @@ impl Simulation {
             }
             entity.regular_crusher.hash(hasher);
             entity.drive_accelerates.hash(hasher);
-            entity.building_damage_state_active.hash(hasher);
             entity.damage_fire_state_active.hash(hasher);
             entity.damage_fire_anim_ids.hash(hasher);
             entity.vision_range.hash(hasher);
@@ -1599,28 +1740,24 @@ impl Simulation {
             entity.navigation.nav_queue.hash(hasher);
             entity.navigation.pending_arrival_clear.hash(hasher);
 
-            if let Some(ref drive_track) = entity.drive_track {
-                1u8.hash(hasher);
-                hash_drive_track_state(drive_track, hasher);
-            } else {
+            #[cfg(test)]
+            if !schema.includes(HashFeature::TrackAuthority) {
+                assert_retired_track_projection_is_bounded(entity);
+                // Schema166's entity.drive_track == None tag, before the
+                // retained classes. The original payload is not recoverable.
                 0u8.hash(hasher);
             }
-
-            entity.drive_locomotion.hash(hasher);
-            entity.ship_locomotion.hash(hasher);
+            hash_retained_track_classes(entity, schema, hasher);
             entity.foot_speed.hash(hasher);
             entity.foot_occupation_enabled.hash(hasher);
             entity.foot_locomotor_swap_active.hash(hasher);
 
-            if let Some(ref forced) = entity.forced_drive_track {
-                1u8.hash(hasher);
-                forced.turn_track_index.hash(hasher);
-                forced.speed.hash(hasher);
-                hash_drive_track_state(&forced.track, hasher);
-            } else {
+            #[cfg(test)]
+            if !schema.includes(HashFeature::TrackAuthority) {
+                // Schema166's entity.forced_drive_track == None tag follows
+                // owner speed/occupation. Current production folds neither tag.
                 0u8.hash(hasher);
             }
-
             if let Some(ref loco) = entity.locomotor {
                 1u8.hash(hasher);
                 (loco.kind as u8).hash(hasher);
@@ -1800,12 +1937,17 @@ impl Simulation {
                 0u8.hash(hasher);
             }
 
-            // Preserve the established hash for entities outside this new
-            // runtime state; the tagged extension distinguishes pending turns.
-            if entity.mcv_deploy_pending || entity.mcv_drive_was_rotating {
+            // Unit+68C remains the deployment authority. The former MCV-only
+            // turn observation now hashes once in its retained locomotor class.
+            if entity.mcv_deploy_pending {
                 0x4d435644u32.hash(hasher);
                 entity.mcv_deploy_pending.hash(hasher);
-                entity.mcv_drive_was_rotating.hash(hasher);
+                #[cfg(test)]
+                if !schema.includes(HashFeature::TrackAuthority) {
+                    // The bounded historical projection above rejects retained
+                    // turn/track state; only its established false latch projects.
+                    false.hash(hasher);
+                }
             }
             match entity.deploy_state {
                 None => 0u8.hash(hasher),
@@ -2939,6 +3081,125 @@ mod mission_authority_hash_tests {
 }
 
 #[cfg(test)]
+mod track_authority_hash_tests {
+    use super::Simulation;
+    use crate::sim::components::{
+        DriveCoord, DriveLocomotionRuntime, ShipLocomotionRuntime, TrackProgress,
+    };
+    use crate::sim::game_entity::GameEntity;
+
+    fn supplied_track_world(ship: bool, active: bool) -> Simulation {
+        let mut sim = Simulation::new();
+        let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 10, 10);
+        let track = if active {
+            TrackProgress {
+                turn_index: 0,
+                cursor: 0,
+                ..Default::default()
+            }
+        } else {
+            TrackProgress::default()
+        };
+        let head_to = active.then_some(DriveCoord::cell(10, 9, 0));
+        if ship {
+            entity.ship_locomotion = Some(ShipLocomotionRuntime {
+                track,
+                head_to,
+                track_valid: active,
+                ..Default::default()
+            });
+        } else {
+            entity.drive_locomotion = Some(DriveLocomotionRuntime {
+                track,
+                head_to,
+                track_valid: active,
+                ..Default::default()
+            });
+        }
+        sim.substrate.entities.insert(entity);
+        sim
+    }
+
+    #[test]
+    fn current_hash_covers_each_retained_track_progress_field() {
+        for ship in [false, true] {
+            for field in 0..6 {
+                let mut sim = supplied_track_world(ship, true);
+                let before = sim.state_hash();
+                let entity = sim.substrate.entities.get_mut(1).unwrap();
+                if field == 5 {
+                    if ship {
+                        let state = entity.ship_locomotion.as_mut().unwrap();
+                        state.turn_latched = !state.turn_latched;
+                    } else {
+                        let state = entity.drive_locomotion.as_mut().unwrap();
+                        state.turn_latched = !state.turn_latched;
+                    }
+                } else if field == 4 {
+                    if ship {
+                        let state = entity.ship_locomotion.as_mut().unwrap();
+                        state.track_valid = !state.track_valid;
+                    } else {
+                        let state = entity.drive_locomotion.as_mut().unwrap();
+                        state.track_valid = !state.track_valid;
+                    }
+                } else {
+                    let track = if ship {
+                        &mut entity.ship_locomotion.as_mut().unwrap().track
+                    } else {
+                        &mut entity.drive_locomotion.as_mut().unwrap().track
+                    };
+                    match field {
+                        0 => track.turn_index = 1,
+                        1 => track.cursor = 1,
+                        2 => track.reversed = true,
+                        3 => track.residual = 1,
+                        _ => unreachable!(),
+                    }
+                }
+                assert_ne!(before, sim.state_hash(), "ship={ship} field={field}");
+            }
+        }
+    }
+
+    #[test]
+    fn prior_track_free_projection_keeps_retained_residual_and_short_state() {
+        for ship in [false, true] {
+            let mut sim = supplied_track_world(ship, false);
+            let before = sim.state_hash_without_track_authority_v167();
+            assert_ne!(
+                before,
+                sim.state_hash(),
+                "obsolete absence tags and pending=false are projected only before schema167"
+            );
+            let entity = sim.substrate.entities.get_mut(1).unwrap();
+            let track = if ship {
+                &mut entity.ship_locomotion.as_mut().unwrap().track
+            } else {
+                &mut entity.drive_locomotion.as_mut().unwrap().track
+            };
+            // Completion retires selector/cursor independently of these fields.
+            track.cursor = 0;
+            track.residual = 3;
+            track.reversed = true;
+            assert_ne!(before, sim.state_hash_without_track_authority_v167());
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "pre-v167 detached-track projection requires")]
+    fn prior_projection_rejects_active_drive_instead_of_fabricating_absence() {
+        supplied_track_world(false, true).state_hash_without_track_authority_v167();
+    }
+
+    #[test]
+    #[should_panic(expected = "pre-v167 detached-track projection requires")]
+    fn prior_projection_rejects_active_ship_instead_of_fabricating_absence() {
+        supplied_track_world(true, true).state_hash_without_track_authority_v167();
+    }
+}
+
+#[cfg(test)]
 mod rally_hash_tests {
     use super::{Simulation, hash_house_ai_activation_fields};
     use crate::sim::components::{DriveCoord, DriveLocomotionRuntime};
@@ -2958,21 +3219,6 @@ mod rally_hash_tests {
             .insert(GameEntity::test_default(1, "GAWEAP", "Americans", 10, 10));
 
         sim_b.substrate.entities.get_mut(1).unwrap().rally_target = Some((30, 31));
-
-        assert_ne!(sim_a.state_hash(), sim_b.state_hash());
-    }
-
-    #[test]
-    fn building_damage_state_changes_state_hash() {
-        let mut sim_a = Simulation::new();
-        let mut sim_b = Simulation::new();
-        let mut entity_a = GameEntity::test_default(1, "GAPOWR", "Americans", 10, 10);
-        let mut entity_b = entity_a.clone();
-        entity_a.category = crate::map::entities::EntityCategory::Structure;
-        entity_b.category = crate::map::entities::EntityCategory::Structure;
-        entity_b.building_damage_state_active = true;
-        sim_a.substrate.entities.insert(entity_a);
-        sim_b.substrate.entities.insert(entity_b);
 
         assert_ne!(sim_a.state_hash(), sim_b.state_hash());
     }
@@ -3754,10 +4000,7 @@ mod tube_movement_hash_tests {
             0,
             0,
             crate::sim::intern::test_intern("Allies"),
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             crate::sim::intern::test_intern("MTNK"),
             crate::map::entities::EntityCategory::Unit,
             0,
@@ -3889,10 +4132,7 @@ mod radio_contact_hash_tests {
             0,
             0,
             sim.interner.intern("Americans"),
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             sim.interner.intern("MTNK"),
             EntityCategory::Unit,
             0,
@@ -3971,161 +4211,38 @@ mod radio_contact_hash_tests {
 }
 
 #[cfg(test)]
-mod building_anim_overlay_hash_tests {
-    use super::Simulation;
-    use crate::map::entities::EntityCategory;
-    use crate::sim::components::{AnimOverlayState, BuildingAnimOverlays, Health};
-    use crate::sim::game_entity::GameEntity;
-    use crate::sim::intern::InternedId;
-
-    fn base_overlay(anim_type: InternedId) -> AnimOverlayState {
-        AnimOverlayState {
-            anim_type,
-            frame: 5,
-            loop_start: 3,
-            loop_end: 12,
-            rate_logic_frames: 6,
-            elapsed_logic_frames: 2,
-            finished: false,
-        }
-    }
-
-    fn hash_with_overlays(
-        build: impl FnOnce(InternedId, InternedId) -> Option<BuildingAnimOverlays>,
-    ) -> u64 {
-        let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Allies");
-        let type_ref = sim.interner.intern("GACNST");
-        let first_anim = sim.interner.intern("GACNST_B");
-        let second_anim = sim.interner.intern("GACNST_C");
-        let mut entity = GameEntity::new_at_frame_zero_for_test(
-            1,
-            5,
-            5,
-            0,
-            0,
-            owner,
-            Health {
-                current: 1000,
-                max: 1000,
-            },
-            type_ref,
-            EntityCategory::Structure,
-            0,
-            5,
-            false,
-        );
-        entity.building_anim_overlays = build(first_anim, second_anim);
-        sim.substrate.entities.insert(entity);
-        sim.state_hash()
-    }
-
-    fn hash_with_mutation(mutate: impl FnOnce(&mut AnimOverlayState, InternedId)) -> u64 {
-        hash_with_overlays(|first_anim, second_anim| {
-            let mut overlay = base_overlay(first_anim);
-            mutate(&mut overlay, second_anim);
-            Some(BuildingAnimOverlays {
-                anims: vec![overlay],
-            })
-        })
-    }
-
+mod building_anim_slot_hash_tests {
     #[test]
-    fn presence_vector_order_and_every_overlay_field_change_state_hash() {
-        let absent = hash_with_overlays(|_, _| None);
-        let empty = hash_with_overlays(|_, _| Some(BuildingAnimOverlays { anims: Vec::new() }));
-        let base = hash_with_mutation(|_, _| {});
-        assert_ne!(absent, empty, "overlay component presence is hashed");
-        assert_ne!(empty, base, "overlay vector length is hashed");
-
-        let forward = hash_with_overlays(|first, second| {
-            Some(BuildingAnimOverlays {
-                anims: vec![base_overlay(first), base_overlay(second)],
-            })
-        });
-        let reversed = hash_with_overlays(|first, second| {
-            Some(BuildingAnimOverlays {
-                anims: vec![base_overlay(second), base_overlay(first)],
-            })
-        });
-        assert_ne!(forward, reversed, "overlay vector order is hashed");
-
-        assert_ne!(
-            base,
-            hash_with_mutation(|overlay, second| overlay.anim_type = second),
-            "anim_type is hashed"
-        );
-        assert_ne!(
-            base,
-            hash_with_mutation(|overlay, _| overlay.frame += 1),
-            "frame is hashed"
-        );
-        assert_ne!(
-            base,
-            hash_with_mutation(|overlay, _| overlay.loop_start += 1),
-            "loop_start is hashed"
-        );
-        assert_ne!(
-            base,
-            hash_with_mutation(|overlay, _| overlay.loop_end += 1),
-            "loop_end is hashed"
-        );
-        assert_ne!(
-            base,
-            hash_with_mutation(|overlay, _| overlay.rate_logic_frames += 1),
-            "rate_logic_frames is hashed"
-        );
-        assert_ne!(
-            base,
-            hash_with_mutation(|overlay, _| overlay.elapsed_logic_frames += 1),
-            "elapsed_logic_frames is hashed"
-        );
-        assert_ne!(
-            base,
-            hash_with_mutation(|overlay, _| overlay.finished = true),
-            "finished is hashed"
-        );
-    }
-
-    #[test]
-    fn overlay_hash_uses_canonical_animation_name_not_process_local_id() {
-        fn build(with_unreferenced_intern: bool, anim_name: &str) -> u64 {
-            let mut sim = Simulation::new();
-            let owner = sim.interner.intern("Allies");
-            let type_ref = sim.interner.intern("GACNST");
-            if with_unreferenced_intern {
-                sim.interner.intern("PRESENTATION_ONLY_NAME");
-            }
-            let anim_type = sim.interner.intern(anim_name);
-            let mut entity = GameEntity::new_at_frame_zero_for_test(
-                1,
-                5,
-                5,
-                0,
-                0,
-                owner,
-                Health {
-                    current: 1000,
-                    max: 1000,
-                },
-                type_ref,
-                EntityCategory::Structure,
-                0,
-                5,
-                false,
-            );
-            entity.building_anim_overlays = Some(BuildingAnimOverlays {
-                anims: vec![base_overlay(anim_type)],
-            });
-            sim.substrate.entities.insert(entity);
-            sim.state_hash()
-        }
-
-        assert_eq!(
-            build(false, "GACNST_B"),
-            build(true, "gacnst_b"),
-            "hashing ignores process-local ID allocation and first-seen casing"
-        );
+    fn retained_slot_identity_flag_and_runtime_change_hash() {
+        let (mut sim, rules, id) = crate::sim::building_art::slot_test_fixture();
+        let empty = sim.state_hash();
+        let anim = sim
+            .set_building_anim_slot(id, 3, false, false, 0, &rules)
+            .unwrap();
+        let present = sim.state_hash();
+        assert_ne!(empty, present);
+        sim.substrate
+            .anims
+            .get_mut(anim)
+            .unwrap()
+            .runtime
+            .current_frame += 1;
+        assert_ne!(present, sim.state_hash());
+        let advanced = sim.state_hash();
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .building_damage_state_active = true;
+        assert_ne!(advanced, sim.state_hash());
+        let retained = sim.state_hash();
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .building_anim_slots
+            .swap(3, 4);
+        assert_ne!(retained, sim.state_hash());
     }
 }
 
@@ -4146,10 +4263,7 @@ mod infantry_hash_tests {
             0,
             0,
             sim.interner.intern("Allies"),
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             sim.interner.intern("E1"),
             EntityCategory::Infantry,
             0,
@@ -4504,10 +4618,7 @@ mod rocking_hash_tests {
             0,
             0,
             owner,
-            Health {
-                current: 400,
-                max: 400,
-            },
+            Health { current: 400 },
             type_id,
             EntityCategory::Unit,
             0,
@@ -4583,10 +4694,7 @@ mod c4_hash_tests {
             0,
             0,
             owner,
-            Health {
-                current: 125,
-                max: 125,
-            },
+            Health { current: 125 },
             type_id,
             EntityCategory::Infantry,
             0,
@@ -4798,10 +4906,7 @@ mod bridge161_hash_projection_tests {
             0,
             0,
             owner,
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             type_ref,
             EntityCategory::Infantry,
             0,
@@ -4928,6 +5033,75 @@ mod bridge161_hash_projection_tests {
             real_owner,
             sim.state_hash_with_schema(HashSchema::Before(161)),
             "historical projection does not omit real owner state or invent the former entity ID"
+        );
+    }
+}
+
+#[cfg(test)]
+mod aircraft_dock_hash_tests {
+    use super::Simulation;
+    use crate::sim::aircraft::AircraftMission;
+    use crate::sim::docking::aircraft_dock::AircraftAmmo;
+    use crate::sim::game_entity::GameEntity;
+
+    #[test]
+    fn aircraft_dock_indices_and_reservations_affect_simulation_hash() {
+        let mut sim = Simulation::new();
+        let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 0, 0);
+        let mut ammo = AircraftAmmo::new(3);
+        ammo.target_pad = Some(0);
+        entity.aircraft_ammo = Some(ammo);
+        entity.aircraft_mission = Some(AircraftMission::DockedIdle {
+            airfield_id: 2,
+            pad_index: 0,
+        });
+        sim.substrate.entities.insert(entity);
+        let original = sim.state_hash();
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .aircraft_ammo
+            .as_mut()
+            .unwrap()
+            .target_pad = Some(256);
+        assert_ne!(
+            sim.state_hash(),
+            original,
+            "saved ammo pad must not alias low byte"
+        );
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .aircraft_ammo
+            .as_mut()
+            .unwrap()
+            .target_pad = Some(0);
+        assert_eq!(sim.state_hash(), original);
+        sim.substrate.entities.get_mut(1).unwrap().aircraft_mission =
+            Some(AircraftMission::DockedIdle {
+                airfield_id: 2,
+                pad_index: 256,
+            });
+        assert_ne!(
+            sim.state_hash(),
+            original,
+            "mission pad must not alias low byte"
+        );
+        let before_reservation = sim.state_hash();
+        sim.production.airfield_docks.try_reserve(2, 1, 300);
+        assert_ne!(
+            sim.state_hash(),
+            before_reservation,
+            "reservation admission changes future state"
+        );
+        let occupied = sim.state_hash();
+        sim.production.airfield_docks.release(1);
+        assert_ne!(
+            sim.state_hash(),
+            occupied,
+            "release changes future admission"
         );
     }
 }

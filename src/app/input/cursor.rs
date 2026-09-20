@@ -555,7 +555,7 @@ fn capability_cursor_for_hover(
                 // 5. Engineer on damaged friendly building → repair.
                 if matches!(hover.kind, HoverTargetKind::FriendlyStructure) {
                     if let Some(he) = hovered_entity {
-                        if he.health.current < he.health.max {
+                        if hovered_obj.is_some_and(|obj| he.health.current < obj.strength) {
                             return CursorFeedbackKind::EngineerRepair;
                         }
                     }
@@ -629,7 +629,7 @@ fn capability_cursor_for_hover(
             // building shows the enter/dock cursor (the click issues
             // RepairAtDepot; see `input::context_order`).
             if sel_entity.category == EntityCategory::Unit
-                && sel_entity.health.current < sel_entity.health.max
+                && sel_entity.health.current < sel_obj.strength
                 && matches!(hover.kind, HoverTargetKind::FriendlyStructure)
                 && hovered_obj.map_or(false, |o| o.unit_repair)
             {

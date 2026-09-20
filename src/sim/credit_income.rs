@@ -5,16 +5,12 @@
 //! (`HouseState.economy.credits`) with the native primitives' semantics:
 //! `HouseClass::Add_Credits @ 0x004F9950` (`credits += amount`, no clamp) and
 //! `HouseClass::Spend_Money @ 0x004F9790` (cash first, then the silo-drain
-//! fallback that stock skirmish never reaches because house storage stays 0.0
-//! — see the 09.01 scan §1.2; VERA has no house storage, so the fallback is
-//! the `min(credits, amount)` clamp).
+//! fallback. The current wallet adapter clamps to available credits; native
+//! saved nonzero Building/House storage withdrawal and liquidation remain a
+//! required integration boundary, not a proof that storage is always zero.
 //!
-//! Ordering residual (VERA-internal, gamemd equivalent UNCHECKED beyond the
-//! call order): native `BuildingClass::Update` runs the ProduceCash block
-//! before `TechnoClass::AI_Update` (where the drain transfer lives); VERA
-//! runs the ProduceCash step after the promotion/drain steps. No stock type
-//! carries both `ProduceCash*` and `Drainable=`, so no frame-observable
-//! difference exists on retail data.
+//! Building AI runs ProduceCash43FD2C before shared Techno43FE56 promotion
+//! and drain transfer, matching the implemented Structure prelude order.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on rules/ and sim/ only. NEVER on render/, ui/,
@@ -26,6 +22,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::InternedId;
+#[cfg(test)]
 use crate::sim::mission::MissionType;
 use crate::sim::world::Simulation;
 
@@ -117,7 +114,9 @@ pub(crate) fn spend_money(sim: &mut Simulation, owner: InternedId, amount: i32) 
 /// `ftol(storage_total × IncomeMult) + credits`; storage is 0 in stock
 /// skirmish (scan §1.1/§2.1) so this is the cash balance.
 pub(crate) fn available_money(sim: &Simulation, owner: InternedId) -> i32 {
-    sim.houses.get(&owner).map_or(0, |house| house.economy.credits)
+    sim.houses
+        .get(&owner)
+        .map_or(0, |house| house.economy.credits)
 }
 
 // ---------------------------------------------------------------------------
@@ -165,62 +164,6 @@ pub(crate) fn produce_cash_on_owner_change(
     }
 }
 
-/// The operational gate `BuildingClass` vtable `+0x350` = `0x004555D0` (DB
-/// label `CanSellOrUndeploy` is a misnomer; the body is the "is this building
-/// online" test that both `BuildingClass::Update`'s prologue at `0x0043FB2B`
-/// and the ProduceCash block at `0x0043FDA0` call):
-///
-/// ```text
-/// if (!HasPower && +0x67C < 2) return false;            // unpowered
-/// if (EMPLockRemaining > 0) return false;               // EMP
-/// if (Health == 0) return false;
-/// if (Powered && Power < 0 && PowerRatio < 1.0 && +0x67C < 2) return false;
-/// if (+0x1574 && (house blackout timer running || house+0x577B)) return false;
-/// return (!NeedsEngineer(+0x1552) || HasEngineer)
-///     && mission != Selling(0x12) && mission != Construction(0x13);
-/// ```
-///
-/// VERA folds the two power terms and the house blackout into
-/// `power_system::is_building_powered`. Residuals (each names its trigger):
-/// EMP (`EMPLockRemaining`) has no VERA field — a derrick under EMP keeps
-/// paying (trigger: EMP on a captured derrick; rare, 20 credits per pulse);
-/// `NeedsEngineer`/`HasEngineer` is not modelled — the timer only ever arms
-/// through `ChangeOwner`, which sets `HasEngineer`, so the term is always true
-/// on a live timer; the `+0x67C < 2` clause on both power terms is UNMODELLED
-/// (the field's identity is UNCHECKED — VERA treats it as always `< 2`, i.e.
-/// the power terms always apply); the `Type+0x1574` term is `PoweredSpecial=`
-/// (`BuildingTypeClass::ReadINI @ 0x0046000A..0x0046000F`, string
-/// `0x0081AE1C`) and is UNMODELLED — with it set the gate also refuses while
-/// the house blackout timer runs or house byte `+0x577B` is set, a flag
-/// written by `HouseClass::AI_AssessPower @ 0x00508D4A` and read by
-/// `AI_Choose_Building` whose meaning is UNCHECKED (trigger: a
-/// `PoweredSpecial=yes` derrick — none in stock, where rulesmd.ini puts the
-/// key on the power plants `GAPOWR`/`NAPOWR`/`NANRCT`/`YAPOWR` only, none
-/// of which carries `ProduceCash*`; frequency: zero in stock).
-fn building_operational(sim: &Simulation, stable_id: u64, rules: &RuleSet) -> bool {
-    let Some(entity) = sim.substrate.entities.get(stable_id) else {
-        return false;
-    };
-    if entity.health.current == 0 {
-        return false;
-    }
-    if !crate::sim::power_system::is_building_powered(
-        &sim.power_states,
-        rules,
-        entity,
-        &sim.interner,
-    ) {
-        return false;
-    }
-    if entity.building_up.is_some() {
-        return false;
-    }
-    !matches!(
-        entity.mission.current().known(),
-        Some(MissionType::Selling | MissionType::Construction)
-    )
-}
-
 /// `BuildingClass::Update @ 0x0043FD2C..0x0043FDD6`, the ProduceCash block:
 /// fire test on the `+0x6D0` timer (see [`ProduceCashTimer::fires_now`]),
 /// re-arm with `ProduceCashDelay`, skip when the owner's HouseType is
@@ -260,7 +203,7 @@ pub(crate) fn produce_cash_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
     {
         return;
     }
-    if !building_operational(sim, stable_id, rules) {
+    if sim.building_operational_state(stable_id, rules) != Some(true) {
         return;
     }
     if amount > 0 {
@@ -651,6 +594,55 @@ mod tests {
     /// §2.13 gate: `vtable+0x350` (`0x004555D0`) refuses an unpowered
     /// building, so a `Powered=yes` derrick under low power re-arms without
     /// paying.
+    #[test]
+    fn cash_uses_shared_powered_special_outage_and_effective_mission_gate() {
+        use crate::sim::mission::state::MissionTestFixture;
+        use crate::sim::mission::{MissionDispatchTimer, MissionId};
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=OIL\n[OIL]\nStrength=100\nPoweredSpecial=yes\nProduceCashAmount=20\nProduceCashDelay=100\n"
+        )).unwrap();
+        let mut sim = Simulation::new();
+        let owner = house(&mut sim, "A", true, 0);
+        let id = sim
+            .spawn_object_at_height("OIL", "A", 10, 10, 0, 0, &rules)
+            .unwrap();
+        for (outage, current, queued, pays) in [
+            (true, 5, -1, false),
+            (false, -1, 0x12, false),
+            (false, -1, 0x13, false),
+            (false, -1, 5, true),
+        ] {
+            sim.power_states
+                .entry(owner)
+                .or_default()
+                .power_blackout_remaining = u32::from(outage);
+            let entity = sim.substrate.entities.get_mut(id).unwrap();
+            entity.produce_cash_timer = ProduceCashTimer::armed(0, 100);
+            entity.mission.apply_test_fixture(MissionTestFixture {
+                current: MissionId::from_raw(current),
+                queued: MissionId::from_raw(queued),
+                suspended: MissionId::NONE,
+                movement_bypass_latch: 0,
+                handler_state: 0,
+                mission_start_frame: 0,
+                ai_counter: 0,
+                dispatch_timer: MissionDispatchTimer::at_frame(0),
+            });
+            sim.session.binary_frame = 99;
+            let before = credits(&sim, owner);
+            produce_cash_step(&mut sim, id, &rules);
+            assert_eq!(credits(&sim, owner) - before, if pays { 20 } else { 0 });
+            assert_eq!(
+                sim.entities()
+                    .get(id)
+                    .unwrap()
+                    .produce_cash_timer
+                    .start_frame,
+                99
+            );
+        }
+    }
+
     #[test]
     fn derrick_stops_paying_while_not_operational() {
         let rules = rules();

@@ -22,13 +22,13 @@
 //! | deploy begins | off | the deploy command |
 //! | undeploy completes | on | the deploy state machine |
 //! | a destination is accepted | on | the move-command entry |
-//! | undock | on | *not wired* |
-//! | release docked harvester | on | *not wired* |
+//! | bunker sell/death release4593A0 | on | `docking::bunker_link::release_sell_destroy` |
+//! | bunker normal release4595C0 | on | `docking::bunker_link::release_normal` |
 //!
-//! The two unwired rows are on-edges, and leaving an on-edge out can only leave
-//! a unit powered off longer than the original would — it cannot power something
-//! off that the original leaves on. They are recorded rather than guessed
-//! because neither dock path has a single obvious Rust counterpart yet.
+//! Both bunker calls dispatch ILoco+58 (Power_On55A8F0), before Force_Track
+//! and the caller's separate speed write. The building+2E4 link gates them;
+//! its only non-null producer is bunker installation. The old harvester label
+//! on4595C0 does not make it a refinery release path.
 //!
 //! Accepting a destination is the player-facing recovery edge: whatever powered
 //! a unit down, ordering it to move powers it back up, so nothing can be

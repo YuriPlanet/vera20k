@@ -46,10 +46,7 @@ fn prone_mover() -> GameEntity {
         0,
         64,
         test_intern("Americans"),
-        Health {
-            current: 100,
-            max: 100,
-        },
+        Health { current: 100 },
         test_intern("E1"),
         EntityCategory::Infantry,
         0,

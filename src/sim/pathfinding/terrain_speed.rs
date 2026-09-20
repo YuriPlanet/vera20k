@@ -71,22 +71,22 @@ const ZERO_COMBINED_SUBSTITUTE: SimFixed = SIM_HALF;
 /// `Process_Movement` and nowhere else.
 const DAMAGED_MOVER_SPEED_FACTOR: SimFixed = SimFixed::lit("0.75");
 
-/// `ConditionYellow` is stored as a fraction; the sim compares it as an integer
-/// scaled by this factor so no float enters the health test.
-const CONDITION_YELLOW_SCALE: i64 = 1000;
-
-/// Whether the mover's health ratio is at or below `[AudioVisual] ConditionYellow`.
-///
-/// The original engine's test is `ratio <= ConditionYellow` — a unit sitting
-/// exactly on the threshold IS penalised. `condition_yellow_x1000` is the
-/// pre-scaled integer form parsed from `[AudioVisual]`; the cross-multiply keeps
-/// the comparison in integers, matching the building damage-state gate.
+/// Drive4B3DD4..3DEE / Ship6A3423..343D test AH,0x41: Less, Equal or
+/// Unordered all apply the penalty. The shared x87 owner preserves signed
+/// Strength and masked zero-denominator results.
 pub fn is_at_or_below_condition_yellow(
-    current_hp: i64,
-    max_hp: i64,
-    condition_yellow_x1000: i64,
+    current_hp: i32,
+    strength: i32,
+    condition_yellow: f64,
 ) -> bool {
-    max_hp > 0 && current_hp * CONDITION_YELLOW_SCALE <= max_hp * condition_yellow_x1000
+    use crate::util::native_x87::MaskedX87Ordering::{Equal, Less, Unordered};
+    matches!(
+        crate::sim::components::Health {
+            current: current_hp
+        }
+        .compare_ratio(strength, condition_yellow),
+        Less | Equal | Unordered
+    )
 }
 
 /// Whether this locomotor is one of the two that route through the land-type ×
@@ -302,6 +302,59 @@ fn slope_factor_for(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn original_health_ratio_corpus_drives_flat_drive_and_ship_speed() {
+        use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
+        let terrain = ResolvedTerrainGrid::from_cells(
+            2,
+            1,
+            (0..2)
+                .map(|rx| {
+                    let mut cell = test_flat_cell(rx, 0);
+                    cell.speed_costs = SpeedCostProfile {
+                        track: Some(100),
+                        float: Some(100),
+                        ..Default::default()
+                    };
+                    cell
+                })
+                .collect(),
+        );
+        for row in crate::sim::health_ratio_fixture::rows() {
+            let damaged = is_at_or_below_condition_yellow(
+                row.input.current,
+                row.input.strength,
+                row.input.yellow(),
+            );
+            for (speed, kind, bits) in [
+                (
+                    SpeedType::Track,
+                    LocomotorKind::Drive,
+                    &row.output.drive_speed_bits,
+                ),
+                (
+                    SpeedType::Float,
+                    LocomotorKind::Ship,
+                    &row.output.ship_speed_bits,
+                ),
+            ] {
+                let actual = compute_cell_speed_modifier(
+                    speed,
+                    kind,
+                    (128, 128),
+                    (1, 0),
+                    &terrain,
+                    &TerrainSpeedConfig::default(),
+                    damaged,
+                );
+                assert_eq!(
+                    actual,
+                    SimFixed::from_num(crate::sim::health_ratio_fixture::decode(bits)),
+                    "{row:?}, {kind:?}"
+                );
+            }
+        }
+    }
     use super::*;
     use crate::rules::terrain_rules::SpeedCostProfile;
 
@@ -459,7 +512,7 @@ mod tests {
     /// `[AudioVisual] ConditionYellow=50%`.
     #[test]
     fn gsi_06_04_condition_yellow_test_is_inclusive() {
-        const STOCK: i64 = 500; // 50% x1000
+        const STOCK: f64 = 0.5;
         // Exactly on the threshold — penalised.
         assert!(is_at_or_below_condition_yellow(50, 100, STOCK));
         // Below — penalised.
@@ -468,7 +521,7 @@ mod tests {
         assert!(!is_at_or_below_condition_yellow(51, 100, STOCK));
         assert!(!is_at_or_below_condition_yellow(100, 100, STOCK));
         // A zero-max entity has no ratio to compare.
-        assert!(!is_at_or_below_condition_yellow(0, 0, STOCK));
+        assert!(is_at_or_below_condition_yellow(0, 0, STOCK));
     }
 
     /// GSI-06.13 gap 7 — the `0.0 → 0.5` rescue is a substitution on the

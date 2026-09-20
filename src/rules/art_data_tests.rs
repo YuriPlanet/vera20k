@@ -3,6 +3,58 @@
 use super::*;
 
 #[test]
+fn original_1080_building_slot_power_reads_preserve_native_defaults() {
+    #[derive(serde::Deserialize)]
+    struct Row {
+        slot: usize,
+        flag: usize,
+        name: String,
+        raw: Option<String>,
+        initial: bool,
+        output: bool,
+    }
+    let rows: Vec<Row> = serde_json::from_str(include_str!(
+        "../../tools/spatial_oracle/building_slot_power_rules.json"
+    ))
+    .unwrap();
+    assert_eq!(rows.len(), 1080);
+    for (index, row) in rows.into_iter().enumerate() {
+        let mut section = IniSection::new("B".into());
+        if let Some(raw) = row.raw {
+            section.set(&row.name, &raw);
+        }
+        let initial = BuildingAnimPowerFlags {
+            powered: row.initial,
+            powered_light: row.initial,
+            powered_effect: row.initial,
+            powered_special: row.initial,
+        };
+        let mut records = [initial; 21];
+        read_building_anim_power(&section, &mut records);
+        let actual = records[row.slot];
+        assert_eq!(
+            [
+                actual.powered,
+                actual.powered_light,
+                actual.powered_effect,
+                actual.powered_special
+            ][row.flag],
+            row.output,
+            "native row {index}"
+        );
+    }
+    let registry = ArtRegistry::from_ini(&IniFile::from_str(
+        "[B]\nTurretAnimPowered=no\nActiveAnimPowered=no\n",
+    ));
+    let records = &registry.get("B").unwrap().building_anim_power;
+    assert_eq!(records[9], BuildingAnimPowerFlags::default());
+    assert!(
+        !records[3].powered,
+        "power metadata exists without an animation name"
+    );
+}
+
+#[test]
 fn test_apply_theater_letter() {
     assert_eq!(apply_theater_letter("GAPOWR", "TEMPERATE"), "GTPOWR");
     assert_eq!(apply_theater_letter("GAPOWR", "SNOW"), "GAPOWR");

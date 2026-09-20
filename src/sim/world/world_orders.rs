@@ -271,11 +271,9 @@ impl Simulation {
                     Some(&blocker_neighbor_counts),
                     self.playfield_bounds,
                     Some(&mut self.substrate.cell_occupation),
-                    crate::sim::movement::DestinationTiming::new(
+                    crate::sim::movement::DestinationTiming::from_rules(
                         self.session.binary_frame,
-                        rules.map_or(self.blockage_path_delay_ticks, |r| {
-                            r.general.blockage_path_delay_ticks
-                        }),
+                        rules,
                     ),
                 );
             }
@@ -886,10 +884,8 @@ impl Simulation {
             .as_ref()
             .map(|info| info.speed)
             .unwrap_or(ra2_speed_to_leptons_per_second(4));
-        let timing = movement::DestinationTiming::new(
-            self.session.binary_frame,
-            self.blockage_path_delay_ticks,
-        );
+        let timing =
+            movement::DestinationTiming::from_rules(self.session.binary_frame, rules.into());
         if movement::issue_direct_move(
             &mut self.substrate.entities,
             attacker_id,

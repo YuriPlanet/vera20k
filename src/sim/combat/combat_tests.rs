@@ -323,12 +323,9 @@ fn align_attackers_to_targets(
     }
 }
 
-fn make_entity(id: u64, type_ref: &str, rx: u16, ry: u16, hp: u16) -> GameEntity {
+fn make_entity(id: u64, type_ref: &str, rx: u16, ry: u16, hp: i32) -> GameEntity {
     let mut e = GameEntity::test_default(id, type_ref, "Test", rx, ry);
-    e.health = Health {
-        current: hp,
-        max: hp,
-    };
+    e.health = Health { current: hp };
     e.lifecycle.in_limbo = false;
     e
 }
@@ -338,14 +335,11 @@ fn make_entity_owned(
     type_ref: &str,
     rx: u16,
     ry: u16,
-    hp: u16,
+    hp: i32,
     owner: &str,
 ) -> GameEntity {
     let mut e = GameEntity::test_default(id, type_ref, owner, rx, ry);
-    e.health = Health {
-        current: hp,
-        max: hp,
-    };
+    e.health = Health { current: hp };
     e.lifecycle.in_limbo = false;
     e
 }
@@ -805,7 +799,7 @@ fn gsi_04_05_building_attack_frame_remains_live_after_world_receiver_dispatch() 
     );
 }
 
-fn make_infantry_entity(id: u64, type_ref: &str, rx: u16, ry: u16, hp: u16) -> GameEntity {
+fn make_infantry_entity(id: u64, type_ref: &str, rx: u16, ry: u16, hp: i32) -> GameEntity {
     let mut e = make_entity(id, type_ref, rx, ry, hp);
     e.category = EntityCategory::Infantry;
     e.is_voxel = false;
@@ -819,13 +813,13 @@ fn make_structure_entity(
     type_ref: &str,
     rx: u16,
     ry: u16,
-    current: u16,
-    max: u16,
+    current: i32,
+    max: i32,
 ) -> GameEntity {
     let mut entity = make_entity(id, type_ref, rx, ry, max);
     entity.category = EntityCategory::Structure;
     entity.is_voxel = false;
-    entity.health = Health { current, max };
+    entity.health = Health { current };
     entity
 }
 
@@ -1376,11 +1370,11 @@ fn test_tick_combat_applies_damage() {
 }
 
 #[test]
-fn combat_damage_crossing_condition_yellow_sets_building_damage_state() {
+fn combat_damage_crosses_live_type_condition_yellow() {
     let rules = test_rules();
     let mut store = EntityStore::new();
     store.insert(make_entity(1, "MTNK", 5, 5, 300));
-    store.insert(make_structure_entity(2, "GAPOWR", 8, 5, 60, 100));
+    store.insert(make_structure_entity(2, "GAPOWR", 8, 5, 400, 750));
     let mut interner = test_interner();
     issue_attack_command(&mut store, 1, 2, None, &interner);
     let mut main_rng = SimRng::new(1);
@@ -1402,16 +1396,21 @@ fn combat_damage_crossing_condition_yellow_sets_building_damage_state() {
         store
             .get(2)
             .expect("building survives")
-            .building_damage_state_active
+            .health
+            .compare_ratio(
+                rules.object("GAPOWR").unwrap().strength,
+                rules.general.condition_yellow
+            )
+            == crate::util::native_x87::MaskedX87Ordering::Less
     );
 }
 
 #[test]
-fn combat_damage_above_condition_yellow_leaves_building_damage_state_false() {
+fn combat_damage_above_live_type_condition_yellow() {
     let rules = test_rules();
     let mut store = EntityStore::new();
     store.insert(make_entity(1, "MTNK", 5, 5, 300));
-    store.insert(make_structure_entity(2, "GAPOWR", 8, 5, 100, 100));
+    store.insert(make_structure_entity(2, "GAPOWR", 8, 5, 750, 750));
     let mut interner = test_interner();
     issue_attack_command(&mut store, 1, 2, None, &interner);
     let mut main_rng = SimRng::new(1);
@@ -1429,15 +1428,20 @@ fn combat_damage_above_condition_yellow_leaves_building_damage_state_false() {
     );
 
     assert!(
-        !store
+        store
             .get(2)
             .expect("building survives")
-            .building_damage_state_active
+            .health
+            .compare_ratio(
+                rules.object("GAPOWR").unwrap().strength,
+                rules.general.condition_yellow
+            )
+            == crate::util::native_x87::MaskedX87Ordering::Greater
     );
 }
 
 #[test]
-fn aoe_damage_crossing_condition_yellow_sets_building_damage_state() {
+fn aoe_damage_crosses_live_type_condition_yellow() {
     let rules = building_damage_state_aoe_rules();
     let mut store = EntityStore::new();
     store.insert(make_entity(1, "MTNK", 5, 5, 300));
@@ -1463,7 +1467,12 @@ fn aoe_damage_crossing_condition_yellow_sets_building_damage_state() {
         store
             .get(2)
             .expect("building survives")
-            .building_damage_state_active
+            .health
+            .compare_ratio(
+                rules.object("GAPOWR").unwrap().strength,
+                rules.general.condition_yellow
+            )
+            == crate::util::native_x87::MaskedX87Ordering::Less
     );
 }
 
@@ -1835,7 +1844,7 @@ fn gsi_04_07_damage_live_order_second_attacker_reads_restored_target() {
 
 #[test]
 fn gsi_04_07_damage_prior_projectile_fatal_death_weapon_is_inline() {
-    fn run(victim_hp: u16, explodes: bool) -> (CombatTickResult, OverlayGrid, EntityStore, u64) {
+    fn run(victim_hp: i32, explodes: bool) -> (CombatTickResult, OverlayGrid, EntityStore, u64) {
         let ini_text = format!(
             "[InfantryTypes]\n\
              [VehicleTypes]\n0=BOOMER\n1=SHOOTER\n2=TARGET\n\
@@ -2048,7 +2057,7 @@ fn gsi_04_07_damage_prior_projectile_fatal_death_weapon_is_inline() {
 fn gsi_04_07_damage_retaliation_is_receiver_synchronous_and_uses_mission_override() {
     #[derive(Debug)]
     struct Outcome {
-        health: u16,
+        health: i32,
         current: MissionId,
         suspended: MissionId,
         target: Option<TargetKind>,
@@ -2064,7 +2073,7 @@ fn gsi_04_07_damage_retaliation_is_receiver_synchronous_and_uses_mission_overrid
         mission: MissionType,
         source_present: bool,
         allied: bool,
-        victim_health: u16,
+        victim_health: i32,
     ) -> Outcome {
         let ini = IniFile::from_str(
             "[InfantryTypes]\n\
@@ -2266,7 +2275,7 @@ fn gsi_04_07_damage_retaliation_is_receiver_synchronous_and_uses_mission_overrid
 
 #[test]
 fn gsi_04_07_damage_retaliation_peek_rejects_limbo_attacker() {
-    fn run(attacker_in_limbo: bool) -> (u16, bool, MissionId, MissionId, Option<TargetKind>) {
+    fn run(attacker_in_limbo: bool) -> (i32, bool, MissionId, MissionId, Option<TargetKind>) {
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[InfantryTypes]\n\
              [VehicleTypes]\n0=SOURCE\n1=VICTIM\n\
@@ -2556,10 +2565,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
     );
     {
         let victim = sim.substrate.entities.get_mut(victim_id).unwrap();
-        victim.health = Health {
-            current: 180,
-            max: 300,
-        };
+        victim.health = Health { current: 180 };
         victim.mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_known(MissionType::Guard),
             suspended: MissionId::NONE,
@@ -2778,7 +2784,9 @@ fn gsi_04_07_damage_ai_retaliation_keeps_higher_scored_current_target() {
         let current_score = crate::sim::combat::combat_targeting::calculate_ai_threat_score(
             &entities, 10, current_id, &rules, &interner, None, None,
         )
-        .and_then(|score| crate::util::native_x87::X87Chop53::ftol_i64(score).ok())
+        .map(|score| {
+            i64::from(crate::util::native_x87::MaskedX87Chop53::ftol_i32_low_masked(score))
+        })
         .expect("current target score");
         let attacker_score = crate::sim::combat::combat_targeting::calculate_ai_threat_score(
             &entities,
@@ -2789,7 +2797,9 @@ fn gsi_04_07_damage_ai_retaliation_keeps_higher_scored_current_target() {
             None,
             None,
         )
-        .and_then(|score| crate::util::native_x87::X87Chop53::ftol_i64(score).ok())
+        .map(|score| {
+            i64::from(crate::util::native_x87::MaskedX87Chop53::ftol_i32_low_masked(score))
+        })
         .expect("attacker score");
 
         let mut houses = BTreeMap::new();
@@ -3019,7 +3029,7 @@ fn gsi_04_07_damage_spawn_and_slave_managers_block_retaliation() {
 #[test]
 fn gsi_04_07_damage_full_capture_manager_blocks_retaliation() {
     struct Outcome {
-        health: u16,
+        health: i32,
         mission: MissionId,
         suspended: MissionId,
         target: Option<TargetKind>,
@@ -3997,7 +4007,7 @@ fn gsi_08_05_tick_combat_respects_the_jittered_cooldown() {
 
     // First shot fires immediately (cooldown=0).
     fire_once(&mut store, &mut interner, &mut main_rng);
-    let h1: u16 = store.get(2).unwrap().health.current;
+    let h1: i32 = store.get(2).unwrap().health.current;
 
     // `TechnoClass::GetROF @ 0x006FCFA0` returns `ROF + RandomRanged(0, 2)`,
     // so a `ROF=50` weapon reloads in 50, 51 or 52 frames — the exact value is
@@ -4222,7 +4232,7 @@ fn a_struck_building_sounds_the_global_damage_cue_only_on_a_state_crossing() {
     let hit = |victim_type: &str,
                victim_category: EntityCategory,
                damage: i32|
-     -> (Vec<SimSoundEvent>, u16) {
+     -> (Vec<SimSoundEvent>, i32) {
         // `GameEntity::test_default` interns through the thread-local test
         // interner, and `test_interner()` snapshots it — so the entities must
         // exist before the snapshot or their type ids resolve to whatever the
@@ -4234,10 +4244,7 @@ fn a_struck_building_sounds_the_global_damage_cue_only_on_a_state_crossing() {
         entities.insert(attacker);
         let mut victim = GameEntity::test_default(2, victim_type, "Soviet", 4, 7);
         victim.category = victim_category;
-        victim.health = Health {
-            current: 100,
-            max: 100,
-        };
+        victim.health = Health { current: 100 };
         victim.lifecycle.in_limbo = false;
         victim.in_playfield = true;
         entities.insert(victim);
@@ -4360,7 +4367,7 @@ fn a_techno_speaks_its_voice_feedback_only_on_the_half_strength_crossing() {
     let hit = |victim_type: &str,
                victim_category: EntityCategory,
                damage: i32|
-     -> (Vec<SimSoundEvent>, u16) {
+     -> (Vec<SimSoundEvent>, i32) {
         let mut entities = EntityStore::new();
         let mut attacker = GameEntity::test_default(1, "MTNK", "Americans", 10, 10);
         attacker.lifecycle.in_limbo = false;
@@ -4368,10 +4375,7 @@ fn a_techno_speaks_its_voice_feedback_only_on_the_half_strength_crossing() {
         entities.insert(attacker);
         let mut victim = GameEntity::test_default(2, victim_type, "Soviet", 4, 7);
         victim.category = victim_category;
-        victim.health = Health {
-            current: 100,
-            max: 100,
-        };
+        victim.health = Health { current: 100 };
         victim.lifecycle.in_limbo = false;
         victim.in_playfield = true;
         entities.insert(victim);
@@ -4790,7 +4794,7 @@ fn test_infantry_vs_heavy_armor() {
         &mut main_rng,
     );
 
-    let h: u16 = store.get(2).unwrap().health.current;
+    let h: i32 = store.get(2).unwrap().health.current;
     assert_eq!(
         h,
         300 - 6,
@@ -5971,10 +5975,7 @@ fn crusher_driveover_destroys_wall_but_noncrusher_does_not() {
         veh.omni_crusher = obj.omni_crusher;
         veh.locomotor =
             Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(obj, 0, 0));
-        veh.health = Health {
-            current: 300,
-            max: 300,
-        };
+        veh.health = Health { current: 300 };
         sim.substrate.entities.insert(veh);
         sim.substrate.entities.rebuild_owner_index();
         sim
@@ -6151,10 +6152,7 @@ fn build_minimal_sim_with_gawall_row(
         let mut entity = GameEntity::test_default(next_id, "GAWALL", "Test", rx, ry);
         entity.owner = owner_id;
         entity.type_ref = type_id;
-        entity.health = Health {
-            current: 400,
-            max: 400,
-        };
+        entity.health = Health { current: 400 };
         sim.substrate.entities.insert(entity);
         next_id += 1;
     }
@@ -7231,10 +7229,7 @@ fn dying_attacker_retaliation_matches_absent_attacker() {
     // Victim: armed MTNK last hit by attacker id 2; idle (no attack_target / order).
     fn victim() -> GameEntity {
         let mut v = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
-        v.health = Health {
-            current: 300,
-            max: 300,
-        };
+        v.health = Health { current: 300 };
         v.last_attacker_id = Some(2);
         v
     }
@@ -7267,10 +7262,7 @@ fn dying_attacker_retaliation_matches_absent_attacker() {
     let mut store_dying = EntityStore::new();
     store_dying.insert(victim());
     let mut dead = GameEntity::test_default(2, "TARGV", "Russia", 6, 5);
-    dead.health = Health {
-        current: 0,
-        max: 200,
-    };
+    dead.health = Health { current: 0 };
     dead.dying = true;
     store_dying.insert(dead);
     tick_retaliation(&mut store_dying, &rules, &interner, &live_order, None, None);
@@ -7292,10 +7284,7 @@ fn dying_attacker_retaliation_matches_absent_attacker() {
     let mut store_live = EntityStore::new();
     store_live.insert(victim());
     let mut live = GameEntity::test_default(2, "TARGV", "Russia", 6, 5);
-    live.health = Health {
-        current: 200,
-        max: 200,
-    };
+    live.health = Health { current: 200 };
     store_live.insert(live);
     tick_retaliation(&mut store_live, &rules, &interner, &live_order, None, None);
     let vc = store_live.get(1).unwrap();
@@ -8568,7 +8557,7 @@ fn gsi_08_05_elite_rof_and_firepower_abilities_reach_the_fire_path() {
     .expect("elite-ability fixture parses");
 
     // (damage dealt, reload the shot armed)
-    let fire_once = |elite: bool| -> (u16, u16) {
+    let fire_once = |elite: bool| -> (i32, u16) {
         let mut store = EntityStore::new();
         let mut firer = make_entity_owned(1, "MTNK", 5, 5, 300, "Soviet");
         if elite {

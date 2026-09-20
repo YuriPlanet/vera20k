@@ -1,0 +1,5596 @@
+{
+  "getters": [
+    {
+      "input": {
+        "applied_bits": "0000000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 0,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.0,
+        "raw": 0
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3f9eb851eb851eb8",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 0,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.03,
+        "raw": 0
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 0,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.2,
+        "raw": 0
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fefffffffffffff",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 0,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.9999999999999999,
+        "raw": 0
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 0,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 1.0,
+        "raw": 0
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "bfd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 0,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": -0.25,
+        "raw": 0
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "0000000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 1,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.0,
+        "raw": 1
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3f9eb851eb851eb8",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 1,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.03,
+        "raw": 1
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 1,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.2,
+        "raw": 1
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fefffffffffffff",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 1,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.9999999999999999,
+        "raw": 1
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 1,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 1,
+      "state": {
+        "applied": 1.0,
+        "raw": 1
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "bfd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 1,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": -0.25,
+        "raw": 1
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "0000000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 10,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.0,
+        "raw": 10
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3f9eb851eb851eb8",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 10,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.03,
+        "raw": 10
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 10,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 2,
+      "state": {
+        "applied": 0.2,
+        "raw": 10
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fefffffffffffff",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 10,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 9,
+      "state": {
+        "applied": 0.9999999999999999,
+        "raw": 10
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 10,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 10,
+      "state": {
+        "applied": 1.0,
+        "raw": 10
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "bfd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 10,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": -2,
+      "state": {
+        "applied": -0.25,
+        "raw": 10
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "0000000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3f9eb851eb851eb8",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.03,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 3,
+      "state": {
+        "applied": 0.2,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fefffffffffffff",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 16,
+      "state": {
+        "applied": 0.9999999999999999,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 17,
+      "state": {
+        "applied": 1.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "bfd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": -4,
+      "state": {
+        "applied": -0.25,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "0000000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 25,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.0,
+        "raw": 25
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3f9eb851eb851eb8",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 25,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.03,
+        "raw": 25
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 25,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 5,
+      "state": {
+        "applied": 0.2,
+        "raw": 25
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fefffffffffffff",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 25,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 24,
+      "state": {
+        "applied": 0.9999999999999999,
+        "raw": 25
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 25,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 25,
+      "state": {
+        "applied": 1.0,
+        "raw": 25
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "bfd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 25,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": -6,
+      "state": {
+        "applied": -0.25,
+        "raw": 25
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "0000000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 255,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.0,
+        "raw": 255
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3f9eb851eb851eb8",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 255,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 7,
+      "state": {
+        "applied": 0.03,
+        "raw": 255
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 255,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 51,
+      "state": {
+        "applied": 0.2,
+        "raw": 255
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fefffffffffffff",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 255,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 254,
+      "state": {
+        "applied": 0.9999999999999999,
+        "raw": 255
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 255,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 255,
+      "state": {
+        "applied": 1.0,
+        "raw": 255
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "bfd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 255,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": -63,
+      "state": {
+        "applied": -0.25,
+        "raw": 255
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "0000000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": -17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.0,
+        "raw": -17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3f9eb851eb851eb8",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": -17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 0,
+      "state": {
+        "applied": 0.03,
+        "raw": -17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": -17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": -3,
+      "state": {
+        "applied": 0.2,
+        "raw": -17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fefffffffffffff",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": -17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": -16,
+      "state": {
+        "applied": 0.9999999999999999,
+        "raw": -17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": -17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": -17,
+      "state": {
+        "applied": 1.0,
+        "raw": -17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "bfd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": -17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 4,
+      "state": {
+        "applied": -0.25,
+        "raw": -17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3ff3333333333333",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f933333",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 17,
+      "state": {
+        "applied": 0.75,
+        "crate": 1.2,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": -1,
+        "house": 1.15,
+        "rank": 0.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3ff3333333333333",
+        "faster": false,
+        "flag_owner": 0,
+        "house_bits": "3f933333",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 8,
+      "state": {
+        "applied": 0.75,
+        "crate": 1.2,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": 0,
+        "house": 1.15,
+        "rank": 0.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f933333",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 25,
+      "state": {
+        "applied": 0.75,
+        "crate": 1.2,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": -1,
+        "house": 1.15,
+        "rank": 1.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": 0,
+        "house_bits": "3f933333",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 12,
+      "state": {
+        "applied": 0.75,
+        "crate": 1.2,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": 0,
+        "house": 1.15,
+        "rank": 1.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f933333",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 25,
+      "state": {
+        "applied": 0.75,
+        "crate": 1.2,
+        "elite_faster": true,
+        "faster": false,
+        "flag_owner": -1,
+        "house": 1.15,
+        "rank": 2.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": 0,
+        "house_bits": "3f933333",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 12,
+      "state": {
+        "applied": 0.75,
+        "crate": 1.2,
+        "elite_faster": true,
+        "faster": false,
+        "flag_owner": 0,
+        "house": 1.15,
+        "rank": 2.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f933333",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 25,
+      "state": {
+        "applied": 0.75,
+        "crate": 1.2,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": -1,
+        "house": 1.15,
+        "rank": 2.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": 0,
+        "house_bits": "3f933333",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 12,
+      "state": {
+        "applied": 0.75,
+        "crate": 1.2,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": 0,
+        "house": 1.15,
+        "rank": 2.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3ff8000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f400000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 14,
+      "state": {
+        "applied": 0.75,
+        "crate": 1.5,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": -1,
+        "house": 0.75,
+        "rank": 0.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3ff8000000000000",
+        "faster": false,
+        "flag_owner": 0,
+        "house_bits": "3f400000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 7,
+      "state": {
+        "applied": 0.75,
+        "crate": 1.5,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": 0,
+        "house": 0.75,
+        "rank": 0.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3ff8000000000000",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f400000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 21,
+      "state": {
+        "applied": 0.75,
+        "crate": 1.5,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": -1,
+        "house": 0.75,
+        "rank": 1.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3ff8000000000000",
+        "faster": true,
+        "flag_owner": 0,
+        "house_bits": "3f400000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 10,
+      "state": {
+        "applied": 0.75,
+        "crate": 1.5,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": 0,
+        "house": 0.75,
+        "rank": 1.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3ff8000000000000",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f400000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 21,
+      "state": {
+        "applied": 0.75,
+        "crate": 1.5,
+        "elite_faster": true,
+        "faster": false,
+        "flag_owner": -1,
+        "house": 0.75,
+        "rank": 2.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3ff8000000000000",
+        "faster": true,
+        "flag_owner": 0,
+        "house_bits": "3f400000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 10,
+      "state": {
+        "applied": 0.75,
+        "crate": 1.5,
+        "elite_faster": true,
+        "faster": false,
+        "flag_owner": 0,
+        "house": 0.75,
+        "rank": 2.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3ff8000000000000",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f400000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 21,
+      "state": {
+        "applied": 0.75,
+        "crate": 1.5,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": -1,
+        "house": 0.75,
+        "rank": 2.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3ff8000000000000",
+        "faster": true,
+        "flag_owner": 0,
+        "house_bits": "3f400000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 10,
+      "state": {
+        "applied": 0.75,
+        "crate": 1.5,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": 0,
+        "house": 0.75,
+        "rank": 2.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3fefffffffffffff",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800001",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 12,
+      "state": {
+        "applied": 0.75,
+        "crate": 0.9999999999999999,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": -1,
+        "house": 1.0000001,
+        "rank": 0.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3fefffffffffffff",
+        "faster": false,
+        "flag_owner": 0,
+        "house_bits": "3f800001",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 6,
+      "state": {
+        "applied": 0.75,
+        "crate": 0.9999999999999999,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": 0,
+        "house": 1.0000001,
+        "rank": 0.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3fefffffffffffff",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800001",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 18,
+      "state": {
+        "applied": 0.75,
+        "crate": 0.9999999999999999,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": -1,
+        "house": 1.0000001,
+        "rank": 1.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3fefffffffffffff",
+        "faster": true,
+        "flag_owner": 0,
+        "house_bits": "3f800001",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 9,
+      "state": {
+        "applied": 0.75,
+        "crate": 0.9999999999999999,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": 0,
+        "house": 1.0000001,
+        "rank": 1.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3fefffffffffffff",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800001",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 18,
+      "state": {
+        "applied": 0.75,
+        "crate": 0.9999999999999999,
+        "elite_faster": true,
+        "faster": false,
+        "flag_owner": -1,
+        "house": 1.0000001,
+        "rank": 2.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3fefffffffffffff",
+        "faster": true,
+        "flag_owner": 0,
+        "house_bits": "3f800001",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 9,
+      "state": {
+        "applied": 0.75,
+        "crate": 0.9999999999999999,
+        "elite_faster": true,
+        "faster": false,
+        "flag_owner": 0,
+        "house": 1.0000001,
+        "rank": 2.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3fefffffffffffff",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800001",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 18,
+      "state": {
+        "applied": 0.75,
+        "crate": 0.9999999999999999,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": -1,
+        "house": 1.0000001,
+        "rank": 2.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3fe8000000000000",
+        "crate_bits": "3fefffffffffffff",
+        "faster": true,
+        "flag_owner": 0,
+        "house_bits": "3f800001",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 9,
+      "state": {
+        "applied": 0.75,
+        "crate": 0.9999999999999999,
+        "elite_faster": false,
+        "faster": true,
+        "flag_owner": 0,
+        "house": 1.0000001,
+        "rank": 2.0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "4008000000000000",
+        "faster": false,
+        "flag_owner": 0,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 25,
+      "state": {
+        "applied": 1.0,
+        "crate": 3.0,
+        "flag_owner": 0,
+        "raw": 17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "4008000000000000",
+        "faster": false,
+        "flag_owner": 0,
+        "house_bits": "3f800000",
+        "raw": -17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": -25,
+      "state": {
+        "applied": 1.0,
+        "crate": 3.0,
+        "flag_owner": 0,
+        "raw": -17
+      }
+    },
+    {
+      "input": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "4008000000000000",
+        "faster": false,
+        "flag_owner": 0,
+        "house_bits": "3f800000",
+        "raw": 2147483647,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "output": 1073741822,
+      "state": {
+        "applied": 1.0,
+        "crate": 3.0,
+        "flag_owner": 0,
+        "raw": 2147483647
+      }
+    }
+  ],
+  "prefixes": [
+    {
+      "getter": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": false,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "passive": false,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 1,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3ff0000000000000",
+        "budget": 24,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": false,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "passive": true,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 1,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3ff0000000000000",
+        "budget": 24,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd1eb851eb851eb",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": true,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "passive": false,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 1,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd1eb851eb851eb",
+        "budget": 11,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": true,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "passive": true,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 1,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd0000000000000",
+        "budget": 11,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 0,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": false,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "passive": false,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 63,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3ff0000000000000",
+        "budget": 24,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": false,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "passive": true,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 63,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3ff0000000000000",
+        "budget": 24,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd1eb851eb851eb",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": true,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "passive": false,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 63,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd1eb851eb851eb",
+        "budget": 11,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": true,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "passive": true,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 63,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd0000000000000",
+        "budget": 11,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 0,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": false,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "passive": false,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 64,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3ff0000000000000",
+        "budget": 24,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": false,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "passive": true,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 64,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3ff0000000000000",
+        "budget": 24,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": true,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "passive": false,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 64,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd0000000000000",
+        "budget": 11,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 0,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": true,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "passive": true,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 64,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd0000000000000",
+        "budget": 11,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 0,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": false,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "passive": false,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 71,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3ff0000000000000",
+        "budget": 24,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": false,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "passive": true,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 71,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3ff0000000000000",
+        "budget": 24,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": true,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "passive": false,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 71,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd0000000000000",
+        "budget": 11,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 0,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": true,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "passive": true,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 71,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd0000000000000",
+        "budget": 11,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 0,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 0,
+        "target": 0.125,
+        "target_bits": "3fc0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc0000000000000",
+        "budget": 9,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 1000,
+        "target": 0.125,
+        "target_bits": "3fc0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc0000000000000",
+        "budget": 9,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 0,
+        "target": 0.125,
+        "target_bits": "3fc0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc0000000000000",
+        "budget": 9,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 1000,
+        "target": 0.125,
+        "target_bits": "3fc0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc0000000000000",
+        "budget": 9,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.125,
+        "applied_bits": "3fc0000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 0,
+        "target": 0.75,
+        "target_bits": "3fe8000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc999999999999a",
+        "budget": 10,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc999999999999a"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.125,
+        "applied_bits": "3fc0000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 1000,
+        "target": 0.75,
+        "target_bits": "3fe8000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc999999999999a",
+        "budget": 10,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc999999999999a"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.125,
+        "applied_bits": "3fc0000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 0,
+        "target": 0.75,
+        "target_bits": "3fe8000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc999999999999a",
+        "budget": 10,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc999999999999a"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.125,
+        "applied_bits": "3fc0000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 1000,
+        "target": 0.75,
+        "target_bits": "3fe8000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc999999999999a",
+        "budget": 10,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc999999999999a"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 0,
+        "target": 0.75,
+        "target_bits": "3fe8000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc999999999999a",
+        "budget": 10,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc999999999999a"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 1000,
+        "target": 0.75,
+        "target_bits": "3fe8000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc999999999999a",
+        "budget": 10,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc999999999999a"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 0,
+        "target": 0.75,
+        "target_bits": "3fe8000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc999999999999a",
+        "budget": 10,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc999999999999a"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 1000,
+        "target": 0.75,
+        "target_bits": "3fe8000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc999999999999a",
+        "budget": 10,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc999999999999a"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3f9eb851eb851eb8",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.0,
+        "applied_bits": "0000000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 511,
+        "target": 1.0,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3f9eb851eb851eb8",
+        "budget": 7,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fb99999a0000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.0,
+        "applied_bits": "0000000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 511,
+        "target": 1.0,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fb99999a0000000",
+        "budget": 8,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3f9eb851eb851eb8",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.0,
+        "applied_bits": "0000000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 512,
+        "target": 1.0,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3f9eb851eb851eb8",
+        "budget": 7,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fb99999a0000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.0,
+        "applied_bits": "0000000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 512,
+        "target": 1.0,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fb99999a0000000",
+        "budget": 8,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd3333340000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.0,
+        "applied_bits": "0000000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 513,
+        "target": 1.0,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd3333340000000",
+        "budget": 12,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd3333340000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.0,
+        "applied_bits": "0000000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 513,
+        "target": 1.0,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd3333340000000",
+        "budget": 12,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe6e978d4fdf3b6",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 511,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe6e978d4fdf3b6",
+        "budget": 19,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe72f1a9fa00000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 511,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe72f1a9fa00000",
+        "budget": 19,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe6e978d4fdf3b6",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 512,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe6e978d4fdf3b6",
+        "budget": 19,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe72f1a9fa00000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 512,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe72f1a9fa00000",
+        "budget": 19,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe6e978d4fdf3b6",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 513,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe6e978d4fdf3b6",
+        "budget": 19,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe6e978d4fdf3b6",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 513,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe6e978d4fdf3b6",
+        "budget": 19,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.5,
+        "applied_bits": "3fe0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 511,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe0000000000000",
+        "budget": 15,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 0,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fde5e353f400000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.5,
+        "applied_bits": "3fe0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 511,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fde5e353f400000",
+        "budget": 15,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.5,
+        "applied_bits": "3fe0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 512,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe0000000000000",
+        "budget": 15,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 0,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fde5e353f400000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.5,
+        "applied_bits": "3fe0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 512,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fde5e353f400000",
+        "budget": 15,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fddd2f1a9fbe76c",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.5,
+        "applied_bits": "3fe0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 513,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fddd2f1a9fbe76c",
+        "budget": 14,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fddd2f1a9fbe76c",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.5,
+        "applied_bits": "3fe0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 513,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fddd2f1a9fbe76c",
+        "budget": 14,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": false,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          -731
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "retry": false,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": 20,
+        "distance": 1069,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": false,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          -731
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "retry": true,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": -3,
+        "distance": 1069,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": true,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          -731
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          624
+        ],
+        "retry": false,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": 20,
+        "distance": 1448,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": true,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          -731
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          624
+        ],
+        "retry": true,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": -3,
+        "distance": 1448,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": false,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          208
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "retry": false,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": 20,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": false,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          208
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "retry": true,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": -3,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": true,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          208
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          624
+        ],
+        "retry": false,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": 20,
+        "distance": 659,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": true,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          208
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          624
+        ],
+        "retry": true,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": -3,
+        "distance": 659,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": false,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          624
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "retry": false,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": 20,
+        "distance": 659,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": false,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          624
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "retry": true,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": -3,
+        "distance": 659,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": true,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          624
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          624
+        ],
+        "retry": false,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": 20,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": true,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          624
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "drive",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          624
+        ],
+        "retry": true,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": -3,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": false,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "passive": false,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 1,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3ff0000000000000",
+        "budget": 24,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": false,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "passive": true,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 1,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3ff0000000000000",
+        "budget": 24,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd1eb851eb851eb",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": true,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "passive": false,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 1,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd1eb851eb851eb",
+        "budget": 11,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": true,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "passive": true,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 1,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd0000000000000",
+        "budget": 11,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 0,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": false,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "passive": false,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 63,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3ff0000000000000",
+        "budget": 24,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": false,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "passive": true,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 63,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3ff0000000000000",
+        "budget": 24,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd1eb851eb851eb",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": true,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "passive": false,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 63,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd1eb851eb851eb",
+        "budget": 11,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": true,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "passive": true,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 63,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd0000000000000",
+        "budget": 11,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 0,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": false,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "passive": false,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 64,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3ff0000000000000",
+        "budget": 24,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": false,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "passive": true,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 64,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3ff0000000000000",
+        "budget": 24,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": true,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "passive": false,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 64,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd0000000000000",
+        "budget": 11,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 0,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": true,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "passive": true,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 64,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd0000000000000",
+        "budget": 11,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 0,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": false,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "passive": false,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 71,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3ff0000000000000",
+        "budget": 24,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3ff0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": false,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "passive": true,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 71,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3ff0000000000000",
+        "budget": 24,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": true,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "passive": false,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 71,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd0000000000000",
+        "budget": 11,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 0,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "accelerates": true,
+        "applied_bits": "3fd0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "passive": true,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "selector": 71,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd0000000000000",
+        "budget": 11,
+        "distance": null,
+        "getters": 1,
+        "propagate": false,
+        "setters": 0,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 0,
+        "target": 0.125,
+        "target_bits": "3fc0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc0000000000000",
+        "budget": 9,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 1000,
+        "target": 0.125,
+        "target_bits": "3fc0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc0000000000000",
+        "budget": 9,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 0,
+        "target": 0.125,
+        "target_bits": "3fc0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc0000000000000",
+        "budget": 9,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 1000,
+        "target": 0.125,
+        "target_bits": "3fc0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc0000000000000",
+        "budget": 9,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.125,
+        "applied_bits": "3fc0000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 0,
+        "target": 0.75,
+        "target_bits": "3fe8000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc999999999999a",
+        "budget": 10,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc999999999999a"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.125,
+        "applied_bits": "3fc0000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 1000,
+        "target": 0.75,
+        "target_bits": "3fe8000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc999999999999a",
+        "budget": 10,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc999999999999a"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.125,
+        "applied_bits": "3fc0000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 0,
+        "target": 0.75,
+        "target_bits": "3fe8000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc999999999999a",
+        "budget": 10,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc999999999999a"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.125,
+        "applied_bits": "3fc0000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 1000,
+        "target": 0.75,
+        "target_bits": "3fe8000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc999999999999a",
+        "budget": 10,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc999999999999a"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 0,
+        "target": 0.75,
+        "target_bits": "3fe8000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc999999999999a",
+        "budget": 10,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc999999999999a"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 1000,
+        "target": 0.75,
+        "target_bits": "3fe8000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc999999999999a",
+        "budget": 10,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc999999999999a"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 0,
+        "target": 0.75,
+        "target_bits": "3fe8000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc999999999999a",
+        "budget": 10,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc999999999999a"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fc999999999999a",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "crush": true,
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 1000,
+        "target": 0.75,
+        "target_bits": "3fe8000000000000"
+      },
+      "output": {
+        "applied_bits": "3fc999999999999a",
+        "budget": 10,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fc999999999999a"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3f9eb851eb851eb8",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.0,
+        "applied_bits": "0000000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 511,
+        "target": 1.0,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3f9eb851eb851eb8",
+        "budget": 7,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fb99999a0000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.0,
+        "applied_bits": "0000000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 511,
+        "target": 1.0,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fb99999a0000000",
+        "budget": 8,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3f9eb851eb851eb8",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.0,
+        "applied_bits": "0000000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 512,
+        "target": 1.0,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3f9eb851eb851eb8",
+        "budget": 7,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fb99999a0000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.0,
+        "applied_bits": "0000000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 512,
+        "target": 1.0,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fb99999a0000000",
+        "budget": 8,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd3333340000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.0,
+        "applied_bits": "0000000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 513,
+        "target": 1.0,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd3333340000000",
+        "budget": 12,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fd3333340000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.0,
+        "applied_bits": "0000000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 513,
+        "target": 1.0,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fd3333340000000",
+        "budget": 12,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe6e978d4fdf3b6",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 511,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe6e978d4fdf3b6",
+        "budget": 19,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe72f1a9fa00000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 511,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe72f1a9fa00000",
+        "budget": 19,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe6e978d4fdf3b6",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 512,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe6e978d4fdf3b6",
+        "budget": 19,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe72f1a9fa00000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 512,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe72f1a9fa00000",
+        "budget": 19,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe6e978d4fdf3b6",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 513,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe6e978d4fdf3b6",
+        "budget": 19,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe6e978d4fdf3b6",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 513,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe6e978d4fdf3b6",
+        "budget": 19,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.5,
+        "applied_bits": "3fe0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 511,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe0000000000000",
+        "budget": 15,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 0,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fde5e353f400000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.5,
+        "applied_bits": "3fe0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 511,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fde5e353f400000",
+        "budget": 15,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe0000000000000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.5,
+        "applied_bits": "3fe0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 512,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe0000000000000",
+        "budget": 15,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 0,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fde5e353f400000",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.5,
+        "applied_bits": "3fe0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 512,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fde5e353f400000",
+        "budget": 15,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fddd2f1a9fbe76c",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.5,
+        "applied_bits": "3fe0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": false,
+        "slowdown": 513,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fddd2f1a9fbe76c",
+        "budget": 14,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fddd2f1a9fbe76c",
+        "crate_bits": "3ff0000000000000",
+        "faster": false,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.5,
+        "applied_bits": "3fe0000000000000",
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "sinking": true,
+        "slowdown": 513,
+        "target": 0.5,
+        "target_bits": "3fe0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fddd2f1a9fbe76c",
+        "budget": 14,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3fe0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": false,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          -731
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "retry": false,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": 20,
+        "distance": 1069,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": false,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          -731
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "retry": true,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": -3,
+        "distance": 1069,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": true,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          -731
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          624
+        ],
+        "retry": false,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": 20,
+        "distance": 1448,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": true,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          -731
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          624
+        ],
+        "retry": true,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": -3,
+        "distance": 1448,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": false,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          208
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "retry": false,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": 20,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": false,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          208
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "retry": true,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": -3,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": true,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          208
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          624
+        ],
+        "retry": false,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": 20,
+        "distance": 659,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": true,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          208
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          624
+        ],
+        "retry": true,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": -3,
+        "distance": 659,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": false,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          624
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "retry": false,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": 20,
+        "distance": 659,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": false,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          624
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          208
+        ],
+        "retry": true,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": -3,
+        "distance": 659,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": true,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          624
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          624
+        ],
+        "retry": false,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": 20,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    },
+    {
+      "getter": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "crate_bits": "3ff3333333333333",
+        "faster": true,
+        "flag_owner": -1,
+        "house_bits": "3f800000",
+        "raw": 17,
+        "veteran_bits": "3ff8000000000000"
+      },
+      "input": {
+        "accel_bits": "3f9eb851eb851eb8",
+        "applied": 0.75,
+        "applied_bits": "3fe8000000000000",
+        "bridge": true,
+        "crate": 1.2,
+        "current": [
+          2176,
+          2176,
+          624
+        ],
+        "decel_bits": "3f60624dd2f1a9fc",
+        "family": "ship",
+        "faster": true,
+        "residual": -3,
+        "resolved_destination": [
+          2688,
+          2176,
+          624
+        ],
+        "retry": true,
+        "target_bits": "3ff0000000000000"
+      },
+      "output": {
+        "applied_bits": "3fe8f5c28f5c28f5",
+        "budget": -3,
+        "distance": 512,
+        "getters": 1,
+        "propagate": true,
+        "setters": 1,
+        "target_bits": "3ff0000000000000"
+      }
+    }
+  ]
+}

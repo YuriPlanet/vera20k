@@ -31,6 +31,7 @@ mod inviso_scatter;
 #[cfg(test)]
 pub(crate) mod receiver_fixture;
 mod receiver_health;
+mod object_health;
 #[cfg(test)]
 pub(crate) use receiver_fixture::{
     BaseDefenseResponseTraceEntry, FixtureTrace, commit_area_damage_receivers,
@@ -2352,16 +2353,8 @@ fn resolve_receive_damage(
                 .map(|object| armor_index(&object.armor))
                 .unwrap_or(0) as u8,
         ),
-        strength: target_type
-            .map(|object| object.strength)
-            .filter(|&strength| strength > 0)
-            .unwrap_or(i32::from(target.health.max)),
         current_hp: i32::from(target.health.current),
         object_immune: target_type.is_some_and(|object| object.immune),
-        is_building: target_is_building,
-        can_c4: target_type
-            .map(|object| object.can_c4)
-            .unwrap_or(target_is_building),
     };
     let type_immune = target_type.is_some_and(|object| object.type_immune)
         && source.is_some_and(|source| {
@@ -2454,7 +2447,6 @@ fn resolve_receive_damage(
         distance_leptons,
         scenario_no_damage,
         rules.combat_damage.max_damage,
-        f64::from(rules.general.condition_red),
     );
     let invulnerability_impact = outcome.invulnerability_impact_damage.map(|doubled_damage| {
         let flags = match active_invulnerability
@@ -2561,9 +2553,9 @@ fn postmortem_duration_for_event(
     target: &GameEntity,
     rules: &RuleSet,
     interner: &StringInterner,
-    outcome: damage::DamageOutcome,
+    state: damage::DamageState,
 ) -> Option<i32> {
-    if outcome.state != damage::DamageState::Dead || target.category != EntityCategory::Structure {
+    if state != damage::DamageState::Dead || target.category != EntityCategory::Structure {
         return None;
     }
     let warhead = rules.warhead(interner.resolve(event.warhead_ref))?;

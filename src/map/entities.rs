@@ -41,8 +41,9 @@ pub struct MapEntity {
     pub owner: String,
     /// Object type ID from rules.ini (e.g., "HTNK", "E1", "GAPOWR").
     pub type_id: String,
-    /// Health value (0–256, where 256 = 100% health).
-    pub health: u16,
+    /// Signed authored health fraction; 256 denotes full Strength. Class admission
+    /// owns clamping, near-full snapping and minimum-health rules.
+    pub health: i32,
     /// Isometric cell X coordinate.
     pub cell_x: u16,
     /// Isometric cell Y coordinate.
@@ -186,7 +187,8 @@ fn parse_infantry_section(
         }
         let owner: String = fields[0].to_string();
         let type_id: String = fields[1].to_string();
-        let health: u16 = fields[2].parse::<u16>().unwrap_or(256).min(256);
+        // Malformed-token fallback is legacy Rust policy, not native CRT parity.
+        let health: i32 = fields[2].parse::<i32>().unwrap_or(256);
         let Some(cell_x) = fields[3].parse::<u16>().ok() else {
             log::warn!("[Infantry] key {}: invalid X '{}'", key, fields[3]);
             continue;
@@ -287,7 +289,8 @@ fn parse_aircraft_section(
 fn parse_common_fields(fields: &[&str], category: EntityCategory, key: &str) -> Option<MapEntity> {
     let owner: String = fields[0].to_string();
     let type_id: String = fields[1].to_string();
-    let health: u16 = fields[2].parse::<u16>().unwrap_or(256).min(256);
+    // Malformed-token fallback is legacy Rust policy, not native CRT parity.
+    let health: i32 = fields[2].parse::<i32>().unwrap_or(256);
 
     let cell_x: u16 = match fields[3].parse::<u16>() {
         Ok(v) => v,
@@ -396,6 +399,20 @@ fn parse_recruitment_field(value: Option<&str>) -> bool {
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
+
+    #[test]
+    fn authored_health_preserves_signed_dword_before_class_admission() {
+        for section in ["Units", "Aircraft", "Infantry", "Structures"] {
+            for health in [i32::MIN, -1, 0, 256, 512, i32::MAX] {
+                let ini = IniFile::from_str(&format!(
+                    "[{section}]\n0=Americans,TYPE,{health},30,40,0,Guard,0,None,0,-1,false,true,false\n"
+                ));
+                let entities = parse_map_entities(&ini);
+                assert_eq!(entities.len(), 1, "{section}");
+                assert_eq!(entities[0].health, health, "{section}");
+            }
+        }
+    }
 
     #[test]
     fn test_parse_units() {

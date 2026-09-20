@@ -1,0 +1,4106 @@
+[
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": -1,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 2,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 0,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490",
+      "004B25F2",
+      "004B2605"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "004B0F69",
+    "input": {
+      "class_flag_62": 1,
+      "family": "drive",
+      "queue_head": 8,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "004B0F20",
+      "004B0F55",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": -1,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": 0,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": -2,
+      "track_valid": 0,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": -1,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": 0,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": -1,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 2,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 0,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 0
+  },
+  {
+    "boundary": "original_return",
+    "boundary_address": "30000000",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 0
+    },
+    "loco_writes": [
+      {
+        "offset": 76,
+        "size": 4,
+        "value": 0
+      }
+    ],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490",
+      "006A1C43",
+      "006A1C56"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": false,
+    "residual_after": 0,
+    "residual_before": 305419896,
+    "returned_al": 0,
+    "type_getter_calls": 1
+  },
+  {
+    "boundary": "before_speed_prefix",
+    "boundary_address": "006A0639",
+    "input": {
+      "class_flag_62": 1,
+      "family": "ship",
+      "queue_head": 8,
+      "selector": -2,
+      "track_valid": 1,
+      "turret": 1
+    },
+    "loco_writes": [],
+    "observed_calls": [
+      "006A05F0",
+      "006A0625",
+      "006F3270",
+      "00741490"
+    ],
+    "original_code_and_vtable_unchanged": true,
+    "owner_and_other_loco_fields_unchanged": true,
+    "prefix_eligible": true,
+    "residual_after": 305419896,
+    "residual_before": 305419896,
+    "returned_al": null,
+    "type_getter_calls": 1
+  }
+]

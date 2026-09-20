@@ -743,9 +743,9 @@ impl Simulation {
                                 Some(&blocker_neighbor_counts),
                                 self.playfield_bounds,
                                 Some(&mut self.substrate.cell_occupation),
-                                crate::sim::movement::DestinationTiming::new(
+                                crate::sim::movement::DestinationTiming::from_rules(
                                     self.session.binary_frame,
-                                    self.blockage_path_delay_ticks,
+                                    rules.into(),
                                 ),
                             );
                         }
@@ -800,9 +800,9 @@ impl Simulation {
                         Some(&blocker_neighbor_counts),
                         self.playfield_bounds,
                         Some(&mut self.substrate.cell_occupation),
-                        crate::sim::movement::DestinationTiming::new(
+                        crate::sim::movement::DestinationTiming::from_rules(
                             self.session.binary_frame,
-                            self.blockage_path_delay_ticks,
+                            rules.into(),
                         ),
                     )
                 };
@@ -861,6 +861,12 @@ impl Simulation {
                 }
                 if !self.stop_jumpjet_infantry_destination(*entity_id, rules, overlay_registry) {
                     return false;
+                }
+                if let Some(entity) = self.substrate.entities.get_mut(*entity_id) {
+                    // Accepted null Foot setter4D96C2 follows locomotor Stop,
+                    // including a no-op Stop, and preserves the retry counter.
+                    movement::DestinationTiming::from_rules(self.session.binary_frame, rules)
+                        .accept(entity);
                 }
                 // Cancel any special locomotor states in progress.
                 // **VERA-internal: retail Stop leaves the installed locomotor
@@ -1140,9 +1146,9 @@ impl Simulation {
                         Some(&blocker_neighbor_counts),
                         self.playfield_bounds,
                         Some(&mut self.substrate.cell_occupation),
-                        crate::sim::movement::DestinationTiming::new(
+                        crate::sim::movement::DestinationTiming::from_rules(
                             self.session.binary_frame,
-                            self.blockage_path_delay_ticks,
+                            rules.into(),
                         ),
                     )
                 };
@@ -1410,7 +1416,7 @@ impl Simulation {
                 if !self.entity_owned_by_id(command_owner, *entity_id) {
                     return false;
                 }
-                production::toggle_repair(self, *entity_id)
+                rules.is_some_and(|rules| production::toggle_repair(self, rules, *entity_id))
             }
             Command::MinerReturn {
                 entity_id,
@@ -1528,7 +1534,9 @@ impl Simulation {
                         e.category,
                         crate::map::entities::EntityCategory::Unit
                             | crate::map::entities::EntityCategory::Infantry
-                    ) && e.health.current < e.health.max
+                    ) && self
+                        .object_type(e.type_ref(), rules)
+                        .is_some_and(|object| e.health.current < object.strength)
                         && !e.dying
                 });
                 if !entity_ok {
@@ -1607,9 +1615,9 @@ impl Simulation {
                         Some(&blocker_neighbor_counts),
                         self.playfield_bounds,
                         Some(&mut self.substrate.cell_occupation),
-                        crate::sim::movement::DestinationTiming::new(
+                        crate::sim::movement::DestinationTiming::from_rules(
                             self.session.binary_frame,
-                            self.blockage_path_delay_ticks,
+                            rules.into(),
                         ),
                     );
                 }
@@ -1740,9 +1748,9 @@ impl Simulation {
                         Some(&blocker_neighbor_counts),
                         self.playfield_bounds,
                         Some(&mut self.substrate.cell_occupation),
-                        crate::sim::movement::DestinationTiming::new(
+                        crate::sim::movement::DestinationTiming::from_rules(
                             self.session.binary_frame,
-                            self.blockage_path_delay_ticks,
+                            rules.into(),
                         ),
                     );
                 }
@@ -1995,9 +2003,9 @@ impl Simulation {
                         Some(&blocker_neighbor_counts),
                         self.playfield_bounds,
                         Some(&mut self.substrate.cell_occupation),
-                        crate::sim::movement::DestinationTiming::new(
+                        crate::sim::movement::DestinationTiming::from_rules(
                             self.session.binary_frame,
-                            self.blockage_path_delay_ticks,
+                            rules.into(),
                         ),
                     );
                 }
@@ -2156,9 +2164,9 @@ impl Simulation {
                             },
                             target_coord,
                         )),
-                        crate::sim::movement::DestinationTiming::new(
+                        crate::sim::movement::DestinationTiming::from_rules(
                             self.session.binary_frame,
-                            self.blockage_path_delay_ticks,
+                            rules.into(),
                         ),
                     );
                 }
@@ -2423,9 +2431,9 @@ impl Simulation {
                             Some(&blocker_neighbor_counts),
                             self.playfield_bounds,
                             Some(&mut self.substrate.cell_occupation),
-                            crate::sim::movement::DestinationTiming::new(
+                            crate::sim::movement::DestinationTiming::from_rules(
                                 self.session.binary_frame,
-                                self.blockage_path_delay_ticks,
+                                rules.into(),
                             ),
                         );
                     }
@@ -2529,7 +2537,7 @@ impl Simulation {
                     ammo.dock_phase,
                     Some(AircraftDockPhase::ReturnToBase) | Some(AircraftDockPhase::WaitForDock)
                 ) {
-                    self.production.airfield_docks.cancel(entity_id);
+                    self.production.airfield_docks.release(entity_id);
                 }
             }
         }
@@ -2929,7 +2937,7 @@ mod tests {
         let owner = sim.interner.intern("Americans");
         let type_ref = sim.interner.intern(type_id);
         let obj = rules.object(type_id).expect("object type");
-        let health = obj.strength.clamp(0, u16::MAX as i32) as u16;
+        let health = obj.strength;
         let mut entity = GameEntity::new_at_frame_zero_for_test(
             sid,
             20,
@@ -2937,10 +2945,7 @@ mod tests {
             0,
             0,
             owner,
-            Health {
-                current: health,
-                max: health,
-            },
+            Health { current: health },
             type_ref,
             EntityCategory::Unit,
             0,
@@ -2975,10 +2980,7 @@ mod tests {
             0,
             0,
             owner,
-            Health {
-                current: 100,
-                max: 100,
-            },
+            Health { current: 100 },
             type_ref,
             EntityCategory::Unit,
             0,
@@ -3442,10 +3444,7 @@ mod tests {
             0,
             0,
             owner,
-            Health {
-                current: 600,
-                max: 600,
-            },
+            Health { current: 600 },
             type_ref,
             EntityCategory::Unit,
             0,
@@ -3466,10 +3465,7 @@ mod tests {
             0,
             0,
             owner,
-            Health {
-                current: 900,
-                max: 900,
-            },
+            Health { current: 900 },
             type_ref,
             EntityCategory::Structure,
             0,
@@ -3514,10 +3510,7 @@ mod tests {
             0,
             0,
             owner,
-            Health {
-                current: 1000,
-                max: 1000,
-            },
+            Health { current: 1000 },
             type_ref,
             EntityCategory::Structure,
             0,
@@ -3710,10 +3703,7 @@ mod tests {
             0,
             0,
             owner_id,
-            Health {
-                current: 1000,
-                max: 1000,
-            },
+            Health { current: 1000 },
             type_id,
             EntityCategory::Structure,
             0,
@@ -3743,10 +3733,7 @@ mod tests {
             0,
             0,
             owner_id,
-            Health {
-                current: 400,
-                max: 400,
-            },
+            Health { current: 400 },
             type_id,
             EntityCategory::Unit,
             0,
@@ -3863,8 +3850,20 @@ mod tests {
         let mut sim = Simulation::new();
         spawn_bunker_struct(&mut sim, 2, "Americans", 10, 10);
         spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 14, 14);
-        sim.reveal(1);
-        sim.add_entity_occupancy(1);
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        unit.locomotor = Some(
+            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Drive,
+            ),
+        );
+        unit.drive_locomotion = Some(Default::default());
+        // Admission-only spawn helper preclears Limbo without placing the
+        // object. Restore its constructor gate and publish through Reveal.
+        unit.lifecycle.in_limbo = true;
+        assert!(matches!(
+            sim.reveal(1),
+            crate::sim::world::RevealOutcome::Revealed { .. }
+        ));
         crate::sim::docking::bunker_link::install_bunker_link(&mut sim, 2, 1, &rules);
         assert_eq!(
             sim.substrate.entities.get(2).unwrap().bunker_occupant,
@@ -3885,9 +3884,17 @@ mod tests {
             sim.substrate.entities.get(1).unwrap().bunker_link,
             BunkerLink::None
         );
-        // Released at the anchor SW of the bunker (10,10) + (-1,+1) when no grid.
+        // Force starts at the retained pose; the SW exit is a destination.
         let unit = sim.substrate.entities.get(1).unwrap();
-        assert_eq!((unit.position.rx, unit.position.ry), (9, 11));
+        assert_eq!((unit.position.rx, unit.position.ry), (14, 14));
+        assert_eq!(
+            unit.navigation.nav_com,
+            Some(crate::sim::components::NavTargetRef::cell(9, 11))
+        );
+        assert_eq!(
+            unit.drive_locomotion.as_ref().unwrap().track.turn_index,
+            0x47
+        );
         assert_eq!(
             unit.mission.queued(),
             MissionId::from_known(MissionType::Move)
@@ -3921,8 +3928,20 @@ mod tests {
         // Place the tank ON the bunker cell so the install needs no pathfinding
         // (the movement subsystem is not run in this harness).
         spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 10, 10);
-        sim.reveal(1);
-        sim.add_entity_occupancy(1);
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        unit.locomotor = Some(
+            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Drive,
+            ),
+        );
+        unit.drive_locomotion = Some(Default::default());
+        // Exercise real cell/Logic membership, not the admission-only helper's
+        // already-clear Limbo byte (which makes Reveal a no-op).
+        unit.lifecycle.in_limbo = true;
+        assert!(matches!(
+            sim.reveal(1),
+            crate::sim::world::RevealOutcome::Revealed { .. }
+        ));
 
         // 1) Enter: admission + install machine starts.
         assert!(sim.apply_command(
@@ -3962,14 +3981,18 @@ mod tests {
         );
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker_link, BunkerLink::Installed(2));
-        assert!(!unit.in_logic_vector, "occupant hidden while installed");
+        assert!(
+            unit.in_logic_vector,
+            "install preserves LogicVector membership"
+        );
+        assert!(!unit.lifecycle.in_limbo);
         assert_eq!(
             sim.bunker_wall_events.iter().filter(|e| e.up).count(),
             1,
             "one walls-up event on install"
         );
 
-        // 3) Eject: occupant released near the bunker, links cleared, walls-down.
+        // 3) Eject: Force starts without teleporting, links clear, walls lower.
         sim.bunker_wall_events.clear();
         assert!(sim.apply_command(
             "Americans",
@@ -3981,7 +4004,13 @@ mod tests {
         assert_eq!(sim.substrate.entities.get(2).unwrap().bunker_occupant, None);
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker_link, BunkerLink::None);
-        assert!(unit.in_logic_vector, "occupant revealed on eject");
+        assert!(unit.in_logic_vector, "occupant stays active on eject");
+        assert!(!unit.lifecycle.in_limbo);
+        assert_eq!((unit.position.rx, unit.position.ry), (10, 10));
+        assert_eq!(
+            unit.drive_locomotion.as_ref().unwrap().track.turn_index,
+            0x47
+        );
         assert_eq!(
             unit.mission.queued(),
             MissionId::from_known(MissionType::Move)

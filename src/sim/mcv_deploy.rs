@@ -182,47 +182,6 @@ pub(crate) fn finish_retry(sim: &mut Simulation, id: u64, accepted: bool) {
     }
 }
 
-pub(crate) fn rotation_completed(previous: &mut bool, rotating: bool) -> bool {
-    let completed = *previous && !rotating;
-    *previous = rotating;
-    completed
-}
-
-/// Drive::Process 0x4B077B/0x4B0896: the rotating-to-rest edge calls
-/// Unit::PerCellProcess(0), which retries +0x68C independently of Mission_Unload.
-/// This runs at the locomotor entry, after the object's mission dispatch.
-pub(crate) fn drive_process_prelude(sim: &mut Simulation, id: u64, rules: &RuleSet) {
-    if !sim.order_actor_admits(id) || !sim.substrate.entities.get(id).is_some_and(|e| {
-        !e.dying
-            // 0x4B055A..0x4B056D: active track owns Process and must leave
-            // the previous-rotation latch alone until the track is finished.
-            && e.forced_drive_track.is_none()
-            && !e.drive_locomotion.as_ref().is_some_and(|d| d.track_valid && d.track.turn_index != -1)
-            // 0x4B066C..0x4B06C3: same-cell NavCom is handled by the
-            // destination/waypoint owner before the rotation branch.
-            && !matches!(e.navigation.nav_com, Some(crate::sim::components::NavTargetRef::Cell { rx, ry })
-                if (rx,ry) == (e.position.rx,e.position.ry))
-            && is_mcv(sim, e, rules)
-            && e.locomotor.as_ref().is_some_and(|l| {
-                l.active_kind() == crate::rules::locomotor_type::LocomotorKind::Drive
-            })
-    }) {
-        return;
-    }
-    let e = sim.substrate.entities.get_mut(id).unwrap();
-    let rotating = e
-        .body_facing
-        .as_ref()
-        .is_some_and(|f| f.is_rotating(sim.session.binary_frame));
-    let completed = rotation_completed(&mut e.mcv_drive_was_rotating, rotating);
-    if let Some(body) = e.body_facing.as_ref() {
-        e.facing = (body.current(sim.session.binary_frame) >> 8) as u8;
-    }
-    if completed {
-        per_cell_process(sim, id, rules);
-    }
-}
-
 pub(crate) fn per_cell_process(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     // 0x739EEC..0x739EF8 has no current-mission guard. Stop and Move do not
     // erase pending intent; native Deploy decides whether NavCom allows it.

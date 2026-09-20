@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Building GetPowerOutput/GetPowerDrain with signed-health ratio and House ADD32 totals",
+  "assumptions": [
+    "PC53/chop FPCW0E7F. Actual and type Strength are raw signed32. Original retail vtable getters execute unchanged.",
+    "Original post-INI signed field splits execute with supplied parsed EAX; no native text parser coverage.",
+    "No upgrade slots supplied. Warped/online/output-overpowered(+668) bytes are fixture inputs, not proof of lifecycle writers. ExtraDrain(+669) remains false and is not covered.",
+    "House accumulator and8 admission combinations execute; admission uses noncampaign mode1/non-local House. Original House entry and16 empty/rejected-contribution iterations also execute through508D45. Qualifying iteration callbacks, campaign registration, blackout and scheduler are excluded.",
+    "Corpus does not establish whole power lifecycle or sidebar theoretical-total parity."
+  ],
+  "substitutions": [
+    "Data-shaped Building/type/House, integer inputs, stack and ambient FPCW only; no callback replacement or original code patches."
+  ],
+  "entry_points": {
+    "output": "0x0044E7B0",
+    "drain": "0x0044E880",
+    "ratio": "0x005F5C60",
+    "output_add": "0x00508CF9",
+    "drain_add": "0x00508D0E"
+  },
+  "original_code": {
+    "0044E7B0..0044E879": {
+      "hex": "51568bf1578b86200500008b168bb8e00e0000897c2408ff92d401000084c00f859e0000008a866806000084c074108b862005000003b8e80e0000897c24088b86200500008a88ae16000084c9750a8a88af16000084c9741d8b80e80e000085c07e138b8e1401000085c97e090fafc103f8897c24088a860207000084c074218d8eec050000ba030000008b0185c0740603b8e00e000083c1044a75ee897c240885ff7e1e8a866006000084c074148bcee8fa731a00da4c2408e8917637005f5e59c35f33c05e59c3",
+      "sha256": "27dcdb613375e03e843a4a45fbb844c09310c15d0600a0f249019d13d7a466e9"
+    },
+    "0044E880..0044E8E2": {
+      "hex": "568bf18b06ff90d401000084c0754f8a866006000084c074458b8e200500008a966906000084d28b81e40e000074060381ec0e00008a8e0207000084c974218d96ec050000be030000008b0a85c974060381e40e000083c2044e75ee5ec333c05ec3",
+      "sha256": "57a286ef558269e1a90d361b4fdb77d216f13034414b0b12cbbba2b43b1b81ee"
+    },
+    "0070C5B0..0070C5B7": {
+      "hex": "8a8170020000c3",
+      "sha256": "dc70faabde99871255277dda9a000f6611e1e612d8f4721bd81968541f4aa025"
+    },
+    "00459EE0..00459EE7": {
+      "hex": "8b8120050000c3",
+      "sha256": "e14f94839512c1779785a7c447f5ebab5bc4995dddc9c24e2bc5b22aab8db3d0"
+    },
+    "005F5C60..005F5C80": {
+      "hex": "83ec08db416c8b01dd5c2400ff9088000000db80a0000000dc7c240083c408c3",
+      "sha256": "095a50e9e65fad30ddd3ce677f851db5066fd7a8a020e3b2df16bd35d632b953"
+    },
+    "007C5F00..007C5F2C": {
+      "hex": "83ec0cd93c248d4424048b142481e2ffff00003b15802d8200750bdf388b50048b0083c40cc38b15802d8200",
+      "sha256": "41deea65cb3b09157013420167f759957f8dd9dc99bcbbb725cf34df2836d4d1"
+    },
+    "00461080..004610A0": {
+      "hex": "3bc78985e00e00007d10f7d88985e40e000089bde00e0000eb0689bde40e0000",
+      "sha256": "d74273f1eccee820437c2dd0d59938c723a2aad2a265380b2699f41cb9459a24"
+    },
+    "004610C0..004610D8": {
+      "hex": "3bc78985e80e00007d0ef7d88985ec0e000089bde80e0000",
+      "sha256": "6ba869ec8d97b64619dd69eb67f85459ad3059c386ee763631466e4b73697425"
+    },
+    "00508CF9..00508D07": {
+      "hex": "8b8ea453000003c8898ea4530000",
+      "sha256": "33487bf8b5b612240b94dc022e46e7720135f1bc250e459cee0ade172b8872a8"
+    },
+    "00508D0E..00508D1E": {
+      "hex": "8b96a85300008bcf03d08996a8530000",
+      "sha256": "1a33d624e6a9c57cb782b0cfdfe967878898c66fa54ffe28b64547618f96e33b"
+    }
+  },
+  "caller_admission_executed": {
+    "00508CA2..00508CF2": {
+      "hex": "8b466c8b3ca83bfb0f8487000000389f81000000757f385f74747a8b0d38b2a8003bcb7512389eec0100007517389eed010000741beb0d3b354c3da8000f94c03ac3740c389f1b04000075043bcb7445",
+      "sha256": "c34b164b1ea164cdb671a900b5de623633184876f32f5e7402ea0b757eb8cb64"
+    }
+  },
+  "empty_iteration_executed": {
+    "00508C30..00508D45": {
+      "hex": "83ec1053568bf133db8b8ea45300008b86a85300003bc8894c240c894424107d243bc374203bcb7415db44240cda742410dc1d18177e00dfe0f6c4017407c644241401eb04885c2414889e78570000899ea4530000899ea85300008b46785533ed3bc3885c240f894424140f8ea4000000578b466c8b3ca83bfb0f8487000000389f81000000757f385f74747a8b0d38b2a8003bcb7512389eec0100007517389eed010000741beb0d3b354c3da8000f94c03ac3740c389f1b04000075043bcb74458bcfe8b75af4ff8b8ea453000003c8898ea45300008bcfe8725bf4ff8b96a85300008bcf03d08996a8530000e89d71200084c074108bcfe8825af4ff85c07e05c6442413018b442418453be80f8c5effffff5f",
+      "sha256": "274174fc0f18839deaecc0e8bce732de940a81375858ab4f0f07a4b5837772e9"
+    }
+  },
+  "vtable_slots": {
+    "007E3F44": "e09e4500",
+    "007E4090": "b0c57000"
+  },
+  "payload_sha256": "257f138b2c918fe31637f77220c9d3f58b8b5a4bd498ddf2d8ab1033c09ba737"
+}

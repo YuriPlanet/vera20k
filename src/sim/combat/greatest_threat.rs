@@ -86,10 +86,11 @@
 //!   work. Trigger: an occupied civilian building choosing among several
 //!   enemies, or one standing in unexplored ground. Frequency: garrison maps
 //!   only.
-//! - The `DistributedFire=` spread-fire assignment (`FUN_00709550`) and the
-//!   AI-only ore-cell fallback (`TechnoClass::Cell_Threat_Fallback @
-//!   0x006F8C10`, which returns 0 for every human-controlled house) are not
-//!   represented. Neither is reachable for a human house today.
+//! - The `DistributedFire=` candidate/history assignment (`0x00709550`) is
+//!   not represented here. It is reachable for human-owned stock AEGIS;
+//!   its complete collection, firing-history and detach owners remain pending.
+//!   Separately, the omitted AI ore-cell fallback (`0x006F8C10`) returns 0
+//!   for a human-controlled house.
 //! - The ordinary class-mask AA bit (`Weapon772A90`) gates the airborne
 //!   prepass through the resolved native slot choice. The complete mask,
 //!   including Infantry special mission/type rewrites and AG class bits,
@@ -111,7 +112,7 @@ use super::{armor_index, is_within_range_leptons, lepton_distance_sq_raw};
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::rules::object_type::ObjectType;
+use crate::rules::object_type::{ObjectType, VhpScan};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
@@ -121,7 +122,9 @@ use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::pathfinding::zone_map::{ZoneGrid, ZoneId};
 use crate::sim::vision::FogState;
 use crate::util::fixed_math::SimFixed;
-use crate::util::native_x87::{NativeF64Bits, X87Chop53, X87Value, sqrt_approx_f32};
+use crate::util::native_x87::{
+    MaskedX87Chop53 as ScoreX87, MaskedX87Value, NativeF64Bits, X87Chop53, sqrt_approx_f32,
+};
 
 /// `Sqrt_Approx` operand base: leptons per cell.
 const LEPTONS_PER_CELL: i32 = 256;
@@ -223,8 +226,12 @@ impl ThreatCoefficients {
 /// start and again after a house lost its last structure. Native takes neither.
 pub(crate) const HOUSE_SELECTS_OWN_COEFFICIENTS: bool = true;
 
-fn load_threat_double(value: f64) -> Option<X87Value> {
-    X87Chop53::load_f64(NativeF64Bits::from_bits(value.to_bits())).ok()
+fn load_threat_double(value: f64) -> MaskedX87Value {
+    ScoreX87::load_f64(NativeF64Bits::from_bits(value.to_bits()))
+}
+
+fn spill_threat_double(value: MaskedX87Value) -> MaskedX87Value {
+    ScoreX87::load_f64(ScoreX87::store_f64_masked_chop(value))
 }
 
 fn threat_coord(entity: &GameEntity, terrain: Option<&ResolvedTerrainGrid>) -> (i32, i32, i32) {
@@ -340,17 +347,17 @@ pub(crate) fn calculate_threat_score(
     alliances: Option<&HouseAllianceMap>,
     coefficients: ThreatCoefficients,
     reference: ThreatReference,
-) -> Option<X87Value> {
+) -> Option<MaskedX87Value> {
     let scorer = entities.get(scorer_id)?;
     let candidate = entities.get(candidate_id)?;
     let scorer_type = rules.object(interner.resolve(scorer.type_ref()))?;
     let candidate_type = rules.object(interner.resolve(candidate.type_ref()))?;
-    let coeff_a = load_threat_double(coefficients.my_effectiveness)?;
-    let coeff_b = load_threat_double(coefficients.target_effectiveness)?;
-    let coeff_c = load_threat_double(coefficients.target_special_threat)?;
-    let coeff_d = load_threat_double(coefficients.target_strength)?;
-    let coeff_e = load_threat_double(coefficients.target_distance)?;
-    let mut score = X87Chop53::load_i32(0);
+    let coeff_a = load_threat_double(coefficients.my_effectiveness);
+    let coeff_b = load_threat_double(coefficients.target_effectiveness);
+    let coeff_c = load_threat_double(coefficients.target_special_threat);
+    let coeff_d = load_threat_double(coefficients.target_strength);
+    let coeff_e = load_threat_double(coefficients.target_distance);
+    let mut score = ScoreX87::load_i32(0);
 
     // B: the candidate's selected weapon against the scorer. A candidate
     // already targeting the scorer contributes the negated term (`FCHS` at
@@ -368,26 +375,26 @@ pub(crate) fn calculate_threat_score(
         &scorer_as_target,
     ) {
         let verses =
-            load_threat_double(selected.warhead.verses_f64[armor_index(&scorer_type.armor)])?;
-        let mut term = X87Chop53::mul(coeff_b, verses);
+            load_threat_double(selected.warhead.verses_f64[armor_index(&scorer_type.armor)]);
+        let mut term = ScoreX87::mul(coeff_b, verses);
         if candidate
             .attack_target
             .as_ref()
             .is_some_and(|target| target.target == super::TargetKind::Entity(scorer.stable_id()))
         {
-            term = X87Chop53::neg(term);
+            term = ScoreX87::neg(term);
         }
-        score = X87Chop53::add(score, term);
+        score = spill_threat_double(term);
     }
 
     // C: candidate type SpecialThreatValue (`TechnoTypeClass+0x2C0`).
-    score = X87Chop53::add(
-        score,
-        X87Chop53::mul(
+    score = spill_threat_double(ScoreX87::add(
+        ScoreX87::mul(
             coeff_c,
-            load_threat_double(candidate_type.special_threat_value)?,
+            load_threat_double(candidate_type.special_threat_value),
         ),
-    );
+        score,
+    ));
 
     // A: the scorer's selected weapon against the candidate. Retain the
     // selected weapon for the native range term below.
@@ -405,21 +412,13 @@ pub(crate) fn calculate_threat_score(
     );
     if let Some(selected) = selected_scorer_weapon.as_ref() {
         let verses =
-            load_threat_double(selected.warhead.verses_f64[armor_index(&candidate_type.armor)])?;
-        score = X87Chop53::add(score, X87Chop53::mul(coeff_a, verses));
+            load_threat_double(selected.warhead.verses_f64[armor_index(&candidate_type.armor)]);
+        score = spill_threat_double(ScoreX87::add(ScoreX87::mul(coeff_a, verses), score));
     }
 
     // D: live candidate health ratio (`ObjectClass::GetHealthRatio @ 0x005F5C60`).
-    let health_ratio = if candidate.health.max == 0 {
-        X87Chop53::load_i32(0)
-    } else {
-        X87Chop53::div(
-            X87Chop53::load_i32(i32::from(candidate.health.current)),
-            X87Chop53::load_i32(i32::from(candidate.health.max)),
-        )
-        .ok()?
-    };
-    score = X87Chop53::add(score, X87Chop53::mul(coeff_d, health_ratio));
+    let health_ratio = candidate.health.ratio(candidate_type.strength);
+    score = spill_threat_double(ScoreX87::add(ScoreX87::mul(health_ratio, coeff_d), score));
 
     // E: distance beyond the scorer's selected weapon range. With no weapon
     // selected native falls back to the scorer type's `GuardRange`
@@ -444,7 +443,7 @@ pub(crate) fn calculate_threat_score(
         X87Chop53::mul(dz, dz),
     );
     let distance_root = X87Chop53::load_f32(sqrt_approx_f32(distance_sq).ok()?).ok()?;
-    let distance_leptons = i32::try_from(X87Chop53::ftol_i64(distance_root).ok()?).ok()?;
+    let distance_leptons = X87Chop53::ftol_i32_low_masked(distance_root);
     let distance = match reference {
         // `CDQ ; AND EDX,0xff ; ADD EAX,EDX ; SAR EAX,0x8` at `0x0070D094`.
         ThreatReference::NullCoord => {
@@ -462,40 +461,44 @@ pub(crate) fn calculate_threat_score(
         |selected| selected.weapon.range.to_num::<i32>(),
     );
     let beyond_range = distance.wrapping_sub(range_cells).max(0);
-    score = X87Chop53::add(
-        X87Chop53::mul(X87Chop53::load_i32(beyond_range), coeff_e),
+    score = ScoreX87::add(
+        ScoreX87::mul(ScoreX87::load_i32(beyond_range), coeff_e),
         score,
     );
-    Some(X87Chop53::add(
-        score,
-        load_threat_double(THREAT_SCORE_BASE)?,
-    ))
+    Some(ScoreX87::add(score, load_threat_double(THREAT_SCORE_BASE)))
 }
 
-/// `TechnoClass::Evaluate_Candidate`'s scoring tail: the single truncating
-/// `ftol` at `0x006F86A9`, then the zero/negative handling at `0x006F8930`.
-///
-/// A score of exactly zero is a REJECTION, not a low-ranked accept; anything
-/// negative is clamped up to 1 and accepted.
-///
-/// Not modelled here: the `VHPScan=` adjustments (`0x006F86B4`, gate `G3` at
-/// `0x006F7D07`), which halve or double the score from the candidate's
-/// `EstimatedHealth` bookkeeping (`TechnoClass+0x70`, debited by the passive
-/// driver at `0x00709820`). VERA carries no `EstimatedHealth` field.
-/// - Trigger: an attacker whose TYPE authors `VHPScan=`. Stock `rulesmd.ini`
-///   has exactly one — `[NASAM] VHPScan=Strong` (the Patriot missile site).
-/// - Player effect: a SAM site would skip candidates other SAM sites have
-///   already committed lethal damage to, instead of piling on.
-/// - Frequency: only among several SAM sites firing at one aircraft.
-/// - Downstream risk: the field is written by the acquisition driver and read
-///   by every other object's scan, so it is shared targeting state; it belongs
-///   with the driver port, not here.
-fn finish_score(score: X87Value) -> Option<i32> {
-    let truncated = i32::try_from(X87Chop53::ftol_i64(score).ok()?).ok()?;
-    if truncated == 0 {
+/// `EvaluateCandidate6F7CF7..6F7D13`, before its weapon-verses check.
+fn rejects_vhp_candidate(mode: VhpScan, estimated_health: i32) -> bool {
+    mode == VhpScan::Strong && estimated_health <= 0
+}
+
+/// Native `_ftol` at6F870B precedes VHPScan and the later integer modifiers.
+fn truncate_score(score: MaskedX87Value) -> i32 {
+    // Native reads low EAX, including wrapping signed64 results and masked
+    // conversion-indefinite. A checked i32 conversion wrongly rejects them.
+    ScoreX87::ftol_i32_low_masked(score)
+}
+
+/// `EvaluateCandidate6F8719..6F875F`; original-byte corpus: vhp_scan.json.
+fn adjust_vhp_score(mode: VhpScan, estimated_health: i32, strength: i32, score: i32) -> i32 {
+    if mode != VhpScan::Normal {
+        score
+    } else if estimated_health <= 0 {
+        score / 2
+    } else if estimated_health <= strength / 2 {
+        score.wrapping_mul(2)
+    } else {
+        score
+    }
+}
+
+/// Final6F8928..6F8939 acceptance, after all integer score modifiers.
+fn finish_score(score: i32) -> Option<i32> {
+    if score == 0 {
         return None;
     }
-    Some(truncated.max(1))
+    Some(score.max(1))
 }
 
 /// The cells of one Chebyshev ring, in `Greatest_Threat`'s literal loop order:
@@ -1152,6 +1155,12 @@ fn evaluate_candidate(ctx: &ScanContext<'_>, candidate: &GameEntity) -> Option<i
         &scanner_facts,
         &candidate_facts,
     )?;
+    // G3 sits between selection and the verses gate. The conditional native
+    // +3BC FIRE_ILLEGAL probe and null-weapon continuation remain separate gaps
+    // in the existing early ladder; this check adds neither callback nor RNG.
+    if rejects_vhp_candidate(ctx.attacker_obj.vhp_scan, candidate.estimated_health.get()) {
+        return None;
+    }
     if selected.warhead.verses_f64[armor_index(&candidate_obj.armor)] <= VERSES_FLOOR {
         return None;
     }
@@ -1449,7 +1458,9 @@ fn evaluate_candidate(ctx: &ScanContext<'_>, candidate: &GameEntity) -> Option<i
     //   `ResolvedTerrainGrid` into the scan, which is terrain plumbing rather
     //   than targeting.
 
-    // G28/P9 — score, truncate, and treat an exactly-zero score as a rejection.
+    // G28/P9 — truncate first, then Normal VHPScan, then final acceptance.
+    // Native's additional house/target/zone modifiers at6F875F..6F8928 remain
+    // unrepresented; they belong after this VHP transform and before finish_score.
     let score = calculate_threat_score(
         ctx.entities,
         ctx.attacker.stable_id,
@@ -1461,6 +1472,13 @@ fn evaluate_candidate(ctx: &ScanContext<'_>, candidate: &GameEntity) -> Option<i
         ctx.coefficients,
         ctx.threat_reference,
     )?;
+    let score = truncate_score(score);
+    let score = adjust_vhp_score(
+        ctx.attacker_obj.vhp_scan,
+        candidate.estimated_health.get(),
+        candidate_obj.strength,
+        score,
+    );
     finish_score(score)
 }
 
@@ -2156,7 +2174,7 @@ mod tests {
         let coefficients =
             ThreatCoefficients::resolve(&rules, attacker_obj, HOUSE_SELECTS_OWN_COEFFICIENTS);
         let score = |candidate: u64, reference: ThreatReference| {
-            finish_score(
+            finish_score(truncate_score(
                 calculate_threat_score(
                     &entities,
                     1,
@@ -2169,7 +2187,7 @@ mod tests {
                     reference,
                 )
                 .expect("scored"),
-            )
+            ))
             .expect("accepted")
         };
         assert!(
@@ -2707,9 +2725,134 @@ mod tests {
     /// is clamped up to 1 and accepted.
     #[test]
     fn zero_score_rejects_and_negative_clamps_to_one() {
-        assert_eq!(finish_score(X87Chop53::load_i32(0)), None);
-        assert_eq!(finish_score(X87Chop53::load_i32(-5)), Some(1));
-        assert_eq!(finish_score(X87Chop53::load_i32(42)), Some(42));
+        assert_eq!(finish_score(0), None);
+        assert_eq!(finish_score(-5), Some(1));
+        assert_eq!(finish_score(42), Some(42));
+    }
+
+    #[test]
+    fn vhp_scan_matches_original_integer_slices() {
+        let rows: serde_json::Value =
+            serde_json::from_str(include_str!("../../../tools/spatial_oracle/vhp_scan.json"))
+                .unwrap();
+        let rows = rows.as_array().unwrap();
+        assert_eq!(rows.len(), 498);
+        for row in rows {
+            let mode = match row["mode"].as_i64().unwrap() {
+                0 => VhpScan::None,
+                1 => VhpScan::Normal,
+                2 => VhpScan::Strong,
+                _ => unreachable!(),
+            };
+            let integer = |key: &str| row[key].as_i64().unwrap() as i32;
+            let optional = |key: &str| row[key].as_i64().map(|value| value as i32);
+            if let Some(bits) = row["float_score_bits"].as_str() {
+                let native = crate::util::native_x87::NativeF64Bits::from_bits(
+                    u64::from_str_radix(bits, 16).unwrap(),
+                );
+                let score = ScoreX87::load_f64(native);
+                assert_eq!(truncate_score(score), integer("score"), "{row}");
+            }
+            let rejected = rejects_vhp_candidate(mode, integer("estimated"));
+            assert_eq!(rejected, row["early_rejected"].as_bool().unwrap(), "{row}");
+            let score = adjust_vhp_score(
+                mode,
+                integer("estimated"),
+                integer("strength"),
+                integer("score"),
+            );
+            assert_eq!(score, integer("adjusted"), "{row}");
+            assert_eq!(finish_score(score), optional("score_accepted"), "{row}");
+            assert_eq!(
+                if rejected { None } else { finish_score(score) },
+                optional("combined"),
+                "{row}"
+            );
+        }
+    }
+
+    fn vhp_rules(mode: &str, score: i32) -> RuleSet {
+        let strength_coefficient = score - 100_000;
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\nMyEffectivenessCoefficientDefault=0\nTargetEffectivenessCoefficientDefault=0\n\
+             TargetSpecialThreatCoefficientDefault=0\nTargetStrengthCoefficientDefault={strength_coefficient}\n\
+             TargetDistanceCoefficientDefault=0\n\
+             [VehicleTypes]\n0=GRIZZLY\n1=SCOUT\n\
+             [GRIZZLY]\nStrength=300\nPrimary=GUN\nVHPScan={mode}\n\
+             [SCOUT]\nStrength=301\nArmor=heavy\n\
+             [WeaponTypes]\n0=GUN\n[GUN]\nDamage=100\nRange=5\nWarhead=WH\n\
+             [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+        ))).unwrap()
+    }
+
+    fn vhp_entities(estimates: [i32; 2]) -> EntityStore {
+        let mut entities = EntityStore::new();
+        place(
+            &mut entities,
+            1,
+            "GRIZZLY",
+            "Americans",
+            5,
+            5,
+            EntityCategory::Unit,
+        );
+        for (id, estimate) in [2, 3].into_iter().zip(estimates) {
+            place(
+                &mut entities,
+                id,
+                "SCOUT",
+                "Soviets",
+                5 + id as u16,
+                5,
+                EntityCategory::Unit,
+            );
+            let entity = entities.get_mut(id).unwrap();
+            entity.health.current = 301;
+            entity.estimated_health =
+                crate::sim::estimated_health::EstimatedHealth::from_raw(estimate);
+        }
+        entities
+    }
+
+    #[test]
+    fn vhp_scan_changes_live_flat_scan_selection_at_estimate_boundaries() {
+        for (mode, estimates, expected) in [
+            ("None", [0, 301], Some(2)),
+            ("Strong", [0, 301], Some(3)),
+            ("Strong", [-1, 0], None),
+            ("Strong", [1, 301], Some(2)),
+            ("Normal", [0, 301], Some(3)),
+            ("Normal", [301, 150], Some(3)),
+            ("Normal", [301, 151], Some(2)),
+        ] {
+            let rules = vhp_rules(mode, 100);
+            let entities = vhp_entities(estimates);
+            assert_eq!(
+                pick_with_mask(&entities, &rules, 1, super::super::ScanMission::Hunt),
+                expected,
+                "{mode} {estimates:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn vhp_scan_halves_before_zero_rejection_without_changing_raw_retaliation_score() {
+        for score in [-1, 1] {
+            let entities = vhp_entities([0, -10]);
+            let rules = vhp_rules("Normal", score);
+            assert_eq!(pick(&entities, &rules, 1), None, "{score}/2 rejects");
+            let interner = test_interner();
+            let raw = super::super::combat_targeting::calculate_ai_threat_score(
+                &entities, 1, 2, &rules, &interner, None, None,
+            )
+            .unwrap();
+            assert_eq!(truncate_score(raw), score, "raw70CD10 remains unchanged");
+            let none_rules = vhp_rules("None", score);
+            assert!(
+                pick(&entities, &none_rules, 1).is_some(),
+                "None accepts {score}"
+            );
+        }
     }
 
     /// The `0.02f` Verses floor is a FLOAT constant widened to double, so an
@@ -2721,3 +2864,7 @@ mod tests {
         assert!(0.0_f64 <= VERSES_FLOOR);
     }
 }
+
+#[cfg(test)]
+#[path = "greatest_threat_health_tests.rs"]
+mod health_tests;

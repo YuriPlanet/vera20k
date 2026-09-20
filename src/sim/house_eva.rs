@@ -234,6 +234,7 @@ mod tests {
         e.owner = sim.interner.intern(owner);
         e.category = EntityCategory::Structure;
         e.lifecycle.in_limbo = false;
+        e.lifecycle.cell_marked = true;
         sim.substrate.entities.insert(e);
     }
 

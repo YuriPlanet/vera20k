@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Drive/Ship fresh first-query Mark0/CanEnter/Mark1 saved-code dispatch, original second-candidate producer and recursive-call boundary, separate TrackProcess chain eligibility, and supplied recursive direction normalization",
+  "assumptions": [
+    "Interior continuations supply the already-derived first Cell pointer or retained first XYZ, selected direction, effective height, owner/class pointer and native-shaped stack locals; prior pathfinding, facing, entering receiver and crate/life-guard execution are excluded",
+    "Owner uses a copy of the retail Unit vtable; original GetType and WhatAmI callbacks execute with supplied UnitType IsTrain+C94, Crusher+D28 and Passive+E0C values. Flag combinations are continuation inputs, not proof of any stock-YR type or live class reaching them",
+    "First query begins immediately after Map returned candidate1. Second begins at Drive4B40A3/Ship6A36CF with first XYZ(2688,2432,312), second direction1 and height3; original additions, packed-cell store, Map lookup and argument publication execute. Chain begins immediately before CanEnter with its four earlier arguments supplied on the stack",
+    "Original49F3A0 startup initializes the lepton direction table before each case; direction deltas are not supplied",
+    "Supplied original null coordinates are zero. Cell1 is(10,9), Cell2(11,8). Second-candidate output records original XYZ(2944,2176,312) and saved cell(11,8). Differing overlays establish that later Crusher coercion reads the newly published candidate2 cell",
+    "Correction of the prior corpus: its second-query continuation supplied a stale candidate1 packed cell after skipping the producer, so its candidate1-anchor/reachability claim was invalid. These rows now execute the producer; the supplied callback and response-boundary scope is unchanged. Alive=false rows supply post-guard state solely to exercise the later life check, not the preceding crate/life branch",
+    "Caller handling is sampled at the first named response boundary; scatter, gate, wall, delay, two-node shift and recursive Process_Movement bodies do not execute",
+    "Recursive code2 rows run the original CALL and stop at callee entry, recording all three supplied/caller-written arguments. Separate normalization rows begin at the real second-direction checks with a supplied recursion flag; no full recursive call is claimed",
+    "Chain executes the original jump table and native Unit/Passive gate only, stopping before chain installation. It has no fresh Mark bracket and code2 can reach eligibility without a fresh recursive retry",
+    "Observation hooks only append evidence. Relevant original code ranges are checked byte-for-byte unchanged after each row; supplied external stubs are outside the executable image"
+  ],
+  "substitutions": [
+    "Virtual Mark+124 and CanEnter+1AC slots point to external MOV-EAX/RET fixture stubs. Mark returns an explicitly supplied clobber value; CanEnter returns the supplied code0..7. Their world side effects and classification are NOT native evidence here",
+    "All other reached instructions, conditional branches, type coercions, type/WhatAmI getters, original map lookup, jump table and recursive-call argument writes execute unpatched retail bytes"
+  ],
+  "entry_points": {
+    "direction_initializer": "0x0049F3A0",
+    "drive_first": "0x004B349C",
+    "drive_first_query": "0x004B34C0",
+    "drive_second": "0x004B40A3",
+    "drive_second_query": "0x004B4120",
+    "drive_chain": "0x004B1C3A",
+    "drive_chain_query": "0x004B1C3E",
+    "drive_recursive_call": "0x004B4219",
+    "ship_first": "0x006A2AEB",
+    "ship_first_query": "0x006A2B0F",
+    "ship_second": "0x006A36CF",
+    "ship_second_query": "0x006A374C",
+    "ship_chain": "0x006A1284",
+    "ship_chain_query": "0x006A1288",
+    "ship_recursive_call": "0x006A3845"
+  },
+  "original_code_range_sha256": {
+    "0049F3A0..0049F420": "52f1257c8be8543e900151dec350e5f57e5282a63e03367d58d8dd5118afb712",
+    "004B2630..004B4767": "11e321ff23751671400cae05e8745cfc305c989a547a0299d2a1dbbe7d73eeb5",
+    "006A1C80..006A3DA0": "d051687f053a8c7d0add49c0ff000ec726f1668376bb4cec64bf83af35cb0cd1",
+    "004B0F20..004B2624": "ca8c6c98f8aa26cdbcdce654d4bd2309277225e979cb9743335fb2086fe01626",
+    "006A05F0..006A1C78": "eaaf1930ae98db64cb9f1f0c240d698511a6c7f9904ef8dcd27f8d9f60c50928"
+  },
+  "payload_sha256": "90ba96f07698e7ea018f4b25b2255357b736fb35c78d9b61eecb566cc2f772ff"
+}

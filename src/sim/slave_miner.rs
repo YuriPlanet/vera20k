@@ -542,13 +542,29 @@ pub(crate) fn deploy_slave_miner_with_overlay_context(
             entity.facing,
             entity.selected,
             target_type.to_string(),
+            crate::sim::conversion_health::ConversionHealth::capture(
+                entity,
+                obj,
+                rules.object(target_type)?,
+                crate::sim::conversion_health::ConversionKind::Unit,
+            ),
             enslaves,
             slaves_number,
         ))
     }?;
 
-    let (owner, rx, ry, z, _facing, was_selected, target_type, slave_type, slaves_number) =
-        deploy_data;
+    let (
+        owner,
+        rx,
+        ry,
+        z,
+        _facing,
+        was_selected,
+        target_type,
+        converted_health,
+        slave_type,
+        slaves_number,
+    ) = deploy_data;
 
     // Preserve any existing manager/bindings when this is a redeploy after a
     // retail-style YAREFN -> SMIN reverse conversion.
@@ -570,6 +586,7 @@ pub(crate) fn deploy_slave_miner_with_overlay_context(
     )?;
 
     if let Some(ge) = sim.substrate.entities.get_mut(new_sid) {
+        converted_health.apply(ge);
         ge.selected = was_selected;
     }
 
@@ -672,10 +689,16 @@ pub(crate) fn undeploy_slave_miner_with_overlay_context(
             entity.position.z,
             entity.selected,
             target_type.to_string(),
+            crate::sim::conversion_health::ConversionHealth::capture(
+                entity,
+                obj,
+                rules.object(target_type)?,
+                crate::sim::conversion_health::ConversionKind::Building,
+            ),
         ))
     }?;
 
-    let (owner, rx, ry, z, was_selected, target_type) = undeploy_data;
+    let (owner, rx, ry, z, was_selected, target_type, converted_health) = undeploy_data;
 
     let slave_ids = sim.production.slave_bindings.remove(&stable_id);
 
@@ -695,6 +718,7 @@ pub(crate) fn undeploy_slave_miner_with_overlay_context(
     )?;
 
     if let Some(ge) = sim.substrate.entities.get_mut(new_sid) {
+        converted_health.apply(ge);
         ge.selected = was_selected;
     }
 

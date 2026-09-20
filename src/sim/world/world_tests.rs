@@ -240,10 +240,7 @@ fn animation_boundary_fixture() -> (Simulation, RuleSet) {
         0,
         0,
         owner,
-        crate::sim::components::Health {
-            current: 100,
-            max: 100,
-        },
+        crate::sim::components::Health { current: 100 },
         type_ref,
         EntityCategory::Infantry,
         0,
@@ -1329,7 +1326,10 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
         sim.terrain_costs[&crate::rules::locomotor_type::SpeedType::Track].cost_at(5, 4),
         100
     );
-    assert_eq!(sim.houses.get(&wall_owner).unwrap().economy.credits, credits_before);
+    assert_eq!(
+        sim.houses.get(&wall_owner).unwrap().economy.credits,
+        credits_before
+    );
     assert_eq!(sim.scenario_rng.state(), rng_before);
     assert_ne!(sim.state_hash(), hash_before_sale);
     assert!(matches!(
@@ -1693,7 +1693,7 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
 
 #[test]
 fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
-    fn run(carrier_hp: u16) -> (Simulation, crate::sim::combat::CombatTickResult, u64) {
+    fn run(carrier_hp: i32) -> (Simulation, crate::sim::combat::CombatTickResult, u64) {
         let ini = IniFile::from_str(
             "[InfantryTypes]\n0=PASSENGER\n\
              [VehicleTypes]\n0=BOOMER\n1=SHOOTER\n\
@@ -1725,7 +1725,6 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
         carrier.owner = enemy;
         carrier.type_ref = sim.interner.intern("BOOMER");
         carrier.health.current = carrier_hp;
-        carrier.health.max = carrier_hp;
         carrier.passenger_role = crate::sim::passenger::PassengerRole::Transport { cargo };
         sim.substrate.entities.insert(carrier);
         let _ = sim.reveal(10);
@@ -1745,7 +1744,6 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
         listener.category = EntityCategory::Structure;
         listener.is_voxel = false;
         listener.health.current = 300;
-        listener.health.max = 300;
         sim.substrate.entities.insert(listener);
         let _ = sim.reveal(30);
 
@@ -1755,7 +1753,6 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
         nested_fatal.category = EntityCategory::Structure;
         nested_fatal.is_voxel = false;
         nested_fatal.health.current = 107;
-        nested_fatal.health.max = 107;
         sim.substrate.entities.insert(nested_fatal);
         let _ = sim.reveal(31);
 
@@ -1891,7 +1888,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
     assert!(boundary.substrate.occupancy.contains_entity(8, 5, 10));
     for id in [30, 31] {
         let listener = boundary.substrate.entities.get(id).unwrap();
-        assert_eq!(listener.health.current, listener.health.max);
+        assert_eq!(listener.health.current, if id == 30 { 300 } else { 107 });
         assert_eq!(listener.last_attacker_id, None);
     }
     assert!(
@@ -2349,10 +2346,7 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
             0,
             0,
             owner,
-            crate::sim::components::Health {
-                current: 100,
-                max: 100,
-            },
+            crate::sim::components::Health { current: 100 },
             type_ref,
             category,
             0,
@@ -2406,10 +2400,7 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
             0,
             0,
             original_building_owner,
-            crate::sim::components::Health {
-                current: 100,
-                max: 100,
-            },
+            crate::sim::components::Health { current: 100 },
             sim.interner.intern("TESTBUILD"),
             EntityCategory::Structure,
             0,
@@ -4457,8 +4448,8 @@ fn test_destroyed_bridge_snaps_unit_to_ground_over_water_below() {
         .get(1)
         .expect("deck unit must SURVIVE collapse over water");
     assert_eq!(
-        e.health.current, e.health.max,
-        "DropIn never harms — health stays at max"
+        e.health.current, 300,
+        "DropIn never harms — authored full health uses MTNK Strength300"
     );
     assert_eq!(e.position.z, 0, "snapped to ground level");
     assert!(!e.on_bridge);
@@ -4521,7 +4512,7 @@ fn test_destroyed_bridge_snaps_unit_to_ground_over_overlay_blocked() {
         .entities
         .get(1)
         .expect("deck unit must SURVIVE over overlay-blocked ground");
-    assert_eq!(e.health.current, e.health.max, "DropIn never harms");
+    assert_eq!(e.health.current, 300, "DropIn never harms");
     assert_eq!(e.position.z, 0);
     assert!(!e.on_bridge);
     assert!(e.bridge_occupancy.is_none());
@@ -4580,7 +4571,7 @@ fn test_destroyed_bridge_snaps_unit_to_ground_over_terrain_object_blocked() {
         .entities
         .get(1)
         .expect("deck unit must SURVIVE over terrain-object-blocked ground");
-    assert_eq!(e.health.current, e.health.max, "DropIn never harms");
+    assert_eq!(e.health.current, 300, "DropIn never harms");
     assert_eq!(e.position.z, 0);
     assert!(!e.on_bridge);
     assert!(e.bridge_occupancy.is_none());
@@ -4652,7 +4643,7 @@ fn test_destroyed_bridge_fallout_matches_rebuilt_ground_walkability() {
     // DropIn correction: the unit survived stranded at ground level even
     // though the underlying ground is cliff-like (vanilla never despawns).
     let e = sim.substrate.entities.get(1).expect("deck unit survives");
-    assert_eq!(e.health.current, e.health.max, "DropIn never harms");
+    assert_eq!(e.health.current, 300, "DropIn never harms");
     assert!(!e.on_bridge);
 }
 
@@ -6452,7 +6443,20 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
         movement.decel_factor = SimFixed::lit("0.002");
         movement.slowdown_distance = SimFixed::from_num(500);
     }
-    assert!(sim.substrate.entities.get(1).unwrap().drive_track.is_some());
+    // An accepted order only installs NavCom/route. The first production
+    // Process owns selection, the retained head, and its occupation claim.
+    sim.process_ground_locomotor_for_test(1, None, Some(&grid), None)
+        .expect("Drive Process must commit the first segment before Stop");
+    let committed_track = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .drive_locomotion
+        .as_ref()
+        .unwrap()
+        .track;
+    assert!(committed_track.turn_index >= 0);
     let committed_head = sim
         .substrate
         .entities
@@ -6485,7 +6489,6 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
     let stopped = sim.substrate.entities.get(1).unwrap();
     assert_eq!(stopped.navigation.nav_com, None);
     assert!(stopped.movement_target.is_some());
-    assert!(stopped.drive_track.is_some());
     let stopped_target = stopped.movement_target.as_ref().unwrap();
     assert_eq!(
         stopped_target.path,
@@ -6496,6 +6499,10 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
         Some((committed_head.rx, committed_head.ry))
     );
     let drive = stopped.drive_locomotion.as_ref().unwrap();
+    assert_eq!(
+        drive.track, committed_track,
+        "Stop preserves the active track"
+    );
     assert!(drive.head_to.is_some());
     assert!(drive.occupation_head_to.is_some());
     assert!(sim.substrate.occupancy.contains_entity(4, 4, 1));
@@ -6560,8 +6567,8 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
         (committed_head.rx, committed_head.ry)
     );
     assert!(entity.movement_target.is_none());
-    assert!(entity.drive_track.is_none());
     let drive = entity.drive_locomotion.as_ref().unwrap();
+    assert_eq!((drive.track.turn_index, drive.track.cursor), (-1, 0));
     assert_eq!(drive.head_to, None);
     assert_eq!(drive.occupation_head_to, None);
     assert!(
@@ -6670,14 +6677,19 @@ fn gsi_13_06_stop_preserves_committed_ship_segment_and_speed_state() {
         )
     };
     assert!(issued);
-    let committed_head = {
+    sim.process_ground_locomotor_for_test(1, None, Some(&grid), None)
+        .expect("Ship Process must commit the first segment before Stop");
+    let (committed_head, committed_track) = {
         let entity = sim.substrate.entities.get_mut(1).unwrap();
-        assert!(entity.drive_track.is_some());
         let ship = entity.ship_locomotion.as_mut().expect("Ship runtime");
+        assert!(ship.track.turn_index >= 0);
         ship.target_speed_fraction = SIM_ONE;
         entity.foot_speed.applied_fraction = SIM_HALF;
         entity.foot_speed.cached_current_speed = 10;
-        ship.head_to.expect("Ship curve has a committed head")
+        (
+            ship.head_to.expect("Ship curve has a committed head"),
+            ship.track,
+        )
     };
     let committed_cell = (
         u16::try_from(committed_head.x.div_euclid(256)).unwrap(),
@@ -6700,6 +6712,10 @@ fn gsi_13_06_stop_preserves_committed_ship_segment_and_speed_state() {
     assert_eq!(target.path, vec![(4, 4), committed_cell]);
     assert_eq!(target.final_goal, Some(committed_cell));
     let ship = stopped.ship_locomotion.as_ref().expect("Ship runtime");
+    assert_eq!(
+        ship.track, committed_track,
+        "Stop preserves the active track"
+    );
     assert_eq!(ship.destination, None);
     assert_eq!(ship.head_to, Some(committed_head));
     assert_eq!(ship.target_speed_fraction, SimFixed::lit("0.3"));
@@ -7096,7 +7112,6 @@ fn test_attack_move_lethal_hit_does_not_run_pointer_expiry_early() {
     );
     if let Some(e) = sim.substrate.entities.get_mut(2) {
         e.health.current = 50;
-        e.health.max = 50;
     }
     let grid = PathGrid::new(32, 32);
     let cmd = cmd_envelope(
@@ -7223,10 +7238,7 @@ fn test_fog_revealed_persists_after_unit_moves_away() {
         0,
         0,
         americans_id,
-        crate::sim::components::Health {
-            current: 100,
-            max: 100,
-        },
+        crate::sim::components::Health { current: 100 },
         e1_id,
         EntityCategory::Infantry,
         0,
@@ -7794,10 +7806,7 @@ fn command_death_is_ignored_before_ordinary_tail_drain() {
         let mut bld = GameEntity::test_default(id, "GAPOWR", "Americans", rx, ry);
         bld.category = EntityCategory::Structure;
         bld.foundation = "2x2".to_string();
-        bld.health = Health {
-            current: 750,
-            max: 750,
-        };
+        bld.health = Health { current: 750 };
         sim.substrate.entities.insert(bld);
         sim.reveal(id);
     }
@@ -7879,18 +7888,12 @@ fn combat_death_not_repaired_then_freed_at_end_of_tick() {
     // `+0x388`. Face it east at the building so the death/drain ordering under
     // test happens on the first tick instead of after a turn-to-fire.
     atk.facing = 64;
-    atk.health = Health {
-        current: 300,
-        max: 300,
-    };
+    atk.health = Health { current: 300 };
     // Damaged, auto-repairing enemy building MTNK destroys this tick at Phase 5.
     let mut bld = GameEntity::test_default(2, "TARGB", "Russia", 7, 5);
     bld.category = EntityCategory::Structure;
     bld.foundation = "1x1".to_string();
-    bld.health = Health {
-        current: 50,
-        max: 750,
-    };
+    bld.health = Health { current: 50 };
     bld.repairing = true;
     sim.interner = crate::sim::intern::test_interner();
     let russia = sim.interner.intern("Russia");
@@ -10351,6 +10354,12 @@ fn attack_move_resume_lets_a_crusher_tank_through_a_sandbag_cell() {
             .map(|t| t.path.clone())
     };
     let crusher = run(true).expect("crusher resumes its attack-move");
-    assert!(crusher.contains(&(5, 0)), "crusher route crosses the sandbag: {crusher:?}");
-    assert!(run(false).is_none(), "non-crusher is refused at the sandbag");
+    assert!(
+        crusher.contains(&(5, 0)),
+        "crusher route crosses the sandbag: {crusher:?}"
+    );
+    assert!(
+        run(false).is_none(),
+        "non-crusher is refused at the sandbag"
+    );
 }

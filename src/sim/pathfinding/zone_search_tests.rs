@@ -885,7 +885,25 @@ fn caller_count_bridge_detour(
         cell.bridge_transition = true;
         cell.bridge_deck_level = 4;
     }
-    let mut zones = ZoneGrid::build(&PathGrid::new(6, 4), &BTreeMap::new(), 6, 4);
+    // Foot4D3810 -> Map56D100 needs the native base rows before the route
+    // search. Build those from this fixture's real levels and Map Size=(6,4),
+    // including the bridge's ground endpoints. The deliberately restricted
+    // hierarchy below remains the separate Cell+122 caller-count witness.
+    let mut zones = ZoneGrid::build_with_native_bridge_geometry(
+        &path,
+        &BTreeMap::new(),
+        Some(&terrain),
+        &[BridgeEndpointRecord {
+            endpoint_a: (1, 2),
+            endpoint_b: (5, 2),
+            group_id: 0,
+            active: true,
+            bridge_kind: BridgeRecordKind::High,
+        }],
+        6,
+        4,
+        Some((6, 4)),
+    );
     let mut labels = vec![3; 24];
     for (x, y) in [(1, 0), (5, 0), (5, 1), (5, 2), (1, 2)] {
         labels[y * 6 + x] = 1;
@@ -896,6 +914,23 @@ fn caller_count_bridge_detour(
     } else {
         ((1, 0), (5, 0))
     };
+    let native_start = zones
+        .get_path_zone_id_native(&terrain, start, mz, false)
+        .expect("caller fixture retains native topology");
+    assert!(
+        (2..u32::from(u16::MAX)).contains(&native_start),
+        "the native precheck must use a valid ground row, not equal invalid labels"
+    );
+    assert_eq!(
+        zones.get_path_zone_id_native(&terrain, goal, mz, false),
+        Some(native_start),
+        "the top-row shortcut connects the native source and destination"
+    );
+    assert_eq!(
+        zones.get_path_zone_id_native(&terrain, (3, 2), mz, true),
+        Some(native_start),
+        "the bridge deck resolves through the same reachable ground component"
+    );
     let route = |counts: Option<&BlockerNeighborCounts>| {
         find_layered_path_zoned_marker(
             &path,
@@ -1123,7 +1158,13 @@ fn gsi_04_12_interaction_order_entry_threads_exact_blocker_counts() {
     height_map.insert((1, 0), 4);
     height_map.insert((5, 0), 4);
     let mut sim = Simulation::new();
-    sim.playfield_bounds = Some(rectangular_spawn_bounds(6));
+    // Explicit fixture Map Size=(6,4), separate from the generous LocalSize
+    // bounds. Foot's production precheck consumes both header dimensions.
+    sim.playfield_bounds = Some(PlayfieldBounds {
+        base: 6,
+        ..rectangular_spawn_bounds(6)
+    });
+    sim.playfield_size_height = Some(4);
     sim.resolved_terrain = Some(terrain);
     sim.zone_grid = Some(zone_grid);
     let engineer_id = sim
@@ -1162,35 +1203,50 @@ fn gsi_04_12_interaction_order_entry_threads_exact_blocker_counts() {
         "Walk searches during Process, after order admission"
     );
 
-    // The command retains the object destination. Execute the real no-head
-    // Process before checking its route, with live blockers and the same grids.
-    crate::sim::movement::movement_tick::tick_movement_object_with_grids(
-        &mut sim.substrate.entities,
-        engineer_id,
-        Some(&path_grid),
-        &sim.terrain_costs,
-        &sim.house_alliances,
-        &mut sim.substrate.occupancy,
-        &mut sim.substrate.cell_occupation,
-        &mut sim.substrate.raw_cell_occupation,
-        &mut sim.substrate.next_occupancy_enter_order,
-        &mut sim.scenario_rng,
-        sim.session.tick,
-        sim.session.binary_frame,
-        sim.zone_grid.as_ref(),
-        sim.resolved_terrain.as_ref(),
-        sim.overlay_grid.as_ref(),
-        None,
-        sim.playfield_bounds,
-        &sim.terrain_speed_config,
-        sim.close_enough,
-        sim.path_delay_ticks,
-        sim.blockage_path_delay_ticks,
-        &mut sim.interner,
-        Some(&rules),
-        &mut Vec::new(),
-        &mut Vec::new(),
+    assert_eq!(
+        engineer.mission.queued().known(),
+        Some(crate::sim::mission::MissionType::Capture)
     );
+
+    // The direct Process seam omits Object/Techno AI. Run the production
+    // Ready -> Commence checkpoint first: Infantry51C300 reads CURRENT
+    // mission when admitting the Building NavCom, not its queued Capture.
+    sim.mission_host_promote(engineer_id, sim.session.binary_frame, &rules);
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(engineer_id)
+            .unwrap()
+            .mission
+            .current()
+            .known(),
+        Some(crate::sim::mission::MissionType::Capture)
+    );
+    // Publish the same navigation used by order admission for shared world
+    // receivers, which take their grid from Simulation rather than the
+    // locomotor test seam's optional fallback.
+    sim.path_grid = Some(std::sync::Arc::new(path_grid));
+    let target_cell = sim
+        .resolved_terrain
+        .as_ref()
+        .unwrap()
+        .native_cell_identity((5, 0));
+    assert_eq!(
+        sim.infantry_can_enter(
+            engineer_id,
+            target_cell,
+            crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
+            &rules,
+            None,
+        )
+        .expect("Capture target admission uses the live Building NavCom"),
+        crate::sim::movement::infantry_entry::InfantryEntryClass::Clear
+    );
+
+    // Execute the real no-head Process with live blockers and canonical grids.
+    sim.process_ground_locomotor_for_test(engineer_id, Some(&rules), None, None)
+        .expect("Capture Process retains the fixture's native map inputs");
+
     let engineer = sim.substrate.entities.get(engineer_id).unwrap();
     assert_eq!(
         engineer.navigation.nav_com,

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original6FCFA0 GetROF signed numeric stores, branch order and RNG with supplied query callbacks",
+  "assumptions": [
+    "Queried type, weapon, class, garrison/count and retained HouseROF are supplied inputs",
+    "Original Scenario RNG seed constructor, range draws, veterancy predicates and ftol execute",
+    "Aircraft class1 and Type+6C4 branch is distinct from Infantry class15/Type+6C0",
+    "No caller FireAt scheduling, weapon selection, INI parsing or House factor construction claim"
+  ],
+  "substitutions": [
+    "Scratch-owned virtual query table returns supplied class/weapon/type/garrison/occupants; originalPE code/vtables unchanged"
+  ],
+  "entry_points": {
+    "get_rof": "0x006FCFA0"
+  },
+  "original_slices": [
+    {
+      "start": "006FCFA0",
+      "end_exclusive": "006FD205",
+      "hex": "568bf1578b06ff502c83f806751383befc020000017e0a5fb8010000005ec204008b44240c8b16508bceff92f80300008b3885ff750a5fb8010000005ec204008a873001000084c00f850c0200008a872a01000084c0740e8b860803000085c00f85f40100008a872901000084c0740e8b860403000085c00f85dc0100008a872d01000084c0740e8b861403000085c00f85c401000085f6750433c0eb108b168bceff522c48f7d81bc0f7d023c68b8eb80300008b979c0000003bca7d4085c97e2283f9047f1d85c074198b80c40600008b8c88440e000083f9ff74075f8bc15ec204008b0d30b2a8006a056a0381c118020000e847f7f5ff5f5ec204008b1530b2a80053556a026a008d8a18020000e82bf7f5ffdb87b0000000894424148b861c020000dc88a8010000da442414e82c8e0c008dbe500100008be88bcf896c2414e8a92e050084c0750b8bcfe81e2f050084c0745a8b168bceff92840000008bcf8bd8e8872e050084c0740a8a83a002000084c0751f8bcfe8f22e050084c0742e8a83a002000084c0750a8a83b202000084c0741adb442414a1e0718800dc8890060000e8b68d0c008be8896c24148b168bceff920004000084c074538b068bceff900804000085c07e178b168bceff92080400008bc88bc599f7f98be8896c24148b0de0718800d981440f0000d81d48177e00dfe0f6c4417515db442414d8b1440f0000e8558d0c008be8896c24148b86e402000085c074368b168bceff522c83f806742a8b0de0718800d981500f0000d81d48177e00dfe0f6c4407511db442414d8b1500f0000e8118d0c008be88bc55d5b5f5ec204008b87b00000005f5ec20400",
+      "sha256": "bac04a141dda1393f8df43ef9f3f7de0ea1a3bb7fce193764a87428e99e152b3"
+    }
+  ],
+  "payload_sha256": "5cc8e2c64ee1cbd5e204c5aab670f219b0bc9cf65cfd7996e586565f43bacc2e"
+}

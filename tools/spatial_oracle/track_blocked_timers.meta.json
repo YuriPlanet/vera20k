@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Drive/Ship fresh first-code2 headclear, timer arms/expiry, FindPath urgency and post-call continuation",
+  "assumptions": [
+    "Interior first-code2 entry with supplied frame, retained head/valid, Foot timers and blocked latch; current owner link and native-shaped stack",
+    "timer_middle_word explicitly supplies SP+54 on each interior invocation; original stores copy this word to timer+4. Zero is not established as a retail invariant; nonzero copy cases are included",
+    "Repeated calls preserve all owner/locomotor fields and explicitly vary binary frame; stopped waiting common-tail effects are excluded",
+    "Original headclear only writes valid0 when head differs from native null coordinate; supplied null-head/valid1 inputs test that distinction without claiming retail reachability",
+    "Rules blockage delay5 and PathDelay0.01 supplied; original multiply900 and ftol run with PC53/chop FPCW0E7F",
+    "Negative-duration rows stop at the movement wait and do not cover a negative blocked duration query; this is not exhaustive signed input coverage",
+    "FindPath/zone/Stop bodies are not executed; explicit callback inputs validate remaining caller branches, output-byte writes and timer publication only",
+    "No full fresh retry, common rejection tail, world CanEnter, path search, Stop lifecycle or complete locomotor parity claimed"
+  ],
+  "substitutions": [
+    "FindPath call boundary uses external scratch RET12 with supplied AL and optional owner-link retirement",
+    "Cloned Unit vtable replaces only +2CC zone and +480 Stop with supplied external RET4/RET8; original table unchanged"
+  ],
+  "entry_points": {
+    "drive_entry": "0x004B3607",
+    "drive_waiting": "0x004B3AA1",
+    "drive_null": "0x008A0790",
+    "ship_entry": "0x006A2C56",
+    "ship_waiting": "0x006A30F0",
+    "ship_null": "0x00B077F8"
+  },
+  "original_code": [
+    {
+      "start": "004B3607",
+      "end_exclusive": "004B36F4",
+      "hex": "a190078a008b4d408d5d403bc8751a8b4b048b1594078a003bca750d8b53088b0d98078a003bd174198bcb89018b1594078a00895104a198078a00c64563008941088b44241883f8020f85410400008b450c8a88b706000084c9752dc680b7060000018b550c8b0de0718800a184eda80081c2680600008b896817000089028b442454894204894a088b4d0c8b3d84eda8008bb1400600008b814806000083feff740a8bd72bd63bd07d0a2bc285c00f85e50300008a81b706000084c00f84070300008b91680600008b817006000083faff740a2bfa8bd73bd07d0a2bc285c00f85e4020000b301e9df020000",
+      "sha256": "17f7fe8bcf168ba6cb74db6a56a6bfdc0f7878859781c84c46dda81739fb814d"
+    },
+    {
+      "start": "004B39D1",
+      "end_exclusive": "004B3A97",
+      "hex": "32db8b45348d75349981e2ff00000003c2c1f80866894424688b46049981e2ff00000003c233d2c1f80884db0f95c242668944246a8b442468526a0050e80dff01008b4d0c85c975138b4c24605f5e5dc6010132c05b83c44cc20c0084c075288b1156ff92cc02000084c0751b8b4d0c8b016a016a00ff90800400005f5e5d32c05b83c44cc20c008b0de07188008b3584eda800dd8160170000dc0df8277e00e88a2431008b550c8b4c245481c2400600005f89325e5d5b894a04894208b00183c44cc20c00",
+      "sha256": "6918c10ee6bf7908e036ed04376c5d9d94729909441f549fe03e9ff2a8d803e6"
+    },
+    {
+      "start": "006A2C56",
+      "end_exclusive": "006A2D43",
+      "hex": "a1f877b0008b4d408d5d403bc8751a8b4b048b15fc77b0003bca750d8b53088b0d0078b0003bd174198bcb89018b15fc77b000895104a10078b000c64563008941088b44241883f8020f85410400008b450c8a88b706000084c9752dc680b7060000018b550c8b0de0718800a184eda80081c2680600008b896817000089028b442454894204894a088b4d0c8b3d84eda8008bb1400600008b814806000083feff740a8bd72bd63bd07d0a2bc285c00f85e50300008a81b706000084c00f84070300008b91680600008b817006000083faff740a2bfa8bd73bd07d0a2bc285c00f85e4020000b301e9df020000",
+      "sha256": "54b708dc32856921a0ee9d520929f342d13a94179fabad870d315c252f056fec"
+    },
+    {
+      "start": "006A3020",
+      "end_exclusive": "006A30E6",
+      "hex": "32db8b45348d75349981e2ff00000003c2c1f80866894424688b46049981e2ff00000003c233d2c1f80884db0f95c242668944246a8b442468526a0050e8be08e3ff8b4d0c85c975138b4c24605f5e5dc6010132c05b83c44cc20c0084c075288b1156ff92cc02000084c0751b8b4d0c8b016a016a00ff90800400005f5e5d32c05b83c44cc20c008b0de07188008b3584eda800dd8160170000dc0df8277e00e83b2e12008b550c8b4c245481c2400600005f89325e5d5b894a04894208b00183c44cc20c00",
+      "sha256": "b765967c64dd50150468feaf86f772ae784f66b4c1825e8a990affc34011e011"
+    },
+    {
+      "start": "007C5F00",
+      "end_exclusive": "007C5F3D",
+      "hex": "83ec0cd93c248d4424048b142481e2ffff00003b15802d8200750bdf388b50048b0083c40cc38b15802d8200891424d92c24df388b50048b0083c40cc3",
+      "sha256": "164aed30b9c92bf114a2f5a68baa9084c30054087c4a03daa7ffbe8a6d7757ba"
+    }
+  ],
+  "payload_sha256": "562adcfb1cdf4b6366dc2afea6f48d8e27f9b773e0b70d7a2cb6effc2c7e3347"
+}

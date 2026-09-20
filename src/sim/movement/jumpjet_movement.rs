@@ -214,6 +214,10 @@ impl crate::sim::world::Simulation {
                 id,
                 target,
                 speed,
+                crate::sim::movement::DestinationTiming::from_rules(
+                    self.session.binary_frame,
+                    rules.into(),
+                ),
             );
         }
         let Some(terrain) = self.resolved_terrain.as_ref() else {
@@ -231,7 +235,13 @@ impl crate::sim::world::Simulation {
             .jumpjet_runtime_mut()
             .unwrap()
             .begin_move(input);
-        self.resolve_jumpjet_infantry_move(id, input, speed, rules)
+        let accepted = self.resolve_jumpjet_infantry_move(id, input, speed, rules);
+        if accepted && let Some(entity) = self.substrate.entities.get_mut(id) {
+            // Infantry51B1D2 returns through Foot4D96C2 after locomotor MoveTo.
+            // The shared low-level MoveTo also runs inside Stop and cannot own this.
+            super::DestinationTiming::from_rules(self.session.binary_frame, rules).accept(entity);
+        }
+        accepted
     }
 
     /// Runtime Foot null-destination dispatch to Jumpjet54B4D0. Command
@@ -343,7 +353,7 @@ impl crate::sim::world::Simulation {
         }
         // Original54B698 returns before damage AND cache-clear if Health<=0.
         let health = self.substrate.entities.get(id).unwrap().health.current;
-        if health == 0 {
+        if health <= 0 {
             return true;
         }
         let Some(rules) = rules else {
@@ -476,9 +486,8 @@ impl crate::sim::world::Simulation {
         }
         if moving {
             let target = ((destination.x / 256) as u16, (destination.y / 256) as u16);
-            // Preserve this adapter's former default reset. Native Jumpjet
-            // timer producers are outside the Foot/Walk migration here.
-            e.navigation.path_runtime = crate::sim::components::FootPathRuntime::default();
+            // Jumpjet54B1C0/54B4D0 do not reconstruct Foot timers/retries.
+            // Their outer accepted destination caller publishes the Foot tail.
             e.movement_target = Some(MovementTarget {
                 path: vec![target],
                 path_layers: vec![MovementLayer::Air],

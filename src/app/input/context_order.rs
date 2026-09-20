@@ -968,7 +968,10 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                         .filter(|&sid| {
                             sim.entities().get(sid).is_some_and(|e| {
                                 e.category == EntityCategory::Unit
-                                    && e.health.current < e.health.max
+                                    && resources
+                                        .rules
+                                        .object(sim.interner.resolve(e.type_ref()))
+                                        .is_some_and(|obj| e.health.current < obj.strength)
                                     && !e.is_deployed()
                             })
                         })
@@ -1362,10 +1365,7 @@ mod tests {
                 0,
                 0,
                 owner,
-                Health {
-                    current: 1000,
-                    max: 1000,
-                },
+                Health { current: 1000 },
                 factory_type,
                 EntityCategory::Structure,
                 0,
@@ -1380,10 +1380,7 @@ mod tests {
                 0,
                 0,
                 owner,
-                Health {
-                    current: 300,
-                    max: 300,
-                },
+                Health { current: 300 },
                 tank_type,
                 EntityCategory::Unit,
                 0,
@@ -1657,10 +1654,7 @@ mod tests {
                 0,
                 0,
                 owner,
-                Health {
-                    current: 300,
-                    max: 300,
-                },
+                Health { current: 300 },
                 type_ref,
                 category,
                 0,

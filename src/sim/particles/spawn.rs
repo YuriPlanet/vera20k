@@ -25,6 +25,81 @@ use fixed::types::I48F16;
 use glam::IVec3;
 
 impl Simulation {
+    /// Mark the attached Techno+310 smoke system for retirement while retaining
+    /// its owner pointer. Native ParticleSystem virtual F8 (6301E0) only sets
+    /// its done-spawning byte; physical deletion owns pointer expiry.
+    pub(crate) fn retire_attached_damage_smoke(&mut self, stable_id: u64) {
+        let system_id = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .and_then(|entity| entity.damage_smoke_system_id);
+        if let Some(system_id) = system_id
+            && let Some(system) = self.particle_systems_mut().get_mut(system_id)
+        {
+            system.done_spawning = true;
+        }
+    }
+
+    /// Reached healing tails 6FA75A,45096C,451477: ordered Greater only.
+    /// This never creates smoke and never clears the retained owner slot.
+    pub(crate) fn retire_damage_smoke_after_heal(&mut self, stable_id: u64, rules: &RuleSet) {
+        let above = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| {
+                self.object_type(entity.type_ref(), rules)
+                    .is_some_and(|object| {
+                        entity
+                            .health
+                            .compare_ratio(object.strength, rules.general.condition_yellow)
+                            == crate::util::native_x87::MaskedX87Ordering::Greater
+                    })
+            });
+        if above {
+            self.retire_attached_damage_smoke(stable_id);
+        }
+    }
+
+    /// Selfheal6FA75A has an additional Object GetHeight5F5F40 arm after a
+    /// non-Greater health comparison. Read retained raw Object XYZ (not the
+    /// building's foundation-center coordinate), then the live terrain surface.
+    pub(crate) fn retire_damage_smoke_after_self_heal(&mut self, stable_id: u64, rules: &RuleSet) {
+        let retire = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| {
+                let Some(object) = self.object_type(entity.type_ref(), rules) else {
+                    return false;
+                };
+                if entity
+                    .health
+                    .compare_ratio(object.strength, rules.general.condition_yellow)
+                    == crate::util::native_x87::MaskedX87Ordering::Greater
+                {
+                    return true;
+                }
+                self.damage_smoke_owner_height(entity) < -10
+            });
+        if retire {
+            self.retire_attached_damage_smoke(stable_id);
+        }
+    }
+    /// Shared original Object5F5F40 adapter for the two distinct smoke gates.
+    fn damage_smoke_owner_height(&self, entity: &crate::sim::game_entity::GameEntity) -> i32 {
+        let raw = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+        let surface = crate::sim::movement::ground_pose::ground_surface_z_at(
+            [raw.x, raw.y],
+            entity.on_bridge,
+            self.resolved_terrain.as_ref(),
+            None,
+        )
+        .unwrap_or(0);
+        raw.z.wrapping_sub(surface)
+    }
+
     /// Spawn a new particle system. Returns the new system's stable id, or
     /// `None` for a `Railgun` type, which is still unimplemented.
     ///
@@ -164,21 +239,17 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
-        let above_yellow = i64::from(entity.health.current) * 1000
-            > i64::from(entity.health.max) * rules.general.condition_yellow_x1000;
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        let above_yellow = entity
+            .health
+            .compare_ratio(object.strength, rules.general.condition_yellow)
+            == crate::util::native_x87::MaskedX87Ordering::Greater;
         let current_system = entity.damage_smoke_system_id;
 
         if above_yellow {
-            if let Some(system_id) = current_system
-                && let Some(system) = self.particle_systems_mut().get_mut(system_id)
-            {
-                // ParticleSystemClass vtable +0xF8 is the mark-only Destroy
-                // entry — its body is `*(byte*)(this+0xF8) = 1`, the same byte
-                // the lifetime and spawn-cutoff paths set. The owner slot
-                // remains live until pointer expiry at physical finalization,
-                // preventing a same-frame duplicate.
-                system.done_spawning = true;
-            }
+            self.retire_attached_damage_smoke(stable_id);
             return;
         }
 
@@ -196,16 +267,11 @@ impl Simulation {
             self.substrate.entities.get(stable_id).and_then(|entity| {
                 let object = rules.object(self.interner.resolve(entity.type_ref()))?;
                 let offset = damage_smoke_offset(object);
+                let raw = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
                 let coords = IVec3::new(
-                    i32::from(entity.position.rx)
-                        .wrapping_mul(256)
-                        .wrapping_add(entity.position.sub_x.to_num::<i32>())
-                        .wrapping_add(offset.x),
-                    i32::from(entity.position.ry)
-                        .wrapping_mul(256)
-                        .wrapping_add(entity.position.sub_y.to_num::<i32>())
-                        .wrapping_add(offset.y),
-                    i32::from(entity.position.z).wrapping_add(offset.z),
+                    raw.x.wrapping_add(offset.x),
+                    raw.y.wrapping_add(offset.y),
+                    raw.z.wrapping_add(offset.z),
                 );
                 let smoke = object
                     .damage_particle_systems
@@ -226,9 +292,17 @@ impl Simulation {
             return;
         }
 
-        // The remaining native predicate is vtable +0x1C8 > -10. Rust has no
-        // represented negative special-state branch; every live GameEntity at
-        // this receiver seam is in the ordinary passing class.
+        // Original702952..70295F queries height only after the existing-slot,
+        // damage-result and nonempty-type-list gates. Strictly greater than-10;
+        // a rejected height must consume no selection RNG or constructor ID.
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_none_or(|entity| self.damage_smoke_owner_height(entity) <= -10)
+        {
+            return;
+        }
         let selected = self
             .scenario_rng
             .next_range_u32_inclusive(0, system_types.len().saturating_sub(1) as u32)
@@ -450,6 +524,137 @@ pub(super) fn spawn_particle_with_insert(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn original_96_receiver_height_rows_gate_constructor_and_rng() {
+        use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
+        use crate::sim::game_entity::GameEntity;
+        let rows: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/receiver_smoke_height.json"
+        ))
+        .unwrap();
+        assert_eq!(rows.as_array().unwrap().len(), 96);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=TEST\n[TEST]\nStrength=100\nDamageParticleSystems=Sys,SysTwo\nDamageSmokeOffset=0,0,0\nDamSmkOffScrnRel=no\n[Particles]\n0=Smk\n[ParticleSystems]\n0=Sys\n1=SysTwo\n[Smk]\nBehavesLike=Smoke\nMaxEC=10\n[Sys]\nBehavesLike=Smoke\nHoldsWhat=Smk\n[SysTwo]\nBehavesLike=Smoke\nHoldsWhat=Smk\n")).unwrap();
+        for row in rows.as_array().unwrap() {
+            let input = &row["input"];
+            let x = input["xy"][0].as_i64().unwrap() as i32;
+            let y = input["xy"][1].as_i64().unwrap() as i32;
+            let z = input["z"].as_i64().unwrap() as i32;
+            let mut sim = Simulation::new();
+            let id = sim.allocate_stable_id();
+            let mut entity =
+                GameEntity::test_default(id, "TEST", "A", (x >> 8) as u16, (y >> 8) as u16);
+            entity.type_ref = sim.interner.intern("TEST");
+            entity.owner = sim.interner.intern("A");
+            entity.health.current = 40;
+            entity.position.sub_x = SimFixed::from_num(x & 255);
+            entity.position.sub_y = SimFixed::from_num(y & 255);
+            entity.position.exact_z_leptons = Some(z);
+            entity.on_bridge = input["on_bridge"].as_bool().unwrap();
+            let mut cell = test_flat_cell(entity.position.rx, entity.position.ry);
+            cell.level = input["level"].as_u64().unwrap() as u8;
+            cell.slope_type = input["slope"].as_u64().unwrap() as u8;
+            sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(8, 8, vec![cell]));
+            assert_eq!(
+                sim.damage_smoke_owner_height(&entity),
+                row["output"]["height"].as_i64().unwrap() as i32
+            );
+            sim.substrate.entities.insert(entity);
+            let before_rng = sim.scenario_rng.logical_state();
+            sim.maintain_damage_smoke_after_receive(
+                id,
+                crate::sim::combat::damage::DamageState::Yellow,
+                &rules,
+            );
+            let smoke = sim.entities().get(id).unwrap().damage_smoke_system_id;
+            assert_eq!(
+                smoke.is_some(),
+                row["output"]["spawn_admitted"] == true,
+                "{row}"
+            );
+            if let Some(smoke) = smoke {
+                assert_eq!(
+                    sim.particle_systems().get(smoke).unwrap().coords,
+                    IVec3::new(x, y, z)
+                );
+                assert_ne!(sim.scenario_rng.logical_state(), before_rng);
+            } else {
+                assert_eq!(sim.scenario_rng.logical_state(), before_rng);
+                assert_eq!(sim.allocate_stable_id(), id + 1);
+            }
+        }
+    }
+    #[test]
+    fn original_health_ratio_corpus_marks_owned_damage_smoke() {
+        use crate::map::entities::EntityCategory;
+        use crate::sim::components::Health;
+        use crate::sim::game_entity::GameEntity;
+        for row in crate::sim::health_ratio_fixture::rows() {
+            let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=TEST\n[TEST]\nStrength={}\n[Particles]\n0=Smk\n[ParticleSystems]\n0=Sys\n[Smk]\nBehavesLike=Smoke\nMaxEC=10\nMaxDC=4\nStartStateAI=0\nEndStateAI=10\nStateAIAdvance=4\n[Sys]\nBehavesLike=Smoke\nHoldsWhat=Smk\nParticleCap=10\nSpawnFrames=1\nLifetime=200\n",
+                row.input.strength
+            ))).unwrap();
+            rules.general.condition_yellow = row.input.yellow();
+            let mut sim = Simulation::new();
+            let owner = sim.interner.intern("A");
+            let type_ref = sim.interner.intern("TEST");
+            let id = sim.allocate_stable_id();
+            let entity = GameEntity::new_at_frame_zero_for_test(
+                id,
+                0,
+                0,
+                0,
+                0,
+                owner,
+                Health {
+                    current: row.input.current,
+                },
+                type_ref,
+                EntityCategory::Unit,
+                0,
+                5,
+                true,
+            );
+            sim.substrate.entities.insert(entity);
+            let system_id = sim
+                .spawn_particle_system(
+                    ParticleSystemTypeId(0),
+                    IVec3::ZERO,
+                    Some(id),
+                    Some(id),
+                    IVec3::ZERO,
+                    None,
+                    &rules,
+                )
+                .unwrap();
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .damage_smoke_system_id = Some(system_id);
+            let before_rng = sim.scenario_rng.logical_state();
+            sim.maintain_damage_smoke_after_receive(
+                id,
+                crate::sim::combat::damage::DamageState::Yellow,
+                &rules,
+            );
+            assert_eq!(
+                sim.particle_systems().get(system_id).unwrap().done_spawning,
+                row.output.smoke_above_yellow,
+                "{row:?}"
+            );
+            assert_eq!(
+                sim.substrate
+                    .entities
+                    .get(id)
+                    .unwrap()
+                    .damage_smoke_system_id,
+                Some(system_id)
+            );
+            assert_eq!(sim.particle_systems().len(), 1);
+            assert_eq!(sim.scenario_rng.logical_state(), before_rng);
+        }
+    }
     use super::*;
     use crate::rules::ini_parser::IniFile;
 
@@ -838,12 +1043,9 @@ mod gsi_05_13_electric_bolt_sparks {
         RuleSet::from_ini(&ini).expect("tesla rules parse")
     }
 
-    fn unit(id: u64, type_ref: &str, rx: u16, ry: u16, owner: &str, hp: u16) -> GameEntity {
+    fn unit(id: u64, type_ref: &str, rx: u16, ry: u16, owner: &str, hp: i32) -> GameEntity {
         let mut entity = GameEntity::test_default(id, type_ref, owner, rx, ry);
-        entity.health = Health {
-            current: hp,
-            max: hp,
-        };
+        entity.health = Health { current: hp };
         entity
     }
 

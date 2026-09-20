@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original TechnoAI6F9F6E..6F9F9F estimated-health clamp/recovery slice",
+  "assumptions": [
+    "ESI points to supplied object; actual+6C and estimate+70 are signed dwords; absolute binary frame supplied atA8ED84",
+    "All91 actual/estimate pairs cross6 frame masks,546 cases; includes raw signed/wrapping boundary probes outside current u16 Rust health range",
+    "Stops before6F9F9F without executing class/type callback or whole TechnoAI; earlier berserk and class admission are outside coverage",
+    "Original instructions unchanged, hooks only observe; every write must target+70, adjacent owner bytes/ESI/ESP preserved"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "entry": "0x006F9F6E",
+    "stop_before": "0x006F9F9F"
+  },
+  "original_code_sha256": "1104c65d98a3df95b2c91479b9557a1a479b9ea3118db0f9d2ea55d6d52bfbd3",
+  "payload_sha256": "3d338dfa507368511a1a746f8c1ea6843db1b69d93f201e224fb6ec46c1f61fd"
+}

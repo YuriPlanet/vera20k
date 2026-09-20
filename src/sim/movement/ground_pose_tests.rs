@@ -2,7 +2,9 @@
 
 use super::*;
 use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
+use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::LocomotorKind;
+use crate::rules::ruleset::RuleSet;
 use crate::sim::components::{
     DriveCoord, DriveLocomotionRuntime, MovementTarget, ShipLocomotionRuntime,
 };
@@ -67,10 +69,45 @@ fn mover(sim: &mut Simulation, kind: LocomotorKind) -> GameEntity {
     entity
 }
 
+fn seed_track(entity: &mut GameEntity, kind: LocomotorKind, cursor: i32, head: DriveCoord) {
+    let track = crate::sim::components::TrackProgress {
+        turn_index: 0,
+        cursor,
+        reversed: false,
+        residual: 0,
+    };
+    match kind {
+        LocomotorKind::Drive => {
+            let state = entity.drive_locomotion.get_or_insert_with(Default::default);
+            state.head_to = Some(head);
+            state.track = track;
+            state.track_valid = true;
+        }
+        LocomotorKind::Ship => {
+            let state = entity.ship_locomotion.get_or_insert_with(Default::default);
+            state.head_to = Some(head);
+            state.track = track;
+            state.track_valid = true;
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn track(entity: &GameEntity) -> crate::sim::components::TrackProgress {
+    match entity.locomotor.as_ref().unwrap().kind {
+        LocomotorKind::Drive => entity.drive_locomotion.as_ref().unwrap().track,
+        LocomotorKind::Ship => entity.ship_locomotion.as_ref().unwrap().track,
+        _ => unreachable!(),
+    }
+}
+
 fn insert(sim: &mut Simulation, mut entity: GameEntity) {
     // This fixture inserts a live object-list entry, so its lifecycle mark
     // must agree. Forced terminal relinking intentionally respects this flag.
+    entity.lifecycle.object_alive = true;
+    entity.lifecycle.in_limbo = false;
     entity.lifecycle.cell_marked = true;
+    entity.occupancy_enter_order = sim.substrate.next_occupancy_enter_order.next();
     sim.substrate.occupancy.add(
         entity.position.rx,
         entity.position.ry,
@@ -87,6 +124,16 @@ fn insert(sim: &mut Simulation, mut entity: GameEntity) {
 }
 
 fn tick(sim: &mut Simulation, terrain: &ResolvedTerrainGrid, grid: &PathGrid, frame: u32) {
+    tick_with_rules(sim, terrain, grid, frame, None);
+}
+
+fn tick_with_rules(
+    sim: &mut Simulation,
+    terrain: &ResolvedTerrainGrid,
+    grid: &PathGrid,
+    frame: u32,
+    rules: Option<&RuleSet>,
+) {
     super::movement_tick::tick_movement_object_with_grids(
         &mut sim.substrate.entities,
         1,
@@ -110,7 +157,7 @@ fn tick(sim: &mut Simulation, terrain: &ResolvedTerrainGrid, grid: &PathGrid, fr
         9,
         60,
         &mut sim.interner,
-        None,
+        rules,
         &mut Vec::new(),
         &mut Vec::new(),
     );
@@ -124,7 +171,7 @@ fn drive_ship_paid_points_sample_before_residual_xy_and_no_paid_point_retains_ra
         let grid = PathGrid::from_resolved_terrain(&terrain);
         let mut sim = Simulation::with_seed(3);
         let mut entity = mover(&mut sim, kind);
-        entity.drive_track = Some(drive_track::begin_drive_track(1, 0, 0, -1, 0).unwrap());
+        seed_track(&mut entity, kind, 1, DriveCoord::cell(3, 2, 731));
         // Retail straight-north point0 is (0,245); headY=-128 gives117.
         entity.position.sub_y = SimFixed::from_num(117);
         insert(&mut sim, entity);
@@ -132,21 +179,13 @@ fn drive_ship_paid_points_sample_before_residual_xy_and_no_paid_point_retains_ra
 
         tick(&mut sim, &terrain, &grid, 0); // budget4: residual only
         let entity = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(
-            entity.drive_track.as_ref().unwrap().point_index,
-            0,
-            "{kind:?}"
-        );
+        assert_eq!(track(entity).cursor, 1, "{kind:?}");
         assert_eq!(entity.position.sub_y.to_num::<i32>(), 111, "{kind:?}");
         assert_eq!(entity.position.exact_z_leptons, Some(731), "{kind:?}");
 
         tick(&mut sim, &terrain, &grid, 1); // budget8: point1, residual1
         let entity = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(
-            entity.drive_track.as_ref().unwrap().point_index,
-            1,
-            "{kind:?}"
-        );
+        assert_eq!(track(entity).cursor, 2, "{kind:?}");
         assert_eq!(entity.position.sub_y.to_num::<i32>(), 105, "{kind:?}");
         let paid_z = crate::util::lepton::ground_height_leptons(0, 2, 896, 874).unwrap();
         let final_xy_z = crate::util::lepton::ground_height_leptons(0, 2, 896, 873).unwrap();
@@ -172,7 +211,13 @@ fn residual_bridge_crossing_preserves_z_and_defers_path_consumption_until_paid_p
         let mut grid = PathGrid::from_resolved_terrain(&terrain);
         for (y, bridge) in [(3, leaving), (2, !leaving), (1, !leaving)] {
             let level = if bridge { 0 } else { 4 };
-            terrain.cell_mut(3, y).unwrap().level = level;
+            let cell = terrain.cell_mut(3, y).unwrap();
+            cell.level = level;
+            cell.bridge_facts.raw_flags = if bridge {
+                crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
+            } else {
+                0
+            };
             grid.set_bridge_cell_decoupled_for_test(3, y, level, bridge, bridge, 4, false);
         }
         let mut sim = Simulation::with_seed(3);
@@ -194,19 +239,37 @@ fn residual_bridge_crossing_preserves_z_and_defers_path_consumption_until_paid_p
         let target = entity.movement_target.as_mut().unwrap();
         target.speed = SimFixed::from_num(105); // budget7, strict paid gate >7
         target.path_layers = vec![start_layer, end_layer, end_layer];
-        let mut track = drive_track::begin_drive_track(1, 0, 0, -1, 0).unwrap();
-        track.point_index = 10; // paid Y135-128=7; next point crosses to -4
-        entity.drive_track = Some(track);
+        // This route continues beyond the first retained segment. Native
+        // owner NavCom must survive that terminal; a route without it admits
+        // EnterIdleMode and its Foot SetSpeedFraction(0) at that first end.
+        super::navcom::set_destination_internal_cell(&mut entity, (3, 1), Some(&terrain));
+        assert_eq!(
+            entity.drive_locomotion.as_ref().unwrap().destination,
+            Some(DriveCoord::cell(3, 1, 416))
+        );
+        // Retained cursor 11 is the next sample after paid point10 at Y7.
+        seed_track(
+            &mut entity,
+            LocomotorKind::Drive,
+            11,
+            DriveCoord::cell(3, 2, 731),
+        );
         insert(&mut sim, entity);
 
         tick(&mut sim, &terrain, &grid, 0);
         let entity = sim.substrate.entities.get(1).unwrap();
         assert_eq!((entity.position.rx, entity.position.ry), (3, 2));
-        assert_eq!(entity.position.sub_y.to_num::<i32>(), 252);
+        // Native residual corpus: wallet7 stores factor0x3F7FFFFF, so an
+        // eleven-lepton negative delta truncates to -10 rather than -11.
+        assert_eq!(entity.position.sub_y.to_num::<i32>(), 253);
         assert_eq!(entity.position.exact_z_leptons, Some(731));
         assert_eq!(entity.on_bridge, !leaving);
         assert_eq!(entity.movement_target.as_ref().unwrap().next_index, 1);
-        assert_eq!(entity.drive_track.as_ref().unwrap().cell_offset_y, 256);
+        assert_eq!(
+            track(entity).cursor,
+            11,
+            "residual relinking does not pay a point"
+        );
         assert_eq!(sim.substrate.occupancy.count_on_layer(3, 3, start_layer), 0);
         assert_eq!(sim.substrate.occupancy.count_on_layer(3, 2, end_layer), 1);
         let order_after_residual = entity.occupancy_enter_order;
@@ -238,7 +301,7 @@ fn residual_bridge_crossing_preserves_z_and_defers_path_consumption_until_paid_p
             .speed = SimFixed::from_num(105);
         tick(&mut sim, &terrain, &grid, 2);
         let entity = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(entity.drive_track.as_ref().unwrap().point_index, 12);
+        assert_eq!(track(entity).cursor, 13);
         assert_eq!(entity.movement_target.as_ref().unwrap().next_index, 2);
         assert_eq!(entity.position.exact_z_leptons, Some(416));
         for frame in 3..160 {
@@ -257,7 +320,20 @@ fn residual_bridge_crossing_preserves_z_and_defers_path_consumption_until_paid_p
         let entity = sim.substrate.entities.get(1).unwrap();
         assert!(
             entity.movement_target.is_none(),
-            "residual rebasing must not strand the path cursor"
+            "residual rebasing must not strand the path cursor: leaving={leaving}, xyz={:?}, track={:?}, speed={:?}, target={:?}",
+            ground_pose::position_world_coord(&entity.position),
+            track(entity),
+            entity.foot_speed,
+            entity.movement_target,
+        );
+        assert!(entity.navigation.nav_com.is_none());
+        assert!(
+            entity
+                .drive_locomotion
+                .as_ref()
+                .unwrap()
+                .destination
+                .is_none()
         );
         assert_eq!((entity.position.rx, entity.position.ry), (3, 1));
         assert_eq!(entity.position.exact_z_leptons, Some(416));
@@ -328,9 +404,7 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
             MovementLayer::Bridge,
             MovementLayer::Bridge,
         ];
-        let mut track = drive_track::begin_drive_track(1, 0, 0, -1, 0).unwrap();
-        track.point_index = 10;
-        entity.drive_track = Some(track);
+        seed_track(&mut entity, kind, 11, DriveCoord::cell(3, 2, 731));
         insert(&mut sim, entity);
         tick(&mut sim, &terrain, &grid, 0);
         sim.session.tick = 1;
@@ -352,11 +426,11 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
         assert_eq!(entity.movement_target.as_ref().unwrap().next_index, 1);
         assert_eq!(
             (
-                entity.drive_track.as_ref().unwrap().point_index,
-                entity.drive_track.as_ref().unwrap().residual,
-                entity.drive_track.as_ref().unwrap().cell_offset_y
+                track(entity).cursor,
+                track(entity).residual,
+                ground_pose::position_world_xy(&entity.position)[1] / 256
             ),
-            (10, 7, 256)
+            (11, 7, 2)
         );
 
         // Native load resets Scenario RNG. Keep the original at that same
@@ -423,10 +497,7 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
             );
             assert!(loaded.on_bridge);
             assert_eq!(loaded.movement_target.as_ref().unwrap().next_index, 2);
-            assert_eq!(
-                loaded.drive_track.as_ref().unwrap().point_index,
-                10 + frame as u16
-            );
+            assert_eq!(track(loaded).cursor, 11 + frame as i32);
             assert_ne!(
                 loaded.position.exact_z_leptons, prior_paid_z,
                 "the first actual paid point must replace the saved height lag"
@@ -553,15 +624,18 @@ fn terminal_drive_snap_updates_ramp_height_with_stashed_teleport_owner() {
     target.next_index = 1;
     target.final_goal = Some((3, 3));
     target.speed = SimFixed::from_num(120);
-    let mut track = drive_track::begin_drive_track(1, 0, 0, 0, 0).unwrap();
-    track.point_index = 22;
-    entity.drive_track = Some(track);
+    seed_track(
+        &mut entity,
+        LocomotorKind::Drive,
+        23,
+        DriveCoord::cell(3, 3, 731),
+    );
     entity.position.sub_y = SimFixed::from_num(131);
     insert(&mut sim, entity);
     tick(&mut sim, &terrain, &grid, 0);
     let entity = sim.substrate.entities.get(1).unwrap();
     assert!(entity.movement_target.is_none());
-    assert!(entity.drive_track.is_none());
+    assert!(super::track_head::committed_track_head(entity).is_none());
     assert_eq!(
         (entity.position.sub_x, entity.position.sub_y),
         (SimFixed::from_num(128), SimFixed::from_num(128))
@@ -574,7 +648,7 @@ fn terminal_drive_snap_updates_ramp_height_with_stashed_teleport_owner() {
 }
 
 #[test]
-fn terminal_centre_height_commits_before_turn_first_without_finalizer() {
+fn terminal_centre_height_commits_before_next_process_turn_without_finalizer() {
     let mut terrain = terrain();
     terrain.cell_mut(3, 3).unwrap().slope_type = 2;
     let grid = PathGrid::from_resolved_terrain(&terrain);
@@ -587,9 +661,12 @@ fn terminal_centre_height_commits_before_turn_first_without_finalizer() {
     target.move_dir_x = SimFixed::from_num(256);
     target.move_dir_y = SIM_ZERO;
     target.speed = SimFixed::from_num(120);
-    let mut track = drive_track::begin_drive_track(1, 0, 0, 0, 0).unwrap();
-    track.point_index = 22;
-    entity.drive_track = Some(track);
+    seed_track(
+        &mut entity,
+        LocomotorKind::Drive,
+        23,
+        DriveCoord::cell(3, 3, 731),
+    );
     entity.position.sub_y = SimFixed::from_num(131);
     insert(&mut sim, entity);
     tick(&mut sim, &terrain, &grid, 0);
@@ -598,11 +675,18 @@ fn terminal_centre_height_commits_before_turn_first_without_finalizer() {
         entity.movement_target.is_some(),
         "unfinished route must not run finalizer"
     );
-    assert!(entity.drive_track.is_none());
-    assert_eq!(entity.facing_target, Some(0x40));
+    assert!(super::track_head::committed_track_head(entity).is_none());
+    // Native terminal4B22AF returns through4B1F5C/4B25F9 after the
+    // selector is retired. Fresh movement selection waits for the next Process.
+    assert_eq!(entity.facing_target, None);
     assert_eq!(entity.position.sub_y, SimFixed::from_num(128));
     // The last real table point is Y131 (height53); the final snap is Y128.
     assert_eq!(entity.position.exact_z_leptons, Some(52));
+    tick(&mut sim, &terrain, &grid, 1);
+    let entity = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(entity.facing_target, Some(0x40));
+    assert_eq!(entity.position.exact_z_leptons, Some(52));
+    assert!(entity.movement_target.is_some());
 }
 
 #[test]
@@ -745,30 +829,37 @@ fn forced_track_terminal_samples_full_head_xy_before_relink() {
     let mut sim = Simulation::new();
     let mut entity = mover(&mut sim, LocomotorKind::Drive);
     entity.movement_target = None;
-    let forced =
-        drive_track::begin_forced_turn_track(0x47, 0, 256, SimFixed::from_num(128), false).unwrap();
     insert(&mut sim, entity);
-    assert!(install_forced_drive_track(
-        sim.substrate.entities.get_mut(1).unwrap(),
-        &mut sim.substrate.cell_occupation,
-        forced,
-        -347,
+    sim.resolved_terrain = Some(terrain.clone());
+    assert!(sim.force_drive_track(
+        1,
+        0x47,
+        DriveCoord {
+            x: 3 * 256,
+            y: 4 * 256,
+            z: -347
+        }
     ));
     for frame in 0..64 {
-        tick(&mut sim, &terrain, &grid, frame);
-        if sim
-            .substrate
-            .entities
-            .get(1)
-            .unwrap()
-            .forced_drive_track
-            .is_none()
+        sim.session.binary_frame = frame;
+        sim.run_track_points(
+            super::track_process::TrackInvocation {
+                entity_id: 1,
+                family: super::track_process::TrackFamily::Drive,
+                apply_fresh_occupation: false,
+            },
+            128,
+            None,
+            Some(&grid),
+            None,
+        );
+        if super::track_head::committed_track_head(sim.substrate.entities.get(1).unwrap()).is_none()
         {
             break;
         }
     }
     let entity = sim.substrate.entities.get(1).unwrap();
-    assert!(entity.forced_drive_track.is_none());
+    assert!(super::track_head::committed_track_head(entity).is_none());
     assert_eq!((entity.position.rx, entity.position.ry), (3, 4));
     assert_eq!(
         (entity.position.sub_x, entity.position.sub_y),
@@ -833,7 +924,7 @@ fn ordinary_drive_ship_command_keeps_subcell_origin_through_terminal_cleanup() {
                 ],
                 "{kind:?}"
             );
-            assert!(entity.drive_track.is_none());
+            assert!(super::track_head::committed_track_head(entity).is_none());
             assert_eq!(
                 entity.drive_locomotion.as_ref().and_then(|d| d.head_to),
                 None
@@ -918,14 +1009,13 @@ fn chained_mover(sim: &mut Simulation, kind: LocomotorKind) -> (GameEntity, Driv
         panic!("native N -> NE curve");
     };
     assert_eq!(plan.nodes, 2);
-    let (head, curve) = super::track_head::begin_fresh(&plan, &entity.position).unwrap();
+    let head = super::track_head::begin_fresh(&plan, &entity.position).unwrap();
     super::track_head::accept_fresh_progress(
         kind,
         &mut entity.drive_locomotion,
         &mut entity.ship_locomotion,
         plan.selection.turn_track_index,
     );
-    entity.drive_track = Some(curve);
     let mut replay = crate::sim::components::FootPathQueue::default();
     super::path_markers::install_path_replay(&mut replay, (3, 3), &path, 1);
     super::path_markers::accept_path_replay(&mut replay, (4, 1), 2);
@@ -959,7 +1049,14 @@ fn chained_mover(sim: &mut Simulation, kind: LocomotorKind) -> (GameEntity, Driv
 }
 
 #[test]
-fn actual_tick_chain_uses_remaining_queue_and_retains_old_head_z() {
+fn admitted_tick_chain_uses_remaining_queue_and_retains_old_head_z() {
+    // Unit+2C746E20 returns1; Process_Track then admits only Passive types.
+    // This supplied type exercises accepted head publication. The stock false
+    // gate and code0/code2 dispatch matrix live in track_chain_migration_tests.
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=MOVER\n[MOVER]\nSpeed=4\nPassive=yes\n",
+    ))
+    .unwrap();
     let terrain = terrain();
     let grid = PathGrid::from_resolved_terrain(&terrain);
     for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
@@ -969,7 +1066,7 @@ fn actual_tick_chain_uses_remaining_queue_and_retains_old_head_z() {
         let expected = super::track_head::offset_head(head, 2);
         let mut chained = false;
         for frame in 0..128 {
-            tick(&mut sim, &terrain, &grid, frame);
+            tick_with_rules(&mut sim, &terrain, &grid, frame, Some(&rules));
             let entity = sim.substrate.entities.get(1).unwrap();
             let (stored, queue) = match kind {
                 LocomotorKind::Drive => {
@@ -985,15 +1082,11 @@ fn actual_tick_chain_uses_remaining_queue_and_retains_old_head_z() {
             if stored == Some(expected) {
                 assert_eq!(queue.cursor, 3);
                 assert_eq!(queue.reference_cell, Some((4, 1)));
-                let curve = entity.drive_track.as_ref().unwrap();
                 assert_eq!(
-                    curve.head_offset_x + i32::from(entity.position.rx) * 256,
-                    expected.x
+                    super::track_head::committed_track_head(entity),
+                    Some(expected)
                 );
-                assert_eq!(
-                    curve.head_offset_y + i32::from(entity.position.ry) * 256,
-                    expected.y
-                );
+                assert!(track(entity).cursor > 0);
                 assert_ne!(entity.position.exact_z_leptons, Some(expected.z));
                 chained = true;
                 break;
@@ -1061,7 +1154,7 @@ fn stop_before_chain_keeps_committed_head_and_discards_abandoned_turn() {
                 "{kind:?}: abandoned E turn"
             );
             if entity.movement_target.is_none() {
-                assert!(entity.drive_track.is_none());
+                assert!(super::track_head::committed_track_head(entity).is_none());
                 assert_eq!(stored, None);
                 assert_eq!(
                     ground_pose::position_world_xy(&entity.position),

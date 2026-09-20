@@ -345,7 +345,13 @@ pub fn sample_promotion(entity: &mut GameEntity, elite_flash_timer: i32) -> Opti
 /// (`FUN_0070BE80` at `0x0070BEFE..0x0070BF0A`; the 900.0 constant lives at
 /// `0x007E27F8`).
 pub fn self_heal_interval_frames(repair_rate_minutes: f64) -> i32 {
-    (repair_rate_minutes * 900.0) as i32
+    {
+        use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
+        X87::ftol_i32_low_masked(X87::mul(
+            X87::load_f64(NativeF64Bits::from_bits(repair_rate_minutes.to_bits())),
+            X87::load_i32(900),
+        ))
+    }
 }
 
 /// The self-heal eligibility virtual, `TechnoClass` vtable slot `0x294` →
@@ -359,8 +365,9 @@ pub fn self_heal_interval_frames(repair_rate_minutes: f64) -> i32 {
 ///    per-object timer, so every eligible object pulses on the same frame.
 /// 3. `Health != Type->Strength` and `Health != 0`.
 ///
-/// A non-positive period is a VERA-internal guard (native would `IDIV` by
-/// zero; no stock or sane INI reaches it) and reads as never-eligible.
+/// The native IDIV uses a signed frame and signed low32 period. Native divide
+/// faults remain explicit deterministic faults, never ordinary ineligibility;
+/// tools/spatial_oracle/object_health records five original fault executions.
 pub fn self_heal_eligible(
     entity: &GameEntity,
     object: &ObjectType,
@@ -373,13 +380,19 @@ pub fn self_heal_eligible(
             return false;
         }
     }
-    if interval_frames <= 0 || frame % (interval_frames as u32) != 0 {
+    let remainder = (frame as i32)
+        .checked_rem(interval_frames)
+        .unwrap_or_else(|| {
+            panic!(
+                "native self-heal IDIV fault at 0070BF17: frame={} period={interval_frames}",
+                frame as i32
+            )
+        });
+    if remainder != 0 {
         return false;
     }
-    // Native compares against `Type->Strength` (`+0xA0`); VERA's `health.max`
-    // is that value at spawn, and it is the ceiling the +1 must respect.
     let health = entity.health.current;
-    health != entity.health.max && health != 0
+    health != object.strength && health != 0
 }
 
 /// The award a kill is worth, before the recipient's own cost divides it.
@@ -518,7 +531,7 @@ mod tests {
         object
     }
 
-    fn entity(veterancy: u16, health: u16, max: u16) -> GameEntity {
+    fn entity(veterancy: u16, health: i32, _strength: i32) -> GameEntity {
         GameEntity::new_at_frame_zero_for_test(
             1,
             5,
@@ -526,10 +539,7 @@ mod tests {
             0,
             0,
             intern::test_intern("Americans"),
-            Health {
-                current: health,
-                max,
-            },
+            Health { current: health },
             intern::test_intern("MTNK"),
             EntityCategory::Unit,
             veterancy,
@@ -763,6 +773,8 @@ mod tests {
         let mut per_type = object_with(&[], &[]);
         per_type.self_healing = true;
         assert!(self_heal_eligible(&rookie, &per_type, 28, interval));
-        assert!(!self_heal_eligible(&rookie, &per_type, 28, 0));
+        assert!(
+            std::panic::catch_unwind(|| self_heal_eligible(&rookie, &per_type, 28, 0)).is_err()
+        );
     }
 }

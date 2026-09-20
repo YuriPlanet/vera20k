@@ -22,16 +22,21 @@
 
 // --- Core types: entity storage, components, commands, RNG, interning ---
 pub mod anim_class;
+pub(crate) mod building_art;
 pub(crate) mod base_plan;
 pub(crate) mod base_plan_generation;
 pub mod capture_manager;
 pub mod cloak_disguise;
 pub mod command;
 pub mod components;
+#[cfg(test)]
+pub(crate) mod health_ratio_fixture;
 pub mod crates; // scenario-start crate placement (Post_Map_Init step 3)
 pub mod credit_income; // oil-derrick ProduceCash + Floating Disc money drain (object-loop money)
+pub(crate) mod conversion_health;
 pub mod economy; // per-house wallet/storage/statistics value-type (production+economy substrate)
 pub mod entity_store;
+pub(crate) mod estimated_health;
 pub mod game_entity;
 pub mod intern;
 pub(crate) mod lifecycle_request;

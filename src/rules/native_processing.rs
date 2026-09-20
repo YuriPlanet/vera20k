@@ -294,6 +294,15 @@ impl ProcessedRulesLayers {
         &self.ini
     }
 
+    /// Allocated AnimTypes and whether their fixed-ART body has actually been
+    /// read, in native registry order. A present ART section alone is not
+    /// evidence of a read: later Type readers can allocate after the Anim sweep.
+    pub(crate) fn anim_type_art_read_states(&self) -> impl Iterator<Item = (&str, bool)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .anim_type_art_read_states()
+    }
+
     /// Consume only the typed-reader compatibility projection and deliberately
     /// discard the native constructor/registry receipt.
     ///
@@ -442,6 +451,14 @@ pub(crate) struct NativeRulesRegistryState {
 }
 
 impl NativeRulesRegistryState {
+    pub(crate) fn anim_type_art_read_states(&self) -> impl Iterator<Item = (&str, bool)> {
+        self.families
+            .get(&RulesTypeFamily::Animation)
+            .into_iter()
+            .flatten()
+            .map(|member| (member.native_stored_id.as_str(), member.anim_art_read))
+    }
+
     pub(crate) fn family_len(&self, family: NativeTypeConstructorFamily) -> usize {
         self.families
             .iter()
@@ -556,6 +573,9 @@ impl RulesTypeFamily {
 struct ProcessedType {
     native_stored_id: String,
     body: IniSection,
+    /// False until the native AnimType ART-body boundary has been entered.
+    /// Kept on the process-resident type so subsequent Rules passes retain it.
+    anim_art_read: bool,
 }
 
 impl ProcessedType {
@@ -563,6 +583,7 @@ impl ProcessedType {
         Self {
             body: IniSection::new(native_stored_id.clone()),
             native_stored_id,
+            anim_art_read: false,
         }
     }
 }
@@ -1032,6 +1053,16 @@ impl RulesPassProcessor {
                 .as_deref()
                 .and_then(|identity| fixed_art.section(identity))
             {
+                // ReadTypeData 0x00679A5D..0x00679A82 visits the live Anim
+                // registry before Techno readers can allocate later roots.
+                // Anim ReadINI 0x00427D22 refuses a missing ART section via
+                // AbstractType's lookup at 0x00410A7F. Record this actual visit,
+                // not membership or eventual ART existence. See
+                // .local/anim-type-art-read-acceptance.md.
+                self.families
+                    .get_mut(&RulesTypeFamily::Animation)
+                    .expect("the live AnimType member exists")[index]
+                    .anim_art_read = true;
                 for key in ["Next", "Spawns"] {
                     self.allocate_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
                 }

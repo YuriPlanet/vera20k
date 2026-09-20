@@ -77,8 +77,7 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
         }
         let moving = entity.movement_target.is_some()
             || entity.navigation.nav_com.is_some()
-            || entity.drive_track.is_some()
-            || entity.forced_drive_track.is_some();
+            || crate::sim::movement::track_head::committed_track_head(entity).is_some();
         MissionHandlerInput {
             category,
             mission,
@@ -2002,10 +2001,7 @@ mod harvester_guard_override_tests {
             0,
             0,
             owner,
-            crate::sim::components::Health {
-                current: 900,
-                max: 900,
-            },
+            crate::sim::components::Health { current: 900 },
             type_ref,
             EntityCategory::Structure,
             0,
@@ -2043,10 +2039,7 @@ mod harvester_guard_override_tests {
             0,
             0,
             owner,
-            crate::sim::components::Health {
-                current: 400,
-                max: 400,
-            },
+            crate::sim::components::Health { current: 400 },
             type_ref,
             EntityCategory::Unit,
             0,

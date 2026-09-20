@@ -1933,10 +1933,7 @@ SpreadPercentage=.06
         let mut sim = Simulation::new();
         let attacker_id = sim.allocate_stable_id();
         let mut attacker = GameEntity::test_default(attacker_id, "MTNK", "Americans", 5, 5);
-        attacker.health = Health {
-            current: 300,
-            max: 300,
-        };
+        attacker.health = Health { current: 300 };
         let owner_id = attacker.owner;
         // `test_default` interns both owner and type through the shared test
         // interner. Snapshot it only after constructing the entity so those

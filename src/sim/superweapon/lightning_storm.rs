@@ -1036,10 +1036,7 @@ mod tests {
         building.lifecycle.in_limbo = false;
         building.owner = sim.interner.intern("Soviet");
         building.type_ref = type_ref;
-        building.health = Health {
-            current: 150,
-            max: 200,
-        };
+        building.health = Health { current: 150 };
         sim.substrate.entities.insert(building);
 
         spawn_bolt(&mut sim, &rules, 5, 5, owner, None);
@@ -1050,12 +1047,22 @@ mod tests {
             .get(10)
             .expect("building remains in sim");
         assert_eq!(building.health.current, 50);
-        assert!(building.building_damage_state_active);
+        assert!(matches!(
+            building.health.compare_ratio(
+                rules
+                    .object(sim.interner.resolve(building.type_ref()))
+                    .unwrap()
+                    .strength,
+                rules.general.condition_yellow,
+            ),
+            crate::util::native_x87::MaskedX87Ordering::Less
+                | crate::util::native_x87::MaskedX87Ordering::Equal
+        ));
     }
 
     #[test]
     fn gsi_04_07_damage_lightning_fatal_uses_inline_death_transaction() {
-        fn run(carrier_hp: u16) -> (Simulation, u64) {
+        fn run(carrier_hp: i32) -> (Simulation, u64) {
             let ini = IniFile::from_str(
                 "[InfantryTypes]\n\
                  [VehicleTypes]\n0=BOOMER\n\
@@ -1088,7 +1095,6 @@ mod tests {
             carrier.type_ref = sim.interner.intern("BOOMER");
             carrier.health = Health {
                 current: carrier_hp,
-                max: carrier_hp,
             };
             sim.substrate.entities.insert(carrier);
             let _ = sim.reveal(10);
@@ -1144,18 +1150,12 @@ mod tests {
         let mut ground = GameEntity::test_default(1, type_name, "Soviet", 5, 5);
         ground.owner = owner;
         ground.type_ref = type_ref;
-        ground.health = Health {
-            current: 100,
-            max: 100,
-        };
+        ground.health = Health { current: 100 };
 
         let mut bridge = GameEntity::test_default(2, type_name, "Soviet", 5, 5);
         bridge.owner = owner;
         bridge.type_ref = type_ref;
-        bridge.health = Health {
-            current: 100,
-            max: 100,
-        };
+        bridge.health = Health { current: 100 };
         bridge.on_bridge = true;
         bridge.position.z = 4;
 

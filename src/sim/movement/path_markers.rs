@@ -235,15 +235,7 @@ pub(super) fn snapshot_bridge_marker_peers(
             let (path_start, path_directions) = remaining_path_from_entity(entity);
             let (is_at_coord_track_cell, is_at_coord_head_cell, is_at_coord_head_z) =
                 is_at_coord_cells(entity);
-            let base_height_leptons =
-                i32::from(entity.position.z as i8).wrapping_mul(GROUND_LEVEL_HEIGHT_LEPTONS);
-            let current_height_leptons = entity
-                .locomotor
-                .as_ref()
-                .filter(|locomotor| locomotor.kind == LocomotorKind::Hover)
-                .map_or(base_height_leptons, |locomotor| {
-                    base_height_leptons.wrapping_add(locomotor.altitude.to_num::<i32>())
-                });
+            let current_height_leptons = super::foot_coordinate::current_coordinate(entity).z;
             let speed = rules
                 .and_then(|rules| rules.object(interner.resolve(entity.type_ref())))
                 .map_or(0, |object| object.speed);
@@ -709,8 +701,6 @@ mod tests {
         // RawTrack 3 handoff point 22, transformed around head cell (6,3),
         // lies in probe cell (5,4).  A deck track deliberately owns no ground
         // occupation_head_to reservation, so that field cannot answer slot 40.
-        // A stale geometry adapter cannot override the retained live selector/head.
-        peer.drive_track = super::super::drive_track::begin_drive_track(1, 0, 0, -1, 0);
         entities.insert(peer);
 
         let peers = snapshot_bridge_marker_peers(&entities, None, &interner);

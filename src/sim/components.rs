@@ -66,16 +66,36 @@ pub struct Facing(pub u8);
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct TurretFacing(pub u8);
 
-/// Hit points â€” current and maximum health.
+/// Signed actual ObjectClass health (+0x6C in gamemd.exe).
 ///
-/// When current reaches 0, the entity is destroyed.
-/// Max health comes from rules.ini Strength= value.
+/// Live ObjectType::strength owns the cap/ratio denominator. EstimatedHealth
+/// is independent state; writes to this field do not implicitly update it.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Health {
-    /// Current HP (0 = destroyed).
-    pub current: u16,
-    /// Maximum HP from rules.ini. Used for health bar display.
-    pub max: u16,
+    pub current: i32,
+}
+
+impl Health {
+    /// ObjectClass::GetHealthRatio (gamemd.exe 0x005F5C60..0x005F5C7F).
+    /// Signed loads and PC53/chop division; zero Strength keeps the native
+    /// masked infinity/NaN result for the caller's actual comparison/conversion.
+    pub fn ratio(self, strength: i32) -> crate::util::native_x87::MaskedX87Value {
+        use crate::util::native_x87::MaskedX87Chop53 as X87;
+        X87::div(X87::load_i32(self.current), X87::load_i32(strength))
+    }
+
+    /// Compare the native ratio without converting masked values to a host float.
+    pub fn compare_ratio(
+        self,
+        strength: i32,
+        threshold: f64,
+    ) -> crate::util::native_x87::MaskedX87Ordering {
+        use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
+        X87::compare(
+            self.ratio(strength),
+            X87::load_f64(NativeF64Bits::from_bits(threshold.to_bits())),
+        )
+    }
 }
 
 /// Vision radius in grid cells used for fog/shroud reveal.
@@ -353,39 +373,14 @@ impl FootPathRuntime {
         }
     }
 
-    /// Preserve established non-Walk countdown semantics while its native
-    /// timer producers are separate work: one decrement per Process call.
-    /// Walk uses frame anchors and must never double-age when Scatter calls
-    /// Process again within the same frame.
-    pub(crate) fn advance_compatibility_process(&mut self) {
-        use crate::sim::timer::{CdTimer, PAUSED_START_FRAME};
-        self.movement_timer = CdTimer::from_raw(
-            PAUSED_START_FRAME,
-            self.movement_timer.duration().saturating_sub(1).max(0),
-        );
-        self.blocked_timer = CdTimer::from_raw(
-            PAUSED_START_FRAME,
-            self.blocked_timer.duration().saturating_sub(1).max(0),
-        );
+    /// Original Foot timers retain the binary frame; repeated Process calls
+    /// must not consume time (Drive4B3607, Ship6A2C56, Walk75B979).
+    pub(crate) fn start_movement(&mut self, frame: u32, duration: i32) {
+        self.movement_timer = crate::sim::timer::CdTimer::started(frame as i32, duration);
     }
 
-    pub(crate) fn start_movement(&mut self, frame: u32, duration: u16, walk: bool) {
-        self.movement_timer = Self::timer(frame, duration, walk);
-    }
-
-    pub(crate) fn start_blocked(&mut self, frame: u32, duration: u16, walk: bool) {
-        self.blocked_timer = Self::timer(frame, duration, walk);
-    }
-
-    fn timer(frame: u32, duration: u16, walk: bool) -> crate::sim::timer::CdTimer {
-        crate::sim::timer::CdTimer::from_raw(
-            if walk {
-                frame as i32
-            } else {
-                crate::sim::timer::PAUSED_START_FRAME
-            },
-            i32::from(duration),
-        )
+    pub(crate) fn start_blocked(&mut self, frame: u32, duration: i32) {
+        self.blocked_timer = crate::sim::timer::CdTimer::started(frame as i32, duration);
     }
 }
 
@@ -479,10 +474,13 @@ pub struct ShipLocomotionRuntime {
     pub head_to: Option<DriveCoord>,
     #[serde(default)]
     pub track: TrackProgress,
-    /// Accepted fresh head awaits its Process-owned Apply1 receiver. Persist
-    /// this obligation across save/rollback; cursor zero cannot infer it.
+    /// Ship+63, independent of head XYZ; admission6A05FC reads this byte.
     #[serde(default)]
-    pub pending_track_occupation: bool,
+    pub track_valid: bool,
+    /// Native class+62: last eligible Process observation of body rotation.
+    /// Do_Turn and track-point facing updates do not write this latch.
+    #[serde(default)]
+    pub turn_latched: bool,
     #[serde(default)]
     pub target_speed_fraction: SimFixed,
     #[serde(default)]
@@ -546,7 +544,7 @@ pub struct DriveOccupationFootprint {
 
 /// DriveLocomotion-owned destination/head-to state.
 ///
-/// This is distinct from `DriveTrackState`: gamemd can clear destination,
+/// Native can clear destination,
 /// head-to, and active track state at different points in the lifecycle.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct DriveLocomotionRuntime {
@@ -558,10 +556,6 @@ pub struct DriveLocomotionRuntime {
     pub turn: DriveTurnState,
     #[serde(default)]
     pub track: TrackProgress,
-    /// Accepted fresh head awaits its Process-owned Apply1 receiver. Persist
-    /// this obligation across save/rollback; cursor zero cannot infer it.
-    #[serde(default)]
-    pub pending_track_occupation: bool,
     /// Drive+65, seeded true at constructor4AF5BB. Native4B4BE0/4B4BF0
     /// disable/enable END while Foot Find_Path removes a Team membership.
     /// No production Rust writer models that synchronous pair yet.
@@ -569,6 +563,10 @@ pub struct DriveLocomotionRuntime {
     pub end_permitted: bool,
     #[serde(default)]
     pub track_valid: bool,
+    /// Native class+62: last eligible Process observation of body rotation.
+    /// Do_Turn and track-point facing updates do not write this latch.
+    #[serde(default)]
+    pub turn_latched: bool,
     #[serde(default)]
     pub target_speed_fraction: SimFixed,
     /// Head-to vehicle-occupation mark, independent from CellClass object-list
@@ -597,9 +595,9 @@ impl Default for DriveLocomotionRuntime {
             head_to: None,
             turn: DriveTurnState::default(),
             track: TrackProgress::default(),
-            pending_track_occupation: false,
             end_permitted: true,
             track_valid: false,
+            turn_latched: false,
             target_speed_fraction: SIM_ZERO,
             occupation_head_to: None,
             occupation_handoff: None,
@@ -745,41 +743,6 @@ pub struct HarvestOverlay {
     pub elapsed_frames: u16,
 }
 
-/// Visual damage state derived from health ratio.
-///
-/// Pure helper — not an ECS component. Computed on the fly from `Health`
-/// by the render system to decide whether to show smoke/fire overlays.
-/// - Green: > 50% HP (healthy)
-/// - Yellow: 25–50% HP (damaged, shows smoke)
-/// - Red: < 25% HP (heavily damaged, shows fire)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum DamageState {
-    Green,
-    Yellow,
-    Red,
-}
-
-impl DamageState {
-    /// Compute the damage state from current and max health.
-    /// Uses pure integer math for deterministic results across platforms.
-    /// Green: ratio > 50%, Yellow: ratio > 25%, Red: ratio <= 25%.
-    pub fn from_health(current: u16, max: u16) -> Self {
-        if max == 0 {
-            return Self::Green;
-        }
-        // current/max > 0.5  ↔  current * 2 > max (no overflow: u16 * 2 fits u32)
-        let c = current as u32;
-        let m = max as u32;
-        if c * 2 > m {
-            Self::Green
-        } else if c * 4 > m {
-            Self::Yellow
-        } else {
-            Self::Red
-        }
-    }
-}
-
 /// Tracks the last entity that dealt damage to this entity.
 ///
 /// Used for retaliation: when an idle unit takes damage, it automatically
@@ -788,45 +751,6 @@ impl DamageState {
 pub struct LastAttacker {
     /// Stable entity ID of the attacker that dealt the most recent damage.
     pub attacker: u64,
-}
-
-/// Per-overlay one-shot animation state for a building (e.g., ConYard crane).
-///
-/// Each active one-shot anim overlay gets its own entry tracking frame progress.
-/// Driven by art.ini LoopStart/LoopEnd/LoopCount/Rate properties from the
-/// anim's own section (e.g., [GACNST_B]).
-///
-/// Timing is in logic frames, not wall-clock milliseconds: gamemd counts the
-/// animation's frame delay in logic frames, and a logic frame's duration is
-/// itself a function of the match game speed.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AnimOverlayState {
-    /// Animation type interned ID (uppercase), e.g., "GACNST_B".
-    pub anim_type: InternedId,
-    /// Current frame index in the animation.
-    pub frame: u16,
-    /// First frame of the loop range (from art.ini LoopStart=).
-    pub loop_start: u16,
-    /// Last frame of the loop range, exclusive (from art.ini LoopEnd=).
-    pub loop_end: u16,
-    /// Logic frames per animation frame — gamemd's `900 / Rate=` frame delay,
-    /// rescaled through the match game speed when the section is
-    /// `Normalized=yes`. Zero blocks advance, as it does natively.
-    pub rate_logic_frames: u32,
-    /// Logic frames accumulated since the last frame advance.
-    pub elapsed_logic_frames: u32,
-    /// true = animation completed its one-shot playback.
-    pub finished: bool,
-}
-
-/// Active one-shot building animation overlays (field on GameEntity).
-///
-/// Populated when a one-shot anim is triggered (e.g., placing a building triggers
-/// the ConYard crane). Cleared when the entity is despawned via EntityStore.remove().
-/// Infinite-loop anims (LoopCount=-1) are NOT stored here — they use a global timer.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct BuildingAnimOverlays {
-    pub anims: Vec<AnimOverlayState>,
 }
 
 /// App-side runtime state for a normal AnimClass-like SHP animation.
@@ -1300,8 +1224,6 @@ mod tests {
         assert_send_sync::<LastAttacker>();
         assert_send_sync::<VoxelAnimation>();
         assert_send_sync::<HarvestOverlay>();
-        assert_send_sync::<AnimOverlayState>();
-        assert_send_sync::<BuildingAnimOverlays>();
         assert_send_sync::<crate::sim::movement::locomotor::LocomotorState>();
         assert_send_sync::<NavigationState>();
         assert_send_sync::<DriveLocomotionRuntime>();
@@ -1379,18 +1301,6 @@ mod tests {
         fn _assert_copy<T: Copy>() {}
         _assert_copy::<C4PlantState>();
         _assert_copy::<PendingC4Detonation>();
-    }
-
-    #[test]
-    fn test_damage_state_thresholds() {
-        assert_eq!(DamageState::from_health(100, 100), DamageState::Green);
-        assert_eq!(DamageState::from_health(51, 100), DamageState::Green);
-        assert_eq!(DamageState::from_health(50, 100), DamageState::Yellow);
-        assert_eq!(DamageState::from_health(26, 100), DamageState::Yellow);
-        assert_eq!(DamageState::from_health(25, 100), DamageState::Red);
-        assert_eq!(DamageState::from_health(1, 100), DamageState::Red);
-        assert_eq!(DamageState::from_health(0, 100), DamageState::Red);
-        assert_eq!(DamageState::from_health(0, 0), DamageState::Green);
     }
 
     #[test]

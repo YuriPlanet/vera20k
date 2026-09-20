@@ -1,0 +1,868 @@
+{
+  "assessment_rows": [
+    {
+      "current": -100,
+      "draining": false,
+      "limbo": false,
+      "marked": false,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": -100,
+      "draining": false,
+      "limbo": true,
+      "marked": false,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": -100,
+      "draining": false,
+      "limbo": false,
+      "marked": true,
+      "output": -200,
+      "special_outage": false
+    },
+    {
+      "current": -100,
+      "draining": false,
+      "limbo": true,
+      "marked": true,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": -100,
+      "draining": true,
+      "limbo": false,
+      "marked": false,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": -100,
+      "draining": true,
+      "limbo": true,
+      "marked": false,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": -100,
+      "draining": true,
+      "limbo": false,
+      "marked": true,
+      "output": -200,
+      "special_outage": false
+    },
+    {
+      "current": -100,
+      "draining": true,
+      "limbo": true,
+      "marked": true,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 0,
+      "draining": false,
+      "limbo": false,
+      "marked": false,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 0,
+      "draining": false,
+      "limbo": true,
+      "marked": false,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 0,
+      "draining": false,
+      "limbo": false,
+      "marked": true,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 0,
+      "draining": false,
+      "limbo": true,
+      "marked": true,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 0,
+      "draining": true,
+      "limbo": false,
+      "marked": false,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 0,
+      "draining": true,
+      "limbo": true,
+      "marked": false,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 0,
+      "draining": true,
+      "limbo": false,
+      "marked": true,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 0,
+      "draining": true,
+      "limbo": true,
+      "marked": true,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 50,
+      "draining": false,
+      "limbo": false,
+      "marked": false,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 50,
+      "draining": false,
+      "limbo": true,
+      "marked": false,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 50,
+      "draining": false,
+      "limbo": false,
+      "marked": true,
+      "output": 100,
+      "special_outage": false
+    },
+    {
+      "current": 50,
+      "draining": false,
+      "limbo": true,
+      "marked": true,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 50,
+      "draining": true,
+      "limbo": false,
+      "marked": false,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 50,
+      "draining": true,
+      "limbo": true,
+      "marked": false,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 50,
+      "draining": true,
+      "limbo": false,
+      "marked": true,
+      "output": 0,
+      "special_outage": true
+    },
+    {
+      "current": 50,
+      "draining": true,
+      "limbo": true,
+      "marked": true,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 100,
+      "draining": false,
+      "limbo": false,
+      "marked": false,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 100,
+      "draining": false,
+      "limbo": true,
+      "marked": false,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 100,
+      "draining": false,
+      "limbo": false,
+      "marked": true,
+      "output": 200,
+      "special_outage": false
+    },
+    {
+      "current": 100,
+      "draining": false,
+      "limbo": true,
+      "marked": true,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 100,
+      "draining": true,
+      "limbo": false,
+      "marked": false,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 100,
+      "draining": true,
+      "limbo": true,
+      "marked": false,
+      "output": 0,
+      "special_outage": false
+    },
+    {
+      "current": 100,
+      "draining": true,
+      "limbo": false,
+      "marked": true,
+      "output": 0,
+      "special_outage": true
+    },
+    {
+      "current": 100,
+      "draining": true,
+      "limbo": true,
+      "marked": true,
+      "output": 0,
+      "special_outage": false
+    }
+  ],
+  "predicate_rows": [
+    {
+      "drain": -2147483648,
+      "operational": true,
+      "output": -2147483648
+    },
+    {
+      "drain": -100,
+      "operational": true,
+      "output": -2147483648
+    },
+    {
+      "drain": -20,
+      "operational": true,
+      "output": -2147483648
+    },
+    {
+      "drain": -10,
+      "operational": true,
+      "output": -2147483648
+    },
+    {
+      "drain": -1,
+      "operational": true,
+      "output": -2147483648
+    },
+    {
+      "drain": 0,
+      "operational": true,
+      "output": -2147483648
+    },
+    {
+      "drain": 1,
+      "operational": false,
+      "output": -2147483648
+    },
+    {
+      "drain": 10,
+      "operational": false,
+      "output": -2147483648
+    },
+    {
+      "drain": 20,
+      "operational": false,
+      "output": -2147483648
+    },
+    {
+      "drain": 100,
+      "operational": false,
+      "output": -2147483648
+    },
+    {
+      "drain": 2147483647,
+      "operational": false,
+      "output": -2147483648
+    },
+    {
+      "drain": -2147483648,
+      "operational": true,
+      "output": -100
+    },
+    {
+      "drain": -100,
+      "operational": true,
+      "output": -100
+    },
+    {
+      "drain": -20,
+      "operational": true,
+      "output": -100
+    },
+    {
+      "drain": -10,
+      "operational": true,
+      "output": -100
+    },
+    {
+      "drain": -1,
+      "operational": true,
+      "output": -100
+    },
+    {
+      "drain": 0,
+      "operational": true,
+      "output": -100
+    },
+    {
+      "drain": 1,
+      "operational": false,
+      "output": -100
+    },
+    {
+      "drain": 10,
+      "operational": false,
+      "output": -100
+    },
+    {
+      "drain": 20,
+      "operational": false,
+      "output": -100
+    },
+    {
+      "drain": 100,
+      "operational": false,
+      "output": -100
+    },
+    {
+      "drain": 2147483647,
+      "operational": false,
+      "output": -100
+    },
+    {
+      "drain": -2147483648,
+      "operational": true,
+      "output": -20
+    },
+    {
+      "drain": -100,
+      "operational": true,
+      "output": -20
+    },
+    {
+      "drain": -20,
+      "operational": true,
+      "output": -20
+    },
+    {
+      "drain": -10,
+      "operational": true,
+      "output": -20
+    },
+    {
+      "drain": -1,
+      "operational": true,
+      "output": -20
+    },
+    {
+      "drain": 0,
+      "operational": true,
+      "output": -20
+    },
+    {
+      "drain": 1,
+      "operational": false,
+      "output": -20
+    },
+    {
+      "drain": 10,
+      "operational": false,
+      "output": -20
+    },
+    {
+      "drain": 20,
+      "operational": false,
+      "output": -20
+    },
+    {
+      "drain": 100,
+      "operational": false,
+      "output": -20
+    },
+    {
+      "drain": 2147483647,
+      "operational": false,
+      "output": -20
+    },
+    {
+      "drain": -2147483648,
+      "operational": true,
+      "output": -10
+    },
+    {
+      "drain": -100,
+      "operational": true,
+      "output": -10
+    },
+    {
+      "drain": -20,
+      "operational": true,
+      "output": -10
+    },
+    {
+      "drain": -10,
+      "operational": true,
+      "output": -10
+    },
+    {
+      "drain": -1,
+      "operational": true,
+      "output": -10
+    },
+    {
+      "drain": 0,
+      "operational": true,
+      "output": -10
+    },
+    {
+      "drain": 1,
+      "operational": false,
+      "output": -10
+    },
+    {
+      "drain": 10,
+      "operational": false,
+      "output": -10
+    },
+    {
+      "drain": 20,
+      "operational": false,
+      "output": -10
+    },
+    {
+      "drain": 100,
+      "operational": false,
+      "output": -10
+    },
+    {
+      "drain": 2147483647,
+      "operational": false,
+      "output": -10
+    },
+    {
+      "drain": -2147483648,
+      "operational": true,
+      "output": -1
+    },
+    {
+      "drain": -100,
+      "operational": true,
+      "output": -1
+    },
+    {
+      "drain": -20,
+      "operational": true,
+      "output": -1
+    },
+    {
+      "drain": -10,
+      "operational": true,
+      "output": -1
+    },
+    {
+      "drain": -1,
+      "operational": true,
+      "output": -1
+    },
+    {
+      "drain": 0,
+      "operational": true,
+      "output": -1
+    },
+    {
+      "drain": 1,
+      "operational": false,
+      "output": -1
+    },
+    {
+      "drain": 10,
+      "operational": false,
+      "output": -1
+    },
+    {
+      "drain": 20,
+      "operational": false,
+      "output": -1
+    },
+    {
+      "drain": 100,
+      "operational": false,
+      "output": -1
+    },
+    {
+      "drain": 2147483647,
+      "operational": false,
+      "output": -1
+    },
+    {
+      "drain": -2147483648,
+      "operational": true,
+      "output": 0
+    },
+    {
+      "drain": -100,
+      "operational": true,
+      "output": 0
+    },
+    {
+      "drain": -20,
+      "operational": true,
+      "output": 0
+    },
+    {
+      "drain": -10,
+      "operational": true,
+      "output": 0
+    },
+    {
+      "drain": -1,
+      "operational": true,
+      "output": 0
+    },
+    {
+      "drain": 0,
+      "operational": true,
+      "output": 0
+    },
+    {
+      "drain": 1,
+      "operational": false,
+      "output": 0
+    },
+    {
+      "drain": 10,
+      "operational": false,
+      "output": 0
+    },
+    {
+      "drain": 20,
+      "operational": false,
+      "output": 0
+    },
+    {
+      "drain": 100,
+      "operational": false,
+      "output": 0
+    },
+    {
+      "drain": 2147483647,
+      "operational": false,
+      "output": 0
+    },
+    {
+      "drain": -2147483648,
+      "operational": true,
+      "output": 1
+    },
+    {
+      "drain": -100,
+      "operational": true,
+      "output": 1
+    },
+    {
+      "drain": -20,
+      "operational": true,
+      "output": 1
+    },
+    {
+      "drain": -10,
+      "operational": true,
+      "output": 1
+    },
+    {
+      "drain": -1,
+      "operational": true,
+      "output": 1
+    },
+    {
+      "drain": 0,
+      "operational": true,
+      "output": 1
+    },
+    {
+      "drain": 1,
+      "operational": true,
+      "output": 1
+    },
+    {
+      "drain": 10,
+      "operational": false,
+      "output": 1
+    },
+    {
+      "drain": 20,
+      "operational": false,
+      "output": 1
+    },
+    {
+      "drain": 100,
+      "operational": false,
+      "output": 1
+    },
+    {
+      "drain": 2147483647,
+      "operational": false,
+      "output": 1
+    },
+    {
+      "drain": -2147483648,
+      "operational": true,
+      "output": 10
+    },
+    {
+      "drain": -100,
+      "operational": true,
+      "output": 10
+    },
+    {
+      "drain": -20,
+      "operational": true,
+      "output": 10
+    },
+    {
+      "drain": -10,
+      "operational": true,
+      "output": 10
+    },
+    {
+      "drain": -1,
+      "operational": true,
+      "output": 10
+    },
+    {
+      "drain": 0,
+      "operational": true,
+      "output": 10
+    },
+    {
+      "drain": 1,
+      "operational": true,
+      "output": 10
+    },
+    {
+      "drain": 10,
+      "operational": true,
+      "output": 10
+    },
+    {
+      "drain": 20,
+      "operational": false,
+      "output": 10
+    },
+    {
+      "drain": 100,
+      "operational": false,
+      "output": 10
+    },
+    {
+      "drain": 2147483647,
+      "operational": false,
+      "output": 10
+    },
+    {
+      "drain": -2147483648,
+      "operational": true,
+      "output": 20
+    },
+    {
+      "drain": -100,
+      "operational": true,
+      "output": 20
+    },
+    {
+      "drain": -20,
+      "operational": true,
+      "output": 20
+    },
+    {
+      "drain": -10,
+      "operational": true,
+      "output": 20
+    },
+    {
+      "drain": -1,
+      "operational": true,
+      "output": 20
+    },
+    {
+      "drain": 0,
+      "operational": true,
+      "output": 20
+    },
+    {
+      "drain": 1,
+      "operational": true,
+      "output": 20
+    },
+    {
+      "drain": 10,
+      "operational": true,
+      "output": 20
+    },
+    {
+      "drain": 20,
+      "operational": true,
+      "output": 20
+    },
+    {
+      "drain": 100,
+      "operational": false,
+      "output": 20
+    },
+    {
+      "drain": 2147483647,
+      "operational": false,
+      "output": 20
+    },
+    {
+      "drain": -2147483648,
+      "operational": true,
+      "output": 100
+    },
+    {
+      "drain": -100,
+      "operational": true,
+      "output": 100
+    },
+    {
+      "drain": -20,
+      "operational": true,
+      "output": 100
+    },
+    {
+      "drain": -10,
+      "operational": true,
+      "output": 100
+    },
+    {
+      "drain": -1,
+      "operational": true,
+      "output": 100
+    },
+    {
+      "drain": 0,
+      "operational": true,
+      "output": 100
+    },
+    {
+      "drain": 1,
+      "operational": true,
+      "output": 100
+    },
+    {
+      "drain": 10,
+      "operational": true,
+      "output": 100
+    },
+    {
+      "drain": 20,
+      "operational": true,
+      "output": 100
+    },
+    {
+      "drain": 100,
+      "operational": true,
+      "output": 100
+    },
+    {
+      "drain": 2147483647,
+      "operational": false,
+      "output": 100
+    },
+    {
+      "drain": -2147483648,
+      "operational": true,
+      "output": 2147483647
+    },
+    {
+      "drain": -100,
+      "operational": true,
+      "output": 2147483647
+    },
+    {
+      "drain": -20,
+      "operational": true,
+      "output": 2147483647
+    },
+    {
+      "drain": -10,
+      "operational": true,
+      "output": 2147483647
+    },
+    {
+      "drain": -1,
+      "operational": true,
+      "output": 2147483647
+    },
+    {
+      "drain": 0,
+      "operational": true,
+      "output": 2147483647
+    },
+    {
+      "drain": 1,
+      "operational": true,
+      "output": 2147483647
+    },
+    {
+      "drain": 10,
+      "operational": true,
+      "output": 2147483647
+    },
+    {
+      "drain": 20,
+      "operational": true,
+      "output": 2147483647
+    },
+    {
+      "drain": 100,
+      "operational": true,
+      "output": 2147483647
+    },
+    {
+      "drain": 2147483647,
+      "operational": true,
+      "output": 2147483647
+    }
+  ],
+  "schema_version": 1
+}

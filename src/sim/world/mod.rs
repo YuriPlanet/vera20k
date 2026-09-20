@@ -1104,10 +1104,6 @@ pub struct Simulation {
     /// Distance in leptons below which a blocked unit stops instead of repathing.
     /// From CloseEnough= in [General]. Default 576 (~2.25 cells).
     pub close_enough: SimFixed,
-    /// Ticks between pathfinding retry attempts (PathDelay= in [General]).
-    pub path_delay_ticks: u16,
-    /// Ticks to wait when blocked by a friendly before aggressive repath (BlockagePathDelay=).
-    pub blockage_path_delay_ticks: u16,
     /// Temporary world-position SHP animations (warp effects, explosions, etc.).
     /// Ticked each frame, auto-removed when finished.
     #[serde(skip)]
@@ -2370,32 +2366,17 @@ impl Simulation {
         fatal_ids
     }
 
-    /// `BuildingClass::ReceiveDamage @ 0x00442230`, result-4 (destroyed) arm
-    /// calling 0x004424EA: when the docked-unit link `+0x2E4` is set, the
-    /// unit is first removed from the collected contact vector (so the
-    /// contact kill/scatter loop that follows never touches it), then
-    /// `BuildingClass::UndockUnit @ 0x004593A0` runs — all of this BEFORE the
-    /// `vtable+0x4EC` death/limbo call that breaks the radio contacts.
+    /// Current VERA refinery-loss adapter, invoked by the damage transaction.
+    /// Cargo remains aboard while contacts are removed and miner state is reset.
+    /// This shared sale/death scheduling is still incomplete native behavior.
     ///
-    /// `UndockUnit` body (disassembled 0x004593A0..0x0045946F): for a docked
-    /// `UnitClass` (`WhatAmI == 1`) it calls the locomotor's `Stop`
-    /// (ILocomotion `+0x58`), then `Head_To` (`+0x70`) with track `0x47` from
-    /// the building's `GetCoords` shifted `(-0x80, +0x80)` — the same
-    /// `Force_Track` push-off the unload exit uses — sets the unit speed
-    /// `1.0` (`vtable+0x544`), clears `+0x2E4` on both objects and `Mark(3)`s
-    /// the building. It touches neither the unit's mission, NavCom, `+0x6D1`
-    /// unload latch nor the contact; those go with the building's own
-    /// limbo/`Destroy(false)` BREAK the same frame. The harvester keeps its
-    /// remaining cargo (no deposit) and its next `Mission_Unload` dispatch
-    /// takes the contact-gone abandonment path.
-    ///
-    /// Rust reuses the sale-time `interrupt_refinery_docked_miners` (the same
-    /// `UndockUnit` shape `BuildingClass::Sell` reaches at 0x0044AAB0): break
-    /// the contact, keep the cargo, install the `0x47` push-off track. Its
-    /// dock-phase reset to `Approach` and the FSM cursor rewrite are
-    /// VERA-internal (gamemd leaves the unit on Unload until the abandonment
-    /// path re-dispatches it; the resulting re-selection of a refinery is the
-    /// same player-visible outcome).
+    /// Native ReceiveDamage4424A2 gates release4593A0 on reciprocal bunker
+    /// +2E4, not refinery contacts/on_pad. That release calls Power_On (+58),
+    /// Force_Track (+70), a separate owner-speed setter and radio BREAK (+274),
+    /// not Stop or Mark. Stock refinery death instead proceeds through pointer
+    /// expiry/Limbo; subsequent contact-loss Unload73DEE0 has its own idle,
+    /// stop and queued-mission gates. Do not substitute a forced track or
+    /// universal cancellation for that unfinished receiver/lifecycle migration.
     fn undock_refinery_unit_on_death(&mut self, rules: &RuleSet, dead_id: u64) {
         let is_refinery = self
             .substrate
@@ -2405,7 +2386,7 @@ impl Simulation {
             .and_then(|building| self.object_type(building.type_ref(), rules))
             .is_some_and(|obj| obj.refinery);
         if is_refinery {
-            crate::sim::miner::interrupt_refinery_docked_miners(self, rules, dead_id);
+            crate::sim::miner::interrupt_refinery_docked_miners(self, dead_id);
         }
     }
 
@@ -2939,8 +2920,6 @@ impl Simulation {
             super_weapons_initialized: false,
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
             close_enough: SimFixed::from_num(576), // 2.25 cells × 256 lep/cell
-            path_delay_ticks: 9,
-            blockage_path_delay_ticks: 60,
             world_effects: Vec::new(),
             debug_event_logging: false,
             input_delay_ticks: 2,
@@ -5645,6 +5624,24 @@ impl Simulation {
             let Some((unit_type_id, owner_id, rx, ry, z, was_selected)) = spawn_data else {
                 continue;
             };
+            // Building449E66/70 captures current health/type ratio at actual
+            // conversion, not when the reverse animation was requested.
+            let converted_health = if let Some(rules) = rules {
+                let Some(health) = self.substrate.entities.get(sid).and_then(|source| {
+                    Some(crate::sim::conversion_health::ConversionHealth::capture(
+                        source,
+                        self.object_type(source.type_ref(), rules)?,
+                        rules.object(self.interner.resolve(unit_type_id))?,
+                        crate::sim::conversion_health::ConversionKind::Building,
+                    ))
+                }) else {
+                    // A missing live type cannot supply a conversion ratio.
+                    continue;
+                };
+                Some(health)
+            } else {
+                None
+            };
             let rules = match rules {
                 Some(rules) => {
                     self.uninit_with_rules(sid, rules);
@@ -5668,6 +5665,9 @@ impl Simulation {
                 overlay_registry,
             ) {
                 if let Some(ge) = self.substrate.entities.get_mut(new_sid) {
+                    converted_health
+                        .expect("conversion with rules captured health")
+                        .apply(ge);
                     ge.selected = was_selected;
                 }
             }
@@ -5771,6 +5771,7 @@ impl Simulation {
         let completed_buildings = self.tick_building_up();
         if let Some(rules) = rules {
             for &stable_id in &completed_buildings {
+                self.initialize_completed_building_anims(stable_id, rules);
                 self.allocate_building_light(stable_id, rules);
                 self.add_building_sensor_array_if_powered(stable_id, rules);
                 self.announce_super_weapon_building_complete(stable_id, rules);
@@ -6842,6 +6843,8 @@ impl Simulation {
                     None,
                     &self.substrate.occupancy,
                     &self.substrate.cell_occupation,
+                    &self.substrate.raw_cell_occupation,
+                    self.session.binary_frame,
                     &self.substrate.entities,
                     &self.house_alliances,
                     &self.interner,

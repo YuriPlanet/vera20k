@@ -234,10 +234,7 @@ fn spawn_infantry(sim: &mut Simulation, type_str: &str, owner: &str, rx: u16, ry
         0,
         0,
         owner_id,
-        Health {
-            current: 125,
-            max: 125,
-        },
+        Health { current: 125 },
         type_id,
         EntityCategory::Infantry,
         0,

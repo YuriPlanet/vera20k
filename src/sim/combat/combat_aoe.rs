@@ -33,8 +33,8 @@ use crate::sim::occupancy::{
 #[cfg(test)]
 use crate::sim::overlay_grid::WallMutation;
 use crate::sim::overlay_grid::{
-    OverlayGrid, WallDamageTransactionHost, WallDirtyStep, WallPointerTarget,
-    WallZoneRepairKind, damage_wall_overlay_with_runtime_host,
+    OverlayGrid, WallDamageTransactionHost, WallDirtyStep, WallPointerTarget, WallZoneRepairKind,
+    damage_wall_overlay_with_runtime_host,
 };
 use crate::sim::rng::SimRng;
 use crate::sim::terrain_object::{TerrainObjectLifecycle, TerrainObjectState};
@@ -130,7 +130,13 @@ impl WallDamageTransactionHost for AoEWallDamageHost<'_, '_> {
 
     fn pointer_expired(&mut self, target: WallPointerTarget) {
         if let WallPointerTarget::Real(rx, ry) = target {
-            expire_cell_target_references(self.entities, rx, ry, #[cfg(test)] self.trace);
+            expire_cell_target_references(
+                self.entities,
+                rx,
+                ry,
+                #[cfg(test)]
+                self.trace,
+            );
         }
     }
 }
@@ -1501,7 +1507,6 @@ mod tests {
             let mut air = GameEntity::test_default(stable_id, type_id, "Soviet", 5, 5);
             air.category = category;
             air.health.current = 1000;
-            air.health.max = 1000;
             let mut locomotor = crate::sim::movement::locomotor::LocomotorState::from_object_type(
                 rules.object(type_id).unwrap(),
                 rules.general.flight_level,
@@ -1598,7 +1603,6 @@ mod tests {
             target.position.sub_x = SimFixed::from_num(sub_x);
             target.position.sub_y = CELL_CENTER_LEPTON;
             target.health.current = 300;
-            target.health.max = 300;
             entities.insert(target);
         }
         let mut interner = test_interner();
@@ -1727,7 +1731,6 @@ mod tests {
         let mut building = GameEntity::test_default(1, "BUILD", "Neutral", 5, 5);
         building.category = EntityCategory::Structure;
         building.health.current = 300;
-        building.health.max = 300;
         entities.insert(building);
         let mut occupancy = OccupancyGrid::new();
         occupancy.add(
@@ -1784,7 +1787,7 @@ mod tests {
         fn run(
             protected_distance: i32,
             kind: InvulnKind,
-        ) -> (Vec<(u64, i32, bool)>, u16, Vec<u64>) {
+        ) -> (Vec<(u64, i32, bool)>, i32, Vec<u64>) {
             let ini = IniFile::from_str(
                 "[InfantryTypes]\n\
                  [VehicleTypes]\n0=TARGET\n\
@@ -1949,7 +1952,7 @@ mod tests {
     #[test]
     fn gsi_04_07_damage_air_receivers_precede_center_first_ground_death_effects() {
         fn run(
-            hp: u16,
+            hp: i32,
         ) -> (
             Vec<u64>,
             crate::sim::combat::DeathEffects,
@@ -1980,7 +1983,6 @@ mod tests {
                 let mut air = GameEntity::test_default(stable_id, "AIRBOMB", "Soviet", rx, 5);
                 air.category = EntityCategory::Aircraft;
                 air.health.current = hp;
-                air.health.max = hp;
                 air.position.z = 0;
                 let mut air_locomotor =
                     crate::sim::movement::locomotor::LocomotorState::from_object_type(
@@ -2003,10 +2005,8 @@ mod tests {
 
             let mut center = GameEntity::test_default(20, "GROUNDBOMB", "Soviet", 5, 5);
             center.health.current = hp;
-            center.health.max = hp;
             let mut east = GameEntity::test_default(10, "GROUNDBOMB", "Soviet", 7, 5);
             east.health.current = hp;
-            east.health.max = hp;
 
             let mut entities = EntityStore::new();
             entities.insert(east);
@@ -2189,7 +2189,6 @@ mod tests {
             entity.position.sub_x = SimFixed::from_num(sub_x);
             entity.position.sub_y = SimFixed::from_num(sub_y);
             entity.health.current = hp;
-            entity.health.max = hp;
             entity
         };
         let mut entities = EntityStore::new();
@@ -2635,7 +2634,7 @@ mod tests {
         ) -> (
             Vec<u64>,
             Vec<Option<crate::sim::intern::InternedId>>,
-            [u16; 3],
+            [i32; 3],
         ) {
             let ini = IniFile::from_str(&format!(
                 "[InfantryTypes]\n\
@@ -2774,7 +2773,7 @@ mod tests {
 
     #[test]
     fn gsi_04_07_damage_object_immune_short_circuits_before_hp() {
-        fn run(immune: bool) -> (u16, usize, crate::sim::combat::DeathEffects) {
+        fn run(immune: bool) -> (i32, usize, crate::sim::combat::DeathEffects) {
             let ini = IniFile::from_str(&format!(
                 "[InfantryTypes]\n\
                  [VehicleTypes]\n0=MTNK\n\
@@ -2809,7 +2808,6 @@ mod tests {
             hut.type_ref = cabhut;
             hut.category = EntityCategory::Structure;
             hut.health.current = 2000;
-            hut.health.max = 2000;
             entities.insert(hut);
 
             let mut occupancy = OccupancyGrid::new();
@@ -2931,13 +2929,11 @@ mod tests {
         rookie.owner = american;
         rookie.type_ref = mtnk;
         rookie.health.current = 300;
-        rookie.health.max = 300;
         entities.insert(rookie);
         let mut veteran = GameEntity::test_default(3, "MTNK", "Americans", 5, 5);
         veteran.owner = american;
         veteran.type_ref = mtnk;
         veteran.health.current = 300;
-        veteran.health.max = 300;
         veteran.veterancy = 100;
         entities.insert(veteran);
 
@@ -3065,7 +3061,6 @@ mod tests {
         target.owner = soviet;
         target.type_ref = target_type;
         target.health.current = 1000;
-        target.health.max = 1000;
         target.attack_target = Some(AttackTarget::new(1));
         entities.insert(target);
 
@@ -3073,7 +3068,6 @@ mod tests {
         allied.owner = yuri;
         allied.type_ref = target_type;
         allied.health.current = 1000;
-        allied.health.max = 1000;
         allied.attack_target = Some(AttackTarget::new(1));
         entities.insert(allied);
 
@@ -3081,7 +3075,6 @@ mod tests {
         immune.owner = soviet;
         immune.type_ref = immune_type;
         immune.health.current = 1000;
-        immune.health.max = 1000;
         immune.attack_target = Some(AttackTarget::new(1));
         entities.insert(immune);
 
@@ -3090,7 +3083,6 @@ mod tests {
         building.type_ref = building_type;
         building.category = EntityCategory::Structure;
         building.health.current = 1000;
-        building.health.max = 1000;
         building.attack_target = Some(AttackTarget::new(1));
         entities.insert(building);
 
@@ -3286,7 +3278,6 @@ mod tests {
         target.type_ref = e1;
         target.category = EntityCategory::Infantry;
         target.health.current = 20;
-        target.health.max = 20;
         target.infantry = Some(crate::sim::game_entity::InfantryRuntime::new());
         target.infantry.as_mut().unwrap().is_prone = true;
         entities.insert(target);
@@ -3296,7 +3287,6 @@ mod tests {
         easy_prone.type_ref = e1;
         easy_prone.category = EntityCategory::Infantry;
         easy_prone.health.current = 100;
-        easy_prone.health.max = 100;
         easy_prone.infantry = Some(crate::sim::game_entity::InfantryRuntime::new());
         easy_prone.infantry.as_mut().unwrap().is_prone = true;
         entities.insert(easy_prone);
@@ -3306,7 +3296,6 @@ mod tests {
         easy_standing.type_ref = e1;
         easy_standing.category = EntityCategory::Infantry;
         easy_standing.health.current = 100;
-        easy_standing.health.max = 100;
         easy_standing.infantry = Some(crate::sim::game_entity::InfantryRuntime::new());
         entities.insert(easy_standing);
 
@@ -3402,14 +3391,14 @@ mod tests {
     fn gsi_04_07_damage_nonfatal_infantry_scatter_precedes_fear() {
         #[derive(Debug)]
         struct Outcome {
-            health: u16,
+            health: i32,
             fear: u16,
             destination: Option<(u16, u16)>,
             queued_mission: MissionId,
             rng_changed: bool,
         }
 
-        fn run(mission: MissionType, attacker_present: bool, health: u16) -> Outcome {
+        fn run(mission: MissionType, attacker_present: bool, health: i32) -> Outcome {
             let ini = IniFile::from_str(
                 "[InfantryTypes]\n0=E1\n\
                  [VehicleTypes]\n0=ATTACKER\n\
@@ -3446,7 +3435,6 @@ mod tests {
             victim.type_ref = victim_type;
             victim.category = EntityCategory::Infantry;
             victim.health.current = health;
-            victim.health.max = 125;
             victim.sub_cell = Some(2);
             victim.infantry = Some(crate::sim::game_entity::InfantryRuntime::new());
             victim.locomotor = Some(

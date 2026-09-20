@@ -135,12 +135,9 @@ pub(crate) struct ImmunityInputs {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TargetDamageView {
     pub armor: ArmorClass,
-    pub strength: i32,
     pub current_hp: i32,
     /// ObjectType `Immune=` entry gate in ObjectClass::ReceiveDamage.
     pub object_immune: bool,
-    pub is_building: bool,
-    pub can_c4: bool,
 }
 
 /// What the receiver-side gates decide before the kernel runs.
@@ -164,19 +161,20 @@ pub(crate) enum DamageState {
     Yellow,
     Red,
     Dead,
+    /// ObjectAlive was already false after the positive HP write (native5).
+    AlreadyDead,
 }
 
-/// Result of the full receiver pipeline.
+/// Prepared receiver packet, before the Object HP transaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DamageOutcome {
-    /// > 0 = damage to subtract; < 0 = heal.
+    /// Object entry admitted the packet before its kernel (which may yield0).
+    pub apply_object_damage: bool,
+    /// Prepared signed kernel result; Object owns the final cap and HP write.
     pub hp_delta: i32,
-    /// Final signed value left in ObjectClass's `int *damage` packet. This is
-    /// normally the HP delta, but an ObjectType `Immune=` early return leaves
-    /// the transformed incoming value intact while applying no health change.
-    /// TechnoClass uses this exact value for House anger feedback.
+    /// Packet retained when Object entry is skipped (for example Immune).
+    /// Accepted commits replace it with their actual mutated packet for anger.
     pub post_object_damage: Option<i32>,
-    pub state: DamageState,
     /// Accepted `Psychedelic=yes` receiver value. TechnoClass stores this
     /// signed distance-zero kernel result as its berserk timer and returns
     /// before ObjectClass mutates HP.

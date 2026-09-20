@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original EvaluateCandidate Strong gate, Normal transform and final integer acceptance slices",
+  "assumptions": [
+    "450 integer rows:3 modes x15 estimate/Strength pairs x10 scores, including signed and wrapping boundaries",
+    "48 appended conversion rows execute original FLD6FDBCD on supplied finite f64 ST0 then original7C5F00 under PC53/chop; i32/i64 overflow and masked conversion-indefinite feed the original integer slices",
+    "Supplied object/type/score state; +84 calls execute the original Unit getter through a copied retail vtable",
+    "Slices are independently entered: after selection/probe, after ftol, and after omitted later modifiers",
+    "Does not execute INI parser, float score construction, earlier eligibility callbacks, later house/zone modifiers, or full scanner",
+    "Final acceptance stops before register-pop/return sequence; observes EAX clamp or zero-rejection boundary"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "strong": "0x006F7CF7",
+    "normal": "0x006F8719",
+    "accept": "0x006F8928"
+  },
+  "original_slices": [
+    {
+      "start": "006F7CF7",
+      "end_exclusive": "006F7D19",
+      "sha256": "926d35084da9d08c86a877f5347ddd39f3cd8e1ae239c2f76d329fcd40a8f3d5"
+    },
+    {
+      "start": "006F8719",
+      "end_exclusive": "006F875F",
+      "sha256": "abcc2412dbbb31f2af62c0f3d11529dbae3361d57e65d362d32f4ca64ee38f54"
+    },
+    {
+      "start": "006F8928",
+      "end_exclusive": "006F895B",
+      "sha256": "bc5f72c2d6df448917c3b3cc018558069f4ad81b87c0af7556ca8f3300ef62e8"
+    },
+    {
+      "start": "006FDBCD",
+      "end_exclusive": "006FDBD3",
+      "sha256": "5164e5c08c285baa6e64076a25b42f551c86cf3df1365c97c2ce9e02ff7756a6"
+    },
+    {
+      "start": "007C5F00",
+      "end_exclusive": "007C5F3D",
+      "sha256": "164aed30b9c92bf114a2f5a68baa9084c30054087c4a03daa7ffbe8a6d7757ba"
+    }
+  ],
+  "original_unit_type_getter": "006F3270",
+  "payload_sha256": "e4bd8a66a25cff42ad38cc649f31f499a62adfd772cf14dba37468ec97e1b6f5"
+}

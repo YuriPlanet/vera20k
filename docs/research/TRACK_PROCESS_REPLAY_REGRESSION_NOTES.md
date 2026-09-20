@@ -105,3 +105,74 @@ causes were separated with test-only probes on both trees (main and candidate):
 These remain Rust-versus-prior-Rust pins. The Walk behaviors above carry their
 own native corpora (`walk_first_path`, `walk_head_occupation`,
 `walk_move_admission`); the pins do not certify whole-scenario native goldens.
+
+## Fresh command/admission ownership: dense comparison against bd5928e6
+
+The isolated bd5928e67db88b452f959f712203d7b1d7a513b9 baseline passed the
+existing dense fingerprint9678228745063827247. Diagnostic serialization after
+each real `advance_tick` captured the same6000 tick/entity keys on baseline and
+the authority candidate (library07). Only XY enters this fingerprint; save/hash
+schema changes cannot explain it.
+
+IDs1..10 have identical XY for all300 ticks. IDs11..20 differ at ticks5..175
+(1710 rows), and their candidate XY at every tick2..300 equals baseline tick-1.
+First difference: tick5/id11, baseline subX127 versus candidate128. At tick2 the
+old command has already requested west-facing192; the candidate stores the
+destination. At tick3 baseline installs selector54/head(39,5), whereas the
+candidate requests the turn and installs that track at tick4. This accounts for
+the observed one-tick translation; it is not a whole-game native trajectory proof.
+
+Original Drive SetDestination4AFD40 writes destination and bridge adjustment
+after owner guards; it does not invoke Do_Turn. The fresh gate4B3408 samples
+Facing::Current4C93D0 and compares all16 bits with `path[0] << 13`. A mismatch
+calls virtual Do_Turn4B0EF0 (Facing::Set4C9220), then executes RET0xC with AL1
+before admission. Ship has the same corridor6A2A57..6A2AAA. Thus AL1 does not
+mean a track was installed. Even ROT0 must return, although its new facing is
+already visible in that call.
+
+`tools/spatial_oracle/drive_fresh_turn.py` executes the unchanged Drive gate,
+vtable, setter and sampler for120 cases/240 calls, with hashes/provenance in its
+sidecar. Eight initial angles include one-bit mismatches hidden by an8-bit cache;
+three path directions and five signed raw rates cover instant and finite turns.
+The negative rate is supplied raw state, not an asserted rules producer. The
+second interior call while rotating does not certify reachability through the
+outer Process gates. Aligned cases stop before admission; no world callbacks or
+movement execute in this corpus.
+
+This also exposed a candidate defect separate from the intentional admission
+delay: `prepare_native_track` set the target after the frame's rotation handler,
+delaying the Facing setter. It now returns an explicit TurnFirst continuation;
+the world caller uses the same rotation owner immediately and still does not
+admit a track. The planner receives a16-bit live sample. Native ROT5 half-turn
+starts at frame2, duration25, and samples0x3FEE immediately; integer division
+does not require that initial sample equal the stored origin0x4000.
+
+Validation: `fresh_heading_gate_and_facing_setter_match_original_native_rows`
+compares native gate/sample outputs; the production test
+`fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission`
+checks Move through `advance_tick`, same-frame Facing, deferred admission and
+save/restore continuation for ROT0/5. Library08 passed these tests, the low-bit
+rotation-to-admission regression and configured teleporter restoration: 9,132
+passed, four existing replay failures, 134 ignored. It compiled in 5m33s and
+tested in 34.8s. Comparing every entity field in all 6,000 library07/08 records
+found only ten differences, all at tick3: westbound facing64 becomes192 and
+target192 becomesNone. XY and all other entity fields are unchanged by that
+setter-timing correction.
+
+Independent read-only review repeated the full baseline/07/08 comparison and
+accepted the dense Rust regression pin17756851045285605503
+(`0xF66D_01F2_23C5_B07F`). The temporary trace was removed. The XY change belongs
+to moving turn/admission ownership out of commands, not the later same-frame
+Facing repair. This establishes neither native command/Event/outer Process
+parity nor a native whole-scenario golden. Full Facing lifecycle/precision
+ownership and the three other replay failures remain unresolved.
+
+The final untraced exact dense test passed (one test, 0.80s;
+`dense-final-validation.log`, compile4m50s). A subsequent read-only native
+`drive_fresh_turn --check` also passed with the corrected120-row metadata.
+
+Local receipts: `dense-baseline.log`, `foot-coordinate-library-07.log`,
+`foot-coordinate-library-08.log`, `dense-baseline08-comparison.json`,
+`dense-07to08-comparison.json`, and `dense-07to08-state-diff.json`. Reproduce
+the native gate with `python -m tools.spatial_oracle.drive_fresh_turn --check`
+under the pinned retail executable configuration from `tools/native_oracle.md`.

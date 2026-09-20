@@ -153,7 +153,7 @@ pub fn populate(
         map_file.entities.push(MapEntity {
             owner: NEUTRAL_OWNER.to_string(),
             type_id: name.clone(),
-            health: NEUTRAL_HEALTH,
+            health: i32::from(NEUTRAL_HEALTH),
             cell_x: *x as u16,
             cell_y: *y as u16,
             facing: 0,

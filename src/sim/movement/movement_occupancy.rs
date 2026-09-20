@@ -16,10 +16,9 @@ use crate::sim::components::Position;
 use crate::sim::debug_event_log::DebugEventKind;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::movement::bump_crush;
-use crate::sim::movement::drive_track::DriveTrackState;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::movement::movement_blocked::handle_blocked_tick;
-use crate::sim::occupancy::{CellOccupationGrid, OccupancyGrid};
+use crate::sim::occupancy::{CellOccupationGrid, OccupancyGrid, RawCellOccupationGrid};
 use crate::sim::pathfinding::cell_entry::{
     self, BuildingOccupantEntryDecision, CanEnterLayerContext, CellEntryResult,
     LiveVehicleBuildingEntry, VehicleBuildingEntryBranch,
@@ -325,40 +324,6 @@ fn has_unignored_blocker_on(
     })
 }
 
-pub(super) fn has_unignored_runtime_occupants_on_layers(
-    occupancy: &OccupancyGrid,
-    cell: (u16, u16),
-    layer_context: CanEnterLayerContext,
-    live_building_entry_skips: &LiveBuildingEntrySkipMap,
-) -> bool {
-    let Some(occ) = occupancy.get(cell.0, cell.1) else {
-        return false;
-    };
-    has_unignored_occupant_on(
-        occ,
-        layer_context.object_list_layer,
-        cell,
-        live_building_entry_skips,
-    ) || (layer_context.occupancy_bits_layer != layer_context.object_list_layer
-        && has_unignored_occupant_on(
-            occ,
-            layer_context.occupancy_bits_layer,
-            cell,
-            live_building_entry_skips,
-        ))
-}
-
-fn has_unignored_occupant_on(
-    occ: &crate::sim::occupancy::CellOccupancy,
-    layer: MovementLayer,
-    cell: (u16, u16),
-    live_building_entry_skips: &LiveBuildingEntrySkipMap,
-) -> bool {
-    let ignored = live_building_entry_skips.get(&cell);
-    occ.iter_layer(layer)
-        .any(|occupant| !ignored.is_some_and(|ids| ids.contains(&occupant.entity_id)))
-}
-
 pub(super) fn build_live_building_entry_skip_map(
     entities: &crate::sim::entity_store::EntityStore,
     mover_id: u64,
@@ -473,13 +438,9 @@ pub(super) fn build_live_building_entry_skip_map(
     skips
 }
 
-pub(super) fn snap_motion_to_cell_center(
-    position: &mut Position,
-    drive_track: &mut Option<DriveTrackState>,
-) {
+pub(super) fn snap_motion_to_cell_center(position: &mut Position) {
     position.sub_x = crate::util::lepton::CELL_CENTER_LEPTON;
     position.sub_y = crate::util::lepton::CELL_CENTER_LEPTON;
-    *drive_track = None;
 }
 
 pub(super) fn naval_terrain_diag(
@@ -552,6 +513,7 @@ pub(super) fn handle_deferred_occupancy(
     mover_entity_block_map: Option<&crate::sim::pathfinding::LayeredEntityBlockMap>,
     occupancy: &mut OccupancyGrid,
     cell_occupation: &mut CellOccupationGrid,
+    raw_cell_occupation: &RawCellOccupationGrid,
     live_building_entry_skips: &LiveBuildingEntrySkipMap,
     alliances: &HouseAllianceMap,
     path_grid: Option<&PathGrid>,
@@ -619,6 +581,8 @@ pub(super) fn handle_deferred_occupancy(
         live_building_entry_skips.get(&(nx, ny)),
         occupancy,
         cell_occupation,
+        raw_cell_occupation,
+        mcfg.binary_frame,
         entities,
         alliances,
         interner,
@@ -685,13 +649,15 @@ pub(super) fn handle_deferred_occupancy(
             // we reach this branch.
             if let Some(entity) = entities.get_mut(entity_id) {
                 if mover_loco_kind != LocomotorKind::Walk {
-                    snap_motion_to_cell_center(&mut entity.position, &mut entity.drive_track);
+                    snap_motion_to_cell_center(&mut entity.position);
                 }
-                entity.navigation.path_runtime.start_blocked(
-                    mcfg.binary_frame,
-                    0,
-                    mover_loco_kind == LocomotorKind::Walk,
-                );
+                // Walk75BE11/75BFD1 and Hover514528/5147DF preserve +668.
+                if !matches!(mover_loco_kind, LocomotorKind::Walk | LocomotorKind::Hover) {
+                    entity
+                        .navigation
+                        .path_runtime
+                        .start_blocked(mcfg.binary_frame, 0);
+                }
                 entity.navigation.path_runtime.path_blocked = false;
             }
         }
@@ -701,7 +667,7 @@ pub(super) fn handle_deferred_occupancy(
             // mover must wait/repath instead of entering this occupied cell.
             if let Some(entity) = entities.get_mut(entity_id) {
                 if mover_loco_kind != LocomotorKind::Walk {
-                    snap_motion_to_cell_center(&mut entity.position, &mut entity.drive_track);
+                    snap_motion_to_cell_center(&mut entity.position);
                 }
                 let cur_pos = (entity.position.rx, entity.position.ry);
                 let body_facing = entity.body_facing;
@@ -762,7 +728,7 @@ pub(super) fn handle_deferred_occupancy(
                 crusher_lepton,
                 crush_capability,
                 eligibility,
-                sim_tick as u32,
+                mcfg.binary_frame,
             ) {
                 bump_crush::DriveCrushOutcome::Kill { victims } => victims,
                 _ => Vec::new(),
@@ -779,7 +745,7 @@ pub(super) fn handle_deferred_occupancy(
                     crusher_lepton,
                     crush_capability,
                     eligibility,
-                    sim_tick as u32,
+                    mcfg.binary_frame,
                 )
             {
                 for blocker_id in blockers {
@@ -839,13 +805,15 @@ pub(super) fn handle_deferred_occupancy(
             }));
             if let Some(entity) = entities.get_mut(entity_id) {
                 if mover_loco_kind != LocomotorKind::Walk {
-                    snap_motion_to_cell_center(&mut entity.position, &mut entity.drive_track);
+                    snap_motion_to_cell_center(&mut entity.position);
                 }
-                entity.navigation.path_runtime.start_blocked(
-                    mcfg.binary_frame,
-                    0,
-                    mover_loco_kind == LocomotorKind::Walk,
-                );
+                // Walk75BE11/75BFD1 and Hover514528/5147DF preserve +668.
+                if !matches!(mover_loco_kind, LocomotorKind::Walk | LocomotorKind::Hover) {
+                    entity
+                        .navigation
+                        .path_runtime
+                        .start_blocked(mcfg.binary_frame, 0);
+                }
                 entity.navigation.path_runtime.path_blocked = false;
             }
         }
@@ -888,7 +856,7 @@ pub(super) fn handle_deferred_occupancy(
             // fall through to handle_blocked_tick for repath.
             if let Some(entity) = entities.get_mut(entity_id) {
                 if mover_loco_kind != LocomotorKind::Walk {
-                    snap_motion_to_cell_center(&mut entity.position, &mut entity.drive_track);
+                    snap_motion_to_cell_center(&mut entity.position);
                 }
                 let cur_pos = (entity.position.rx, entity.position.ry);
                 let body_facing = entity.body_facing;
@@ -904,7 +872,6 @@ pub(super) fn handle_deferred_occupancy(
                             entity.navigation.path_runtime.start_blocked(
                                 mcfg.binary_frame,
                                 bump_crush::POST_SCATTER_WAIT_FRAMES,
-                                mover_loco_kind == LocomotorKind::Walk,
                             );
                         }
                         // Walk code 6 returns after CellScatter (0x75B891),
@@ -1068,7 +1035,7 @@ pub(super) fn handle_deferred_occupancy(
                 );
                 if let Some(entity) = entities.get_mut(entity_id) {
                     if mover_loco_kind != LocomotorKind::Walk {
-                        snap_motion_to_cell_center(&mut entity.position, &mut entity.drive_track);
+                        snap_motion_to_cell_center(&mut entity.position);
                     }
                 }
                 // The tail. `finalize_finished_entities` is VERA's single stop
@@ -1080,7 +1047,7 @@ pub(super) fn handle_deferred_occupancy(
                 }
             } else if let Some(entity) = entities.get_mut(entity_id) {
                 if mover_loco_kind != LocomotorKind::Walk {
-                    snap_motion_to_cell_center(&mut entity.position, &mut entity.drive_track);
+                    snap_motion_to_cell_center(&mut entity.position);
                 }
                 if entity.attack_target.is_none() {
                     entity.attack_target = Some(AttackTarget::new(blocker_id));
@@ -1161,7 +1128,7 @@ pub(super) fn handle_deferred_occupancy(
             let mut has_target = false;
             if let Some(entity) = entities.get_mut(entity_id) {
                 if mover_loco_kind != LocomotorKind::Walk {
-                    snap_motion_to_cell_center(&mut entity.position, &mut entity.drive_track);
+                    snap_motion_to_cell_center(&mut entity.position);
                 }
                 if entity.movement_target.is_some() {
                     has_target = true;
@@ -1236,11 +1203,13 @@ pub(super) fn handle_deferred_occupancy(
                 }
             }
         }
-        CellEntryResult::FriendlyWall | CellEntryResult::Impassable => {
+        CellEntryResult::FriendlyWall
+        | CellEntryResult::EnemyWall
+        | CellEntryResult::Impassable => {
             // Shouldn't reach here from NeedsBlockerCheck, but handle gracefully.
             if let Some(entity) = entities.get_mut(entity_id) {
                 if mover_loco_kind != LocomotorKind::Walk {
-                    snap_motion_to_cell_center(&mut entity.position, &mut entity.drive_track);
+                    snap_motion_to_cell_center(&mut entity.position);
                 }
                 let cur_pos = (entity.position.rx, entity.position.ry);
                 let body_facing = entity.body_facing;

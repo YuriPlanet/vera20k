@@ -224,13 +224,13 @@ pub(crate) fn build_shp_instances(
             match entity.category {
                 EntityCategory::Structure => {
                     let obj = state.rules().and_then(|r| r.object(type_str));
-                    let frame = if obj.map(|o| o.can_be_occupied).unwrap_or(false) {
+                    let frame = if let Some(obj) = obj.filter(|o| o.can_be_occupied) {
                         let occupant_count = entity
                             .passenger_role
                             .cargo()
                             .map(|c| c.count())
                             .unwrap_or(0);
-                        let tech_level = obj.map(|o| o.tech_level).unwrap_or(-1);
+                        let tech_level = obj.tech_level;
                         let (cy, cr) = state
                             .rules()
                             .map(|r| (r.general.condition_yellow, r.general.condition_red))
@@ -238,7 +238,7 @@ pub(crate) fn build_shp_instances(
                         building_frame_index(
                             occupant_count,
                             entity.health.current,
-                            entity.health.max,
+                            obj.strength,
                             tech_level,
                             cy,
                             cr,
@@ -486,8 +486,6 @@ pub(crate) fn build_shp_instances(
                 // can sort together via depth. Anims use the building's entity depth
                 // so they render at the same depth as the body — visible where the
                 // body has transparent pixels, covered where it's opaque.
-                let is_garrisoned = entity.passenger_role.cargo().is_some_and(|c| !c.is_empty());
-                let is_player_owned = !crate::rules::house_colors::is_non_player_house(owner_str);
                 let world_height: f32 = state
                     .match_state
                     .match_presentation
@@ -510,16 +508,8 @@ pub(crate) fn build_shp_instances(
                     state.match_state.match_presentation.lighting.grid(),
                     &sim.session.lighting,
                     (pos.rx, pos.ry),
-                    entity.building_anim_overlays.as_ref(),
-                    crate::app::presentation::building_anim::building_anim_elapsed_logic_frames(
-                        state,
-                        entity.stable_id(),
-                    ),
-                    Some(&sim.session.game_options),
-                    Some(&sim.interner),
-                    is_garrisoned,
-                    is_player_owned,
-                    entity.building_damage_state_active,
+                    sim,
+                    &entity.building_anim_slots,
                     world_height,
                     draw_state,
                     interp_z,
@@ -739,146 +729,6 @@ fn emit_building_bib(
     });
 }
 
-/// Frame of a looping building animation, `elapsed_logic_frames` after the
-/// animation object was created.
-///
-/// gamemd advances the animation's own frame counter by one every `rate` logic
-/// frames and, on reaching `LoopEnd`, resets it to `LoopStart`; the counter and
-/// its timer both start at construction. The phase is therefore a pure function
-/// of how long this animation has existed — which is why identical buildings
-/// raised at different times do not animate in lockstep.
-///
-/// DRIFT — the first sweep is missing when `Start=` differs from `LoopStart=`.
-/// The native counter is relative to `Start` and begins at zero, so the drawn
-/// frame is `Start + counter`: the animation plays `Start..LoopEnd` once when it
-/// is created and only then settles into `LoopStart..LoopEnd-1`. This goes
-/// straight into the loop. Trigger: creation of the slot animation — building
-/// placement for `[CAWA19_A]`, `[GACTWR_A]`, `[NATBNK_A]`, `[NATBNK_B]` and
-/// `[YAROCK_A]`, and crossing `ConditionYellow` for the 21 `…_AD` damaged
-/// replacements that also qualify. Effect: a one-off sweep through the other
-/// half of the SHP is skipped. Frequency: once per animation creation, never
-/// repeating, so it costs a brief transient and nothing steady-state.
-fn looping_frame_values(
-    loop_start: u16,
-    loop_end: u16,
-    start_frame: u16,
-    rate_logic_frames: u16,
-    ping_pong: bool,
-    elapsed_logic_frames: u32,
-) -> u16 {
-    // LoopEnd is EXCLUSIVE in RA2 art.ini — e.g. GAPOWR_A has LoopStart=0,
-    // LoopEnd=8 meaning frames 0..8 (0-7), while GAPOWR_AD starts at frame 8.
-    // The ranges are contiguous: normal=[0..8), damaged=[8..16).
-    let range: u16 = loop_end.saturating_sub(loop_start).max(1);
-    let rate: u32 = u32::from(rate_logic_frames).max(1);
-    let tick: u32 = elapsed_logic_frames / rate;
-
-    if ping_pong {
-        return ping_pong_frame_value(loop_end, start_frame, tick);
-    }
-    loop_start + (tick % range as u32) as u16
-}
-
-/// Frame of a `PingPong=yes` building animation `tick` frame-advances after
-/// construction.
-///
-/// The native bounce is **not** symmetric about the loop range, and it does not
-/// read `LoopStart` at all. The frame counter is relative to `Start=`, and the
-/// direction flips when that counter reaches `LoopEnd - Start` or equals
-/// `Start`. The flip returns immediately without touching the counter, so each
-/// endpoint frame is displayed for one full frame delay rather than being
-/// stepped over — `GARADR_A` (`Start=0`, `LoopEnd=14`) is a 28-step bounce
-/// across frames 0..=14, not a 26-step one across 0..=13.
-fn ping_pong_frame_value(loop_end: u16, start_frame: u16, tick: u32) -> u16 {
-    let high: u32 = u32::from(loop_end.saturating_sub(start_frame));
-    let low: u32 = u32::from(start_frame);
-    if high == 0 {
-        return start_frame;
-    }
-    // The counter climbs from zero on construction and turns at `high`.
-    if tick <= high {
-        return start_frame + tick as u16;
-    }
-    if low >= high {
-        // Both turning points land on the same counter value (or invert), so
-        // gamemd's own behaviour here is degenerate: it flips once at the top,
-        // then the descending counter can never satisfy the `== Start` test
-        // again and runs away downwards for the rest of the animation's life,
-        // walking off the start of the SHP. `[GAPLUG_BD]` (Start=10,
-        // LoopStart=10, LoopEnd=20) is the only stock section that hits it.
-        //
-        // VERA-INTERNAL, and a DELIBERATE DIVERGENCE from gamemd rather than an
-        // approximation of it: hold the last frame gamemd draws before the
-        // runaway. Reproducing the runaway faithfully would mean drawing
-        // negative frame indices, i.e. garbage or nothing.
-        return start_frame + high as u16;
-    }
-    let span: u32 = high - low;
-    let phase: u32 = (tick - high) % (2 * span);
-    let counter: u32 = if phase <= span {
-        high - phase
-    } else {
-        low + (phase - span)
-    };
-    start_frame + counter as u16
-}
-
-/// Whether an `InfantryAbsorb` building's ActiveAnim slot is the one gamemd
-/// clears for the current occupancy.
-///
-/// The native branch only ever touches the first two ActiveAnim slots: with no
-/// occupants it clears the second and creates the first, and with one or more it
-/// clears the first and creates the second. Any further ActiveAnim slot is
-/// outside the branch and keeps rendering.
-fn infantry_absorb_slot_is_hidden(active_slot_ordinal: usize, is_garrisoned: bool) -> bool {
-    match active_slot_ordinal {
-        0 => is_garrisoned,
-        1 => !is_garrisoned,
-        _ => false,
-    }
-}
-
-struct BuildingAnimFrameView<'a> {
-    anim_type: &'a str,
-    loop_start: u16,
-    loop_end: u16,
-    loop_count: i32,
-    start_frame: u16,
-    ping_pong: bool,
-}
-
-fn selected_building_anim_view<'a>(
-    anim: &'a crate::rules::art_data::BuildingAnimConfig,
-    building_damage_state_active: bool,
-    is_garrisoned: bool,
-) -> BuildingAnimFrameView<'a> {
-    let variant = if building_damage_state_active {
-        anim.damaged_variant.as_ref()
-    } else if is_garrisoned {
-        anim.garrisoned_variant.as_ref()
-    } else {
-        None
-    };
-    match variant {
-        Some(v) => BuildingAnimFrameView {
-            anim_type: &v.anim_type,
-            loop_start: v.loop_start,
-            loop_end: v.loop_end,
-            loop_count: v.loop_count,
-            start_frame: v.start_frame,
-            ping_pong: v.ping_pong,
-        },
-        None => BuildingAnimFrameView {
-            anim_type: &anim.anim_type,
-            loop_start: anim.loop_start,
-            loop_end: anim.loop_end,
-            loop_count: anim.loop_count,
-            start_frame: anim.start_frame,
-            ping_pong: anim.ping_pong,
-        },
-    }
-}
-
 /// Emit SpriteInstances for a building's animation overlays.
 ///
 /// Each anim overlay (e.g., CAOILD_A for Oil Derrick's tower) is looked up
@@ -899,13 +749,8 @@ fn emit_building_anims(
     light_grid: &crate::map::lighting::CellLightGrid,
     scenario: &crate::sim::scenario_session::ScenarioLightingState,
     cell: (u16, u16),
-    overlays: Option<&crate::sim::components::BuildingAnimOverlays>,
-    anim_elapsed_logic_frames: u32,
-    game_options: Option<&crate::sim::game_options::GameOptions>,
-    interner: Option<&crate::sim::intern::StringInterner>,
-    is_garrisoned: bool,
-    is_player_owned: bool,
-    building_damage_state_active: bool,
+    sim: &crate::sim::world::Simulation,
+    slots: &[Option<u64>; 21],
     world_height: f32,
     draw_state: DrawState,
     z: u8,
@@ -918,123 +763,36 @@ fn emit_building_anims(
         Some(e) => e,
         None => return,
     };
-    // Ordinal of this entry within the `ActiveAnim` family, i.e. its offset from
-    // the first of gamemd's four contiguous ActiveAnim slots. Parse order is key
-    // order (`ActiveAnim`, `…Two`, `…Three`, `…Four`), so counting Active-kind
-    // entries reproduces the slot index the native branches switch on.
-    let mut active_slot_ordinal: usize = 0;
     for anim in &art_entry.building_anims {
-        let this_active_ordinal: usize = active_slot_ordinal;
-        if matches!(anim.kind, crate::rules::art_data::BuildingAnimKind::Active) {
-            active_slot_ordinal += 1;
-        }
-        // Determine current frame based on animation type and art.ini properties.
-        //
-        // One-shot anims (Active/Production with LoopCount>0): driven by ECS overlays.
-        // Infinite-loop anims (LoopCount=-1 or IdleAnim): per-building loop phase.
-        // Special/Super: event-triggered one-shot — skip entirely if not in overlays.
-        let selected =
-            selected_building_anim_view(anim, building_damage_state_active, is_garrisoned);
-        let anim_upper: String = anim.anim_type.to_uppercase();
-        let anim_upper_id: Option<crate::sim::intern::InternedId> =
-            interner.and_then(|i| i.get(&anim_upper));
-        let frame: u16 = if matches!(
-            anim.kind,
-            crate::rules::art_data::BuildingAnimKind::Active
-                | crate::rules::art_data::BuildingAnimKind::Production
-        ) {
-            if selected.loop_count < 0 {
-                // Refinery ore-pile tier display: ActiveAnim/Two/Three/Four map
-                // to slots 3..6 in gamemd, and exactly ONE renders at a time —
-                // picked by `floor(stored * 4 / Storage)` (tier 0..3+). The
-                // Allied/Soviet dump path bypasses the refinery's StorageClass
-                // entirely (credits go straight to the owner), so the building's
-                // own stored amount stays 0 and tier is always 0 → only the
-                // primary slot (ActiveAnim = GAREFNL1) renders. The non-primary
-                // slots (Two/Three/Four) must be suppressed; otherwise all four
-                // ore-pile sprites stack on top of each other every frame.
-                let obj = rules.and_then(|r| r.object(building_type));
-                if obj.map(|o| o.refinery).unwrap_or(false) && !anim.is_primary {
-                    continue;
-                }
-                // Infantry-absorb power plant (Yuri's Bio Reactor): gamemd shows
-                // exactly ONE of the first two ActiveAnim slots and swaps them on
-                // occupant count — empty picks `ActiveAnim`, one or more occupants
-                // picks `ActiveAnimTwo`. Whichever is not selected is cleared, so
-                // the two layers are never on screen together.
-                if matches!(anim.kind, crate::rules::art_data::BuildingAnimKind::Active)
-                    && obj.is_some_and(|o| o.infantry_absorb && o.extra_power > 0)
-                    && infantry_absorb_slot_is_hidden(this_active_ordinal, is_garrisoned)
-                {
-                    continue;
-                }
-                // Infinite loop ActiveAnim on a capturable tech building
-                // (Oil Derrick, Airport, etc.): the primary slot (ActiveAnim)
-                // only plays after capture. Decorative civilian buildings
-                // (country flags, etc.) always animate.
-                let is_capturable: bool = obj.map(|o| o.capturable).unwrap_or(false);
-                if anim.is_primary && is_capturable && !is_player_owned {
-                    selected.start_frame
-                } else {
-                    looping_frame_values(
-                        selected.loop_start,
-                        selected.loop_end,
-                        selected.start_frame,
-                        crate::app::presentation::building_anim::building_anim_rate_logic_frames(
-                            art_reg,
-                            selected.anim_type,
-                            game_options,
-                        ),
-                        selected.ping_pong,
-                        anim_elapsed_logic_frames,
-                    )
-                }
-            } else {
-                // One-shot: look up current frame from ECS BuildingAnimOverlays component.
-                overlays
-                    .and_then(|o| o.anims.iter().find(|a| anim_upper_id == Some(a.anim_type)))
-                    .map(|a| a.frame)
-                    .unwrap_or_else(|| {
-                        resting_building_anim_frame_values(
-                            selected.loop_start,
-                            selected.loop_end,
-                            selected.start_frame,
-                        )
-                    })
-            }
-        } else if matches!(anim.kind, crate::rules::art_data::BuildingAnimKind::Idle) {
-            looping_frame_values(
-                selected.loop_start,
-                selected.loop_end,
-                selected.start_frame,
-                crate::app::presentation::building_anim::building_anim_rate_logic_frames(
-                    art_reg,
-                    selected.anim_type,
-                    game_options,
-                ),
-                selected.ping_pong,
-                anim_elapsed_logic_frames,
-            )
-        } else {
-            // Special/Super are one-shot event-triggered animations (e.g., GAREFNOR ore
-            // conveyor). Only render if actively playing in the BuildingAnimOverlays state.
-            // When not triggered, skip this anim entirely — don't show frame 0.
-            match overlays.and_then(|o| o.anims.iter().find(|a| anim_upper_id == Some(a.anim_type)))
-            {
-                Some(s) if !s.finished => s.frame,
-                _ => continue,
-            }
+        let Some(instance) = slots[usize::from(anim.native_slot)].and_then(|id| sim.anim(id))
+        else {
+            continue;
         };
-        // If the computed frame isn't in the atlas, fall back to the last
-        // available frame rather than skipping the overlay entirely.
-        // This prevents a visual glitch where the anim disappears for one
-        // tick when the atlas has fewer frames than the art.ini loop range.
-        let context = crate::render::sprite_atlas::attached_anim_palette_context(
-            art_reg.anim_runtime_config(&selected.anim_type),
-        );
-        let mut anim_key: ShpSpriteKey = ShpSpriteKey {
+        if instance.runtime.inactive || instance.draw_runtime.hidden {
+            continue;
+        }
+        let anim_name = sim.interner.resolve(instance.type_id);
+        let Some(runtime_config) = art_reg.anim_runtime_config(anim_name) else {
+            continue;
+        };
+        if !runtime_config.art_body_read {
+            continue;
+        }
+        // Anim+AC is relative to this instance's current type Start. Replacement
+        // copies only AC; its timer/loop state remains the new constructor's.
+        let Ok(frame) = u16::try_from(
+            instance
+                .runtime
+                .current_frame
+                .wrapping_add(runtime_config.start),
+        ) else {
+            continue;
+        };
+        let context =
+            crate::render::sprite_atlas::attached_anim_palette_context(Some(runtime_config));
+        let anim_key: ShpSpriteKey = ShpSpriteKey {
             palette_context: context,
-            type_id: selected.anim_type.to_string(),
+            type_id: anim_name.to_string(),
             facing: 0,
             frame,
             house_color: if context == crate::render::sprite_atlas::ShpPaletteContext::GlobalAnim {
@@ -1043,12 +801,8 @@ fn emit_building_anims(
                 house_color
             },
         };
-        let mut anim_entry_opt = atlas.get(&anim_key);
-        if anim_entry_opt.is_none() && frame > 0 {
-            // Try the previous frame as fallback.
-            anim_key.frame = frame - 1;
-            anim_entry_opt = atlas.get(&anim_key);
-        }
+        let anim_entry_opt = atlas.get(&anim_key);
+
         let Some(anim_entry) = anim_entry_opt else {
             continue;
         };
@@ -1068,14 +822,14 @@ fn emit_building_anims(
         // a constant -2px bias. Negative = toward camera. This orders anims
         // correctly against OTHER nearby objects.
         let type_z_adjust: i32 = art_reg
-            .anim_runtime_config(&selected.anim_type)
+            .anim_runtime_config(anim_name)
             .map(|c| c.z_adjust)
             .unwrap_or(0);
         let z_adjust_px: i32 =
             effective_anim_z_adjust(anim.z_adjust, type_z_adjust) + ANIM_DRAW_DEPTH_BIAS_PX;
         let anim_depth: f32 = apply_shape_z_adjust(building_depth, z_adjust_px, world_height);
 
-        let config = art_reg.anim_runtime_config(&selected.anim_type);
+        let config = art_reg.anim_runtime_config(anim_name);
         // Building mark 0043F9A6..0043FA68 supplies explicit selected Convert/top
         // only when ShouldUseCellDrawer. Its effect brightness hook remains a
         // residual for affected buildings; ordinary brightness is unchanged.
@@ -1118,7 +872,7 @@ fn emit_building_anims(
                     z,
                     z_adjust_px
                         + art_reg
-                            .anim_runtime_config(&selected.anim_type)
+                            .anim_runtime_config(anim_name)
                             .map_or(0, |c| c.y_draw_offset),
                 ),
                 z_gradient: pack_z_gradient(ZGradient::Vertical, false),
@@ -1129,19 +883,6 @@ fn emit_building_anims(
 }
 
 #[cfg(test)]
-fn resting_building_anim_frame(anim: &crate::rules::art_data::BuildingAnimConfig) -> u16 {
-    resting_building_anim_frame_values(anim.loop_start, anim.loop_end, anim.start_frame)
-}
-
-fn resting_building_anim_frame_values(loop_start: u16, loop_end: u16, start_frame: u16) -> u16 {
-    if loop_end > loop_start {
-        // LoopEnd is exclusive — last valid frame is loop_end - 1.
-        loop_end - 1
-    } else {
-        start_frame
-    }
-}
-
 fn resolve_infantry_shp_frame(
     state: &AppState,
     type_id: &str,
@@ -1191,46 +932,46 @@ fn resolve_infantry_shp_frame(
 /// Civilian red-health occupied art collapses frame 3 to frame 1.
 fn building_frame_index(
     occupant_count: u32,
-    health_current: u16,
-    health_max: u16,
+    health_current: i32,
+    strength: i32,
     tech_level: i32,
-    condition_yellow: f32,
-    condition_red: f32,
+    condition_yellow: f64,
+    condition_red: f64,
 ) -> u16 {
-    let mut base: u16 = 0;
-    if occupant_count > 0 {
-        base = 2;
-    }
-    let ratio = if health_max == 0 {
-        1.0
-    } else {
-        health_current as f32 / health_max as f32
-    };
-    let red_tier = ratio <= condition_red;
-    let yellow_tier = tech_level > 0 && ratio <= condition_yellow;
-    if red_tier || yellow_tier {
-        base += 1;
-    }
-    if tech_level == -1 && base == 3 {
-        return 1;
-    }
-    base
+    crate::sim::building_art::occupied_body_frame(
+        occupant_count,
+        health_current,
+        strength,
+        tech_level,
+        condition_yellow,
+        condition_red,
+    )
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn original_health_ratio_corpus_matches_requested_building_art_transition() {
+        for row in crate::sim::health_ratio_fixture::rows() {
+            assert_eq!(
+                crate::sim::building_art::requested_damage_state(
+                    crate::sim::components::Health {
+                        current: row.input.current
+                    },
+                    row.input.strength,
+                    row.input.yellow(),
+                ),
+                row.output.generic_art_damaged,
+                "{row:?}"
+            );
+        }
+    }
     use super::building_frame_index;
-    use super::infantry_absorb_slot_is_hidden;
-    use super::looping_frame_values;
-    use super::resting_building_anim_frame;
-    use super::selected_building_anim_view;
     use super::shp_body_tint;
     use crate::app::presentation::building_anim::building_anim_rate_logic_frames;
     use crate::map::entities::EntityCategory;
     use crate::map::lighting::CellLightGrid;
-    use crate::rules::art_data::{
-        ArtRegistry, BuildingAnimConfig, BuildingAnimKind, BuildingAnimVariantConfig,
-    };
+    use crate::rules::art_data::ArtRegistry;
     use crate::rules::ini_parser::IniFile;
     use crate::sim::game_options::GameOptions;
 
@@ -1295,36 +1036,6 @@ mod tests {
     }
 
     #[test]
-    fn looping_building_anim_advances_one_frame_per_rate_logic_frames() {
-        // 8 frames at 6 logic frames each: frame 0 holds for logic frames 0..5,
-        // frame 1 begins on logic frame 6, and the cycle wraps after 48.
-        assert_eq!(looping_frame_values(0, 8, 0, 6, false, 0), 0);
-        assert_eq!(looping_frame_values(0, 8, 0, 6, false, 5), 0);
-        assert_eq!(looping_frame_values(0, 8, 0, 6, false, 6), 1);
-        assert_eq!(looping_frame_values(0, 8, 0, 6, false, 47), 7);
-        assert_eq!(looping_frame_values(0, 8, 0, 6, false, 48), 0);
-    }
-
-    #[test]
-    fn looping_building_anim_phase_follows_each_buildings_own_creation_frame() {
-        // Two identical power plants raised 15 logic frames apart. gamemd bases
-        // each slot animation's frame timer on its own construction frame, so at
-        // any later moment the two are on different frames of the same loop.
-        // This is the whole point of the per-building phase: a base full of
-        // power plants must not pulse in unison.
-        let rate: u16 = 6;
-        let older_elapsed: u32 = 40;
-        let newer_elapsed: u32 = 40 - 15;
-
-        let older = looping_frame_values(0, 8, 0, rate, false, older_elapsed);
-        let newer = looping_frame_values(0, 8, 0, rate, false, newer_elapsed);
-
-        assert_eq!(older, 6);
-        assert_eq!(newer, 4);
-        assert_ne!(older, newer);
-    }
-
-    #[test]
     fn looping_building_anim_damaged_variant_uses_its_own_section_rate() {
         // Stock `[GARADR]`: the damaged dish replacement carries Rate=180 where
         // the healthy one carries Rate=220, so the delay has to be resolved from
@@ -1349,239 +1060,11 @@ mod tests {
     }
 
     #[test]
-    fn ping_pong_building_anim_dwells_on_both_turning_frames() {
-        // Stock `[GARADR_A]` — the Allied radar dish — is Start=0, LoopEnd=14,
-        // PingPong=yes. gamemd flips direction only after the counter reaches
-        // LoopEnd-Start and returns without stepping back, so frame 14 is drawn
-        // for a full delay and the bounce is 28 steps over frames 0..=14.
-        let frames: Vec<u16> = (0..30)
-            .map(|t| looping_frame_values(0, 14, 0, 1, true, t))
-            .collect();
-
-        assert_eq!(
-            frames,
-            vec![
-                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4,
-                3, 2, 1, 0, 1,
-            ]
-        );
-        // The cycle is 2 × (LoopEnd - Start), not 2 × (range - 1).
-        assert_eq!(frames[0], frames[28]);
-    }
-
-    #[test]
-    fn ping_pong_building_anim_ignores_loop_start_and_keys_off_start_frame() {
-        // The native flip tests read `Start=` and `LoopEnd=` only. `[GAPLUG_BD]`
-        // is Start=10, LoopStart=10, LoopEnd=20, so both turning points land on
-        // the same counter value and gamemd walks off the end; VERA holds the
-        // last frame it draws instead.
-        assert_eq!(looping_frame_values(10, 20, 10, 1, true, 10), 20);
-        assert_eq!(looping_frame_values(10, 20, 10, 1, true, 40), 20);
-    }
-
-    #[test]
-    fn infantry_absorb_building_shows_exactly_one_active_slot() {
-        // Yuri's Bio Reactor: ActiveAnim=YAPOWR_A while empty, ActiveAnimTwo=
-        // YAPOWR_B once anything is inside — never both, and never neither.
-        assert!(!infantry_absorb_slot_is_hidden(0, false));
-        assert!(infantry_absorb_slot_is_hidden(1, false));
-
-        assert!(infantry_absorb_slot_is_hidden(0, true));
-        assert!(!infantry_absorb_slot_is_hidden(1, true));
-    }
-
-    #[test]
-    fn infantry_absorb_swap_leaves_later_active_slots_alone() {
-        // The native branch only reaches the first two ActiveAnim slots.
-        assert!(!infantry_absorb_slot_is_hidden(2, false));
-        assert!(!infantry_absorb_slot_is_hidden(3, true));
-    }
-
-    #[test]
     fn looping_building_anim_rate_falls_back_to_native_default_without_a_section() {
         let art = ArtRegistry::empty();
         assert_eq!(
             building_anim_rate_logic_frames(&art, "NAOBEL_A", Some(&stock_game_options())),
             crate::rules::art_data::DEFAULT_ART_RATE_LOGIC_FRAMES
-        );
-    }
-
-    #[test]
-    fn one_shot_building_anim_rests_on_last_loop_frame() {
-        // LoopEnd is exclusive in RA2 art.ini: LoopEnd=8 means frames 0..8 (8 frames),
-        // so the resting frame is 7 (the last valid frame before LoopEnd).
-        let anim = BuildingAnimConfig {
-            anim_type: "GAAIRC_A".to_string(),
-            damaged_variant: None,
-            garrisoned_variant: None,
-            kind: BuildingAnimKind::Active,
-            x: 0,
-            y: 0,
-            y_sort: 0,
-            z_adjust: 0,
-            loop_start: 0,
-            loop_end: 8,
-            loop_count: 1,
-            rate: 100,
-            start_frame: 0,
-            ping_pong: false,
-            is_primary: false,
-        };
-
-        assert_eq!(resting_building_anim_frame(&anim), 7);
-    }
-
-    #[test]
-    fn one_shot_building_anim_without_loop_range_uses_start_frame() {
-        let anim = BuildingAnimConfig {
-            anim_type: "TEST".to_string(),
-            damaged_variant: None,
-            garrisoned_variant: None,
-            kind: BuildingAnimKind::Active,
-            x: 0,
-            y: 0,
-            y_sort: 0,
-            z_adjust: 0,
-            loop_start: 0,
-            loop_end: 0,
-            loop_count: 1,
-            rate: 100,
-            start_frame: 3,
-            ping_pong: false,
-            is_primary: false,
-        };
-
-        assert_eq!(resting_building_anim_frame(&anim), 3);
-    }
-
-    #[test]
-    fn damaged_active_anim_view_uses_damaged_variant_frame_range() {
-        let anim = BuildingAnimConfig {
-            anim_type: "CASEAT02_A".to_string(),
-            damaged_variant: Some(BuildingAnimVariantConfig {
-                anim_type: "CASEAT02_AD".to_string(),
-                loop_start: 21,
-                loop_end: 39,
-                loop_count: -1,
-                rate: 150,
-                start_frame: 21,
-                ping_pong: false,
-            }),
-            garrisoned_variant: None,
-            kind: BuildingAnimKind::Active,
-            x: 0,
-            y: 0,
-            y_sort: 0,
-            z_adjust: 0,
-            loop_start: 0,
-            loop_end: 20,
-            loop_count: -1,
-            rate: 150,
-            start_frame: 0,
-            ping_pong: false,
-            is_primary: true,
-        };
-
-        let selected = selected_building_anim_view(&anim, true, false);
-
-        assert_eq!(selected.anim_type, "CASEAT02_AD");
-        assert_eq!(selected.start_frame, 21);
-        assert_eq!(selected.loop_start, 21);
-        assert_eq!(selected.loop_end, 39);
-        assert_eq!(
-            looping_frame_values(
-                selected.loop_start,
-                selected.loop_end,
-                selected.start_frame,
-                4,
-                selected.ping_pong,
-                0,
-            ),
-            21
-        );
-    }
-
-    #[test]
-    fn damaged_active_anim_variant_follows_stored_gate_not_health() {
-        let anim = BuildingAnimConfig {
-            anim_type: "CASEAT02_A".to_string(),
-            damaged_variant: Some(BuildingAnimVariantConfig {
-                anim_type: "CASEAT02_AD".to_string(),
-                loop_start: 21,
-                loop_end: 39,
-                loop_count: -1,
-                rate: 150,
-                start_frame: 21,
-                ping_pong: false,
-            }),
-            garrisoned_variant: None,
-            kind: BuildingAnimKind::Active,
-            x: 0,
-            y: 0,
-            y_sort: 0,
-            z_adjust: 0,
-            loop_start: 0,
-            loop_end: 20,
-            loop_count: -1,
-            rate: 150,
-            start_frame: 0,
-            ping_pong: false,
-            is_primary: true,
-        };
-
-        assert_eq!(
-            selected_building_anim_view(&anim, false, false).anim_type,
-            "CASEAT02_A"
-        );
-        assert_eq!(
-            selected_building_anim_view(&anim, true, false).anim_type,
-            "CASEAT02_AD"
-        );
-    }
-
-    #[test]
-    fn garrisoned_active_anim_variant_follows_stored_gate_not_health() {
-        let anim = BuildingAnimConfig {
-            anim_type: "CAWASH19_A".to_string(),
-            damaged_variant: Some(BuildingAnimVariantConfig {
-                anim_type: "CAWASH19_AD".to_string(),
-                loop_start: 12,
-                loop_end: 24,
-                loop_count: -1,
-                rate: 120,
-                start_frame: 12,
-                ping_pong: false,
-            }),
-            garrisoned_variant: Some(BuildingAnimVariantConfig {
-                anim_type: "CAWASH19_AG".to_string(),
-                loop_start: 24,
-                loop_end: 36,
-                loop_count: -1,
-                rate: 120,
-                start_frame: 24,
-                ping_pong: false,
-            }),
-            kind: BuildingAnimKind::Active,
-            x: 0,
-            y: 0,
-            y_sort: 0,
-            z_adjust: 0,
-            loop_start: 0,
-            loop_end: 12,
-            loop_count: -1,
-            rate: 120,
-            start_frame: 0,
-            ping_pong: false,
-            is_primary: true,
-        };
-
-        assert_eq!(
-            selected_building_anim_view(&anim, false, true).anim_type,
-            "CAWASH19_AG"
-        );
-        assert_eq!(
-            selected_building_anim_view(&anim, true, true).anim_type,
-            "CAWASH19_AD"
         );
     }
 
@@ -1650,9 +1133,36 @@ mod tests {
     // Edge cases.
 
     #[test]
-    fn zero_max_hp_treats_as_healthy() {
-        // Avoids division-by-zero; entity not yet fully initialized.
-        assert_eq!(building_frame_index(0, 0, 0, -1, 0.5, 0.25), 0);
+    fn zero_over_zero_selects_damaged_body_frame() {
+        // Native masked 0/0 is unordered and TEST AH,41 enters the damage arm.
+        assert_eq!(building_frame_index(0, 0, 0, -1, 0.5, 0.25), 1);
+    }
+
+    #[test]
+    fn original_health_ratio_corpus_matches_completed_occupied_body_frame() {
+        for row in crate::sim::health_ratio_fixture::rows() {
+            for expected in &row.output.occupied_body_frames {
+                assert_eq!(
+                    building_frame_index(
+                        expected.occupants,
+                        row.input.current,
+                        row.input.strength,
+                        expected.tech_level,
+                        row.input.yellow(),
+                        row.input.red()
+                    ),
+                    expected.frame,
+                    "{row:?}, {expected:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn building_frame_keeps_signed_health_and_live_strength_width() {
+        assert_eq!(building_frame_index(0, 70_000, 100_000, 5, 0.5, 0.25), 0);
+        assert_eq!(building_frame_index(0, 70_000, 200_000, 5, 0.5, 0.25), 1);
+        assert_eq!(building_frame_index(0, -1, 100_000, 5, 0.5, 0.25), 1);
     }
 
     #[test]
@@ -1674,7 +1184,7 @@ mod tests {
             assert_eq!(
                 building_frame_index(
                     n("occupants") as u32,
-                    n("health") as u16,
+                    n("health") as i32,
                     2000,
                     n("tech_level") as i32,
                     0.5,

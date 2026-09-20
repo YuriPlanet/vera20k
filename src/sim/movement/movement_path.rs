@@ -726,7 +726,6 @@ fn build_flat_fallback_layers(
 pub(super) fn try_repath_after_block(
     target: &mut MovementTarget,
     path_runtime: &mut crate::sim::components::FootPathRuntime,
-    walk: bool,
     facing: &mut u8,
     current: (u16, u16),
     current_layer: MovementLayer,
@@ -750,7 +749,7 @@ pub(super) fn try_repath_after_block(
         return false;
     }
     let Some(grid) = ctx.path_grid else {
-        path_runtime.start_movement(mcfg.binary_frame, mcfg.path_delay_ticks, walk);
+        path_runtime.start_movement(mcfg.binary_frame, mcfg.path_delay_ticks);
         return false;
     };
 
@@ -768,7 +767,7 @@ pub(super) fn try_repath_after_block(
         ctx.resolved_terrain,
         NEAREST_REACHABLE_SEARCH_RADIUS,
     ) else {
-        path_runtime.start_movement(mcfg.binary_frame, mcfg.path_delay_ticks, walk);
+        path_runtime.start_movement(mcfg.binary_frame, mcfg.path_delay_ticks);
         return false;
     };
     if effective_goal != goal {
@@ -813,11 +812,11 @@ pub(super) fn try_repath_after_block(
         allow_zone_hierarchy,
     );
     let Some((new_path, new_layers)) = path_result else {
-        path_runtime.start_movement(mcfg.binary_frame, mcfg.path_delay_ticks, walk);
+        path_runtime.start_movement(mcfg.binary_frame, mcfg.path_delay_ticks);
         return false;
     };
     if new_path.len() < 2 {
-        path_runtime.start_movement(mcfg.binary_frame, mcfg.path_delay_ticks, walk);
+        path_runtime.start_movement(mcfg.binary_frame, mcfg.path_delay_ticks);
         return false;
     }
 
@@ -832,7 +831,7 @@ pub(super) fn try_repath_after_block(
     // Infantry: clear blocking state on repath success (fresh grace period).
     // Walk's blocked caller restores its grace until actual paid progress.
     if facts.is_infantry {
-        path_runtime.start_blocked(mcfg.binary_frame, 0, walk);
+        path_runtime.start_blocked(mcfg.binary_frame, 0);
         path_runtime.path_blocked = false;
     }
     // Do NOT set movement_delay on successful repath. gamemd chains
@@ -1143,14 +1142,13 @@ mod tests {
         };
         let mut path_runtime = crate::sim::components::FootPathRuntime::default();
         path_runtime.path_blocked = true;
-        path_runtime.start_blocked(0, 1, false);
+        path_runtime.start_blocked(0, 1);
         let mut facing = 0;
         let mut rng = SimRng::new(0);
 
         assert!(try_repath_after_block(
             &mut target,
             &mut path_runtime,
-            false,
             &mut facing,
             (6, 6),
             MovementLayer::Ground,
@@ -1205,7 +1203,6 @@ mod tests {
         assert!(try_repath_after_block(
             &mut target,
             &mut path_runtime,
-            false,
             &mut facing,
             (0, 1),
             MovementLayer::Ground,

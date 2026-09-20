@@ -42,7 +42,7 @@ use crate::sim::world::Simulation;
 ///
 /// Present only on aircraft with `Ammo= >= 0` in rules.ini.
 /// Entities with `Ammo=-1` (unlimited, the default) have `None`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub struct AircraftAmmo {
     /// Current ammo count. 0 = depleted, triggers auto-return.
     pub current: i32,
@@ -56,7 +56,7 @@ pub struct AircraftAmmo {
     /// dock attempt. Set when transitioning from WaitForDock → Descending;
     /// cleared on launch / no-airfield-available.
     #[serde(default)]
-    pub target_pad: Option<u8>,
+    pub target_pad: Option<u32>,
     /// Ticks remaining until the next ammo point is restored.
     pub reload_timer: u32,
     /// Cooldown ticks before re-scanning for a helipad (prevents per-tick scans).
@@ -79,7 +79,7 @@ impl AircraftAmmo {
 }
 
 /// Docking lifecycle phases for aircraft returning to an airfield.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum AircraftDockPhase {
     /// Flying toward the target airfield.
     ReturnToBase,
@@ -111,19 +111,60 @@ pub enum AircraftDockPhase {
 /// every tick). Whichever probe hits a free slot first wins — emergent
 /// timing/iteration order, NOT a FIFO and NOT a distance sort. Releasing a pad
 /// simply empties it; the next probe claims it.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct AirfieldDocks {
     /// Per-airfield occupancy: pad_index → occupant aircraft (None = empty).
     /// Vec length equals `NumberOfDocks` for the airfield.
     slots: BTreeMap<u64, Vec<Option<u64>>>,
-    /// Reverse lookup: aircraft → (airfield, pad_index).
-    aircraft_to_pad: BTreeMap<u64, (u64, u8)>,
+    /// Derived lookup rebuilt from saved slots: aircraft → (airfield, pad_index).
+    #[serde(skip)]
+    aircraft_to_pad: BTreeMap<u64, (u64, u32)>,
+}
+
+impl<'de> serde::Deserialize<'de> for AirfieldDocks {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        struct SavedReservations {
+            slots: BTreeMap<u64, Vec<Option<u64>>>,
+        }
+        let saved = <SavedReservations as serde::Deserialize>::deserialize(deserializer)?;
+        let mut aircraft_to_pad = BTreeMap::new();
+        for (&airfield, pads) in &saved.slots {
+            for (index, &aircraft) in pads.iter().enumerate() {
+                let Some(aircraft) = aircraft else { continue };
+                let index = u32::try_from(index).map_err(serde::de::Error::custom)?;
+                if let Some(previous) = aircraft_to_pad.insert(aircraft, (airfield, index)) {
+                    return Err(serde::de::Error::custom(format!(
+                        "aircraft {aircraft} reserves both {previous:?} and ({airfield}, {index})"
+                    )));
+                }
+            }
+        }
+        Ok(Self {
+            slots: saved.slots,
+            aircraft_to_pad,
+        })
+    }
 }
 
 impl AirfieldDocks {
+    /// Whether there are no registered airfields (including empty registrations).
+    pub(crate) fn is_empty(&self) -> bool {
+        self.slots.is_empty()
+    }
+
+    /// The reverse lookup is derived; only canonical slot state enters the hash.
+    pub(crate) fn hash_state(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        if !self.slots.is_empty() {
+            b"airfield-reservations-v170".hash(hasher);
+            self.slots.hash(hasher);
+        }
+    }
+
     /// Register an airfield with its pad count.
     /// Called lazily when an aircraft first tries to dock. Idempotent.
-    fn ensure_registered(&mut self, airfield_sid: u64, num_pads: u8) {
+    fn ensure_registered(&mut self, airfield_sid: u64, num_pads: u32) {
         self.slots
             .entry(airfield_sid)
             .or_insert_with(|| vec![None; num_pads as usize]);
@@ -141,8 +182,8 @@ impl AirfieldDocks {
         &mut self,
         airfield_sid: u64,
         aircraft_sid: u64,
-        num_pads: u8,
-    ) -> Option<u8> {
+        num_pads: u32,
+    ) -> Option<u32> {
         self.ensure_registered(airfield_sid, num_pads);
 
         // Already docked here? Return existing pad index (idempotent).
@@ -152,19 +193,20 @@ impl AirfieldDocks {
             return Some(*pad);
         }
 
-        let pads = self.slots.get_mut(&airfield_sid).expect("registered above");
-        for (idx, slot) in pads.iter_mut().enumerate() {
-            if slot.is_none() {
-                *slot = Some(aircraft_sid);
-                let pad_index = idx as u8;
-                self.aircraft_to_pad
-                    .insert(aircraft_sid, (airfield_sid, pad_index));
-                return Some(pad_index);
-            }
-        }
-
-        // All pads full — refuse. No enqueue; the aircraft re-probes next tick.
-        None
+        // A refused transfer retains the existing reservation. Once a target
+        // slot is available, retire the old slot before publishing the new one.
+        let index = self
+            .slots
+            .get(&airfield_sid)
+            .expect("registered above")
+            .iter()
+            .position(Option::is_none)?;
+        self.release(aircraft_sid);
+        self.slots.get_mut(&airfield_sid).expect("registered above")[index] = Some(aircraft_sid);
+        let pad = index as u32;
+        self.aircraft_to_pad
+            .insert(aircraft_sid, (airfield_sid, pad));
+        Some(pad)
     }
 
     /// Release the aircraft's pad — the slot simply becomes empty. No waiter is
@@ -182,7 +224,7 @@ impl AirfieldDocks {
     }
 
     /// Check if an airfield has at least one free pad. Read-only probe.
-    pub fn has_free_slot(&self, airfield_sid: u64, num_pads: u8) -> bool {
+    pub fn has_free_slot(&self, airfield_sid: u64, num_pads: u32) -> bool {
         match self.slots.get(&airfield_sid) {
             Some(pads) => pads.iter().any(|s| s.is_none()),
             None => num_pads > 0, // Not yet registered = all pads free.
@@ -190,37 +232,26 @@ impl AirfieldDocks {
     }
 
     /// Look up which (airfield, pad_index) this aircraft is parked on.
-    pub fn pad_for(&self, aircraft_sid: u64) -> Option<(u64, u8)> {
+    pub fn pad_for(&self, aircraft_sid: u64) -> Option<(u64, u32)> {
         self.aircraft_to_pad.get(&aircraft_sid).copied()
     }
 
-    /// Cancel an aircraft's reservation — frees its pad if it holds one. No
-    /// waiter is promoted (there is no queue).
-    pub fn cancel(&mut self, aircraft_sid: u64) {
-        if let Some((airfield_sid, pad_index)) = self.aircraft_to_pad.remove(&aircraft_sid)
-            && let Some(pads) = self.slots.get_mut(&airfield_sid)
-            && let Some(slot) = pads.get_mut(pad_index as usize)
-        {
-            *slot = None;
-        }
-    }
-
-    /// Remove dead entities (aircraft or airfields). A pad freed by a dead
-    /// occupant simply empties; no waiter is promoted.
+    /// Remove dead airfields and occupants while maintaining the derived index.
+    /// This performs no cache rebuild/allocation in the per-tick cleanup path.
     pub fn cleanup_dead(&mut self, alive: &BTreeSet<u64>) {
-        // Drop dead airfields entirely.
-        self.slots.retain(|sid, _| alive.contains(sid));
-
-        // Release any dead aircraft (frees their pads).
-        let dead_aircraft: Vec<u64> = self
-            .aircraft_to_pad
-            .keys()
-            .filter(|sid| !alive.contains(sid))
-            .copied()
-            .collect();
-        for sid in dead_aircraft {
-            self.release(sid);
-        }
+        let reverse = &mut self.aircraft_to_pad;
+        self.slots.retain(|airfield, pads| {
+            let keep_airfield = alive.contains(airfield);
+            for slot in pads {
+                if let Some(aircraft) = *slot {
+                    if !keep_airfield || !alive.contains(&aircraft) {
+                        reverse.remove(&aircraft);
+                        *slot = None;
+                    }
+                }
+            }
+            keep_airfield
+        });
     }
 }
 
@@ -387,7 +418,7 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
         new_dock_phase: Option<Option<AircraftDockPhase>>, // Some(None) = clear
         new_target_airfield: Option<Option<u64>>,
         /// Some(Some(pad)) = set pad_index; Some(None) = clear; None = leave alone.
-        new_target_pad: Option<Option<u8>>,
+        new_target_pad: Option<Option<u32>>,
         new_reload_timer: Option<u32>,
         new_rescan_cooldown: Option<u16>,
         restore_ammo: i32,
@@ -467,9 +498,7 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
                     }
                     None => {
                         // Airfield destroyed — find another.
-                        if let Some(old_sid) = snap.target_airfield {
-                            sim.production.airfield_docks.cancel(old_sid);
-                        }
+                        sim.production.airfield_docks.release(snap.id);
                         if let Some((af_sid, af_rx, af_ry)) = find_nearest_airfield(
                             sim,
                             rules,
@@ -502,7 +531,7 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
                     .entities
                     .get(af_sid)
                     .and_then(|af| sim.object_type(af.type_ref(), rules))
-                    .map(|obj| obj.number_of_docks.max(1))
+                    .map(|obj| obj.dock_contact_capacity())
                     .unwrap_or(1);
 
                 if let Some(pad_index) = sim
@@ -638,6 +667,10 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
             id,
             (rx, ry),
             speed,
+            crate::sim::movement::DestinationTiming::from_rules(
+                sim.session.binary_frame,
+                rules.into(),
+            ),
         );
     }
 }
@@ -649,6 +682,59 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reservation_transfer_is_atomic_and_releases_the_old_slot() {
+        let mut docks = AirfieldDocks::default();
+        assert_eq!(docks.try_reserve(100, 1, 1), Some(0));
+        assert_eq!(docks.try_reserve(200, 2, 1), Some(0));
+        assert_eq!(docks.try_reserve(200, 1, 1), None);
+        assert_eq!(docks.pad_for(1), Some((100, 0)));
+        assert!(!docks.has_free_slot(100, 1));
+        docks.release(2);
+        assert_eq!(docks.try_reserve(200, 1, 1), Some(0));
+        assert_eq!(docks.pad_for(1), Some((200, 0)));
+        assert_eq!(docks.try_reserve(100, 3, 1), Some(0));
+        docks.release(1);
+        assert_eq!(docks.pad_for(3), Some((100, 0)));
+        assert!(docks.has_free_slot(200, 1));
+    }
+
+    #[test]
+    fn restore_derives_lookup_and_rejects_ambiguous_slot_ownership() {
+        let mut docks = AirfieldDocks::default();
+        docks.try_reserve(100, 1, 2);
+        docks.try_reserve(100, 2, 2);
+        let wire = serde_json::to_value(&docks).unwrap();
+        assert_eq!(wire, serde_json::json!({"slots": {"100": [1, 2]}}));
+        let mut restored: AirfieldDocks =
+            bincode::deserialize(&bincode::serialize(&docks).unwrap()).unwrap();
+        assert_eq!(restored.pad_for(2), Some((100, 1)));
+        restored.release(2);
+        assert_eq!(restored.try_reserve(100, 3, 2), Some(1));
+        for wire in [
+            serde_json::json!({"slots": {"100": [1, 1]}}),
+            serde_json::json!({"slots": {"100": [1], "200": [1]}}),
+        ] {
+            let error = serde_json::from_value::<AirfieldDocks>(wire).unwrap_err();
+            assert!(error.to_string().contains("aircraft 1 reserves both"));
+        }
+    }
+
+    #[test]
+    fn dead_airfield_cleanup_removes_live_aircraft_reverse_entries() {
+        let mut docks = AirfieldDocks::default();
+        docks.try_reserve(100, 1, 2);
+        docks.try_reserve(200, 2, 2);
+        docks.cleanup_dead(&[1, 2, 200].into_iter().collect());
+        assert_eq!(docks.pad_for(1), None);
+        assert_eq!(docks.pad_for(2), Some((200, 0)));
+        assert_eq!(docks.try_reserve(200, 1, 2), Some(1));
+        docks.cleanup_dead(&[200].into_iter().collect());
+        assert_eq!(docks.pad_for(1), None);
+        assert_eq!(docks.pad_for(2), None);
+        assert!(docks.has_free_slot(200, 2));
+    }
 
     #[test]
     fn airfield_docks_basic_reserve() {
@@ -709,12 +795,12 @@ mod tests {
     }
 
     #[test]
-    fn airfield_docks_cancel() {
+    fn airfield_docks_release_preserves_other_reservations() {
         let mut docks = AirfieldDocks::default();
         docks.try_reserve(100, 1, 2); // pad 0
         docks.try_reserve(100, 2, 2); // pad 1
         assert_eq!(docks.try_reserve(100, 3, 2), None); // full — refused
-        docks.cancel(1); // free pad 0
+        docks.release(1); // free pad 0
         // No auto-promotion: 3 holds no pad until it re-probes.
         assert_eq!(docks.pad_for(3), None);
         assert_eq!(docks.pad_for(2), Some((100, 1)), "2 unaffected");
