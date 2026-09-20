@@ -1320,7 +1320,10 @@ mod map_wall_owner_candidate_tests {
         assert_eq!(captured_offline.point_lights, before_capture.point_lights);
         assert_eq!(before_capture.fingerprint, captured_offline.fingerprint);
 
-        let power = sim.power_states.get_mut(&captured_owner).expect("captured owner power state");
+        let power = sim
+            .power_states
+            .get_mut(&captured_owner)
+            .expect("captured owner power state");
         power.total_output = 100;
         power.is_low_power = false;
         let captured_online = derive_lighting_view(&config, Some(&sim), Some(&rules), 2);
@@ -1889,6 +1892,8 @@ impl MapLoadInitial {
             |low, high| scenario_fill_rng.next_range_u32_inclusive(low, high);
         let mut variant_draw = || variant_main_rng.next_u32();
         let mut variant_selector = selector_cache.begin_load(&mut variant_draw);
+        let pixel_conversion_bounds =
+            crate::util::pixel_conversion::PixelConversionBounds::default();
         let mut resolved_terrain =
             ResolvedTerrainGrid::build_with_variant_selector_and_shared_dummy(
                 &map_data,
@@ -1903,6 +1908,7 @@ impl MapLoadInitial {
                 &mut variant_selector,
                 crate::map::resolved_terrain::SharedCellDummy::fresh(),
                 crate::map::resolved_terrain::OverlayLoadSource::GeneratedMaterialized,
+                pixel_conversion_bounds,
             );
         let theater_ext = theater_result.as_ref().map_or_else(
             || theater_ext_for(&map_data.header.theater),
@@ -2024,6 +2030,7 @@ impl MapLoadInitial {
                 &map_data,
                 Some(&scenario_prefix_projection),
             ),
+            pixel_conversion_bounds,
             lighting: crate::sim::scenario_session::ScenarioLightingState::new(
                 crate::sim::scenario_session::ScenarioLightProfileUnits {
                     ambient_percent: lighting_profiles.normal.ambient_percent,
@@ -2614,6 +2621,7 @@ pub(crate) fn load_map_from_initial(
             &map_data,
             Some(bound_scenario_prefix.projection()),
         ),
+        pixel_conversion_bounds: Default::default(),
         lighting: crate::sim::scenario_session::ScenarioLightingState::new(
             crate::sim::scenario_session::ScenarioLightProfileUnits {
                 ambient_percent: lighting_profiles.normal.ambient_percent,
@@ -2681,6 +2689,7 @@ pub(crate) fn load_map_from_initial(
                     &mut variant_selector,
                     shared_cell_dummy,
                     materialization.overlay_load_source(),
+                    scenario_descriptor.pixel_conversion_bounds,
                 ),
             ),
             None,

@@ -832,6 +832,9 @@ impl Simulation {
             entity.position.sub_x = request.position.sub_x;
             entity.position.sub_y = request.position.sub_y;
         }
+        if let Some(rules) = context.rules {
+            self.reposition_building_anim_slots(stable_id, rules);
+        }
         // `TechnoClass::Unlimbo @ 0x006F6CFE` establishes the canonical
         // TechnoClass+0x3D5 byte from mode-one MapClass membership. Headless
         // fixtures have no MapClass authority, so they retain the constructor
@@ -1786,6 +1789,7 @@ impl Simulation {
                 &mut self.substrate.entities,
                 &[stable_id],
                 self.session.tick,
+                self.resolved_terrain.as_ref(),
             ),
         };
 

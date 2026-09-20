@@ -502,7 +502,8 @@ use crate::sim::world::Simulation;
 // its native damaged-state latch and saves its 21 owned Anim slot references.
 // 169 -> 170: aircraft dock indices widen from u8 to u32; save only reservation
 // slots and rebuild their reverse lookup, rejecting duplicate occupants on load.
-const SNAPSHOT_VERSION: u32 = 170;
+// 170 -> 171: save shared pixel-conversion bounds and retained HasEngineer.
+const SNAPSHOT_VERSION: u32 = 171;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3398,7 +3399,8 @@ mod tests {
         // 162 -> 163: Jumpjet linked type block and flight fields.
         // 164 -> 165: DriveTrackState::before_first_point, inserted mid-record.
         // 165 -> 166: Economy owns the sole house credit balance.
-        assert_eq!(super::SNAPSHOT_VERSION, 170);
+        // 170 -> 171: shared animation bounds and retained HasEngineer.
+        assert_eq!(super::SNAPSHOT_VERSION, 171);
     }
 
     #[test]
@@ -3523,7 +3525,7 @@ mod tests {
 
     #[test]
     fn combined_bridge_membership_history_schema_rejects_separate_layouts() {
-        for version in 153..=169 {
+        for version in 153..=170 {
             let preamble = GameSnapshotPreamble {
                 product_magic: SNAPSHOT_PRODUCT_MAGIC,
                 envelope_version: SNAPSHOT_ENVELOPE_VERSION,
@@ -3532,7 +3534,7 @@ mod tests {
             let bytes = bincode::serialize(&preamble).expect("previous layout header");
             assert!(matches!(
                 GameSnapshot::load(&bytes),
-                Err(SnapshotError::VersionMismatch { expected: 170, found }) if found == version
+                Err(SnapshotError::VersionMismatch { expected: 171, found }) if found == version
             ));
         }
     }

@@ -194,6 +194,8 @@ pub struct ScenarioDescriptor {
     pub tiberium_spreads_flag: bool,
     /// Map-authored global-light profiles plus their tick-zero mutable state.
     pub lighting: ScenarioLightingState,
+    /// Shared gameplay conversion profile; independent of every client's window.
+    pub pixel_conversion_bounds: crate::util::pixel_conversion::PixelConversionBounds,
     /// Authoritative map bounds in the CANONICAL CELL-ARRAY frame (max cell
     /// rx/ry + 1 — the frame entities, waypoints, and vision index), NOT the
     /// raw `[Map] Size=` values: sim cell coordinates span the iso diamond,
@@ -264,6 +266,8 @@ pub struct ScenarioSession {
     pub tiberium_spreads_flag: bool,
     /// Persistent fixed-integer global-light configuration and transition state.
     pub lighting: ScenarioLightingState,
+    /// Saved match authority for Building and Tile animation coordinates.
+    pub pixel_conversion_bounds: crate::util::pixel_conversion::PixelConversionBounds,
     /// Authoritative map bounds in the canonical cell-array frame (max cell
     /// rx/ry + 1); see the descriptor field of the same name. Seeds the fog
     /// grid dimensions at construction.
@@ -413,6 +417,7 @@ impl ScenarioSession {
             tiberium_grows_flag: desc.tiberium_grows_flag,
             tiberium_spreads_flag: desc.tiberium_spreads_flag,
             lighting: desc.lighting,
+            pixel_conversion_bounds: desc.pixel_conversion_bounds,
             map_width: desc.map_width,
             map_height: desc.map_height,
             local_left: desc.local_left,
@@ -596,6 +601,10 @@ mod tests {
         let desc = ScenarioDescriptor {
             seed: 9,
             map_name: "tournamentb.map".into(),
+            pixel_conversion_bounds: crate::util::pixel_conversion::PixelConversionBounds {
+                width: 640,
+                height: 480,
+            },
             theater: "SNOW".into(),
             map_width: 100,
             map_height: 100,
@@ -614,6 +623,10 @@ mod tests {
             .sim;
         assert_eq!(restored.session.map_name, "tournamentb.map");
         assert_eq!(restored.session.theater, "SNOW");
+        assert_eq!(
+            restored.session.pixel_conversion_bounds,
+            desc.pixel_conversion_bounds
+        );
         assert_eq!(
             restored.session.mp_start_waypoints,
             sim.session.mp_start_waypoints

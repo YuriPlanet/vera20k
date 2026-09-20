@@ -100,6 +100,15 @@ pub(super) fn advance(
         })
         .or_else(|| entity.movement_target.as_ref().map(|target| target.speed))
         .unwrap_or(SIM_ZERO);
+    // Group Move retains a formation cap on its execution target. The common
+    // post-pass synchronizer still owns that cap; live type/veterancy remains
+    // the speed authority, including when the cap exceeds that live speed.
+    // Ungrouped target.speed is only a path cache and must not override rules.
+    let speed = entity
+        .movement_target
+        .as_ref()
+        .filter(|target| target.group_id.is_some())
+        .map_or(speed, |target| speed.min(target.speed));
     let target = entity.movement_target.as_ref();
     let class_goal = if kind == LocomotorKind::Drive {
         entity
@@ -258,6 +267,157 @@ mod tests {
                     (retained(&entity), entity.foot_speed.applied_fraction),
                     expected,
                     "{kind:?} selector {selector}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rules_backed_mixed_formation_caps_actual_drive_and_ship_motion() {
+        use crate::sim::components::{DriveCoord, MovementTarget, NavTargetRef};
+        use crate::sim::world::Simulation;
+        use crate::util::fixed_math::ra2_speed_to_leptons_per_second;
+
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=SLOW\n1=FAST\n[SLOW]\nStrength=100\nSpeed=4\nAccelerates=no\n[FAST]\nStrength=100\nSpeed=8\nAccelerates=no\n",
+        )).unwrap();
+        // This preserves the existing VERA group-Move policy. It is a real
+        // rules-backed Process regression, not a claim about native formations.
+        for fast_kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
+            let mut sim = Simulation::with_seed(0);
+            let slow_kind = if fast_kind == LocomotorKind::Drive {
+                LocomotorKind::Ship
+            } else {
+                LocomotorKind::Drive
+            };
+            let mut before = Vec::new();
+            for (id, name, kind, raw_speed, x) in
+                [(1, "SLOW", slow_kind, 4, 8), (2, "FAST", fast_kind, 8, 12)]
+            {
+                let mut mover = GameEntity::test_default(id, name, "Americans", x, 8);
+                mover.type_ref = sim.intern(name);
+                mover.owner = sim.intern("Americans");
+                mover.lifecycle.object_alive = true;
+                mover.lifecycle.in_limbo = false;
+                mover.lifecycle.cell_marked = true;
+                mover.position.sub_x = SimFixed::from_num(128);
+                mover.position.sub_y = SimFixed::from_num(128);
+                mover.locomotor = Some(LocomotorState::for_test_kind(kind));
+                mover.drive_accelerates = false;
+                let head = DriveCoord::cell(x, 7, 0);
+                match kind {
+                    LocomotorKind::Drive => {
+                        mover.drive_locomotion = Some(DriveLocomotionRuntime {
+                            head_to: Some(head),
+                            destination: Some(head),
+                            track_valid: true,
+                            track: crate::sim::components::TrackProgress {
+                                turn_index: 0,
+                                cursor: 0,
+                                ..Default::default()
+                            },
+                            target_speed_fraction: SIM_ONE,
+                            ..Default::default()
+                        })
+                    }
+                    LocomotorKind::Ship => {
+                        mover.ship_locomotion = Some(ShipLocomotionRuntime {
+                            head_to: Some(head),
+                            destination: Some(head),
+                            track_valid: true,
+                            track: crate::sim::components::TrackProgress {
+                                turn_index: 0,
+                                cursor: 0,
+                                ..Default::default()
+                            },
+                            target_speed_fraction: SIM_ONE,
+                            ..Default::default()
+                        })
+                    }
+                    _ => unreachable!(),
+                }
+                mover.navigation.nav_com = Some(NavTargetRef::cell(x, 7));
+                mover.movement_target = Some(MovementTarget {
+                    path: vec![(x, 8), (x, 7)],
+                    next_index: 1,
+                    final_goal: Some((x, 7)),
+                    speed: ra2_speed_to_leptons_per_second(raw_speed),
+                    group_id: Some(7),
+                    ..Default::default()
+                });
+                before.push(super::super::ground_pose::position_world_xy(
+                    &mover.position,
+                ));
+                sim.substrate.entities.insert(mover);
+            }
+            sim.substrate.occupancy =
+                crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
+            super::super::sync_formation_speeds_after_live_pass(&mut sim.substrate.entities);
+            let cap = ra2_speed_to_leptons_per_second(4);
+            assert_eq!(
+                sim.substrate
+                    .entities
+                    .get(2)
+                    .unwrap()
+                    .movement_target
+                    .as_ref()
+                    .unwrap()
+                    .speed,
+                cap
+            );
+            for frame in 0..4 {
+                sim.session.binary_frame = frame;
+                for id in [1, 2] {
+                    sim.process_ground_locomotor_for_test(id, Some(&rules), None, None)
+                        .unwrap();
+                    let mover = sim.substrate.entities.get(id).unwrap();
+                    assert_eq!(
+                        mover.foot_speed.cached_current_speed, 10,
+                        "{fast_kind:?}, mover {id}"
+                    );
+                    assert_eq!(mover.movement_target.as_ref().unwrap().current_speed, cap);
+                }
+            }
+            let after: Vec<_> = [1, 2]
+                .into_iter()
+                .map(|id| {
+                    super::super::ground_pose::position_world_xy(
+                        &sim.substrate.entities.get(id).unwrap().position,
+                    )
+                })
+                .collect();
+            let slow_delta = [after[0][0] - before[0][0], after[0][1] - before[0][1]];
+            let fast_delta = [after[1][0] - before[1][0], after[1][1] - before[1][1]];
+            assert_ne!(slow_delta, [0, 0]);
+            assert_eq!(
+                fast_delta, slow_delta,
+                "mixed formation with fast {fast_kind:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn live_type_speed_wins_without_group_and_caps_cannot_increase_it() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=100\nSpeed=6\nAccelerates=no\n",
+        ))
+        .unwrap();
+        for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
+            for (group_id, cached_speed) in [(None, 15), (Some(7), 1500)] {
+                let mut mover = entity(kind, 0, SIM_ONE);
+                mover.drive_accelerates = false;
+                mover.movement_target = Some(crate::sim::components::MovementTarget {
+                    speed: SimFixed::from_num(cached_speed),
+                    group_id,
+                    ..Default::default()
+                });
+                assert_eq!(
+                    advance(&mut mover, rules.object("MTNK"), Some(&rules), None),
+                    15
+                );
+                assert_eq!(
+                    mover.movement_target.as_ref().unwrap().current_speed,
+                    SimFixed::from_num(225)
                 );
             }
         }

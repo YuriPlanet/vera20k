@@ -691,6 +691,10 @@ pub struct GameEntity {
     /// Building+6EA, constructor43B996 true; distinct from operational6C8.
     #[serde(default = "default_true")]
     pub building_stuff_enabled: bool,
+    /// Building HasEngineer: starts false, changed-owner transfer sets true.
+    /// Authored NeedsEngineer initialization consumes it; never infer from owner.
+    #[serde(default)]
+    pub building_has_engineer: bool,
     /// Building+6E4: OnConstructionComplete's one-time allocation guard.
     #[serde(default)]
     pub building_actually_placed: bool,
@@ -1323,6 +1327,7 @@ impl GameEntity {
             building_storage: Default::default(),
             building_last_operational: false,
             building_stuff_enabled: true,
+            building_has_engineer: false,
             building_actually_placed: false,
             spotlight_capable: false,
             building_light: None,

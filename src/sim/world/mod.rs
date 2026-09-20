@@ -4437,6 +4437,8 @@ impl Simulation {
                 self, stable_id, old_owner, new_owner, rules,
             );
         }
+        // Building4484AF precedes the delegated Techno owner transfer.
+        self.enable_building_after_owner_change(stable_id, rules);
         // gamemd-derived: `BuildingClass::ChangeOwner @ 0x00448260` removes
         // this pointer from the old House BuildConst vector before delegating
         // the Techno owner swap, then appends it to the new House tail.

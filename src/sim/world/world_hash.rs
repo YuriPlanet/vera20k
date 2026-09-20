@@ -881,6 +881,9 @@ impl Simulation {
         self.hash_voxel_anims(&mut hasher);
         self.hash_particle_systems(&mut hasher);
         self.session.fold_identity(&mut hasher);
+        if schema.includes(HashFeature::AnimationAuthority) {
+            self.session.pixel_conversion_bounds.hash(&mut hasher);
+        }
 
         hasher.finish()
     }
@@ -1638,6 +1641,9 @@ impl Simulation {
             }
             if schema.includes_building_power_integration() && !entity.building_stuff_enabled {
                 b"building-stuff-disabled-v1".hash(hasher);
+            }
+            if schema.includes(HashFeature::AnimationAuthority) && entity.building_has_engineer {
+                b"building-has-engineer-v1".hash(hasher);
             }
             if schema.includes(HashFeature::EntityAnimation)
                 && let Some(animation) = entity.animation.as_ref()

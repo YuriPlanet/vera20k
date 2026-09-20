@@ -1,0 +1,199 @@
+{
+  "constructor_rows": [
+    {
+      "offset": [
+        640,
+        0
+      ],
+      "raw_building": [
+        2688,
+        5248,
+        104
+      ],
+      "supplied_tactical_bounds": [
+        640,
+        480
+      ],
+      "world": [
+        2560,
+        5120,
+        104
+      ]
+    },
+    {
+      "offset": [
+        -16777217,
+        -16777219
+      ],
+      "raw_building": [
+        2688,
+        5248,
+        104
+      ],
+      "supplied_tactical_bounds": [
+        640,
+        480
+      ],
+      "world": [
+        -214747488,
+        -71578240,
+        104
+      ]
+    },
+    {
+      "offset": [
+        30,
+        15
+      ],
+      "raw_building": [
+        2688,
+        5248,
+        104
+      ],
+      "supplied_tactical_bounds": [
+        640,
+        480
+      ],
+      "world": [
+        2816,
+        5120,
+        104
+      ]
+    }
+  ],
+  "damage_argument_rows": [
+    {
+      "damage_amount": 1,
+      "damage_area_xyz": [
+        2560,
+        5120,
+        104
+      ],
+      "owner_pointer": 0,
+      "stored_xyz": [
+        2560,
+        5120,
+        104
+      ],
+      "supplied_accumulator": 0,
+      "supplied_type_damage": 1
+    },
+    {
+      "damage_amount": 1,
+      "damage_area_xyz": [
+        5290,
+        2390,
+        104
+      ],
+      "owner_pointer": 0,
+      "stored_xyz": [
+        5290,
+        2390,
+        104
+      ],
+      "supplied_accumulator": 0,
+      "supplied_type_damage": 1
+    }
+  ],
+  "fpcw": "0E7F",
+  "limits": [
+    "Constructor witness starts after slot/type admission and stops before allocation.",
+    "Tactical640x480 is a supplied witness input, not visible640x480 or a proposed default.",
+    "Rectangle witness runs arithmetic only, not actual display initialization.",
+    "Damage witness supplies admitted Anim data, starts at damage arm, and stops at DamageArea entry.",
+    "Damage accumulator0 is supplied; ordinary Anim constructor seeds1. No cadence claim.",
+    "No full renderer, map damage, save loader, or all-caller parity claim."
+  ],
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "rectangle_rows": [
+    {
+      "rectangle": [
+        168,
+        0,
+        472,
+        448
+      ],
+      "visible": [
+        640,
+        480
+      ]
+    },
+    {
+      "rectangle": [
+        168,
+        0,
+        632,
+        568
+      ],
+      "visible": [
+        800,
+        600
+      ]
+    },
+    {
+      "rectangle": [
+        168,
+        0,
+        856,
+        736
+      ],
+      "visible": [
+        1024,
+        768
+      ]
+    }
+  ],
+  "substitutions": [],
+  "unchanged_spans": [
+    {
+      "end_exclusive": "006D1E24",
+      "sha256": "a8043e76c9fba51f32346217c3b490be169ee7d44a20c8a3665dd84583683f88",
+      "start": "006D1DC5"
+    },
+    {
+      "end_exclusive": "00451932",
+      "sha256": "ce8ebdfc44509050b16e519ecea09a737e5e94816c8c1a3a86458973ea5bd2f3",
+      "start": "004518E3"
+    },
+    {
+      "end_exclusive": "006D241C",
+      "sha256": "63464dab23cf879181e09cfa13f3c17c9c47d6d8dd3b01a1d916a8bf31596e9e",
+      "start": "006D2360"
+    },
+    {
+      "end_exclusive": "005AFBF6",
+      "sha256": "c65e279688f86d913bd2c0cec3e95ceaa543ca6dd69bdb2be17cc72c55536388",
+      "start": "005AFB80"
+    },
+    {
+      "end_exclusive": "00459F1B",
+      "sha256": "8b57ece16fea95a1895caa2e8df6be2f2ee7fbfb57edadb12beb56ff1cdcdb3a",
+      "start": "00459EF0"
+    },
+    {
+      "end_exclusive": "007C5F2C",
+      "sha256": "41deea65cb3b09157013420167f759957f8dd9dc99bcbbb725cf34df2836d4d1",
+      "start": "007C5F00"
+    },
+    {
+      "end_exclusive": "0072AD82",
+      "sha256": "5fe56ebd9f55b46c5c19a5870bb4b271e8bbf32e3d0e82263a85e88de601a0fd",
+      "start": "0072AD20"
+    },
+    {
+      "end_exclusive": "0042464C",
+      "sha256": "2128711fe33402919b316013a9fbb0049f8bd62857589e4d96f5518a3a22fe64",
+      "start": "00424507"
+    },
+    {
+      "end_exclusive": "00422C4B",
+      "sha256": "0343f5d8df075985f0ff332d5ce20fe0b8197bf698797cd770c7459c18786b46",
+      "start": "00422BE0"
+    },
+    {
+      "end_exclusive": "005F65D0",
+      "sha256": "7648193cc50a49dd847bb4f9b247568d9c06372ca44f071b866f1f92b699f888",
+      "start": "005F65A0"
+    }
+  ]
+}

@@ -491,6 +491,9 @@ impl Simulation {
                 self.add_building_sensor_array_if_powered(stable_id, ruleset);
             }
             self.commit_map_placement_mission(stable_id, map_ent.mission);
+            if let Some(rules) = rules {
+                self.finish_authored_building_enable(stable_id, rules);
+            }
             count += 1;
 
             if map_ent.category == EntityCategory::Structure

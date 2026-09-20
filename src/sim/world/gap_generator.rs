@@ -17,7 +17,7 @@ impl Simulation {
             .collect()
     }
     /// Shared4555D0 inputs represented by Building and House owners. Native
-    /// HasPower/EMP/overpower/HasEngineer producers remain outside
+    /// HasPower/EMP/overpower producers remain outside
     /// this adapter's established domain; do not infer them from visual state.
     pub(crate) fn building_operational_state(&self, id: u64, rules: &RuleSet) -> Option<bool> {
         let entity = self.substrate.entities.get(id)?;
@@ -26,6 +26,7 @@ impl Simulation {
         }
         let object = rules.object(self.interner.resolve(entity.type_ref()))?;
         let operational = entity.health.current != 0
+            && (!object.needs_engineer || entity.building_has_engineer)
             //Actual Rust placement currently retains Construction in the
             //BuildingUp owner, without publishing that native Mission yet.
             //Keep its admission closed until that represented build completes.

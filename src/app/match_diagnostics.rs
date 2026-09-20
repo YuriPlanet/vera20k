@@ -110,6 +110,7 @@ mod tests {
 
     fn sample_log() -> ReplayLog {
         let mut log = ReplayLog::new(ReplayHeader {
+            pixel_conversion_bounds: Default::default(),
             version: 71,
             tick_hz: 15,
             seed: 0x1234,
@@ -209,6 +210,7 @@ mod tests {
         // ...and the next timeline opens a FRESH segment lazily, exactly as
         // the frame loop does, without inheriting closed ticks.
         diagnostics.replay_log = Some(ReplayLog::new(ReplayHeader {
+            pixel_conversion_bounds: Default::default(),
             version: 71,
             tick_hz: 15,
             seed: 0xAAAA,

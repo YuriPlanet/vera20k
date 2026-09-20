@@ -658,9 +658,9 @@ const GLOBAL_RAW_OWNER_EXCLUDED_V161_HASH: u64 = 0xEFB3_B35E_D792_E94B;
 const GLOBAL_PRE_SUSTAINED_SIGHT_V142_HASH: u64 = 0x4E6E_0CFE_23A8_03A7;
 }
 
-// Kept at the prior value while current owner observations are reviewed. This
-// gate deliberately remains failing until the schema167 receipt is established.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0xA26C_6393_4D59_667C;
+// Schema171: fresh-turn admission/residual clearing and retained-owner hashes.
+// See TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md, PR415 causal attribution.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 11150992376934496020;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -845,6 +845,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     seed_scenario(&mut rec, &rules, &heights, &overlays);
     let mut log = ReplayLog::new(ReplayHeader {
         version: 1,
+        pixel_conversion_bounds: rec.session.pixel_conversion_bounds,
         tick_hz: 15,
         seed: HARNESS_SEED,
         map_name: "global_parity_harness".to_string(),
@@ -1056,6 +1057,59 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
             entity.foot_speed,
         );
     }
+    // The 600-frame boundary lands on an intermediate track retirement.
+    // A retained destination must resume on the next Process visits, even
+    // though the completed path adapter and track head have been cleared.
+    // This is a production continuation regression, not a native scenario golden.
+    let continuation_start = {
+        let tank = rep
+            .substrate
+            .entities
+            .get(4)
+            .expect("retasked tank survives");
+        assert!(tank.navigation.pending_arrival_clear);
+        assert!(tank.movement_target.is_none());
+        assert_eq!(
+            tank.navigation.nav_com,
+            Some(crate::sim::components::NavTargetRef::Cell { rx: 8, ry: 8 }),
+        );
+        crate::sim::movement::ground_pose::position_world_xy(&tank.position)
+    };
+    let mut continuation_admitted = false;
+    for _ in 0..16 {
+        let tick = rep.advance_tick(
+            &[],
+            Some(&rules),
+            &heights,
+            Some(&grid),
+            Some(&overlays),
+            HARNESS_TICK_MS,
+        );
+        assert!(
+            tick.frame_committed,
+            "retained destination continuation must commit"
+        );
+        let tank = rep
+            .substrate
+            .entities
+            .get(4)
+            .expect("continuing tank survives");
+        continuation_admitted |= tank.drive_locomotion.as_ref().is_some_and(|drive| {
+            drive.track.turn_index >= 0 && drive.track_valid && drive.head_to.is_some()
+        });
+    }
+    let continuation_end = crate::sim::movement::ground_pose::position_world_xy(
+        &rep.substrate.entities.get(4).unwrap().position,
+    );
+    assert!(
+        continuation_admitted,
+        "pending arrival must produce another live track"
+    );
+    assert!(
+        continuation_end[0] < continuation_start[0],
+        "retained westbound destination must advance after intermediate retirement",
+    );
+
     assert_eq!(
         final_hash, GLOBAL_HARNESS_FINAL_HASH,
         "committed global-harness baseline drifted. Do not copy the observed value: \

@@ -10,6 +10,8 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::world::Simulation;
 use crate::util::native_x87::MaskedX87Ordering::Greater;
 
+#[path = "building_art_admission.rs"]
+mod admission;
 #[path = "building_art_power.rs"]
 mod power;
 #[path = "building_art_storage.rs"]
@@ -17,6 +19,46 @@ mod storage;
 pub(crate) use storage::BuildingStorage;
 
 impl Simulation {
+    fn building_anim_world_coord(
+        &self,
+        id: u64,
+        config: &BuildingAnimConfig,
+    ) -> Option<crate::sim::anim_class::AnimWorldCoord> {
+        let entity = self.substrate.entities.get(id)?;
+        let raw = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+        let (dx, dy) = self
+            .session
+            .pixel_conversion_bounds
+            .offset_to_leptons(config.x, config.y);
+        Some(crate::sim::anim_class::AnimWorldCoord {
+            x: raw.x.wrapping_sub(128).wrapping_add(dx),
+            y: raw.y.wrapping_sub(128).wrapping_add(dy),
+            z: raw.z,
+        })
+    }
+
+    /// Building43F738 repositions the existing 21 slots after its coordinate
+    /// changes. It neither reconstructs animations nor resets their timers.
+    pub(crate) fn reposition_building_anim_slots(&mut self, id: u64, rules: &RuleSet) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if entity.category != crate::map::entities::EntityCategory::Structure {
+            return;
+        }
+        let slots = entity.building_anim_slots;
+        for (slot, anim_id) in slots.into_iter().enumerate() {
+            let Some(anim_id) = anim_id else { continue };
+            let Some(config) = self.building_anim_config(id, slot as u8, rules) else {
+                continue;
+            };
+            let coord = self.building_anim_world_coord(id, &config).unwrap();
+            if let Some(anim) = self.substrate.anims.get_mut(anim_id) {
+                anim.world_coord = coord;
+            }
+        }
+    }
+
     /// OnConstructionComplete445F80/446183 initializes Idle18 before Active3..6.
     /// The native ActuallyPlaced byte makes this allocation one-shot. A fresh
     /// refinery uses its retained four-slot storage to select Active3..6.
@@ -165,16 +207,8 @@ impl Simulation {
         if !rules.anim_type_names.contains(&canonical) {
             return None;
         }
-        let entity = self.substrate.entities.get(id)?;
-        let raw = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
         // Building render coordinate virtual459EF0 precedes the slot offset.
-        let (dx, dy) =
-            crate::map::resolved_terrain::tile_anim_pixel_offset_to_leptons(config.x, config.y);
-        let world = crate::sim::anim_class::AnimWorldCoord {
-            x: raw.x.wrapping_sub(128).wrapping_add(dx),
-            y: raw.y.wrapping_sub(128).wrapping_add(dy),
-            z: raw.z,
-        };
+        let world = self.building_anim_world_coord(id, config)?;
         let type_name = self.interner.intern(&name.to_ascii_uppercase());
         let mut descriptor = crate::sim::components::AnimClassSpawnDescriptor::new(
             type_name,
@@ -552,6 +586,71 @@ pub(crate) fn slot_test_fixture() -> (Simulation, RuleSet, u64) {
 #[cfg(test)]
 mod slot_tests {
     use super::*;
+    #[test]
+    fn shared_bounds_apply_to_slot_create_replace_and_reveal_reposition() {
+        use crate::sim::world::{
+            PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, UninitContext,
+        };
+        let (mut sim, mut rules, id) = slot_test_fixture();
+        sim.session.pixel_conversion_bounds =
+            crate::util::pixel_conversion::PixelConversionBounds {
+                width: 640,
+                height: 480,
+            };
+        let config = &mut rules.art_registry.get_mut("B").unwrap().building_anims[0];
+        config.x = 640;
+        config.y = 0;
+        let first = sim
+            .set_building_anim_slot(id, 3, false, false, 0, &rules)
+            .unwrap();
+        assert_eq!(sim.anim(first).unwrap().world_coord.x, 512);
+        sim.set_building_damage_state(id, true, &rules);
+        let replaced = sim.entities().get(id).unwrap().building_anim_slots[3].unwrap();
+        assert_eq!(sim.anim(replaced).unwrap().world_coord.x, 512);
+        let timer = sim.anim(replaced).unwrap().runtime.frame_timer;
+        // This synthetic owner has never been marked; enter through the real
+        // coordinate commit and verify its already retained slot moves in place.
+        let entity = sim.entities_mut().get_mut(id).unwrap();
+        entity.lifecycle.in_limbo = true;
+        entity.lifecycle.cell_marked = false;
+        let outcome = sim.try_reveal_entity_with_context(
+            id,
+            RevealRequest {
+                position: RevealPosition {
+                    rx: 3,
+                    ry: 4,
+                    z: 0,
+                    sub_x: crate::util::fixed_math::SimFixed::from_num(128),
+                    sub_y: crate::util::fixed_math::SimFixed::from_num(128),
+                },
+                placement: PlacementEvidence::MarkSucceeded,
+                logic_eligible: true,
+            },
+            UninitContext::with_rules(&rules),
+        );
+        assert!(matches!(outcome, RevealOutcome::Revealed { .. }));
+        assert_eq!(
+            sim.entities().get(id).unwrap().building_anim_slots[3],
+            Some(replaced)
+        );
+        assert_eq!(sim.anim(replaced).unwrap().world_coord.x, 768);
+        assert_eq!(sim.anim(replaced).unwrap().world_coord.y, 1024);
+        assert_eq!(sim.anim(replaced).unwrap().runtime.frame_timer, timer);
+        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
+        let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+            .unwrap()
+            .sim;
+        assert_eq!(
+            restored.session.pixel_conversion_bounds,
+            sim.session.pixel_conversion_bounds
+        );
+        assert_eq!(
+            restored.anim(replaced).unwrap().world_coord,
+            sim.anim(replaced).unwrap().world_coord
+        );
+    }
+
     #[test]
     fn canonical_art_read_receipt_controls_real_slot_constructor_and_logic() {
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};

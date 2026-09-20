@@ -790,6 +790,7 @@ fn master_frame_save_load_continues_trigger_projectile_and_delete_state() {
         )
         .expect("fixture frame must complete");
     let mut replay_log = ReplayLog::new(ReplayHeader {
+        pixel_conversion_bounds: Default::default(),
         version: 1,
         tick_hz: 15,
         seed: original.session.seed,

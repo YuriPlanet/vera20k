@@ -1005,6 +1005,7 @@ where
         lat_enabled,
         cliff_back_impassability,
         terrain.cells().len(),
+        sim.session.pixel_conversion_bounds,
     );
     let shape = crate::map::authored_overlay::NativeOverlayMapShape::new(
         i32::try_from(map_data.header.width).unwrap_or(i32::MAX),

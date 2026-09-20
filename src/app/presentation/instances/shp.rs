@@ -882,7 +882,6 @@ fn emit_building_anims(
     }
 }
 
-#[cfg(test)]
 fn resolve_infantry_shp_frame(
     state: &AppState,
     type_id: &str,

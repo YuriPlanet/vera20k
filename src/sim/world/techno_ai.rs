@@ -516,6 +516,7 @@ fn techno_ai_shell(
                 // must not retire damage fire one native frame early.
                 sim.update_building_damage_fire(id, rules);
                 crate::sim::credit_income::produce_cash_step(sim, id, rules);
+                sim.update_building_absorb_anim(id, rules);
                 sim.update_building_storage_anims(id, rules);
                 veterancy_promotion_step(sim, id, rules);
                 crate::sim::credit_income::drain_common_step(sim, id, rules);

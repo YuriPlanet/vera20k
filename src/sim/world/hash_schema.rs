@@ -69,6 +69,7 @@ pub(super) enum HashFeature {
     TrackAuthority = 167,
     EstimatedHealth = 168,
     AircraftDockState = 170,
+    AnimationAuthority = 171,
 }
 
 impl HashSchema {
@@ -76,9 +77,10 @@ impl HashSchema {
         match self {
             Self::Current => true,
             #[cfg(test)]
-            Self::BeforeBuildingPowerIntegration => {
-                !matches!(_feature, HashFeature::AircraftDockState)
-            }
+            Self::BeforeBuildingPowerIntegration => !matches!(
+                _feature,
+                HashFeature::AircraftDockState | HashFeature::AnimationAuthority
+            ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {
                 (_feature as u16) < version

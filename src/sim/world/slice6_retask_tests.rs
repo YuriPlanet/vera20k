@@ -424,8 +424,10 @@ const SLICE6_RAW_OWNER_EXCLUDED_V161_HASH: u64 = 0x1906_B698_79B5_95DE;
 const SLICE6_PRE_SUSTAINED_SIGHT_V142_HASH: u64 = 0x3378_724A_9514_52B4;
 }
 
-// Keep failing at the old pin until the observed schema167 state is reviewed.
-const SLICE6_BASELINE_HASH: u64 = 0x1B35_F16E_945D_5812;
+// Schema171: live type acceleration preserves retasked track progression;
+// fresh turning defers admission. Old receipts above remain historical only.
+// See docs/research/TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md, PR415 attribution.
+const SLICE6_BASELINE_HASH: u64 = 2458534358217456420;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -493,6 +495,7 @@ fn replay_hash_stable_through_slice6() {
 
     let mut log = ReplayLog::new(ReplayHeader {
         version: 1,
+        pixel_conversion_bounds: sim.session.pixel_conversion_bounds,
         tick_hz: 15,
         seed: sim.session.seed,
         map_name: "slice6_retask".to_string(),
