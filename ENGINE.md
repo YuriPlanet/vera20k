@@ -56,16 +56,23 @@ interpretation pitfalls and shared-database edits.
 
 ## Architecture and delivery
 
+Use the simplest implementation that fully satisfies the required behavior. Avoid
+unnecessary abstractions, duplicated logic and speculative features; prefer clarity
+over minimizing line count.
+
 Choose boundaries and abstractions by responsibility and consumers, not line/type
 counts or C++ structure. Preserve state authority, lifecycle, scheduler/RNG order,
-timers, same-tick effects, persistence and exact numeric semantics. Document and
-validate floating-point use where native behavior requires it. Storage order and
-active-object order are distinct.
+timers, same-tick effects, persistence and numeric semantics under the policy below.
+Document and validate floating-point use where native behavior requires it.
+Storage order and active-object order are distinct.
 
 All math must preserve simulation determinism across supported platforms and CPU
-architectures for identical state, inputs and RNG. Preserve native precision, rounding,
-overflow and evaluation order, including floating-point behavior. Presentation must
-not affect simulation determinism.
+architectures for identical state, inputs and RNG. Prefer `SimFixed` for simulation
+math, accepting documented differences from native precision and rounding. Avoid
+x87 emulation unless demonstrated gameplay requirements make it necessary; exact
+native arithmetic alone is not a requirement to emulate x87. Validate affected
+gameplay, range and overflow behavior. Presentation must not affect simulation
+determinism.
 
 `sim/` never depends on `render/`, `ui/`, `sidebar/`, `audio/` or `net/`.
 App code orchestrates without owning duplicate gameplay. Current module contracts
