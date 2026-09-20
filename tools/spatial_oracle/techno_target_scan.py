@@ -21,7 +21,7 @@ from tools.native_oracle import (
 from tools.spatial_oracle.map_queries import dwords
 
 ENTRY, END, UNIT_VTABLE = 0x709820, 0x7099CD, 0x7F5C70
-OWNER, VTABLE, TYPE, TARGET, OTHER, WEAPON_SLOT, WEAPON, WARHEAD, RULES, SCENARIO, SPAWN, COORD = (
+OWNER, VTABLE, TYPE, TARGET, OTHER, WEAPON_SLOT, WEAPON, PROJECTILE_TYPE, RULES, SCENARIO, SPAWN, COORD = (
     SCRATCH + offset for offset in
     (0x1000, 0x2000, 0x3000, 0x4000, 0x4800, 0x5000, 0x5100, 0x5500,
      0x6000, 0x7000, 0x7400, 0x7800))
@@ -75,8 +75,10 @@ def execute(row):
     u.mem_write(OTHER + 0x14, b'\x01')
     u.mem_write(TYPE + 0x6B0, bytes((row['distributed'],)))
     u.mem_write(WEAPON_SLOT, dwords(WEAPON if row['weapon'] else 0))
-    u.mem_write(WEAPON + 0xA0, dwords(WARHEAD))
-    u.mem_write(WARHEAD + 0x2A2, bytes((row['warhead_excluded'],)))
+    # Weapon parser7729A5..AA resolves/stores Projectile at+A0; Warhead is+AC.
+    # Keep BulletType+2A2 unnamed beyond its observed debit-exclusion effect.
+    u.mem_write(WEAPON + 0xA0, dwords(PROJECTILE_TYPE))
+    u.mem_write(PROJECTILE_TYPE + 0x2A2, bytes((row['projectile_debit_excluded'],)))
     u.mem_write(RULES + 0xE04, dwords(41, 23))
     u.mem_write(0x8871E0, dwords(RULES))
     u.mem_write(0xA8B230, dwords(SCENARIO))
@@ -178,7 +180,7 @@ def generate():
     def add(name, **changes):
         row = dict(name=name, mission=5, target=0, passive=0, spawn=False,
                    error=0, pick=TARGET, pick_flags=1, distributed=0, weapon=True,
-                   warhead_excluded=0, health=100, damage=25, jitter=1,
+                   projectile_debit_excluded=0, health=100, damage=25, jitter=1,
                    stack_seed=0x1234ABCD, mask=1)
         row.update(changes)
         rows.append(row)
@@ -190,7 +192,7 @@ def generate():
             (0, TARGET), (0, 1), (0, 1), (False, True), (0, 1)):
         add(f'install_{pick}_{flags}_{distributed}_{weapon}_{excluded}',
             pick=pick, pick_flags=flags, distributed=distributed, weapon=weapon,
-            warhead_excluded=excluded)
+            projectile_debit_excluded=excluded)
     for mission, jitter, mask in product((5, 11, -1), (0, 1, 2), (0, 1, 2, 3, 7)):
         add(f'cadence_{mission}_{jitter}_{mask}', mission=mission, jitter=jitter, mask=mask)
     for health, damage in ((0, 1), (0x80000000, 1), (0x7FFFFFFF, -1), (100, -25)):
@@ -229,7 +231,7 @@ def metadata():
             'Owner current mission selects delay; scenario RNG draw supplied, not full RNG parity; frame173, normal23, area41',
             'AssignTarget fixture writes current target and clears passive byte; actual class setter effects excluded',
             'Original body reads supplied GetFireError codes and threat results; this is not proof of their eligibility or selection semantics',
-            'Original body performs estimated-health subtraction; damage, weapon selection, warhead exclusion and DistributedFire callback semantics are not implemented by this fixture',
+            'Original body performs estimated-health subtraction; damage, weapon selection, projectile-type exclusion and DistributedFire callback semantics are not implemented by this fixture',
         ],
         substitutions=[
             'Direct calls65C7E0/6B7BB0/709550/6FDB80 segmented only at callee entry; execute supplied machine RET with real call frame',

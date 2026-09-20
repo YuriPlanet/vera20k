@@ -69,7 +69,7 @@ target is a boundary stress case: native `6F77B0` returns true for null targets.
 
 [`techno_target_scan.py`](../../tools/spatial_oracle/techno_target_scan.py) executes
 the complete original `709820..7099CC` body. Its **171 cases** comprise 80 existing-
-target/passive/error/spawn combinations, 32 installation/weapon/warhead combinations,
+target/passive/error/spawn combinations, 32 installation/weapon/projectile-flag combinations,
 45 mission/jitter/mask combinations, four wrapping health-debit cases, and ten
 callback mutations.
 
@@ -80,6 +80,12 @@ and the signed-width subtraction from the retained scan result's estimated healt
 The selected result and current target remain distinct across callbacks. One row
 explicitly proves that GetFireError receives a target changed by the preceding
 weapon-selector callback.
+
+The debit exclusion reads `WeaponType+A0 -> BulletType+2A2`. `WeaponType::ReadINI`
+pushes the `Projectile` key at `77298A`, then resolves and stores that type at
+`7729A5..7729AA`; the warhead pointer
+is a separate `WeaponType+AC` field. The semantic INI name of `BulletType+2A2` is
+not established by this corpus.
 
 The timer's inactive member receives a seeded uninitialised stack local in this
 fixture; its numeric value is not a universal native invariant. Actual RNG,

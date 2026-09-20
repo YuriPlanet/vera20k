@@ -14,7 +14,7 @@
     "Owner current mission selects delay; scenario RNG draw supplied, not full RNG parity; frame173, normal23, area41",
     "AssignTarget fixture writes current target and clears passive byte; actual class setter effects excluded",
     "Original body reads supplied GetFireError codes and threat results; this is not proof of their eligibility or selection semantics",
-    "Original body performs estimated-health subtraction; damage, weapon selection, warhead exclusion and DistributedFire callback semantics are not implemented by this fixture"
+    "Original body performs estimated-health subtraction; damage, weapon selection, projectile-type exclusion and DistributedFire callback semantics are not implemented by this fixture"
   ],
   "substitutions": [
     "Direct calls65C7E0/6B7BB0/709550/6FDB80 segmented only at callee entry; execute supplied machine RET with real call frame",
@@ -25,5 +25,5 @@
     "unit_vtable": "0x007F5C70"
   },
   "original_code_sha256": "1dcdc4f1f407a5fd4302399f546676a9f4abc66a5406c2012efbaeb999f95ef0",
-  "payload_sha256": "887912cea89edf50e3827f5b207201b1d1eeb081b9711953f8a5ddf2ee4e7b62"
+  "payload_sha256": "484cc33c9ffabea247ceed741790b6aff5ffce0f5d83bfbfeae0cb699c85bb1b"
 }
