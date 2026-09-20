@@ -14,13 +14,9 @@
 
 use crate::map::lighting::{self, LIGHT_CLAMP_MAX, LIGHT_UNIT, PointLight};
 use crate::rules::ruleset::{RadiationRules, RuleSet};
-use crate::sim::radiation::{RadSite, RadiationState};
+use crate::sim::radiation::RadSite;
 use crate::sim::world::Simulation;
 use crate::util::fixed_math::sim_to_f32;
-
-/// FNV-1a seed/prime for the per-step light epoch (any non-cryptographic mix).
-const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
 /// Derive the stepwise green point light for one radiation site, or `None` when
 /// the site is degenerate or fully faded.
@@ -86,27 +82,6 @@ pub fn collect_radiation_lights(sim: &Simulation, rules: &RuleSet) -> Vec<PointL
         .sites()
         .filter_map(|site| radiation_site_light(site, &rules.radiation))
         .collect()
-}
-
-/// A cheap epoch that changes only when a site is added/removed or crosses a
-/// `RadLightDelay` step boundary. Drives the per-step rebuild trigger so the
-/// lighting grid is rebuilt stepwise, not every frame.
-pub fn radiation_light_epoch(rad: &RadiationState, rules: &RadiationRules) -> u64 {
-    let light_delay = rules.light_delay.max(1);
-    let mut h = FNV_OFFSET;
-    let mut mix = |v: u64| {
-        h ^= v;
-        h = h.wrapping_mul(FNV_PRIME);
-    };
-    for site in rad.sites() {
-        let steps_total = (site.duration / light_delay).max(1);
-        let elapsed = site.duration - site.remaining;
-        let k = (elapsed / light_delay).clamp(0, steps_total);
-        mix(u64::from(site.center.0));
-        mix(u64::from(site.center.1));
-        mix(k as u64);
-    }
-    h
 }
 
 #[cfg(test)]
@@ -206,39 +181,5 @@ mod tests {
         let mut site = site_at_remaining(0);
         site.duration = 0;
         assert!(radiation_site_light(&site, &stock_rules()).is_none());
-    }
-
-    #[test]
-    fn epoch_changes_only_on_step_boundary() {
-        let rules = stock_rules();
-        let mut rad = RadiationState::default();
-        rad.apply_detonation(
-            crate::sim::radiation::RadDetonation {
-                rx: 10,
-                ry: 10,
-                rad_level: 500,
-                spread: 10,
-            },
-            0,
-            &rules,
-            None,
-        );
-        let e0 = radiation_light_epoch(&rad, &rules);
-        // Tick within the first step window — epoch unchanged.
-        for f in 1..=89 {
-            rad.tick_decay(f, &rules, None);
-        }
-        assert_eq!(
-            radiation_light_epoch(&rad, &rules),
-            e0,
-            "no step crossed yet"
-        );
-        // Cross the 90-frame boundary — epoch changes.
-        rad.tick_decay(90, &rules, None);
-        assert_ne!(
-            radiation_light_epoch(&rad, &rules),
-            e0,
-            "first step crossed"
-        );
     }
 }

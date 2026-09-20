@@ -2783,10 +2783,14 @@ pub(super) fn resolve_attacker_fire(
         // `TechnoClass::Fire_At` launches the bullet FROM the fire coordinate —
         // `GetFLH @ 0x006F3AD0`, the muzzle — and derives the launch velocity as
         // `target - FLH`, so the barrel offset sets both where the shot starts
-        // and which way it leaves. The muzzle animation and the report sound at
-        // `0x006FF3BE`/`0x006FF38B` are handed the identical local, which is why
-        // the presentation layer's own FLH use is the same contract rather than
-        // a second computation.
+        // and which way it leaves. Natively the muzzle animation and the report
+        // sound at `0x006FF3BE`/`0x006FF38B` are handed the identical local.
+        //
+        // RESIDUAL: VERA's muzzle flashes are not. `app/presentation/
+        // fire_effects.rs::resolve_fire_origin_from_sim` recomputes a fire
+        // origin in `f32` from the body facing only (no turret offset), so
+        // the flash and the shot can start at different points on a turreted
+        // unit. The flashes belong on `AnimStore`, built from this coordinate.
         //
         // The aim facing is the turret's when the attacker has one and the
         // body's otherwise; the body facing supplies the base rotation.

@@ -1143,30 +1143,6 @@ pub(crate) fn apply_explicit_skirmish_launch_session(
     )
 }
 
-#[cfg(test)]
-pub(crate) fn apply_explicit_skirmish_launch_session_with_overlay_registry(
-    sim: &mut Simulation,
-    map_data: &MapFile,
-    house_roster: &HouseRoster,
-    rules: &RuleSet,
-    height_map: &BTreeMap<(u16, u16), u8>,
-    resolved_terrain: &ResolvedTerrainGrid,
-    descriptor: &MatchLaunchDescriptor,
-    overlay_registry: &OverlayTypeRegistry,
-) -> SkirmishLaunchApplyResult {
-    apply_resolved_skirmish_launch_session(
-        sim,
-        map_data,
-        house_roster,
-        rules,
-        height_map,
-        resolved_terrain,
-        descriptor,
-        Some(overlay_registry),
-        LaunchStartResolution::PostFillTestCompatibility,
-    )
-}
-
 /// Apply the retained stock-offline House/start projection without repeating
 /// any prefix draw. Existing starting-force and later initialization draws
 /// remain after this projection.
@@ -1870,6 +1846,7 @@ pub(crate) fn starting_unit_prefers_vehicle(spent: i32, budget: i32) -> bool {
     spent < budget.wrapping_sub(budget / 3)
 }
 
+#[cfg(test)]
 pub(crate) fn seed_starting_extra_units(
     sim: &mut Simulation,
     slots: &[NormalizedSkirmishSlot],

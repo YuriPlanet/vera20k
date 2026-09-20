@@ -1,2 +1,2 @@
 //! Compatibility imports for the shared source-event projection.
-pub use crate::sim::radiation_light::{collect_radiation_lights, radiation_light_epoch};
+pub use crate::sim::radiation_light::collect_radiation_lights;

@@ -1617,10 +1617,11 @@ pub struct UnitLostEvent {
 ///
 /// Every native caller sits in a non-building `ReceiveDamage` override
 /// (`BuildingClass` has none), and `0x004D98DD` skips `Spawned=` types.
-/// Shared by the damage kill loop and the non-damage death sites that
-/// natively route through `+0x16C` (`ReceiveDamage`) with `C4Warhead=`:
+/// Called by the damage kill loop only. The non-damage death sites that
+/// natively route through `+0x16C` (`ReceiveDamage`) with `C4Warhead=`,
 /// `InfantryClass::IronCurtain 0x00522632` and `CellClass::BlowUpBridge
-/// 0x0047DDAE`. Paths that natively skip `ReceiveDamage` (crush
+/// 0x0047DDAE`, reach it the same way: VERA kills through that loop too.
+/// Paths that natively skip `ReceiveDamage` (crush
 /// `0x007416A0` → `RecordKill` only, `AircraftClass::Enter_Idle_Mode
 /// 0x004179FD/0x00417B88` → `Crash` slot `+0x3DC`, the off-playfield
 /// `UnInit` at `AircraftClass::AI 0x00414F93/0x00414FD1`) must not call it.
@@ -2056,8 +2057,13 @@ impl DeathEffects {
 /// from a drop-in therefore has the byte clear, so an ordinary death over water
 /// DOES throw debris and consumes the block's draws.
 ///
-/// RESIDUAL (GSI-05.14) — the SHP half spawns through the existing
-/// `ExplosionEffect` path, which plays the sprite at a fixed point. Native
+/// RESIDUAL (GSI-05.14) — the SHP half pushes `ExplosionEffect` rows, and with
+/// stock data nothing comes of them: `spawn_combat_explosion_anim` constructs
+/// only art types the loader bound, `anim_class_roots` lists neither
+/// `DebrisAnims=` nor `MetallicDebris=`, and no stock warhead, `Explosion=` or
+/// `DestroyAnim=` names a debris type, so every row is dropped. The draws are
+/// taken; no chunk is drawn. Binding them without the bouncer arm would be
+/// worse, because `LoopCount=-1` chunks would play in place forever. Native
 /// builds a bouncing `AnimClass` (`0x00421EA0`): every stock
 /// debris AnimType is `Bouncer=yes` — all 26 named by `[General]
 /// MetallicDebris=` or by any `DebrisAnims=` line carry it, authored in
@@ -2067,8 +2073,8 @@ impl DeathEffects {
 /// - Trigger: every death that reaches either SHP arm — in gamemd, 324 of the
 ///   356 stock sections that throw (of 439 authoring `MaxDebris=` in gamemd's
 ///   own spelling, 83 author 0).
-/// - Player effect: the debris sprite plays where the wreck stood instead of
-///   tumbling outward, and its `Damage=`/`Warhead=` on landing is not applied.
+/// - Player effect: no debris chunk appears at all, and its
+///   `Damage=`/`Warhead=` on landing is not applied.
 /// - Frequency: continuous — every building death (no `[BuildingTypes]` section
 ///   authors `DebrisTypes=`, so all 292 that throw land here) plus 18 of the 50
 ///   registered `[VehicleTypes]` that throw and 11 of the 12 `[AircraftTypes]`.

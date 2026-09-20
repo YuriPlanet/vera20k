@@ -26,9 +26,6 @@ pub(crate) struct ProcessAssets {
     /// manager it never leaves this owner: scenario transitions mutate it
     /// synchronously in place, so later failures cannot drop or roll it back.
     native_rules: Option<crate::rules::process_owner::NativeRulesProcessOwner>,
-    /// Shell/read-only compatibility projection built once from the same
-    /// startup-selected RULESMD/LANGRULE/ARTMD snapshots.
-    startup_rules_projection: Option<crate::rules::ini_parser::IniFile>,
     /// MapClass's one process-global fallback CellClass (`0x00ABDC50`). Map
     /// reloads bind their resolved grid to this same live identity.
     pub(crate) shared_cell_dummy: crate::map::resolved_terrain::SharedCellDummy,
@@ -46,23 +43,15 @@ impl ProcessAssets {
         manager: Option<AssetManager>,
         csf: Option<crate::assets::csf_file::CsfFile>,
         native_rules: Option<crate::rules::process_owner::NativeRulesProcessOwner>,
-        startup_rules_projection: Option<crate::rules::ini_parser::IniFile>,
     ) -> Self {
         Self {
             manager,
             leased: false,
             native_rules,
-            startup_rules_projection,
             shared_cell_dummy: Default::default(),
             csf,
             tile_variant_selector_cache: Default::default(),
         }
-    }
-
-    pub(crate) fn startup_rules_projection(
-        &self,
-    ) -> Option<&crate::rules::ini_parser::IniFile> {
-        self.startup_rules_projection.as_ref()
     }
 
     pub(crate) fn has_native_rules(&self) -> bool {
@@ -166,13 +155,13 @@ mod tests {
     #[test]
     fn asset_manager_lease_returns_on_success_failure_and_cancel() {
         // Absent slot: nothing to lease, nothing available.
-        let mut absent = ProcessAssets::from_startup(None, None, None, None);
+        let mut absent = ProcessAssets::from_startup(None, None, None);
         assert!(!absent.is_available());
         assert!(absent.lease_for_loading().is_none());
 
         // Success-shaped cycle: lease out, manager comes home.
         let mut assets =
-            ProcessAssets::from_startup(Some(test_manager("cycle")), None, None, None);
+            ProcessAssets::from_startup(Some(test_manager("cycle")), None, None);
         assert!(assets.is_available());
         let leased = assets.lease_for_loading().expect("available manager leases");
         assert!(!assets.is_available(), "leased slot has no resident manager");
@@ -201,7 +190,7 @@ mod tests {
 
     #[test]
     fn gsi_04_01_process_owner_binds_grid_clones_and_map_reloads() {
-        let assets = ProcessAssets::from_startup(None, None, None, None);
+        let assets = ProcessAssets::from_startup(None, None, None);
         let process_dummy = assets.shared_cell_dummy.clone();
         let mut first = crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
             0,

@@ -1774,14 +1774,6 @@ mod tests {
     use crate::sim::overlay_grid::OverlayGrid;
     use crate::sim::rng::SimRng;
 
-    fn make_config(grows: bool, spreads: bool) -> OreGrowthConfig {
-        OreGrowthConfig {
-            grows,
-            spreads,
-            tiberium_grows_flag: false,
-        }
-    }
-
     fn make_state(width: u16, height: u16) -> OreGrowthState {
         OreGrowthState::new(width, height)
     }

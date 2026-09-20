@@ -557,6 +557,7 @@ pub(in crate::sim) enum ProductionUnitAdmission {
 }
 
 impl ProductionUnitAdmission {
+    #[cfg(test)]
     fn exact_zero(&self) -> bool {
         matches!(self, Self::ExactZero { .. })
     }

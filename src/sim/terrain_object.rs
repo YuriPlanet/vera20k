@@ -205,14 +205,6 @@ impl TerrainAreaState {
         self.navigation_changed_cells
     }
 
-    pub(crate) fn terrain_objects(&self) -> &BTreeMap<u64, TerrainObjectState> {
-        &self.terrain_objects
-    }
-
-    pub(crate) fn terrain_object_cells(&self) -> &BTreeMap<(u16, u16), u64> {
-        &self.terrain_object_cells
-    }
-
     pub(crate) fn navigation_changed_cells(&self) -> &[(u16, u16)] {
         &self.navigation_changed_cells
     }
