@@ -6635,7 +6635,11 @@ impl Simulation {
             bypass_grid: false,
             mode: TerrainEntryMode::SpawnLike,
             is_infantry: category == EntityCategory::Infantry,
-            mover_is_crusher: false,
+            mover_is_crusher: crate::sim::movement::bump_crush::CrushCapability::new(
+                regular_crusher,
+                omni_crusher,
+            )
+            .wall_arm_crusher(),
         })
         .is_clear();
         let cell_clear = evaluate_live_cell_passability(LiveCellPassabilityQuery {

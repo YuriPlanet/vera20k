@@ -213,9 +213,20 @@ pub(super) struct PathfindingContext<'a> {
 /// callers without context quietly passed `false` and crushers detoured around
 /// sandbags they would have driven through.
 ///
-/// So they travel together, and `from_snapshot` is the single place they are
-/// derived. A caller that has a `MoverSnapshot` cannot get them wrong, and a
-/// caller that does not have one has to say so explicitly.
+/// So they travel together and are derived in two places only, both from the
+/// mover itself: `from_snapshot` on the tick path and
+/// `from_entity_without_wall_arm` where no snapshot exists. No caller supplies
+/// a fact.
+///
+/// RESIDUAL: `mover_is_crusher` here is `Crusher=` or `OmniCrusher=`, and the
+/// search uses it both for the entity soft-block exemption and for the
+/// crushable-wall admission. The runtime crossing keys the wall admission on
+/// `Crusher=` alone (`CrushCapability::wall_arm_crusher`, native
+/// `0x0073F438`). Trigger: a modded `OmniCrusher=yes`, `Crusher=no` unit
+/// routed across a sandbag line; stock `[BFRT]` sets both. Effect: the search
+/// admits a cell the crossing then refuses, and the unit repaths at the wall.
+/// Frequency: never in stock rules. Downstream risk: splitting the fact moves
+/// search results for such mods only.
 #[derive(Clone, Copy)]
 pub(super) struct MoverPathFacts {
     pub urgency: u8,
@@ -253,12 +264,21 @@ impl MoverPathFacts {
     /// `false`, and the same tank planned as a crusher or not depending on
     /// which function issued its move.
     ///
-    /// RESIDUAL (ledger I9b): the wall arm stays off on these searches. It needs
-    /// the type's armed flag and primary warhead, which need the rules, and the
-    /// order path's `PathfindingContext` carries no wall tables. Trigger: a
-    /// player move order whose shortest route crosses an enemy wall the unit
-    /// could shoot. Effect: the path detours where retail prices the wall at
-    /// 20x or 60x and drives at it.
+    /// RESIDUAL (ledger I9b): the wall arm is off on these searches, so a wall
+    /// the mover could shoot answers 7, a hard block, where retail prices it at
+    /// 20x or 60x. The armed flag and primary warhead need the rules, which
+    /// this signature does not take, and they would have no consumer yet: the
+    /// order path's context carries no wall tables, and the process-entry and
+    /// Drive tick contexts carry them with `interner: None`, which keeps the
+    /// arm off there too. Wiring this constructor alone would not give retail
+    /// behavior. Walk orders already get the arm (`walk_path.rs`).
+    /// - Trigger: an armed Drive or Ship unit ordered to a goal it can reach
+    ///   only through a wall its warhead can hit.
+    /// - Effect: a detour, or no path at all when the goal is walled in, where
+    ///   retail drives at the wall and shoots it.
+    /// - Frequency: uncommon; walled-in goals in base assaults.
+    /// - Downstream risk: enabling it changes search results in the lockstep
+    ///   stream, so it is a movement-parity change with its own evidence.
     pub fn from_entity_without_wall_arm(
         entity: &crate::sim::game_entity::GameEntity,
         urgency: u8,

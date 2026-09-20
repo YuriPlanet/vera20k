@@ -799,7 +799,7 @@ pub(super) fn classify_track_entry(
         bypass_grid: snap.bypass_grid,
         mode: TerrainEntryMode::RuntimeTransition,
         is_infantry: snap.category == EntityCategory::Infantry,
-        mover_is_crusher: snap.regular_crusher,
+        mover_is_crusher: snap.crush_capability().wall_arm_crusher(),
         wall: wall_tables.map(|tables| cell_entry::WallArmContext {
             overlay_grid: tables.overlay_grid,
             overlay_registry: tables.overlay_registry,

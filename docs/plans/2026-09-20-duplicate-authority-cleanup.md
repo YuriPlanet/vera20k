@@ -18,6 +18,7 @@ Replace this file on each update; do not append a diary.
 | `resource_nodes` | the node map, the second growth algorithm, the miner authority switch, the test-only admission seam, and the state they left write-only | #419 |
 | Animation | bridge `BridgeExplosions=` on `AnimStore`; the store's delayed start edge; the whole `WorldEffect` lane, which drew nothing | #420 |
 | Map load | building animations bound tolerantly; the native anim file-name rule; ore twinkle and cliff-collapse roots | #422 |
+| Mover path facts | the crusher flag every move-order caller passed; facts now come from the mover (`from_snapshot`, `from_entity_without_wall_arm`), cell-entry contexts take the wall-arm key from `CrushCapability`. The wall arm on order and Drive tick searches is movement-ledger row I9b, a parity port, not a duplicate | this PR |
 | Dead code | items dead in both builds; superseded test-only duplicates (map-list funnels, `radiation_light_epoch`); test probes gated; the effect asset catalog trimmed to particle images, which changes the rules hash, so snapshot 176 | #421 |
 
 Three per-mover world scans went with those: the per-frame dock sweep, the
@@ -77,11 +78,6 @@ from the sim coordinate and delete the app stepper and the `f32` FLH.
 `components::ParachuteAnim` is a third app-side stepper. Natively the chute is
 an AnimClass attached to the object (`Object+0x88`); `AnimStore` supports owner
 attachment.
-
-**Hand-built mover path facts.** `MoverPathFacts::from_snapshot` is the single
-derivation since PR #387. Two production sites in `movement_commands.rs` still
-call `mover_path_facts_without_wall_arm` with independently derived
-`mover_is_crusher`/`is_infantry`; closing them is ledger row I9b.
 
 **Per-mover world scans.** `movement_tick.rs` rebuilds
 `build_live_building_entry_skip_map` and `snapshot_bridge_marker_peers` (every
