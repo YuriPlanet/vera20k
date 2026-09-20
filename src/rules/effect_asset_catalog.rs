@@ -363,8 +363,11 @@ mod tests {
     #[test]
     fn tolerant_binder_skips_missing_roots_and_follows_next_chains() {
         let root = TestRoot::new();
-        std::fs::write(root.path().join("ALPHA.SHP"), shp_with_undecodable_pixels(6))
-            .expect("write root SHP");
+        std::fs::write(
+            root.path().join("ALPHA.SHP"),
+            shp_with_undecodable_pixels(6),
+        )
+        .expect("write root SHP");
         std::fs::write(root.path().join("BETA.SHP"), shp_with_undecodable_pixels(4))
             .expect("write chained SHP");
         let assets = AssetManager::from_loose_root_for_test(root.path());
@@ -485,9 +488,8 @@ mod anim_class_root_tests {
     /// twinkle and the cliff-collapse literals.
     #[test]
     fn roots_cover_ore_twinkle_and_cliff_collapse_literals() {
-        let rules =
-            RuleSet::from_ini(&IniFile::from_str("[General]\nOreTwinkle=MYTWINKLE\n"))
-                .expect("rules");
+        let rules = RuleSet::from_ini(&IniFile::from_str("[General]\nOreTwinkle=MYTWINKLE\n"))
+            .expect("rules");
         let roots = anim_class_roots(&rules);
         for name in ["MYTWINKLE", "XGRYMED1", "XGRYMED2", "XGRYSML1"] {
             assert!(
