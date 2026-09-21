@@ -1722,10 +1722,17 @@ pub(crate) struct RandomMapLaunchSnapshot {
 
 #[cfg(test)]
 impl MapLoadInitial {
-    /// Consume the same initial-map receipt and generated-constructor replay
-    /// seam used by the remaining production load. This intentionally omits
-    /// rendering-only data and preserves every generated gameplay surface in
-    /// exact ordered projections for lifecycle convergence tests.
+    /// Consume the same initial-map receipt as the match load and build the
+    /// accepted-generated scenario in its order, with its functions, without a
+    /// GPU, projecting the generated gameplay surfaces for lifecycle
+    /// convergence tests.
+    ///
+    /// It is a second sequencing of the generated arm of `load_map_from_initial`,
+    /// which cannot run here because it takes the GPU context, and it leaves
+    /// out more than rendering: the Team AI registry, the shared cell dummy's
+    /// Resize reconstruction and the theater registry publication. `final_rng` and `post_map_output` are what this sequence
+    /// yields, which the tests compare between two launch routes; they are not
+    /// certified equal to a match load's.
     pub(crate) fn into_random_map_launch_snapshot(
         self,
         asset_manager: &mut AssetManager,
@@ -1984,6 +1991,12 @@ impl MapLoadInitial {
         drop(scenario_fill_ranged);
         drop(variant_main_rng);
         drop(scenario_fill_rng);
+        // The native-id reservations the match load makes at this point: the
+        // `[Tubes]` rows, then the launch branch's post-load particle system.
+        simulation
+            .construct_native_map_tubes(&map_data.ini)
+            .expect("native [Tubes] construction");
+        simulation.construct_post_load_particle_system_id();
         let table = simulation
             .replay_staged_generated_construction_trace(&trace)
             .expect("valid generated construction trace");
@@ -2065,6 +2078,27 @@ impl MapLoadInitial {
             },
         )
         .expect("production generated-map construction funnel");
+        // The generator tail, where the match load runs it: growth and spread
+        // queues from the painted densities, then the final germination
+        // (`RandomMapGenerator::Generate @ 0x00598960` tail). The post-map
+        // finalizer below is therefore told the queues exist.
+        let _ = crate::sim::runtime::initialize_native_tiberium_queues(
+            &mut simulation,
+            &map_data.basic,
+            &map_data.special_flags,
+            &rules,
+            &overlay_registry,
+            Some(&overlay_grid),
+            (map_data.header.width as u16, map_data.header.height as u16),
+        );
+        let _ = crate::sim::tiberium_germinate::run_generated_final_cell_attributes(
+            &resolved_terrain,
+            &mut overlay_grid,
+            &rules.tiberium_types,
+            &overlay_registry,
+            map_data.header.width as u16,
+            map_data.header.height as u16,
+        );
         crate::app::loading::init_helpers::bind_staged_app_scenario_metadata(
             &mut simulation,
             asset_manager,
@@ -2117,7 +2151,7 @@ impl MapLoadInitial {
             overlay_grid,
             &house_roster,
             Some(&match_launch_descriptor),
-            false,
+            true,
         );
         let crate_name_id =
             |name: Option<&str>| name.and_then(|name| overlay_registry.id_for_name(name));

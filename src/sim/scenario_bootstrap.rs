@@ -2296,39 +2296,6 @@ impl ScenarioBootstrapRng {
         Ok((simulation, projection))
     }
 
-    /// Borrow the two independent load-time consumers without exposing either
-    /// raw cursor or allowing one callback to draw from the other stream.
-    #[cfg(test)]
-    pub(crate) fn terrain_draws(&mut self) -> (ScenarioFillRng<'_>, VariantMainRng<'_>) {
-        (
-            ScenarioFillRng {
-                rng: &mut self.scenario,
-            },
-            VariantMainRng {
-                rng: &mut self.main,
-            },
-        )
-    }
-
-    /// Consume the launch generation's ordered Building constructor trace on
-    /// the same Scenario owner that already passed through the stock-offline
-    /// prefix and terrain Fill. Successful rows retain their low word for later
-    /// projection; discarded rows spend the word and deliberately bind none.
-    ///
-    /// gamemd provenance: TechnoClass constructor 0x006F3254 consumes one raw
-    /// Scenario word before RMG placement can succeed or fail. Launch reader
-    /// 0x00684620 regenerates the accepted `.SED` after match RNG reseeding.
-    #[cfg(test)]
-    pub(crate) fn replay_generated_construction_trace(
-        &mut self,
-        trace: &crate::map::construction_trace::RmgConstructionTrace,
-    ) -> Result<
-        crate::sim::world::GeneratedTechnoInitTable,
-        crate::sim::world::GeneratedTechnoInitError,
-    > {
-        replay_generated_construction_trace_with_rng(&mut self.scenario, trace)
-    }
-
     #[cfg(test)]
     pub(crate) fn logical_states_for_test(
         &self,
@@ -2404,6 +2371,15 @@ impl Simulation {
 
     /// Replay accepted launch-generation constructor effects on the staged
     /// Scenario stream after Fill, before authored object-section projection.
+    ///
+    /// Consume the launch generation's ordered Building constructor trace on
+    /// the same Scenario owner that already passed through the stock-offline
+    /// prefix and terrain Fill. Successful rows retain their low word for later
+    /// projection; discarded rows spend the word and deliberately bind none.
+    ///
+    /// gamemd provenance: TechnoClass constructor 0x006F3254 consumes one raw
+    /// Scenario word before RMG placement can succeed or fail. Launch reader
+    /// 0x00684620 regenerates the accepted `.SED` after match RNG reseeding.
     pub(crate) fn replay_staged_generated_construction_trace(
         &mut self,
         trace: &crate::map::construction_trace::RmgConstructionTrace,
@@ -3388,13 +3364,13 @@ mod tests {
     #[test]
     fn main_variant_draws_do_not_advance_scenario_cursor() {
         let seed = 0x51C0_1002;
-        let mut owner = ScenarioBootstrapRng::new(seed);
+        let mut sim = ScenarioBootstrapRng::new(seed).into_simulation(&descriptor(seed));
         {
-            let (scenario, mut main) = owner.terrain_draws();
+            let (scenario, mut main) = sim.terrain_load_draws();
             let _ = main.next_u32();
             drop(scenario);
         }
-        let actual = owner.into_simulation(&descriptor(seed)).rng_state();
+        let actual = sim.rng_state();
         let mut expected_main = SimRng::new(u64::from(seed));
         let _ = expected_main.next_u32();
 
@@ -3406,15 +3382,15 @@ mod tests {
     }
 
     #[test]
-    fn terrain_scenario_draws_transfer_without_advancing_main() {
+    fn terrain_scenario_draws_do_not_advance_main() {
         let seed = 0x51C0_1003;
-        let mut owner = ScenarioBootstrapRng::new(seed);
+        let mut sim = ScenarioBootstrapRng::new(seed).into_simulation(&descriptor(seed));
         {
-            let (mut scenario, main) = owner.terrain_draws();
+            let (mut scenario, main) = sim.terrain_load_draws();
             let _ = scenario.next_range_u32_inclusive(5, 17);
             drop(main);
         }
-        let actual = owner.into_simulation(&descriptor(seed)).rng_state();
+        let actual = sim.rng_state();
         let mut expected_scenario = SimRng::new(u64::from(seed));
         let _ = expected_scenario.next_range_u32_inclusive(5, 17);
 
@@ -4012,12 +3988,7 @@ mod tests {
         let launch = one_player_battle_launch("mp01t4.map");
         let plan = prepare_stock_offline_scenario_prefix_plan(&launch, &map, &map.waypoints, seed)
             .expect("stock Battle prefix");
-        let mut owner = ScenarioBootstrapRng::new(seed);
-        {
-            let (mut scenario_fill, main) = owner.terrain_draws();
-            let _ = scenario_fill.next_range_u32_inclusive(1, 2);
-            drop(main);
-        }
+        let mut owner = ScenarioBootstrapRng::new(seed ^ 1);
 
         assert!(matches!(
             owner.install_pre_fill_scenario_prefix_plan(plan),
@@ -4090,8 +4061,10 @@ mod tests {
         owner
             .install_pre_fill_scenario_prefix_plan(plan)
             .expect("fresh launch owner accepts the Full-Init prefix");
+        // The match load stages the Simulation here, before Fill.
+        let mut sim = owner.into_simulation(&descriptor(seed));
         {
-            let (mut scenario_fill, main) = owner.terrain_draws();
+            let (mut scenario_fill, main) = sim.terrain_load_draws();
             let actual = scenario_fill.next_range_u32_inclusive(5, 17);
             let expected = reference.next_range_u32_inclusive(5, 17);
             assert_eq!(actual, expected);
@@ -4116,8 +4089,8 @@ mod tests {
         let _discarded_word = reference.next_u32();
         let second_word = (reference.next_u32() & 0xFFFF) as u16;
 
-        let bindings = owner
-            .replay_generated_construction_trace(&trace)
+        let bindings = sim
+            .replay_staged_generated_construction_trace(&trace)
             .expect("ordered trace binds emitted constructors");
         assert_eq!(
             bindings
@@ -4135,7 +4108,7 @@ mod tests {
         );
         assert!(bindings.entry(1).is_none(), "discarded row binds no entity");
 
-        let actual = owner.into_simulation(&descriptor(seed)).rng_state();
+        let actual = sim.rng_state();
         assert_eq!(actual.scenario, reference.logical_state());
         assert_eq!(actual.main, before.logical_state());
     }
@@ -4247,8 +4220,21 @@ mod tests {
         let projection = owner
             .install_pre_fill_scenario_prefix_plan(plan)
             .expect("one authoritative Full-Init prefix");
+        // The match load stages the Simulation here, before Fill.
+        let mut scenario = descriptor(seed);
+        scenario.map_name = "RandMap.SED".to_string();
+        scenario.theater = "TEMPERATE".to_string();
+        scenario.game_mode_nonzero = true;
+        scenario.map_width = SIZE;
+        scenario.map_height = SIZE;
+        scenario.local_left = 2;
+        scenario.local_top = 2;
+        scenario.local_width = 36;
+        scenario.local_height = 32;
+        scenario.mp_start_waypoints.insert(0, (start.rx, start.ry));
+        let mut sim = owner.into_simulation(&scenario);
         {
-            let (mut scenario_fill, main) = owner.terrain_draws();
+            let (mut scenario_fill, main) = sim.terrain_load_draws();
             let actual = scenario_fill.next_range_u32_inclusive(5, 17);
             let expected = reference.next_range_u32_inclusive(5, 17);
             assert_eq!(actual, expected, "terrain Fill continues the prefix");
@@ -4272,8 +4258,8 @@ mod tests {
         let first_trace_word = (reference.next_u32() & 0xFFFF) as u16;
         let _discarded_trace_word = reference.next_u32();
         let second_trace_word = (reference.next_u32() & 0xFFFF) as u16;
-        let bindings = owner
-            .replay_generated_construction_trace(&trace)
+        let bindings = sim
+            .replay_staged_generated_construction_trace(&trace)
             .expect("ordered trace binds emitted constructors");
         assert_eq!(
             bindings.entry(0).unwrap().techno_ctor_random_word,
@@ -4285,24 +4271,12 @@ mod tests {
         );
         assert!(bindings.entry(2).is_none());
         assert_eq!(
-            owner.logical_states_for_test().0,
+            sim.rng_state().scenario,
             reference.logical_state(),
             "the independently walked intermediate cursor must match after replay"
         );
 
-        let mut scenario = descriptor(seed);
-        scenario.map_name = "RandMap.SED".to_string();
-        scenario.theater = "TEMPERATE".to_string();
-        scenario.game_mode_nonzero = true;
-        scenario.map_width = SIZE;
-        scenario.map_height = SIZE;
-        scenario.local_left = 2;
-        scenario.local_top = 2;
-        scenario.local_width = 36;
-        scenario.local_height = 32;
-        scenario.mp_start_waypoints.insert(0, (start.rx, start.ry));
         let terrain = techno_constructor_flat_start_terrain(SIZE);
-        let mut sim = owner.into_simulation(&scenario);
         sim.install_resolved_terrain_for_new_map(terrain.clone());
         sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(SIZE, SIZE));
         sim.install_playfield_from_map_header(&map.header);
@@ -4415,7 +4389,7 @@ mod tests {
     #[test]
     fn generated_trace_rejects_bad_ordinal_before_spending_scenario() {
         let seed = 0x51C0_1007;
-        let mut owner = ScenarioBootstrapRng::new(seed);
+        let mut sim = ScenarioBootstrapRng::new(seed).into_simulation(&descriptor(seed));
         let mut trace = crate::map::construction_trace::RmgConstructionTrace::default();
         trace.push_discarded(
             crate::map::construction_trace::RmgConstructionPhase::NeutralTech,
@@ -4424,7 +4398,7 @@ mod tests {
         trace.events[0].ordinal = 4;
 
         assert!(matches!(
-            owner.replay_generated_construction_trace(&trace),
+            sim.replay_staged_generated_construction_trace(&trace),
             Err(
                 crate::sim::world::GeneratedTechnoInitError::TraceOrdinalMismatch {
                     expected: 0,
@@ -4432,9 +4406,8 @@ mod tests {
                 }
             )
         ));
-        let actual = owner.into_simulation(&descriptor(seed)).rng_state();
         assert_eq!(
-            actual.scenario,
+            sim.rng_state().scenario,
             SimRng::new(u64::from(seed)).logical_state()
         );
     }
