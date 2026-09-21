@@ -375,7 +375,8 @@ fn missing_active_team_ai_registry_sections(ini: &IniFile) -> Vec<&'static str> 
 /// Match-load rules for a test, through the path a match load takes: the cold
 /// startup selection (`load_startup_rules`), then the noncampaign scenario
 /// rebuild on its process owner (`load_noncampaign_scenario`). Returns the
-/// rules, the processed INI and the fixed ARTMD snapshot.
+/// rules, the processed INI, the fixed ARTMD snapshot and the native receipt
+/// that binds a stock-offline prefix plan.
 ///
 /// Retail starts from RULESMD.INI, then processes optional LANGRULE.INI, the
 /// selected mode INI, and finally the scenario/map INI. RA2 RULES.INI is not a
@@ -385,15 +386,20 @@ pub(crate) fn load_rules_with_merged_ini(
     asset_manager: &AssetManager,
     mode_rules_override: Option<&IniFile>,
     map_rules_overrides: Option<&IniFile>,
-) -> Option<(RuleSet, IniFile, IniFile)> {
+) -> Option<(
+    RuleSet,
+    IniFile,
+    IniFile,
+    crate::rules::process_owner::NativeScenarioRulesReceipt,
+)> {
     let (_, _, mut native_owner) = load_startup_rules(asset_manager)?.into_parts();
     let no_map = IniFile::from_str("");
-    let (rules, processed_ini, fixed_art_ini, _receipt) = native_owner
+    let (rules, processed_ini, fixed_art_ini, receipt) = native_owner
         .load_noncampaign_scenario(mode_rules_override, map_rules_overrides.unwrap_or(&no_map))
         .map_err(|error| log::warn!("Failed native noncampaign rules rebuild: {error}"))
         .ok()?
         .into_parts();
-    Some((rules, processed_ini, fixed_art_ini))
+    Some((rules, processed_ini, fixed_art_ini, receipt))
 }
 
 fn load_retail_ini(asset_manager: &AssetManager, name: &str) -> Option<IniFile> {
@@ -533,48 +539,6 @@ pub(crate) struct PresentationManifest {
     pub(crate) unit_atlas: Option<UnitAtlas>,
     pub(crate) sprite_atlas: Option<SpriteAtlas>,
     pub(crate) palette_set: Option<crate::render::palette_textures::PaletteSet>,
-}
-
-/// The GPU-free half of the app scenario load (F09): the shared construction
-/// funnel plus the HVA frame-count catalog, with no atlas or GPU involvement.
-#[cfg(test)]
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn construct_app_scenario<F>(
-    map_data: &MapFile,
-    resolved_terrain: &ResolvedTerrainGrid,
-    asset_manager: &AssetManager,
-    theater_name: &str,
-    rules: Option<&RuleSet>,
-    art: Option<&ArtRegistry>,
-    height_map: &BTreeMap<(u16, u16), u8>,
-    overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-    overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
-    bridge_destroyability_mode: BridgeDestroyabilityMode,
-    descriptor: &crate::sim::scenario_session::ScenarioDescriptor,
-    bootstrap_rng: crate::sim::scenario_bootstrap::ScenarioBootstrapRng,
-    generated_inits: Option<&crate::sim::world::GeneratedTechnoInitTable>,
-    initialize_houses_before_objects: F,
-) -> Result<Simulation, crate::sim::world::GeneratedTechnoInitError>
-where
-    F: FnOnce(&mut Simulation),
-{
-    let mut sim = bootstrap_rng.into_simulation(descriptor);
-    populate_staged_app_scenario(
-        &mut sim,
-        map_data,
-        resolved_terrain,
-        theater_name,
-        rules,
-        height_map,
-        overlay_registry,
-        overlay_grid,
-        bridge_destroyability_mode,
-        descriptor,
-        generated_inits,
-        initialize_houses_before_objects,
-    )?;
-    bind_staged_app_scenario_metadata(&mut sim, asset_manager, rules, art);
-    Ok(sim)
 }
 
 /// Populate the already-staged gameplay owner with map object sections.
@@ -1261,7 +1225,7 @@ mod tests {
         let map = IniFile::from_str("[GASAND]\nTiberium=yes\n");
         let loaded = load_rules_with_merged_ini(&assets, None, Some(&map))
             .expect("retail merged rules pair");
-        let (rules, merged_ini, _fixed_art_ini) = loaded;
+        let (rules, merged_ini, _fixed_art_ini, _receipt) = loaded;
         let merged_registry = OverlayTypeRegistry::from_ini(&merged_ini, None);
 
         assert_eq!(merged_registry.id_for_name("GASAND"), Some(0));
@@ -1289,8 +1253,8 @@ mod tests {
             load_rules_with_merged_ini(&assets, None, None).expect("retail no-map rules pair");
         let with_map = load_rules_with_merged_ini(&assets, None, Some(&map))
             .expect("retail MountMoras rules pair");
-        let (no_map_rules, no_map_ini, _no_map_fixed_art_ini) = no_map;
-        let (map_rules, map_ini, _map_fixed_art_ini) = with_map;
+        let (no_map_rules, no_map_ini, _no_map_fixed_art_ini, _no_map_receipt) = no_map;
+        let (map_rules, map_ini, _map_fixed_art_ini, _map_receipt) = with_map;
 
         assert_eq!(
             no_map_rules

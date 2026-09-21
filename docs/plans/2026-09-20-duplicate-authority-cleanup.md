@@ -27,7 +27,8 @@ Replace this file on each update; do not append a diary.
 | Dead code | second sweep, for what the compiler cannot see: `pub` items of the library and items behind `allow(dead_code)`. 90 suppressions removed and 30 put back where the reason is real (native enum values, GPU resource ownership, staged native ports, RNG stream-routing audit anchors); about 40 functions nothing references deleted, with the dead `movement/scatter.rs` module, a terrain render pipeline and instance buffer nothing drew with, the depth-stamp pipeline only a GPU test draws with (now built only there), and stale constants and imports; about 460 functions and constants that only tests call are `#[cfg(test)]`, so the production build no longer carries them. This is a one-time sweep, not a guard: the `dead_code` lint still cannot see an unreferenced `pub` item of the library, so a new one will not be reported. Unreferenced `pub` items kept on purpose: native-value vocabularies with a gap a deletion would hide (`FX_EMP`/`FX_MIRROR`, `REPLAY_FLAG_*`, the rocking constants `SNAP_BACK_RATE` and `APPLY_AREA_FORCE_FLOOR`, `TRACKBAR_WM_HSCROLL_MESSAGE`, the fixed-math `SIM_EPSILON`) and native-derived staged ports (cloak/disguise helpers, house base helpers, gas and smoke particle movers). Three modules only tests reach (`movement/track_speed_native`, `movement/track_fresh_dispatch`, `map/rmg/sqrt_table`) carry the gate on their `mod` line. Non-test warnings 100 to 18; the 17 that remain are fields only tests read and native enum values nothing constructs yet, left visible rather than suppressed | #428 |
 | Per-mover world scans | the whole-world marker-peer snapshot and building entry-skip map every mover rebuilt every tick (and `track_entry.rs` per entry). The mover is lifted out of the store for its turn (`EntityStore::take_turn`), so the other entities are read live: peers by id from the cell lists `UpdateBridgePassability` walks, skips from the buildings on the queried cell's list. The mover's own facts are captured once as its turn begins. Debug builds still build both whole-world forms and compare every live read against them. Two of the three scans | #429 |
 | Loader funnels | `load_rules_with_merged_ini` composed the rules layers cold, a second path beside the match load's `NativeRulesProcessOwner::load_noncampaign_scenario`; it now runs startup selection and that rebuild, and `LoadedRules` is gone. `sprite_atlas.rs` kept a `cfg(test)` copy of the effect-name list that had drifted (no `Wake=`, no projectile images); production and tests call the one `collect_effect_names` | #429 |
-| Per-mover world scans | the third scan, the owner block sets every moving object's turn rebuilt from every entity. `EntityStore` logs each entity it hands out mutably (every route to a `&mut GameEntity` goes through it), and `movement/block_index.rs` keeps one shared record of where each entity sits plus each owner's sets, re-deriving only the logged entities and rewriting only the cells they touch, at the same two points the sets used to be rebuilt (pass preparation; a turn's start when occupancy moved), so a pass sees what a build of the whole world would give it. One rule (`contribution`) and one insert (`insert_unit`) serve the index and the whole-world build, which path searches outside a pass, tests and the debug-build comparison still use | this PR |
+| Per-mover world scans | the third scan, the owner block sets every moving object's turn rebuilt from every entity. `EntityStore` logs each entity it hands out mutably (every route to a `&mut GameEntity` goes through it), and `movement/block_index.rs` keeps one shared record of where each entity sits plus each owner's sets, re-deriving only the logged entities and rewriting only the cells they touch, at the same two points the sets used to be rebuilt (pass preparation; a turn's start when occupancy moved), so a pass sees what a build of the whole world would give it. One rule (`contribution`) and one insert (`insert_unit`) serve the index and the whole-world build, which path searches outside a pass, tests and the debug-build comparison still use | #430 |
+| Loader funnels | scenario construction only tests called, in an order production does not use: `runtime::construct_scenario`, `construct_scenario_with_generated_inits`, `init_helpers::construct_app_scenario`, `HeadlessTerrainBootstrap` with its own terrain Fill funnel, the bootstrap-side generated-construction replay wrapper, and the `ScenarioBootstrapRng::terrain_draws` and `replay_generated_construction_trace` probes with the unit tests that ran Fill and the replay on the bare bootstrap owner. Their users (two synthetic headless tests, the random-map launch snapshot behind `gsi_04_12`) now stage the one `Simulation` first, as the match load does (`into_stock_offline_staged_simulation` with the prefix bound to the native rules receipt, or `into_simulation` where there is no launch prefix), let Fill and the constructor replay draw from that owner, and populate it with the production functions; each asserts that Fill allocates the extent the descriptor announced. The random-map launch snapshot also gained the steps of the generated arm it had skipped (the `[Tubes]` and post-load particle-system native ids, the generator tail's tiberium queues and final germination) and no longer asks the post-map finalizer to rebuild the queues, which pinned the opposite of what a match load does. With that, the finalizer's rebuild branch (`tiberium_queues_preinitialized: false`, a near copy of `runtime::initialize_native_tiberium_queues`) had only unit tests left; the flag, the branch and the `tiberium_queues` output are deleted, and those tests build the queues with the production function before the post-map tail, as both load arms do | this PR |
 
 Three per-mover world scans went with those: the per-frame dock sweep, the
 whole-entity scan in `interrupt_refinery_docked_miners`, and the per-frame
@@ -78,6 +79,25 @@ the Foot destination the order writes, and the locomotor's own cached
 coordinate at `+0x40` that `Move_To` fills and `Process` flies toward. The
 cruise host hands one to the other and clears the order on arrival.
 
+**The random-map launch snapshot (for the final audit to confirm).**
+`MapLoadInitial::into_random_map_launch_snapshot` (`cfg(test)`, behind
+`gsi_04_12`) is a second sequencing of the accepted-generated arm of
+`load_map_from_initial`. It cannot call that function, which takes the GPU
+context and interleaves presentation work; sharing the sequence means
+extracting a GPU-free core out of the app loader, a change to production
+loading that belongs to the random-map work, not a fold of duplicate state. It
+now follows the match load's order with the match load's functions (staged
+`Simulation`, bound prefix, native-id reservations, Fill, replay, populate,
+generator tail, metadata, launch session, post-map finalizer). What it still
+leaves out is named in its doc comment: the Team AI registry, the shared cell
+dummy's Resize reconstruction and the theater registry publication. Its
+`final_rng` and `post_map_output` are compared between two launch routes, not
+certified equal to a match load's. The two probes left on
+`ScenarioBootstrapRng` (`install_pre_fill_scenario_prefix_plan`,
+`logical_states_for_test`) install the prefix through the same
+`install_before_terrain` production uses and read cursors; their users stage
+the `Simulation` next, and none runs Fill.
+
 **Staged native ports with no production caller yet (for the final audit to
 confirm).**
 `track_fresh_dispatch.rs`, `track_speed_native.rs`, the `load_object_lifecycle`
@@ -97,15 +117,7 @@ probes in `world_hash.rs` are replay-pin provenance.
 
 ## Open
 
-**Scenario construction only tests call.** `runtime::construct_scenario`,
-`construct_scenario_with_generated_inits`, `init_helpers::construct_app_scenario`
-and `HeadlessTerrainBootstrap::construct_scenario` only sequence production
-functions (`ScenarioBootstrapRng::into_simulation`, then
-`populate_staged_scenario_with_generated_inits`), but
-`build_headless_terrain_bootstrap` is a test-only terrain Fill funnel with its
-own order, and all of them create the `Simulation` after Fill where production
-stages it before, so what Fill does to the staged owner is untested on that
-path.
+Nothing.
 
 ## Production validation
 
