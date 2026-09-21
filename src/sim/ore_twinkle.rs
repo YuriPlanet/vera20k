@@ -195,6 +195,7 @@ impl Simulation {
             };
             match self.spawn_load_anim_at_world(
                 &rules.art_registry,
+                rules,
                 descriptor,
                 AnimWorldCoord {
                     x: world_x,

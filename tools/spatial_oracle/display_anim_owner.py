@@ -1,8 +1,8 @@
 """Original Anim owner attachment, live detachment and owner expiry.
 
 Supplies real-vtable objects, marking/type state and preallocated display vectors.
-No native calls are replaced. This is a dependency witness for the pending Rust
-animation display migration, not a claim that the migration is implemented.
+No native calls are replaced. Rust consumes these histories in
+anim_class::tests::animation_display_owner_histories_match_native_and_survive_save.
 """
 from pathlib import Path
 import struct
@@ -95,5 +95,5 @@ if __name__ == '__main__':
                      'Five preallocated display buffers exclude allocator growth/failure. Type YSortAdjust999 deliberately differs from supplied retained instance+104.',
                      'Owner is Unit; the shared-owner scan sees no other attached Anim. Mark executes its original Anim/Object paths without substitutions.'],
         substitutions=[],
-        scope='24 original six-step animation display/coordinate histories: six layers, marked/unmarked detach gating, signed/wrapping instance sort adjustment, moving Unit owner, normal detach and owner expiry. Excludes Building owner coordinates, multiple attached anims, constructor admission and AI deletion. Rust integration remains pending.',
+        scope='24 original six-step animation display/coordinate histories: six layers, marked/unmarked detach gating, signed/wrapping instance sort adjustment, moving Unit owner, normal detach and owner expiry. Excludes Building owner coordinates, multiple attached anims, constructor admission and AI deletion.',
     ))

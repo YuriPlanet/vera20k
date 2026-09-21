@@ -542,7 +542,9 @@ use crate::sim::world::Simulation;
 // cache is rebuilt, but history cannot be recovered from current coordinates.
 // 182 -> 183: display vectors now include terrain, particle systems, bullets,
 // waves and voxel debris. Prior snapshots cannot recover their registration history.
-const SNAPSHOT_VERSION: u32 = 183;
+// 183 -> 184: animation display membership, retained instance YSortAdjust and
+// Object+74 marking. Prior snapshots cannot reconstruct attachment history.
+const SNAPSHOT_VERSION: u32 = 184;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1159,7 +1161,13 @@ fn restore_object_references(
     // null, and a deferred Destroy is still a physically present valid target.
     let mut claimed_slots = BTreeMap::new();
     for (owner_id, entity) in sim.substrate.entities.iter_sorted() {
-        for (slot, anim_id) in entity.building_anim_slots.iter().enumerate() {
+        // Diagnostic slots0..20 are Building+55C, slots21..28 are +5C8.
+        for (slot, anim_id) in entity
+            .building_anim_slots
+            .iter()
+            .chain(entity.damage_fire_anim_ids.iter())
+            .enumerate()
+        {
             let Some(anim_id) = *anim_id else { continue };
             let slot = slot as u8;
             if entity.category != crate::map::entities::EntityCategory::Structure {
@@ -1459,16 +1467,6 @@ fn restore_object_references(
             )?;
         }
 
-        for &anim_id in entity.damage_fire_anim_ids.iter().flatten() {
-            require_resolved_reference(
-                anim_ids.contains(&anim_id),
-                "EntityStore",
-                entity_id,
-                "damage_fire_anim_ids",
-                "AnimStore",
-                anim_id,
-            )?;
-        }
         if let Some(system_id) = entity.damage_smoke_system_id {
             require_resolved_reference(
                 particle_system_ids.contains(&system_id),
@@ -3439,7 +3437,7 @@ mod tests {
         // 173 -> 174: ProductionState drops the resource node map.
         // 174 -> 175: bridge collapse explosions join the AnimStore.
         // 180 -> 181: Foot+580 crate multiplier survives save/restore.
-        assert_eq!(super::SNAPSHOT_VERSION, 183);
+        assert_eq!(super::SNAPSHOT_VERSION, 184);
     }
 
     #[test]
@@ -4593,7 +4591,7 @@ mod tests {
 
     #[test]
     fn building_anim_slot_restore_rejects_invalid_graph_before_mutation() {
-        for case in 0..5 {
+        for case in 0..8 {
             let (mut sim, rules, owner) = crate::sim::building_art::slot_test_fixture();
             let anim = sim
                 .set_building_anim_slot(owner, 3, false, false, 0, &rules)
@@ -4634,7 +4632,7 @@ mod tests {
                         second_slot: 4,
                     }
                 }
-                _ => {
+                4 => {
                     let second = sim.allocate_stable_id();
                     let mut entity = sim.substrate.entities.get(owner).unwrap().clone();
                     entity.stable_id = second;
@@ -4645,6 +4643,42 @@ mod tests {
                         first_slot: 3,
                         second_owner: second,
                         second_slot: 3,
+                    }
+                }
+                5 => {
+                    sim.substrate
+                        .entities
+                        .get_mut(owner)
+                        .unwrap()
+                        .damage_fire_anim_ids[0] = Some(999);
+                    SnapshotRestoreError::MissingBuildingSlotAnim {
+                        owner_id: owner,
+                        slot: 21,
+                        anim_id: 999,
+                    }
+                }
+                6 => {
+                    sim.substrate
+                        .entities
+                        .get_mut(owner)
+                        .unwrap()
+                        .damage_fire_anim_ids[0] = Some(anim);
+                    SnapshotRestoreError::DuplicateBuildingSlotAnim {
+                        anim_id: anim,
+                        first_owner: owner,
+                        first_slot: 3,
+                        second_owner: owner,
+                        second_slot: 21,
+                    }
+                }
+                _ => {
+                    let entity = sim.substrate.entities.get_mut(owner).unwrap();
+                    entity.building_anim_slots[3] = None;
+                    entity.damage_fire_anim_ids[0] = Some(anim);
+                    entity.category = crate::map::entities::EntityCategory::Unit;
+                    SnapshotRestoreError::InvalidBuildingAnimSlotOwner {
+                        owner_id: owner,
+                        slot: 21,
                     }
                 }
             };
@@ -4670,7 +4704,7 @@ mod tests {
             .set_building_anim_slot(owner, 3, false, false, 0, &rules)
             .unwrap();
         assert!(sim.anim(anim).unwrap().owner_entity.is_none());
-        sim.destroy_anim(anim);
+        sim.destroy_anim(anim, &rules);
         assert!(sim.substrate.pending_delete.contains(&anim));
         assert_eq!(
             sim.entities().get(owner).unwrap().building_anim_slots[3],

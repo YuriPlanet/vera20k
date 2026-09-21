@@ -751,6 +751,15 @@ impl Simulation {
             id.hash(&mut hasher);
         }
         if schema.includes(HashFeature::DisplayLayers) {
+            #[cfg(test)]
+            if !schema.includes(HashFeature::AnimationDisplay) {
+                self.substrate
+                    .display
+                    .fold_hash_excluding(&mut hasher, |id| self.substrate.anims.contains_key(id));
+            } else {
+                self.substrate.display.fold_hash(&mut hasher);
+            }
+            #[cfg(not(test))]
             self.substrate.display.fold_hash(&mut hasher);
         }
 
@@ -880,7 +889,7 @@ impl Simulation {
         }
         self.hash_super_weapons(&mut hasher);
         self.hash_entities(&mut hasher, schema);
-        self.hash_anims(&mut hasher);
+        self.hash_anims(&mut hasher, schema);
         self.hash_voxel_anims(&mut hasher);
         self.hash_particle_systems(&mut hasher);
         self.session.fold_identity(&mut hasher);
@@ -2151,10 +2160,15 @@ impl Simulation {
 
     /// Scheduler-owned ordinary animations in stable-ID order. Render caches and
     /// transient sound events are deliberately excluded.
-    fn hash_anims(&self, hasher: &mut impl Hasher) {
+    fn hash_anims(&self, hasher: &mut impl Hasher, _schema: HashSchema) {
         self.substrate.anims.iter().count().hash(hasher);
         for (id, anim) in self.substrate.anims.iter() {
             id.hash(hasher);
+            #[cfg(test)]
+            if !_schema.includes(HashFeature::AnimationDisplay) {
+                anim.hash_before_display(hasher);
+                continue;
+            }
             anim.hash(hasher);
         }
     }

@@ -1,6 +1,6 @@
 //! DisplayClass lifecycle queries. The vectors belong to ObjectSubstrate;
 //! queries borrow the object stores without copying coordinates or sort keys.
-//! Animation lifecycle and presentation migration remain open.
+//! Presentation migration remains open.
 //! Native query/membership comparisons: tools/spatial_oracle/display_non_entity.json.
 
 use super::Simulation;
@@ -104,6 +104,7 @@ fn entity_sort_key(
 /// of Logic membership. Air/Surface/Top insertions never call GetYSort.
 struct GroundSortView<'a> {
     entities: &'a crate::sim::entity_store::EntityStore,
+    anims: &'a crate::sim::anim_class::AnimStore,
     particles: &'a crate::sim::particles::ParticleSystemStore,
     terrain: &'a std::collections::BTreeMap<u64, crate::sim::terrain_object::TerrainObjectState>,
     interner: &'a crate::sim::intern::StringInterner,
@@ -123,6 +124,11 @@ impl GroundSortView<'_> {
             // ParticleSystem VT7EFB9C: +AC ->41BE00 ->+48 ->5F65A0,
             // +B8 ->5F6BD0. Attachment updates coords in its AI, not here.
             return system.coords.x.wrapping_add(system.coords.y);
+        }
+        if let Some(anim) = self.anims.get(id) {
+            // Anim422BC0 -> Object5F6BD0 -> GetCoords422BE0, then retained
+            // instance+104. Type changes do not recopy this constructor field.
+            return crate::sim::anim_class::anim_display_sort_key(anim, self.entities);
         }
         if let Some(terrain) = self.terrain.get(&id) {
             // Terrain ctor71BC4A..71BC76 sign-extends the cell coordinates,
@@ -145,6 +151,7 @@ impl Simulation {
     ) {
         let view = GroundSortView {
             entities: &self.substrate.entities,
+            anims: &self.substrate.anims,
             particles: &self.substrate.particle_systems,
             terrain: &self.production.terrain_objects,
             interner: &self.interner,
@@ -202,6 +209,7 @@ impl Simulation {
     pub(super) fn sort_display_ground(&mut self, rules: Option<&RuleSet>) {
         let view = GroundSortView {
             entities: &self.substrate.entities,
+            anims: &self.substrate.anims,
             particles: &self.substrate.particle_systems,
             terrain: &self.production.terrain_objects,
             interner: &self.interner,

@@ -418,12 +418,21 @@ pub enum AnimLayer {
 }
 
 impl AnimLayer {
-    fn from_ini(value: Option<&str>) -> Self {
-        match value.map(|v| v.trim().to_ascii_lowercase()) {
-            Some(v) if v == "ground" => Self::Ground,
-            Some(v) if v == "top" => Self::Top,
-            Some(v) => v.parse::<i32>().map(Self::Other).unwrap_or(Self::Top),
-            None => Self::Top,
+    fn from_ini(section: &IniSection) -> Self {
+        // AnimType ctor4276D4 defaults Air3. Reader427DF2 ->477050 uses
+        // ReadString(capacity128), then the five-name table81DA78 at48E050.
+        // Numeric and unknown tokens resolve to -1, not a numeric layer.
+        match section
+            .read_string("Layer", "Air", 0x80)
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "underground" => Self::Other(0),
+            "surface" => Self::Other(1),
+            "ground" => Self::Ground,
+            "air" => Self::Other(3),
+            "top" => Self::Top,
+            _ => Self::Other(-1),
         }
     }
 }
@@ -782,8 +791,9 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         random_rate_logic_frames: section.get("RandomRate").and_then(parse_random_rate_pair),
         y_draw_offset: section.get_i32("YDrawOffset").unwrap_or(0),
         z_adjust: section.get_i32("ZAdjust").unwrap_or(0),
-        y_sort_adjust: section.get_i32("YSortAdjust").unwrap_or(0),
-        layer: AnimLayer::from_ini(section.get("Layer")),
+        // AnimType ctor42765B initializes0; ReadINI428147 uses ReadInt5276D0.
+        y_sort_adjust: section.read_int("YSortAdjust", 0),
+        layer: AnimLayer::from_ini(section),
         flat: section.get_bool("Flat").unwrap_or(false),
         tiled: section.get_bool("Tiled").unwrap_or(false),
         translucency: section.get_i32("Translucency").unwrap_or(0),

@@ -555,6 +555,7 @@ mod tests {
         let id = sim
             .spawn_load_anim_at_world(
                 &rules.art_registry,
+                &rules,
                 descriptor,
                 crate::sim::anim_class::AnimWorldCoord {
                     x: 7 * 256 + 128,

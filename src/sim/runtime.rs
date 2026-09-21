@@ -900,6 +900,7 @@ where
         let mut host = crate::sim::world::authored_load_host::SimulationAuthoredLoadHost::new(
             sim,
             art,
+            rules,
             assets,
             theater_ext,
             theater_name,
@@ -982,6 +983,7 @@ where
         let mut host = crate::sim::world::authored_load_host::SimulationAuthoredLoadHost::new(
             sim,
             art,
+            rules,
             assets,
             theater_ext,
             theater_name,

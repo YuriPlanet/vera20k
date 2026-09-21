@@ -78,6 +78,7 @@ pub(super) enum HashFeature {
     RetiredTiberiumNodeState = 174,
     FootCrateSpeed = 181,
     DisplayLayers = 182,
+    AnimationDisplay = 184,
 }
 
 impl HashSchema {
@@ -92,6 +93,7 @@ impl HashSchema {
                     | HashFeature::RetiredTiberiumNodeState
                     | HashFeature::FootCrateSpeed
                     | HashFeature::DisplayLayers
+                    | HashFeature::AnimationDisplay
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

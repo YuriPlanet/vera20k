@@ -316,7 +316,7 @@ fn admit_muzzle_anims(world: &mut Simulation, rules: &RuleSet, fire_events: &[Si
         match world.spawn_anim_at_world(rules, descriptor, coord) {
             Ok(anim_id) => {
                 if !is_building {
-                    world.set_anim_owner_object(anim_id, Some(event.attacker_id));
+                    world.set_anim_owner_object(anim_id, Some(event.attacker_id), rules);
                 }
             }
             Err(error) => log::debug!(
@@ -519,19 +519,18 @@ mod muzzle_anim_tests {
         assert_eq!(anims[1].z_adjust, -200);
     }
 
-    /// A firer killed in the pass that carried its shot: the flash is built
-    /// while the firer is still stored, and the firer's teardown expires the
-    /// attachment through the ordinary pointer notification. Built after the
-    /// teardown, the anim kept an owner id nothing would clear, and resolved
-    /// its coordinate as a bare delta near the map origin.
+    /// Firer expiry425150 removes Display and clears ownership without
+    /// converting stored relative coordinates. The hidden flash remains in
+    /// storage until its own AI reaches Destroy. Native owner histories are
+    /// preserved in tools/spatial_oracle/display_anim_owner.json.
     #[test]
-    fn a_flash_outlives_a_firer_that_dies_without_a_dangling_owner() {
+    fn firer_expiry_hides_the_flash_without_converting_its_relative_coordinate() {
         let (mut sim, rules, tank) = fixture(EntityCategory::Unit);
         sim.reveal(tank);
         let event = shot(&mut sim, tank, EntityCategory::Unit);
-        let fire = event.fire_coord;
         admit_muzzle_anims(&mut sim, &rules, &[event]);
         let id = *sim.substrate.anims.iter().next().expect("muzzle anim").0;
+        let relative = sim.anim(id).unwrap().world_coord;
 
         sim.uninit_with_rules(tank, &rules);
 
@@ -540,13 +539,10 @@ mod muzzle_anim_tests {
         assert!(anim.runtime.inactive, "and marked it for removal");
         assert_eq!(
             sim.anim_absolute_coord(id),
-            Some(AnimWorldCoord {
-                x: fire.x,
-                y: fire.y,
-                z: fire.z,
-            }),
-            "detach wrote the absolute coordinate back"
+            Some(relative),
+            "expiry preserves the stored delta after clearing the owner"
         );
+        assert_eq!(sim.substrate.display.layer_of(id), None);
     }
 
     /// The same, through `commit`: the flash is constructed before the

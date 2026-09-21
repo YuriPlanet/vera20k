@@ -121,7 +121,7 @@ impl crate::sim::world::Simulation {
         };
         match self.spawn_anim_at_world(rules, descriptor, coord) {
             Ok(anim_id) => {
-                self.set_anim_owner_object(anim_id, Some(owner_id));
+                self.set_anim_owner_object(anim_id, Some(owner_id), rules);
                 Some(anim_id)
             }
             Err(error) => {

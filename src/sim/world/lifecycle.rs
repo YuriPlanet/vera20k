@@ -747,7 +747,7 @@ impl Simulation {
     /// It still executes the complete result-bearing Reveal transaction.
     pub(crate) fn reveal(&mut self, stable_id: u64) -> RevealOutcome {
         if self.substrate.anims.contains_key(stable_id) {
-            let registered = self.reveal_anim(stable_id);
+            let registered = self.reveal_anim(stable_id, None, None);
             return RevealOutcome::Revealed {
                 logic_registered: registered,
             };
@@ -1977,7 +1977,12 @@ impl Simulation {
         self.unregister_logic_object(stable_id)
     }
 
-    pub(crate) fn reveal_anim(&mut self, stable_id: u64) -> bool {
+    pub(crate) fn reveal_anim(
+        &mut self,
+        stable_id: u64,
+        rules: Option<&RuleSet>,
+        art: Option<&crate::rules::art_data::ArtRegistry>,
+    ) -> bool {
         if !self
             .substrate
             .anims
@@ -1986,10 +1991,14 @@ impl Simulation {
         {
             return false;
         }
+        self.mark_anim_display(stable_id, true);
+        self.submit_anim_display(stable_id, rules, art);
         self.register_logic_object(stable_id)
     }
 
     pub(crate) fn conceal_anim(&mut self, stable_id: u64) -> bool {
+        self.substrate.display.remove(stable_id);
+        self.mark_anim_display(stable_id, false);
         self.unregister_logic_object(stable_id)
     }
 
@@ -2484,7 +2493,9 @@ impl Simulation {
 
     fn run_represented_uninit_pre_hook(&mut self, stable_id: u64) {
         self.clear_all_building_anim_slots(stable_id);
-        self.clear_building_damage_fire_slots(stable_id);
+        // Object UnInit5F6616 expires damage-fire owners before Building's
+        // destructor43BDE0 destroys the remaining slot Anims. Do not run the
+        // recovery path here: it converts coordinates and stops sounds early.
         self.release_owned_count_once(stable_id);
         crate::sim::docking::bunker_link::break_links_on_despawn(self, stable_id);
         #[cfg(test)]
@@ -3320,9 +3331,11 @@ impl Simulation {
     fn finalize_and_remove_common(&mut self, stable_id: u64) {
         self.release_house_base_tracking(stable_id);
         self.destroy_building_light(stable_id);
+        self.clear_building_damage_fire_slots(stable_id, None);
         if self.substrate.anims.contains_key(stable_id) {
+            self.clear_damage_fire_anim_reference(stable_id);
             self.conceal_anim(stable_id);
-            self.detach_anim_from_owner(stable_id);
+            self.release_anim_owner_reference(stable_id);
             self.clear_building_anim_reference(stable_id);
         }
         // A Jumpjet destroyed while hovering never reaches State 4's release,
@@ -3377,7 +3390,7 @@ impl Simulation {
     }
 
     fn finalize_multiplayer_feedback_anim(&mut self, stable_id: u64) {
-        self.detach_anim_from_owner(stable_id);
+        self.release_anim_owner_reference(stable_id);
         self.substrate.multiplayer_feedback_anims.remove(stable_id);
         #[cfg(test)]
         self.trace_lifecycle_for_test(LifecycleTestEvent::FinalizedCommon { stable_id });

@@ -225,7 +225,7 @@ impl Simulation {
             let native_id = self
                 .next_native_load_id()
                 .expect("installed native identity cursor");
-            self.spawn_load_anim_at_world(&rules.art_registry, descriptor, world, native_id)
+            self.spawn_load_anim_at_world(&rules.art_registry, rules, descriptor, world, native_id)
         } else {
             self.spawn_anim_at_world(rules, descriptor, world)
         };
@@ -303,6 +303,7 @@ impl Simulation {
     pub(crate) fn rebuild_building_anim_slot_indices(&mut self) {
         for anim in self.substrate.anims.values_mut() {
             anim.building_slot = None;
+            anim.damage_fire_slot = None;
         }
         let slots: Vec<_> = self
             .substrate
@@ -322,6 +323,17 @@ impl Simulation {
                 .get_mut(id)
                 .expect("snapshot admission validated every unique Building slot Anim")
                 .building_slot = Some((owner, slot));
+        }
+        for entity in self.substrate.entities.values() {
+            for (slot, id) in entity.damage_fire_anim_ids.iter().enumerate() {
+                if let Some(id) = id {
+                    self.substrate
+                        .anims
+                        .get_mut(*id)
+                        .expect("snapshot admission validated every unique damage-fire Anim")
+                        .damage_fire_slot = Some((entity.stable_id(), slot as u8));
+                }
+            }
         }
     }
 }
@@ -842,7 +854,7 @@ mod slot_tests {
         let anim = sim
             .set_building_anim_slot(id, 3, false, false, 0, &rules)
             .unwrap();
-        sim.destroy_anim(anim);
+        sim.destroy_anim(anim, &rules);
         assert_eq!(
             sim.entities().get(id).unwrap().building_anim_slots[3],
             Some(anim)

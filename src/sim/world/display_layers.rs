@@ -115,6 +115,24 @@ impl DisplayLayers {
     pub(crate) fn fold_hash(&self, hasher: &mut impl Hasher) {
         self.layers.hash(hasher);
     }
+
+    /// Bounded pre184 replay projection: animations were not yet registered.
+    /// This cannot reconstruct an old Ground order changed by intervening anims.
+    #[cfg(test)]
+    pub(crate) fn fold_hash_excluding(
+        &self,
+        hasher: &mut impl Hasher,
+        exclude: impl Fn(u64) -> bool,
+    ) {
+        let layers: [Vec<u64>; 5] = std::array::from_fn(|layer| {
+            self.layers[layer]
+                .iter()
+                .copied()
+                .filter(|id| !exclude(*id))
+                .collect()
+        });
+        layers.hash(hasher);
+    }
 }
 
 impl Serialize for DisplayLayers {

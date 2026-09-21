@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Eight slots: original owner expiry removes Display and retains relative coordinates and the Building slot; subsequent Anim expiry clears that slot. Excludes complete Building/Anim destruction, sound IO and inherited Building listener prefix.",
+  "assumptions": [
+    "Supplied marked Anim, attached Building, one occupied damage-fire slot and real primary/RTTI vtables.",
+    "Preallocated display vectors; no allocator growth. The Building listener tail receives registers from its inherited prefix."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "anim_owner_expiry": "0x00425150",
+    "owner_callback": "0x00710410",
+    "building_anim_reference_tail": "0x0044EA07",
+    "fire_slot_clear": "0x0044EA45"
+  },
+  "payload_sha256": "8f25f39fe735b4dadb9ce4149d8b9f935716248d23d2e48429bf7b576afcbef4"
+}

@@ -215,25 +215,14 @@ fn anim_render_destination(
     stable_id: u64,
     owner_entity: Option<u64>,
     world_coord: crate::sim::anim_class::AnimWorldCoord,
+    y_sort_adjust: i32,
     config: Option<&AnimTypeRuntimeConfig>,
     ground_order: &crate::app::presentation::render::draw_plan_lowering::NativeGroundOrder,
 ) -> Option<AnimRenderDestination> {
-    // gamemd-derived: `AnimClass::GetLayer @ 0x00424CB0` forces layer 2
-    // (Ground) for ANY anim carrying an owner at `Anim+0xCC`, ahead of both the
-    // AnimType `Layer=` read and the Top default — so an attached anim joins the
-    // sorted ground layer whatever its type asked for. Layer 2 is the only
-    // sorted `DisplayClass` layer: `Submit_Object @ 0x004A9720` sets the sorted
-    // flag with `CMP EDI,0x2` at `0x004A9747` / `SETZ CL` at `0x004A974D`, and every other layer
-    // plain-appends, so a layer-2 member is inserted in ascending y-sort against
-    // the non-anim ground objects by `ObjectClass::YSortComparator @ 0x005F6220`
-    // keyed on vtable `+0xB8`. For an anim that key is
-    // `AnimClass::GetYSort @ 0x00422BC0` = `ObjectClass::GetYSort @ 0x005F6BD0`
-    // + AnimType `YSortAdjust`, and `ObjectClass::GetYSort` reads slot `+0xAC`
-    // (`ObjectClass::GetRenderCoords @ 0x0041BE00`, which AnimClass does not
-    // override) — that re-enters the anim's own virtual `+0x48`, so an attached
-    // anim sorts at its OWNER-RESOLVED absolute position, not at the stored
-    // relative delta. `coord` is already that resolved value.
-    let config_y_sort_adjust = config.map_or(0, |config| config.y_sort_adjust);
+    // Anim GetLayer424CB0 forces attached objects to Ground. GetYSort422BC0
+    // adds retained instance+104 to owner-resolved X+Y; Next changes the type
+    // without recopying its adjustment. Full Display membership/order migration
+    // remains separate from this destination and key lowering.
     if owner_entity.is_some() {
         return ground_order
             .anim_object_draw(
@@ -243,7 +232,7 @@ fn anim_render_destination(
                     y: world_coord.y,
                     z: world_coord.z,
                 },
-                config_y_sort_adjust,
+                y_sort_adjust,
             )
             .map(AnimRenderDestination::Ground);
     }
@@ -257,10 +246,11 @@ fn anim_render_destination(
                     y: world_coord.y,
                     z: world_coord.z,
                 },
-                config.y_sort_adjust,
+                y_sort_adjust,
             )
             .map(AnimRenderDestination::Ground),
         AnimLayer::Top => Some(AnimRenderDestination::Top),
+        AnimLayer::Other(-1) => None,
         AnimLayer::Other(_) => Some(AnimRenderDestination::Existing),
     }
 }
@@ -446,6 +436,7 @@ pub(crate) fn build_anim_class_instances(
             anim.stable_id,
             anim.owner_entity,
             anim_coord,
+            anim.display.y_sort_adjust(),
             config,
             ground_order,
         ) {
@@ -1412,13 +1403,13 @@ mod tests {
     fn gsi_05_12_owner_attached_anim_is_forced_onto_the_sorted_ground_layer() {
         // `AnimClass::GetLayer @ 0x00424CB0` tests the owner at `Anim+0xCC`
         // FIRST and returns 2 (Ground); only an ownerless anim reaches the
-        // AnimType `Layer=` read or the Top default. Layer 2 is the one sorted
+        // AnimType `Layer=` read or the Air default. Layer 2 is the one sorted
         // `DisplayClass` layer (`Submit_Object @ 0x004A9720`,
         // `CMP EDI,0x2` at `0x004A9747` / `SETZ CL` at `0x004A974D`), so an attached anim is
         // y-sorted against ordinary ground objects rather than appended.
         let art = ArtRegistry::from_ini(&IniFile::from_str(
-            "[FIRE_TOP]\nLayer=top\nYSortAdjust=7\n\
-             [FIRE_AIR]\nLayer=air\n",
+            "[FIRE_TOP]\nLayer=top\nYSortAdjust=999\n\
+             [FIRE_AIR]\nLayer=air\n[FIRE_NONE]\nLayer=None\n",
         ));
         let order =
             crate::app::presentation::render::draw_plan_lowering::NativeGroundOrder::new(&[
@@ -1436,13 +1427,13 @@ mod tests {
 
         let top_config = art.anim_runtime_config("FIRE_TOP");
         assert_eq!(
-            anim_render_destination(10, None, resolved, top_config, &order),
+            anim_render_destination(10, None, resolved, 7, top_config, &order),
             Some(AnimRenderDestination::Top),
             "without an owner the type's Layer=top still wins"
         );
 
         let Some(AnimRenderDestination::Ground(draw)) =
-            anim_render_destination(10, Some(77), resolved, top_config, &order)
+            anim_render_destination(10, Some(77), resolved, 7, top_config, &order)
         else {
             panic!("an owner-attached anim must enter the sorted ground layer");
         };
@@ -1452,7 +1443,7 @@ mod tests {
             draw.y_sort_key(),
             2450 + 2653 + 7,
             "ObjectClass::GetYSort @ 0x005F6BD0 returns coord.X + coord.Y, and \
-             AnimClass::GetYSort @ 0x00422BC0 adds the AnimType YSortAdjust"
+             AnimClass::GetYSort @ 0x00422BC0 adds the retained instance YSortAdjust"
         );
 
         // The override is unconditional on the type: air is pulled down too.
@@ -1461,6 +1452,7 @@ mod tests {
                 20,
                 Some(77),
                 resolved,
+                7,
                 art.anim_runtime_config("FIRE_AIR"),
                 &order
             ),
@@ -1469,13 +1461,22 @@ mod tests {
         // And it does not need a known AnimType at all, because GetLayer
         // returns before it reads `Anim+0xC8`.
         assert!(matches!(
-            anim_render_destination(30, Some(77), resolved, None, &order),
+            anim_render_destination(30, Some(77), resolved, 7, None, &order),
             Some(AnimRenderDestination::Ground(_)),
+        ));
+        let no_layer = art.anim_runtime_config("FIRE_NONE");
+        assert_eq!(
+            anim_render_destination(30, None, resolved, 7, no_layer, &order),
+            None
+        );
+        assert!(matches!(
+            anim_render_destination(30, Some(77), resolved, 7, no_layer, &order),
+            Some(AnimRenderDestination::Ground(_))
         ));
     }
 
     #[test]
-    fn gsi_13_04_wa_top_and_tuntop_ground_use_native_layer_and_ysort_lowering() {
+    fn default_air_and_explicit_ground_use_retained_instance_sort_adjustment() {
         let art = ArtRegistry::from_ini(&IniFile::from_str(
             "[WA_CUSTOM]\nYSortAdjust=7\n\
              [TUNTOP_CUSTOM]\nLayer=ground\nYSortAdjust=1000\n",
@@ -1493,11 +1494,11 @@ mod tests {
         };
 
         assert_eq!(
-            anim_render_destination(10, None, world, wa, &order),
-            Some(AnimRenderDestination::Top)
+            anim_render_destination(10, None, world, 7, wa, &order),
+            Some(AnimRenderDestination::Existing)
         );
         let Some(AnimRenderDestination::Ground(tunnel_draw)) =
-            anim_render_destination(20, None, world, tuntop, &order)
+            anim_render_destination(20, None, world, 1000, tuntop, &order)
         else {
             panic!("ground tile animation must enter TacticalDrawPlan");
         };

@@ -1808,8 +1808,10 @@ fn insert_anim(sim: &mut Simulation, stable_id: u64, inactive: bool) {
         in_logic_vector: false,
         owner_entity: None,
         building_slot: None,
+        damage_fire_slot: None,
         start_sound_active: false,
         stop_sound_id: None,
+        display: Default::default(),
     };
     assert!(sim.substrate.anims.insert(anim).is_none());
 }

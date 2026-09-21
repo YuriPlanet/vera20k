@@ -3,6 +3,28 @@
 use super::*;
 
 #[test]
+fn animation_layer_matches_original_name_reader() {
+    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../tools/spatial_oracle/anim_layer_rules.json"
+    ))
+    .unwrap();
+    assert_eq!(rows.len(), 19);
+    for row in rows {
+        let mut text = "[A]\nLoopCount=1\n".to_owned();
+        if let Some(raw) = row["raw"].as_str() {
+            text.push_str(&format!("Layer={raw}\n"));
+        }
+        let ini = IniFile::from_str(&text);
+        let actual = match AnimLayer::from_ini(ini.section("A").unwrap()) {
+            AnimLayer::Ground => 2,
+            AnimLayer::Top => 4,
+            AnimLayer::Other(value) => value,
+        };
+        assert_eq!(actual, row["layer"].as_i64().unwrap() as i32, "{row}");
+    }
+}
+
+#[test]
 fn original_1080_building_slot_power_reads_preserve_native_defaults() {
     #[derive(serde::Deserialize)]
     struct Row {
