@@ -26,7 +26,6 @@ Thumbs.db
 /docs/*
 !/docs/_config.yml
 !/docs/index.md
-!/docs/module-map.md
 !/docs/images/
 !/docs/images/**
 # Focused evidence and task plans are tracked; historical research is archived.

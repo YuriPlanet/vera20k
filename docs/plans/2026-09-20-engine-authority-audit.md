@@ -102,8 +102,6 @@ native whole-scenario goldens.
   causal attribution, Fly, formation speed, shared coordinates, Building slot
   policies, docking, presentation consumers and the normal-build inclusion fix,
   using the actual passing full-suite result.
-- `python tools/module_map.py` passed against committed source `3c212e74`: 840
-  modules and 5,336 dependency edges; reviewed the new admission/conversion/Fly edges.
 
 Validation is local Windows. GitHub's CI workflow is manually disabled and has
 produced no run for this branch; no Linux/macOS execution is claimed. No repository
