@@ -308,7 +308,27 @@ Log `.local/anim-display-clippy.log`. All owned validation processes are termina
 User amendment: the dependency map has been removed from GitHub main and is no
 longer used. Do not consult or refresh it, even if this branch's older contract
 still requests it. No dependency-map refresh was run for this increment.
-Retail release load is still required for Layer/load-context, Flat and CruiseHeight.
+Release `cargo build -p vera20k --release --bin vera20k` passed (27 warnings,
+3m10s; `.local/anim-display-release-build.log`). The built executable SHA256 is
+`30cde1ce3aefd13f1e03cbe2ffacb2d833bef6da841b85d7e38268545112becc`.
+The sealed Soviet `radar-online-v2` capture loaded retail `Fight.MAP` through
+the app, built its render assets and reached production tick1. This exercises
+the changed Layer/load-context, Flat and CruiseHeight readers in a release
+retail load; it does not compare their resulting values against gamemd.
+
+The full capture is **INVALID**, with no final frame: its first-deploy assertion
+expects facing128 immediately but sees the original facing64. The script also
+requires a second deploy command. These assumptions predate native MCV mission
+continuation (`ff38eb7c`, already in the branch base): current `issue_order`
+queues Unload, `start_turn` uses FacingClass and one command completes later.
+The full lib suite passed `one_command_turns_and_converts_all_stock_mcv_types`
+and `turn_completion_converts_before_the_next_mission_retry`; a fresh
+`python -m tools.mcv_deploy_oracle --check` passed. This is a stale capture
+contract, not evidence to restore instant turning. Modernizing its script,
+sealed timing expectations and validator remains a tooling follow-up; do not
+silently weaken v2. Retained run, failure manifest and stderr are under
+`.local/anim-display-retail-soviet/`; the owned child exited1 without timeout.
+All owned build/validation processes are terminal.
 
 Original executable comparisons passed this increment:
 - `display_anim_owner --check`:24 six-step histories, all five vectors, signed/
@@ -332,14 +352,25 @@ entity layers88 and crate Ground histories6 (see prior source and saved corpora)
 Ghidra annotations are saved/read back at4276D4,427DF2,422961,428147,425180,
 43BDE8,44EA45 and424801. Prior corrections include Anim Mark4238B0 (formerly
 ProcessCloakMode), non-entity GetLayer468B90/62FE80/75F890/74A960 and Fly
-ILoco_Process4CCB40 (real GetLayer4CFCF0). No binary, signature or boundary edits.
+ILoco_Process4CCB40 (real GetLayer4CFCF0). Further original body/caller/table
+inspection corrected `JumpjetLocomotionClass__State5_Touchdown` at54CA90 to
+`JumpjetLocomotionClass__State5_Crash`: table54B19C index5 calls54CA90, while
+index4 calls normal descent54C550. Comments54CC0D,4CD4E7 and41CC67 are saved
+and read back. No binary, signature or boundary edits.
 
 ### Required continuation
 
-1. Complete explicit Fly resubmissions:4CD4E7 before Mark(PUT),4CD75A/4CD792
-   around relocation. DropIn5F400E/5F4196 and Jumpjet touchdown54CC0D remain open.
-   Generic per-frame cache refresh is not equivalent. Resolve Aircraft overrides
-   and reachable receivers from their native objects.
+1. Complete explicit Fly resubmissions:4CD2A0 enters Mark(REMOVE)4CD324 and
+   RemoveDisplay4CD333 only for health>0 with loco+50/+51, runs their height
+   helpers, then unconditionally submits4CD4E7 before Mark(PUT), even when the
+   live layer stayed equal. Aircraft Landable=false takes an earlier branch;
+   type+E0A is proven by reader41CC54/41CC67, literal81804C, ctorfalse41C8E2.
+   Existing Rules has `landable`; do not add another authority.4CD75A/4CD792
+   are another explicit relocation pair. DropIn5F400E/5F4196 and Jumpjet
+   **crash** relocation54CBD4..54CC0D remain open. Normal State4 touchdown
+   54C81A..54C9FB has Mark/SetCoords/pickup and no direct Display submit;
+   Process54B17F/54B18E separately compares live entry/exit queries. Preserve
+   those distinctions; generic per-frame cache refresh is not equivalent.
 2. Migrate presentation/input from Logic-based `tactical_registration_order()`
    and full sorting to Display. Current fallback appends store objects; Anim
    destination still derives live Layer rather than historical membership.
@@ -356,8 +387,9 @@ ILoco_Process4CCB40 (real GetLayer4CFCF0). No binary, signature or boundary edit
    writers, bounce landing and per-frame damage remain required combat work.
    Owner shared-Anim flag+84 is not represented; revisit its actual consumers
    while completing Display/animation paths rather than assuming no effect.
-5. Release retail load, then one fresh critic only after coherent implementation
-   and validation before PR. PR439/440 critics are finished; do not repeat them.
+5. Finish coherent implementation and validation, then one fresh critic before
+   PR. The release retail load ran; the separate full tactical capture failed
+   on the stale MCV contract above. PR439/440 critics are finished; do not repeat.
 
 HouseType speed factors+128/+12C/+130 remain absent. Unit+6CC CTF starts-1;
 740DF0/740E20 attach/detach, Limbo/destruction return it. Creation4FC060 caller
