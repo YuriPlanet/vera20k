@@ -368,12 +368,6 @@ pub fn tick_active_superweapon_effects(
     lightning_storm::process(sim, rules, overlay_registry);
 }
 
-/// Compatibility entry point for focused subsystem tests.
-pub fn tick_superweapons(sim: &mut Simulation, rules: &RuleSet) {
-    tick_superweapon_instances(sim, rules);
-    tick_active_superweapon_effects(sim, rules, None);
-}
-
 /// Refresh superweapon grants for a specific owner by scanning their buildings.
 ///
 /// Call when a building is completed, sold, or destroyed. Activates new grants

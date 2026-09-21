@@ -114,6 +114,7 @@ impl RmgScratch {
         self.width
     }
 
+    #[cfg(test)]
     pub fn diamond_bounds(&self) -> (i32, i32) {
         (self.diamond_min, self.diamond_max)
     }

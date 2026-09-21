@@ -33,8 +33,8 @@
 //! a visible divergence.
 
 use crate::ui::shell::geom::{
-    RIGHT_PANEL_WIDTH, RectPx, RightPanelRects, SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW,
-    center_offset, dlu_rect, lower_strip_rect, right_panel_rects, snap_button_biased_truncate,
+    RIGHT_PANEL_WIDTH, RectPx, RightPanelRects, SDBTNANM_CELL_W_NARROW, center_offset, dlu_rect,
+    lower_strip_rect, right_panel_rects, snap_button_biased_truncate,
 };
 
 const SHELL_BASE_W: i32 = 800;
@@ -231,12 +231,6 @@ impl ScoreShellLayout {
     /// SDBTNANM cell, not the resource rect.
     pub fn hit_continue(&self, x: i32, y: i32) -> bool {
         self.continue_button.contains(x, y)
-    }
-
-    /// Native owner-draw button cell height, exposed so the caller does not need
-    /// to re-derive it when emitting art.
-    pub const fn button_cell_h() -> i32 {
-        SDBTNANM_CELL_H
     }
 }
 

@@ -219,6 +219,7 @@ const TURRET_OFFSET_DIVISOR: i32 = 8;
 ///
 /// Returns pixels in the rasterizer's screen convention (+X right, +Y down), matching
 /// how `render_vxl` projects a voxel: `x * scale` and `-y * scale`.
+#[cfg(test)]
 pub fn turret_pivot_screen_offset(
     turret_offset_leptons: i32,
     body_facing: u8,
@@ -807,6 +808,7 @@ const SHADOW_LIGHT_OFFSET_PX: f32 = 3.0;
 /// Other geometry retains the approximate occupied-column fallback below.
 /// Final destination darkening is separate: the current voxel fragment uses
 /// a linear-alpha approximation to native packed RGB565 half, not exact half.
+#[cfg(test)]
 pub fn render_vxl_shadow(
     vxl: &VxlFile,
     hva: Option<&HvaFile>,

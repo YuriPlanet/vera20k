@@ -706,6 +706,7 @@ pub const fn anim_translucency_source_alpha(draw_bits: u32) -> f32 {
 /// frame, then convert them to the source weight the native blend applies. An
 /// animation with neither `Translucent=` nor a recognised `Translucency=` returns
 /// `1.0`, so wiring this in cannot change an opaque animation.
+#[cfg(test)]
 pub fn anim_frame_source_alpha(
     config: &AnimTypeRuntimeConfig,
     current_frame: i32,

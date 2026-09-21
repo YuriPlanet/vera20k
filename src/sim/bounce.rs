@@ -139,6 +139,7 @@ impl BounceState {
     }
 
     /// The velocity vector, for the host's own reads.
+    #[cfg(test)]
     pub fn velocity_f32(&self) -> [f32; 3] {
         [
             f32::from_bits(self.velocity[0].bits()),

@@ -15,6 +15,7 @@
 //! The seed contract mirrors the original engine: one 32-bit word seeds the scenario and
 //! main streams identically, fixed before any setup-phase draw.
 
+#[cfg(test)]
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -25,6 +26,7 @@ use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::theater;
 use crate::map::tile_variant_selector::TileVariantSelectorCache;
 use crate::map::waypoints;
+#[cfg(test)]
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::scenario_bootstrap::ScenarioBootstrapRng;
 use crate::sim::scenario_session::ScenarioDescriptor;
@@ -67,12 +69,15 @@ fn one_player_battle_launch(
 }
 
 /// Terrain plus the exact setup RNG owner advanced while that terrain loaded.
+#[cfg(test)]
 struct HeadlessTerrainBootstrap {
     resolved: ResolvedTerrainGrid,
     bootstrap_rng: ScenarioBootstrapRng,
 }
 
+#[cfg(test)]
 impl HeadlessTerrainBootstrap {
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     fn construct_scenario<F>(
         self,
@@ -111,6 +116,7 @@ impl HeadlessTerrainBootstrap {
 /// Active YR `MapClass::Clear @ 0x00565B00` clears the fixed cell table, then
 /// `MapClass::Resize @ 0x00565C10` allocates the complete Size diamond before
 /// IsoMapPack records overwrite it (allocation loop `0x0056639E..0x00566451`).
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn build_headless_terrain_bootstrap(
     map: &MapFile,

@@ -257,6 +257,7 @@ pub fn is_building_powered(
 ///
 /// Sets `power_blackout_remaining` to the configured duration from `[General]`.
 /// While active, the owner's power output is forced to 0.
+#[cfg(test)]
 pub fn trigger_spy_blackout(
     power_states: &mut BTreeMap<InternedId, PowerState>,
     owner_id: InternedId,

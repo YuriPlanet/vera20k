@@ -37,11 +37,13 @@ pub const CELL_CENTER_LEPTON_I32: i32 = 128;
 /// Tile width in pixels (60.0) divided by leptons per cell (256).
 /// Pre-computed for efficient lepton → screen pixel conversion.
 /// = 60.0 / 256.0 = 0.234375
+#[cfg(test)]
 pub(crate) const SCREEN_X_PER_LEPTON: f32 = 60.0 / 256.0;
 
 /// Tile half-height in pixels (15.0) divided by leptons per cell (256).
 /// Pre-computed for efficient lepton → screen pixel conversion.
 /// = 30.0 / 256.0 = 0.1171875
+#[cfg(test)]
 pub(crate) const SCREEN_Y_PER_LEPTON: f32 = 30.0 / 256.0;
 
 /// Screen-Y offset every VERA world layer carries relative to the original's
@@ -240,6 +242,7 @@ pub fn subcell_lepton_offset(sub_cell: Option<u8>) -> (SimFixed, SimFixed) {
 ///   dy_pixels = (sub_x + sub_y - 256) * (TILE_HEIGHT / 2) / 256
 ///
 /// This replaces hardcoded pixel offsets with lepton-derived values.
+#[cfg(test)]
 pub fn lepton_sub_to_screen_offset(sub_x: SimFixed, sub_y: SimFixed) -> (f32, f32) {
     let dx_lep: f32 = sub_x.to_num::<f32>() - CELL_CENTER_LEPTON.to_num::<f32>();
     let dy_lep: f32 = sub_y.to_num::<f32>() - CELL_CENTER_LEPTON.to_num::<f32>();

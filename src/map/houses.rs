@@ -161,6 +161,7 @@ fn normalize_house_name(name: &str) -> String {
 /// This remains as a compatibility helper for systems that only need color.
 /// `schemes` is the parsed `[Colors]` list used to resolve each house's
 /// `Color=<name>` to a `[Colors]` entry index.
+#[cfg(test)]
 pub fn parse_house_colors(ini: &IniFile, schemes: &[ColorSchemeEntry]) -> HouseColorMap {
     parse_house_roster(ini, schemes, None).color_map()
 }

@@ -102,6 +102,7 @@ impl CellVisibilityRuntime {
     const FLAG_TRANSIENT: u32 = 0x40;
     const FLAG_FOGGED_OBJECT_SNAPSHOT: u32 = 0x400000;
 
+    #[cfg(test)]
     fn set_fogged_object_snapshot(&mut self, present: bool) {
         if present {
             self.flags |= Self::FLAG_FOGGED_OBJECT_SNAPSHOT;
@@ -143,6 +144,7 @@ impl CellVisibilityRuntime {
     }
 
     /// Native `CellClass::Unshroud` flag projection; it is not a traversal.
+    #[cfg(test)]
     pub fn unshroud(&mut self) {
         self.alt_flags |= Self::ALT_GROUND_VISIBLE | Self::ALT_GROUND_OPEN;
         if self.shroud_counter > 0 {
@@ -334,6 +336,7 @@ impl OwnerVisibility {
     }
 
     /// Mark a cell as both visible and revealed.
+    #[cfg(test)]
     pub fn mark_visible(&mut self, rx: u16, ry: u16) {
         self.mark_visible_with_fog_of_war(rx, ry, true);
         if let Some(index) = self.index(rx, ry) {
@@ -455,6 +458,7 @@ impl OwnerVisibility {
         &self.visibility_marks
     }
 
+    #[cfg(test)]
     fn set_fogged_object_snapshot(&mut self, rx: u16, ry: u16, present: bool) {
         let Some(index) = self.index(rx, ry) else {
             return;
@@ -510,6 +514,7 @@ impl OwnerVisibility {
 
     /// Merge revealed bits from a previous tick's grid into this one.
     /// Cells that were revealed before stay revealed even if no unit sees them now.
+    #[cfg(test)]
     pub fn merge_revealed_from(&mut self, other: &OwnerVisibility) {
         // If dimensions differ, fall back to per-cell copy for the overlapping region.
         if self.width == other.width && self.height == other.height {
@@ -715,6 +720,7 @@ impl FogState {
     /// Insert one shared frozen-building footprint record. Named location:
     /// `BuildingClass::FreezeInFog` installs the same FoggedObjectClass pointer
     /// into every occupy-list cell, not one allocation per cell.
+    #[cfg(test)]
     pub fn insert_fogged_object_footprint(
         &mut self,
         viewer: InternedId,
@@ -759,6 +765,7 @@ impl FogState {
     /// `ClearFoggedObjects` is not a symbol in this program. The address stays
     /// unbound rather than swapped for a positive match against an unrelated
     /// function.
+    #[cfg(test)]
     pub fn clear_fogged_objects_at(
         &mut self,
         viewer: InternedId,
@@ -809,6 +816,7 @@ impl FogState {
     }
 
     /// Native `FUN_00487110 (unlabelled; name not a symbol)`.
+    #[cfg(test)]
     pub fn set_cloaked_by_house(&mut self, house_index: u8, rx: u16, ry: u16) -> bool {
         let Some(word) = self.cloak_word_mut(rx, ry) else {
             return false;
@@ -820,6 +828,7 @@ impl FogState {
     }
 
     /// Native `FUN_00487130 (unlabelled; name not a symbol)`.
+    #[cfg(test)]
     pub fn clear_cloaked_by_house(&mut self, house_index: u8, rx: u16, ry: u16) -> bool {
         let Some(word) = self.cloak_word_mut(rx, ry) else {
             return false;
@@ -868,6 +877,7 @@ impl FogState {
         self.cloaked_by_houses.get(index).copied()
     }
 
+    #[cfg(test)]
     fn cloak_word_mut(&mut self, rx: u16, ry: u16) -> Option<&mut u32> {
         if rx >= self.width || ry >= self.height {
             return None;
@@ -904,6 +914,7 @@ impl FogState {
     /// - Frequency: continuous around stock submarines and detector units.
     /// - Downstream risk: sensor-driven resident-object `+0x420` reevaluation
     ///   and cloak-generator ownership remain separate mechanisms.
+    #[cfg(test)]
     pub fn sensors_add_at(
         &mut self,
         house: InternedId,
@@ -918,6 +929,7 @@ impl FogState {
     }
 
     /// Paired `TechnoClass::RemoveSensorsAt` @ `0x004DE940` decrement walk.
+    #[cfg(test)]
     pub fn sensors_remove_at(
         &mut self,
         house: InternedId,
@@ -1085,6 +1097,7 @@ impl FogState {
     }
 
     /// Native `CellClass::DrawObjectsCloaked`: no observer-mode bypass.
+    #[cfg(test)]
     pub fn draw_objects_cloaked(
         &self,
         current_player: Option<InternedId>,
@@ -1208,6 +1221,7 @@ impl FogState {
 
     /// Clear all explored/revealed state for the given owner.
     /// Used by spy infiltration to reset an enemy's map knowledge.
+    #[cfg(test)]
     pub fn reset_explored_for_owner(&mut self, owner: InternedId) {
         let cells = self.rectangular_cells();
         self.transition_whole_map_for_owner(owner, cells, true, false);
@@ -1270,6 +1284,7 @@ impl FogState {
     /// Bit 3 = NW (rx-1, ry).
     ///
     /// Out-of-bounds neighbors are treated as shrouded (bit set).
+    #[cfg(test)]
     pub fn shroud_edge_mask(&self, owner: InternedId, rx: u16, ry: u16) -> u8 {
         let mut mask: u8 = 0;
         if ry == 0 || !self.is_cell_revealed(owner, rx, ry - 1) {
@@ -1404,6 +1419,7 @@ impl Default for VisionConfig {
 ///
 /// Creates a fresh `FogState` and populates it. Used by tests; production code
 /// calls `recompute_owner_visibility_in_place` to avoid per-tick allocation.
+#[cfg(test)]
 pub fn recompute_owner_visibility(
     entities: &EntityStore,
     path_grid: Option<&PathGrid>,
@@ -2070,6 +2086,7 @@ pub(crate) fn reveal_radius_for_direct_allies(
 /// active owners and never infers a transition from an absent list entry.
 ///
 /// Takes the owner names whose persisted SpySat latch is active.
+#[cfg(test)]
 pub fn apply_spy_sat(
     fog: &mut FogState,
     spy_sat_owners: &[InternedId],

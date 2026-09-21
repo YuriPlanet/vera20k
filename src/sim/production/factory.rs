@@ -20,7 +20,6 @@
 //! clamps, some `Factory` fields) are forward-declared seams consumed by later
 //! slices (P4 cancel, P6 prereq revalidation) and are intentionally unused here, so
 //! dead-code is allowed module-wide.
-#![allow(dead_code)]
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -783,8 +782,7 @@ impl FactoryRegistry {
     /// active slot (C7 StartNextQueued), seeding it from `next_cost`.
     /// EventClass-tail cancellation and delivery both pass `0`; the pre-step
     /// revalidation sweep passes `1`.
-    /// Returns the popped type, or `None` if the queue was empty (the factory is left idle
-    /// for `prune_idle`).
+    /// Returns the popped type, or `None` if the queue was empty (the factory is left idle).
     pub(super) fn clear_active_and_advance(
         &mut self,
         owner: InternedId,
@@ -837,19 +835,6 @@ impl FactoryRegistry {
         }
         object.completion_accounted = true;
         true
-    }
-
-    /// Drop a `(owner, category)` factory if it holds no active object and an empty queue
-    /// (replaces `prune_empty_queues`). Returns `true` if removed.
-    pub(crate) fn prune_idle(&mut self, owner: InternedId, category: ProductionCategory) -> bool {
-        let idle = self
-            .factories
-            .get(&(owner, category))
-            .map_or(false, |f| f.object.is_none() && f.queue.is_empty());
-        if idle {
-            self.factories.remove(&(owner, category));
-        }
-        idle
     }
 
     /// Drop EVERY idle factory (no active object AND empty queue) registry-wide — the

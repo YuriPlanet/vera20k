@@ -21,6 +21,7 @@ use crate::util::fixed_math::{SimFixed, facing_from_delta_int_u16};
 /// 8-bit facing space. No production caller; the live shortest-arc logic is the
 /// signed 16-bit subtraction inside `FacingClass::current`.
 /// Returns a value in -128..=127 (positive = clockwise, negative = counter-clockwise).
+#[cfg(test)]
 pub fn shortest_rotation(current: u8, target: u8) -> i16 {
     let diff: i16 = target as i16 - current as i16;
     // Wrap into -128..127 range for shortest path.

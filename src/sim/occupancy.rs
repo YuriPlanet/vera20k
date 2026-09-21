@@ -1169,6 +1169,7 @@ pub(crate) fn clear_drive_head_to_occupation_for_replacement(
 
 /// A paid Drive point clears the owner's current-coordinate occupation before
 /// the coordinate commit. Object-list membership is intentionally untouched.
+#[cfg(test)]
 pub(crate) fn clear_current_drive_occupation_for_paid_point(
     foot_occupation_enabled: &mut bool,
     _drive: &mut DriveLocomotionRuntime,
@@ -1841,6 +1842,7 @@ impl OccupancyGrid {
     }
 
     /// Total number of occupied cells (for diagnostics).
+    #[cfg(test)]
     pub fn occupied_cell_count(&self) -> usize {
         self.cells.len()
     }

@@ -117,6 +117,7 @@ pub struct RocketState {
 }
 
 /// Attach a rocket using the compatibility parameters used by existing callers.
+#[cfg(test)]
 pub fn attach_rocket_state(
     entities: &mut EntityStore,
     entity_id: u64,
@@ -152,17 +153,6 @@ pub fn attach_rocket_state_with_payload(
         RocketFlightParameters::legacy(speed),
         payload,
     )
-}
-
-/// Attach a rocket using the selected native flight-table values.
-pub fn attach_rocket_state_with_parameters(
-    entities: &mut EntityStore,
-    entity_id: u64,
-    origin: (u16, u16),
-    target: (u16, u16),
-    parameters: RocketFlightParameters,
-) -> bool {
-    attach_rocket_state_full(entities, entity_id, origin, target, parameters, None)
 }
 
 fn attach_rocket_state_full(

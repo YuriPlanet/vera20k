@@ -148,6 +148,7 @@ pub fn hsv_to_rgb(hsv: [u8; 3]) -> [u8; 3] {
 /// Resolve a player color priority to the loading-bar backing color in RGB,
 /// applying the priority table, the scheme-doubling, and HSV→RGB. Returns `None`
 /// when the `[Colors]` list is empty or the index is out of range.
+#[cfg(test)]
 pub fn backing_rgb_for_priority(schemes: &[ColorSchemeEntry], priority: i32) -> Option<[u8; 3]> {
     scheme_for_priority(schemes, priority).map(|scheme| hsv_to_rgb(scheme.hsv))
 }

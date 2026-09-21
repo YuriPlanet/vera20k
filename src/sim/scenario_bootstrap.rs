@@ -17,6 +17,7 @@ use crate::rng_continuation::MapGenRngContinuation;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::ai::AiPlayerState;
+#[cfg(test)]
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::find_nearby_cell::{
     NearbyAnchorGate, NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell,
@@ -408,10 +409,12 @@ impl PreFillScenarioPrefixPlan {
         &self.first_gathered_starts
     }
 
+    #[cfg(test)]
     pub(crate) fn final_gathered_starts(&self) -> &[Waypoint] {
         self.projection.final_gathered_starts()
     }
 
+    #[cfg(test)]
     pub(crate) fn assignment(&self) -> &NativeStartAssignment {
         self.projection.assignment()
     }
@@ -2295,6 +2298,7 @@ impl ScenarioBootstrapRng {
 
     /// Borrow the two independent load-time consumers without exposing either
     /// raw cursor or allowing one callback to draw from the other stream.
+    #[cfg(test)]
     pub(crate) fn terrain_draws(&mut self) -> (ScenarioFillRng<'_>, VariantMainRng<'_>) {
         (
             ScenarioFillRng {
@@ -2314,6 +2318,7 @@ impl ScenarioBootstrapRng {
     /// gamemd provenance: TechnoClass constructor 0x006F3254 consumes one raw
     /// Scenario word before RMG placement can succeed or fail. Launch reader
     /// 0x00684620 regenerates the accepted `.SED` after match RNG reseeding.
+    #[cfg(test)]
     pub(crate) fn replay_generated_construction_trace(
         &mut self,
         trace: &crate::map::construction_trace::RmgConstructionTrace,
@@ -2541,6 +2546,7 @@ pub(crate) fn initialize_campaign_current_house(
 
 /// Map-roster house construction shared by app and headless (F09):
 /// native order requires houses before every object section.
+#[cfg(test)]
 pub(crate) fn initialize_map_roster_houses(
     sim: &mut Simulation,
     house_roster: &HouseRoster,

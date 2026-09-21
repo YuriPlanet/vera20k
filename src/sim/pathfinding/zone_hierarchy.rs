@@ -89,7 +89,6 @@ pub(crate) struct ZoneRecord {
 }
 
 impl ZoneRecord {
-    #[allow(dead_code)]
     pub(crate) fn new(zone_id: ZoneId, parent: ZoneId, zone_type: u8) -> Self {
         Self {
             zone_id,
@@ -107,7 +106,6 @@ pub(crate) struct ZoneEdgeRecord {
 }
 
 impl ZoneEdgeRecord {
-    #[allow(dead_code)]
     pub(crate) fn new(neighbor: ZoneId, flag: u8) -> Self {
         Self { neighbor, flag }
     }
@@ -129,7 +127,6 @@ pub(crate) struct ZoneLevelGraph {
 }
 
 impl ZoneLevelGraph {
-    #[allow(dead_code)]
     pub(crate) fn new(zone_count: ZoneId) -> Self {
         Self {
             records: vec![None; zone_count as usize + 1],
@@ -141,7 +138,6 @@ impl ZoneLevelGraph {
         }
     }
 
-    #[allow(dead_code)]
     pub(crate) fn with_cell_zone_ids(
         mut self,
         cell_zone_ids: Vec<ZoneId>,
@@ -155,7 +151,6 @@ impl ZoneLevelGraph {
         self
     }
 
-    #[allow(dead_code)]
     pub(crate) fn set_record(&mut self, record: ZoneRecord) {
         let idx = record.zone_id as usize;
         if idx < self.records.len() {
@@ -178,7 +173,6 @@ impl ZoneLevelGraph {
         true
     }
 
-    #[allow(dead_code)]
     pub(crate) fn push_edge(&mut self, zone: ZoneId, edge: ZoneEdgeRecord) {
         let idx = zone as usize;
         if idx < self.edges.len() {
@@ -331,7 +325,6 @@ pub(crate) struct ZoneHierarchy {
 
 impl ZoneHierarchy {
     /// Levels are passed low-to-high: level 0, level 1, level 2.
-    #[allow(dead_code)]
     pub(crate) fn new(
         level0: ZoneLevelGraph,
         level1: ZoneLevelGraph,
@@ -389,12 +382,11 @@ pub(crate) struct ZonePrecheckExclusions {
     lookup: [BTreeSet<ZoneEdgeKey>; ZONE_PRECHECK_LEVELS],
     // Preserves the verified producer's append order once failed-A* exclusion
     // production is activated.
-    #[allow(dead_code)]
     ordered: [Vec<ZoneEdgeKey>; ZONE_PRECHECK_LEVELS],
 }
 
 impl ZonePrecheckExclusions {
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn insert(&mut self, level: usize, a: ZoneId, b: ZoneId) -> bool {
         let Some(key) = ZoneEdgeKey::new(a, b) else {
             return false;
@@ -405,7 +397,7 @@ impl ZonePrecheckExclusions {
     }
 
     // Exact failed-A* producer wiring is intentionally deferred.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn append_producer_edge(&mut self, level: usize, a: ZoneId, b: ZoneId) -> bool {
         let Some(key) = ZoneEdgeKey::new(a, b) else {
             return false;
@@ -420,7 +412,7 @@ impl ZonePrecheckExclusions {
     }
 
     // Diagnostic view of the deferred producer's native append order.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn ordered_edges(&self, level: usize) -> &[ZoneEdgeKey] {
         self.ordered.get(level).map(Vec::as_slice).unwrap_or(&[])
     }

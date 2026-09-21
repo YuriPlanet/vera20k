@@ -153,9 +153,6 @@ mod ivec3_serde {
 }
 
 impl ParticleSystem {
-    pub fn particle_count(&self) -> usize {
-        self.particles.len()
-    }
 }
 
 /// Deterministic store for `ParticleSystem` instances.

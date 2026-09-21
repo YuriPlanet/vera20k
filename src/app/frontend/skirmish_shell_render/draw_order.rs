@@ -142,6 +142,7 @@ fn push_steady_optional_roles(
     }
 }
 
+#[cfg(test)]
 pub fn skirmish_shell_semantic_draw_order(
     layout: &SkirmishShellLayout,
     overlay_frame10_active: bool,
@@ -172,6 +173,7 @@ pub fn skirmish_shell_semantic_draw_order(
     roles
 }
 
+#[cfg(test)]
 pub fn choose_map_modal_semantic_draw_order(
     layout: &SkirmishShellLayout,
     customize_battle_background_available: bool,
@@ -190,6 +192,7 @@ pub fn choose_map_modal_semantic_draw_order(
     roles
 }
 
+#[cfg(test)]
 pub fn random_map_setup_semantic_draw_order(
     layout: &SkirmishShellLayout,
     generic_background_available: bool,
@@ -215,6 +218,7 @@ pub fn random_map_setup_semantic_draw_order(
     roles
 }
 
+#[cfg(test)]
 pub fn validation_modal_semantic_draw_order() -> Vec<SkirmishShellDrawRole> {
     vec![
         SkirmishShellDrawRole::ValidationModal,

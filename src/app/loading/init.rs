@@ -20,8 +20,10 @@ use crate::app::frontend::skirmish::{
 use crate::app::loading::fresh_scenario::{
     FreshMapMaterialization, FreshScenarioLoadContextDescriptor,
 };
+#[cfg(test)]
+use crate::app::loading::init_helpers::load_rules_with_merged_ini;
 use crate::app::loading::init_helpers::{
-    build_entity_atlases, build_sidebar_cameo_atlas, build_tile_atlas, load_rules_with_merged_ini,
+    build_entity_atlases, build_sidebar_cameo_atlas, build_tile_atlas,
     log_trigger_graph_diagnostics, parse_debug_spawn_units_env, scheduler_anim_roots,
     theater_ext_for,
 };
@@ -1653,6 +1655,7 @@ pub(crate) fn scenario_start_waypoints_for_load(
         .collect()
 }
 
+#[cfg(test)]
 fn replay_launch_generated_construction(
     bootstrap_rng: &mut ScenarioBootstrapRng,
     trace: Option<&crate::map::rmg::RmgConstructionTrace>,

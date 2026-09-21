@@ -50,14 +50,17 @@ pub(crate) struct NativeRulesPhaseReceipt {
 }
 
 impl NativeRulesPhaseReceipt {
+    #[cfg(test)]
     pub(crate) fn events(&self) -> &[NativeTypeConstructionEvent] {
         &self.events
     }
 
+    #[cfg(test)]
     pub(crate) fn event_count(&self) -> usize {
         self.events.len()
     }
 
+    #[cfg(test)]
     pub(crate) fn allocated_super_weapon_type_count(&self) -> usize {
         self.allocated_super_weapon_type_count
     }
@@ -76,10 +79,12 @@ pub(crate) struct NativeScenarioRulesReceipt {
 }
 
 impl NativeScenarioRulesReceipt {
+    #[cfg(test)]
     pub(crate) fn pre_reset(&self) -> &NativeRulesPhaseReceipt {
         &self.pre_reset
     }
 
+    #[cfg(test)]
     pub(crate) fn post_reset(&self) -> &NativeRulesPhaseReceipt {
         &self.post_reset
     }

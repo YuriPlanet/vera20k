@@ -119,6 +119,7 @@ pub fn set_elite(entity: &mut GameEntity) {
 }
 
 /// `VeterancyStruct::SetVeteran(1) @ 0x00750090`: store 1.0f.
+#[cfg(test)]
 pub fn set_veteran(entity: &mut GameEntity) {
     entity.veterancy_raw = NativeF32Bits::from_bits(VETERAN_THRESHOLD_BITS);
     entity.veterancy = RANK_VETERAN_U16;

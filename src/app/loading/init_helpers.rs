@@ -23,9 +23,9 @@ use crate::render::tile_atlas::{self, TileAtlas};
 use crate::render::unit_atlas::{self, UnitAtlas};
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::native_processing::{
-    NativeTypeConstructionTrace, ProcessedRulesLayers, RulesLayerKind, RulesLayerStack,
-};
+#[cfg(test)]
+use crate::rules::native_processing::NativeTypeConstructionTrace;
+use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerStack};
 use crate::rules::process_owner::NativeRulesProcessOwner;
 use crate::rules::ruleset::RuleSet;
 
@@ -247,6 +247,7 @@ pub(crate) fn theater_ext_for(theater_name: &str) -> &'static str {
 ///
 /// This transient pair keeps match-load consumers on one rules source without
 /// making the INI a second persistent rules authority.
+#[cfg(test)]
 pub(crate) struct LoadedRules {
     rules: RuleSet,
     processed_ini: IniFile,
@@ -254,7 +255,9 @@ pub(crate) struct LoadedRules {
     fixed_art_ini: IniFile,
 }
 
+#[cfg(test)]
 impl LoadedRules {
+    #[cfg(test)]
     fn from_processed(
         processed: ProcessedRulesLayers,
         fixed_art_ini: IniFile,
@@ -271,6 +274,7 @@ impl LoadedRules {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn into_parts(self) -> (RuleSet, IniFile, NativeTypeConstructionTrace, IniFile) {
         (
             self.rules,
@@ -430,6 +434,7 @@ fn missing_active_team_ai_registry_sections(ini: &IniFile) -> Vec<&'static str> 
 /// Retail starts from RULESMD.INI, then processes optional LANGRULE.INI, the
 /// selected mode INI, and finally the scenario/map INI. RA2 RULES.INI is not a
 /// base layer in the active Yuri's Revenge path.
+#[cfg(test)]
 pub(crate) fn load_rules_with_merged_ini(
     asset_manager: &AssetManager,
     mode_rules_override: Option<&IniFile>,
@@ -625,6 +630,7 @@ pub(crate) struct PresentationManifest {
 
 /// The GPU-free half of the app scenario load (F09): the shared construction
 /// funnel plus the HVA frame-count catalog, with no atlas or GPU involvement.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn construct_app_scenario<F>(
     map_data: &MapFile,

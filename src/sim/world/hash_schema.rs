@@ -36,7 +36,6 @@ pub(super) enum HashFeature {
     MasterFrame = 43,
     EntityAnimation = 44,
     /// Reserved historical positional bit; obsolete overlay state no longer exists.
-    #[allow(dead_code)]
     RetiredBuildingAnimOverlays = 45,
     TerminalScore = 46,
     PlayfieldAuthority = 47,

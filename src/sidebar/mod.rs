@@ -21,8 +21,6 @@ pub(crate) use sidebar_view::build_sidebar_view;
 pub(crate) use sidebar_view::build_sidebar_view_with_spec;
 pub(crate) use sidebar_view::ArmedSidebarEntry;
 
-/// Original RA2 sidebar chrome width (all SHPs are 168px wide).
-pub const SIDEBAR_WIDTH: f32 = 168.0;
 /// Cameo hit zones are fixed 60×48 (`6A8220`), independent of artwork size.
 pub(crate) const CAMEO_COLUMNS: usize = 2;
 
@@ -40,6 +38,7 @@ impl Rect {
     }
 }
 
+#[cfg(test)]
 pub fn radar_minimap_rect(screen_w: f32) -> Rect {
     radar_minimap_rect_with_spec(screen_w, SidebarChromeLayoutSpec::stock())
 }
@@ -257,17 +256,6 @@ pub struct SidebarView {
 
 pub fn default_active_tab() -> SidebarTab {
     SidebarTab::Building
-}
-
-pub fn tab_for_category(category: ProductionCategory) -> SidebarTab {
-    match category {
-        ProductionCategory::Building => SidebarTab::Building,
-        ProductionCategory::Defense => SidebarTab::Defense,
-        ProductionCategory::Infantry => SidebarTab::Infantry,
-        ProductionCategory::Vehicle => SidebarTab::Vehicle,
-        ProductionCategory::Aircraft => SidebarTab::Vehicle,
-        ProductionCategory::Ship => SidebarTab::Vehicle,
-    }
 }
 
 /// Compute the vertical layout of chrome sections for a given screen height.

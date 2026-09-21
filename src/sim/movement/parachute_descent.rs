@@ -178,6 +178,7 @@ impl crate::sim::world::Simulation {
 ///
 /// Cleanup (per landed entity):
 /// - clear `parachute_state`
+#[cfg(test)]
 pub fn tick_parachute_descent(
     entities: &mut EntityStore,
     parachute_max_fall_rate: i32,

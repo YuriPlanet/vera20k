@@ -10,7 +10,7 @@
 //! `GetFireError` function; the fire gates are scattered early returns across
 //! `combat/mod.rs`, `combat_fire_gate.rs` and the attacker snapshot loop, none
 //! of which yields a code, so nothing downstream can consume one. That is why
-//! the whole enum is `#[allow(dead_code)]`.
+//! the whole enum is ``.
 //! - Trigger: any consumer that needs to know *why* a shot did not happen —
 //!   gattling spin-up (which native drives from codes {0, 2, 3, 4}), the attack
 //!   cursor, and the EVA "cannot deploy/fire" feedback.
@@ -49,6 +49,7 @@ impl FireDecision {
     /// {0, 2, 3, 4} per research doc §4.8). Code 4 is unmapped in our enum;
     /// we approximate with Generic since it covers "rotation/cooldown-related
     /// no-fire" cases.
+    #[cfg(test)]
     pub fn drives_gattling_spinup(self) -> bool {
         matches!(
             self,
@@ -57,6 +58,7 @@ impl FireDecision {
     }
 
     /// Whether this decision means "fire happens this tick".
+    #[cfg(test)]
     pub fn is_fire(self) -> bool {
         matches!(self, Self::Fire)
     }

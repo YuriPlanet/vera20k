@@ -4,7 +4,9 @@
 //! node selection, and placement-result classification remain deliberately
 //! outside this module.
 
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
+#[cfg(test)]
+use std::hash::Hasher;
 
 /// One native 16-byte BasePlan node represented without pointer aliases.
 #[derive(
@@ -32,6 +34,7 @@ pub(crate) const fn pack_base_plan_cell(x: i32, y: i32) -> u32 {
 }
 
 /// Recover the two signed `CellStruct` words.
+#[cfg(test)]
 pub(crate) const fn unpack_base_plan_cell(packed: u32) -> (i16, i16) {
     (packed as u16 as i16, (packed >> 16) as u16 as i16)
 }
@@ -43,6 +46,7 @@ impl BasePlanState {
     /// PercentBuilt, filled latches, and retry counters are intentionally not
     /// part of this native compatibility helper. Rust's authoritative world
     /// hash covers them separately.
+    #[cfg(test)]
     pub(crate) fn hash_native_checksum_fields(&self, hasher: &mut impl Hasher) {
         (self.nodes.len() as i32).hash(hasher);
         for node in &self.nodes {
@@ -114,6 +118,7 @@ impl BasePlanState {
     ///
     /// Native `BuildingClass__ExitObject_Main @ 0x00443C60` performs this
     /// ordinary-node clear at `0x0044552D..0x004455A2`.
+    #[cfg(test)]
     pub(crate) fn clear_failed_site(&mut self, packed_cell: u32) -> usize {
         let mut cleared = 0;
         for node in &mut self.nodes {
@@ -131,6 +136,7 @@ impl BasePlanState {
     /// `BuildingClass__ExitObject_Main` result block at
     /// `0x00445237..0x004452C3` then applies the mode/strict-threshold gates
     /// and ordered shift-left removal. `Vec::remove` preserves that tail order.
+    #[cfg(test)]
     pub(crate) fn apply_normalized_placement_result(
         &mut self,
         node_index: usize,

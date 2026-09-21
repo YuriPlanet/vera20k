@@ -115,6 +115,7 @@ impl TubeFact {
         }
     }
 
+    #[cfg(test)]
     pub fn auto_low_bridge(cell: (u16, u16), direction: u8) -> Self {
         Self::automatic_recalc_shell(cell, direction)
     }

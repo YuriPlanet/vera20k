@@ -585,6 +585,7 @@ pub fn carve(
 }
 
 /// Convenience for tests and the seeder: is this water amount above the gate?
+#[cfg(test)]
 pub fn carries_a_river(water_percent: i32) -> bool {
     water_percent > super::lake::RIVER_GATE
 }

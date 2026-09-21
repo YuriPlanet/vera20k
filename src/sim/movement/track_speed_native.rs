@@ -5,9 +5,8 @@
 //! are deliberately separate. This is not wired into production until its live
 //! owners retain native precision; no fixed-point mirror is maintained here.
 
-use crate::util::native_x87::{
-    NativeF32Bits, NativeF64Bits, NativeX87Error, X87Chop53 as X, X87Ordering, sqrt_approx_f32,
-};
+use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
+use crate::util::native_x87::{NativeX87Error, X87Chop53 as X, X87Ordering, sqrt_approx_f32};
 
 // Original qwords7E6240/7E6248/7E6250 (Ship7F1308/7F1310/7F1318)
 // are promoted float constants, unlike the actual binary64 crush cap7E3548.

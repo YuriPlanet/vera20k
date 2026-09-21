@@ -322,7 +322,6 @@ pub(crate) struct EntityReadyInputProvider;
 ///
 /// Retained as the rules-aware exact readiness provider while the current host
 /// evaluates the same inputs directly.
-#[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) struct LiveReadyInputProvider<'r> {
     pub(crate) rules: &'r RuleSet,

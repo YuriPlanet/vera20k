@@ -308,6 +308,7 @@ impl<'a> TerrainSpawnContext<'a> {
 /// - active spawners do not roll probability;
 /// - midpoint resets active state to idle before the forced spread attempt;
 /// - placement only targets empty cells owned by this file's generic gates.
+#[cfg(test)]
 pub fn tick_terrain_spawners_stateful(
     spawners: &mut BTreeMap<(u16, u16), TerrainSpawnerState>,
     mut ctx: TerrainSpawnContext<'_>,
@@ -843,6 +844,7 @@ pub fn seed_terrain_spawner_animation(
 /// Convenience for tests and preview/spawn-pick callers. The production load
 /// path calls the two halves separately so construction keeps its native
 /// position ahead of `[Units]`.
+#[cfg(test)]
 pub fn seed_terrain_spawners(
     sim: &mut crate::sim::world::Simulation,
     terrain_objects: &[crate::map::overlay::TerrainObject],

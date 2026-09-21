@@ -191,6 +191,7 @@ impl ZoneAdjacency {
     }
 
     /// Check if two zones are directly adjacent.
+    #[cfg(test)]
     pub fn are_adjacent(&self, a: ZoneId, b: ZoneId) -> bool {
         if a == ZONE_INVALID || b == ZONE_INVALID {
             return false;
@@ -921,7 +922,7 @@ impl ZoneGrid {
     }
 
     /// Replace the one shared route-selection hierarchy (test fixtures only).
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn set_hierarchy(&mut self, hierarchy: ZoneHierarchy) {
         self.hierarchy = Some(hierarchy);
     }

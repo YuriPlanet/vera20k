@@ -222,6 +222,7 @@ impl Wave {
         wave
     }
 
+    #[cfg(test)]
     pub fn replace_recorded_cells(&mut self, cells: Vec<WaveRecordedCell>) {
         self.recorded_cells = cells;
     }
@@ -232,6 +233,7 @@ impl Wave {
         dx * dx + dy * dy >= CONSTRUCTOR_MIN_XY_DISTANCE * CONSTRUCTOR_MIN_XY_DISTANCE
     }
 
+    /// No reader yet; kept because the wave-type mapping is recorded nowhere else.
     pub const fn color_mode(&self) -> WaveColorMode {
         match self.wave_type {
             0 => WaveColorMode::FramebufferSonicDistortion,
@@ -241,6 +243,7 @@ impl Wave {
         }
     }
 
+    /// No reader yet; see `color_mode`.
     pub const fn registration_bucket(&self) -> u8 {
         WAVE_DISPLAY_REGISTRATION_BUCKET
     }

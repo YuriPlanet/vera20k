@@ -32,6 +32,7 @@ use crate::render::unit_slope_transition_cache::{
 };
 use crate::rules::house_colors::{self, HouseColorIndex};
 use crate::sim::components::HarvestOverlay;
+#[cfg(test)]
 use crate::sim::movement::slope_transition::SLOPE_TRANSITION_FRAMES;
 use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, Ordering};

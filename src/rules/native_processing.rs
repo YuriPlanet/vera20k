@@ -324,6 +324,7 @@ impl ProcessedRulesLayers {
         &self.powerups
     }
 
+    #[cfg(test)]
     pub(crate) fn native_type_construction_trace(&self) -> &NativeTypeConstructionTrace {
         &self.native_type_construction_trace
     }
@@ -373,10 +374,12 @@ pub(crate) struct NativeTypeConstructionEvent {
 }
 
 impl NativeTypeConstructionEvent {
+    #[cfg(test)]
     pub(crate) fn family(&self) -> NativeTypeConstructorFamily {
         self.family
     }
 
+    #[cfg(test)]
     pub(crate) fn native_stored_id(&self) -> &str {
         &self.native_stored_id
     }
@@ -397,14 +400,17 @@ pub(crate) struct NativeTypeConstructionTrace {
 }
 
 impl NativeTypeConstructionTrace {
+    #[cfg(test)]
     pub(crate) fn events(&self) -> &[NativeTypeConstructionEvent] {
         &self.events
     }
 
+    #[cfg(test)]
     pub(crate) fn event_count(&self) -> usize {
         self.events.len()
     }
 
+    #[cfg(test)]
     pub(crate) fn allocated_super_weapon_type_count(&self) -> usize {
         self.allocated_super_weapon_type_count
     }
@@ -459,6 +465,7 @@ impl NativeRulesRegistryState {
             .map(|member| (member.native_stored_id.as_str(), member.anim_art_read))
     }
 
+    #[cfg(test)]
     pub(crate) fn family_len(&self, family: NativeTypeConstructorFamily) -> usize {
         self.families
             .iter()
@@ -468,6 +475,7 @@ impl NativeRulesRegistryState {
             .unwrap_or(0)
     }
 
+    #[cfg(test)]
     pub(crate) fn tiberium_slot_count(&self) -> usize {
         self.tiberiums.len()
     }

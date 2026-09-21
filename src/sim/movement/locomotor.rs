@@ -437,6 +437,7 @@ impl LocomotorState {
     }
 
     /// Whether this locomotor is in the ground family (Drive/Walk/Hover/Mech/Ship).
+    #[cfg(test)]
     pub fn is_ground_mover(&self) -> bool {
         matches!(
             self.kind,
@@ -449,6 +450,7 @@ impl LocomotorState {
     }
 
     /// Whether this locomotor is an air mover (Fly/Jumpjet/Rocket).
+    #[cfg(test)]
     pub fn is_air_mover(&self) -> bool {
         matches!(
             self.kind,
@@ -539,6 +541,7 @@ impl LocomotorState {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn walk_animation_moving(&self) -> Option<bool> {
         match (self.kind, &self.runtime_payload) {
             (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => {
@@ -597,6 +600,7 @@ impl LocomotorState {
     }
 
     /// Whether the primary locomotor is currently active and no piggyback is stored.
+    #[cfg(test)]
     pub fn is_primary_active(&self) -> bool {
         self.kind == self.effective_kind() && self.piggyback.is_none()
     }

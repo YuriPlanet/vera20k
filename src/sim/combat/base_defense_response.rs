@@ -185,6 +185,7 @@ impl ResponseSelection {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn remaining_budget(&self) -> i32 {
         self.remaining_budget
     }

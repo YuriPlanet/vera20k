@@ -1003,6 +1003,7 @@ impl CellEntryOracleRow {
 }
 
 /// Opt-in diagnostic wrapper for Phase-1 cell entry checks.
+#[cfg(test)]
 pub fn check_terrain_with_layers_oracle(
     target: (u16, u16),
     layers: CanEnterLayerContext,
@@ -1226,6 +1227,7 @@ pub fn check_terrain_with_layers(
 /// [`evaluate_can_enter_cell`]. The arms of the native walk this phase does not
 /// produce — the wall/overlay codes and the head-on facing test — are recorded
 /// in the module header rather than approximated here.
+#[cfg(test)]
 pub fn classify_occupied_cell(
     target: (u16, u16),
     target_layer: MovementLayer,

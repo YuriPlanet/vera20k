@@ -1161,6 +1161,7 @@ impl GameEntity {
     /// survives as the cross-check the harvest seam asserts against and as the
     /// fallback [`GameEntity::passive_acquire_mission`] uses for an object that
     /// still holds the `NONE` sentinel.
+    #[cfg(test)]
     pub fn derived_mission(&self) -> (MissionType, u8) {
         self.derived_mission_with(true)
     }

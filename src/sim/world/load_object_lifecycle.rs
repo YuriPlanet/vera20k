@@ -57,6 +57,7 @@ struct LoadOverlayObject {
     terminal_path: LoadOverlayTerminalPath,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct LoadOverlayObjectSnapshot {
     pub(crate) stable_id: u64,
@@ -254,6 +255,7 @@ impl LoadObjectLifecycle {
 
     /// Wall rejection performs its ordinary UnInit broadcast and a full-Limbo
     /// broadcast before queueing; the destructor supplies the third broadcast.
+    #[cfg(test)]
     pub(crate) fn finish_wall_reject(
         &mut self,
         handle: LoadOverlayHandle,
@@ -301,6 +303,7 @@ impl LoadObjectLifecycle {
 
     /// Release the registered constructor survivors when the scene is
     /// torn down. Iteration order is intentionally not claimed as native parity.
+    #[cfg(test)]
     pub(crate) fn release_scene_survivors(&mut self) -> Result<usize, LoadOverlayLifecycleError> {
         let survivors: Vec<_> = self
             .objects
@@ -339,6 +342,7 @@ impl LoadObjectLifecycle {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn object_count(&self) -> usize {
         self.objects.len()
     }

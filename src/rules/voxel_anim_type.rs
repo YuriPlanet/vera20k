@@ -176,6 +176,7 @@ impl VoxelAnimType {
     }
 
     /// `+0x296`, which the constructor computes rather than reads.
+    #[cfg(test)]
     pub fn shares_data(&self) -> bool {
         self.share_body_data || self.share_turret_data || self.share_barrel_data
     }

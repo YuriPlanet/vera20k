@@ -78,7 +78,6 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // detached geometry/cursor payload that cannot be recovered from the retained
 // class. Old comments and pins below refer to that historical execution only;
 // current tests must not fabricate it or relax the pre167 projection guard.
-#[allow(dead_code)]
 #[rustfmt::skip]
 mod schema166_receipt {
 /// The pre-slice baseline. Captured from `dev` BEFORE the Slice-6 edits (run the

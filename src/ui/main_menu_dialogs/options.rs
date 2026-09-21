@@ -605,6 +605,7 @@ pub(crate) struct PhysicalControlFrame {
 }
 
 impl PhysicalControlFrame {
+    #[cfg(test)]
     pub(crate) fn from_logical(
         left: f64,
         top: f64,

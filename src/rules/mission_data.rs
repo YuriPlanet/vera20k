@@ -111,6 +111,7 @@ impl MissionType {
     }
 
     /// Alias of [`MissionType::id`] for dispatch call sites.
+    #[cfg(test)]
     #[inline]
     pub fn dispatch_id(self) -> u8 {
         self as u8

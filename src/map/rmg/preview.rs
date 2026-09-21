@@ -251,6 +251,7 @@ impl PreviewPalette {
     }
 
     /// The terrain colour pair for a raw cell identity.
+    #[cfg(test)]
     pub fn tile_colours(&self, tile_index: i32, sub_tile: u8) -> ([u8; 3], [u8; 3]) {
         self.tiles
             .get(&(tile_index, sub_tile))
@@ -259,6 +260,7 @@ impl PreviewPalette {
     }
 
     /// The overlay colour for an id and growth stage, already channel-ordered.
+    #[cfg(test)]
     pub fn overlay_colour(&self, overlay_id: u8, density: u8) -> Option<[u8; 3]> {
         self.overlays
             .get(&(overlay_id, density))

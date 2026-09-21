@@ -79,7 +79,6 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 
 // Historical schema166 receipts: signed health cannot reconstruct the old
 // current/max fold. These values record provenance, not current projections.
-#[allow(dead_code)]
 mod schema166_receipt {
     /// Committed final-hash baseline for the recorded bridge crossing.
     ///

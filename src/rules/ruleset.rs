@@ -3940,6 +3940,7 @@ impl RuleSet {
     }
 
     /// Resolve a particle type name to its ID (case-insensitive).
+    #[cfg(test)]
     pub fn p_type_id_by_name(&self, name: &str) -> Option<ParticleTypeId> {
         self.particle_types_by_name
             .get(&name.to_ascii_uppercase())
@@ -3966,16 +3967,19 @@ impl RuleSet {
     }
 
     /// Number of `[VoxelAnims]` types loaded.
+    #[cfg(test)]
     pub fn voxel_anim_type_count(&self) -> usize {
         self.voxel_anim_types.len()
     }
 
     /// Number of particle types loaded from `[Particles]`.
+    #[cfg(test)]
     pub fn particle_type_count(&self) -> usize {
         self.particle_types.len()
     }
 
     /// Number of particle system types loaded from `[ParticleSystems]`.
+    #[cfg(test)]
     pub fn particle_system_type_count(&self) -> usize {
         self.particle_system_types.len()
     }
@@ -4290,6 +4294,7 @@ impl RuleSet {
     }
 
     /// Total number of projectiles.
+    #[cfg(test)]
     pub fn projectile_count(&self) -> usize {
         self.projectiles.len()
     }

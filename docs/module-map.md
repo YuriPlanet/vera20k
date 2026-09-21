@@ -1,12 +1,12 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `f55a8bcfbf86c28b7480516d70b19f0d92039cd6` (2026-09-21), cargo-modules 0.26.0.
+Generated snapshot: `11b3b487b6f4ca1c5e2abf19c25584ea52d2a343` (2026-09-21), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
 External crates and the sysroot are excluded from the dependency graph.
-Contains **839 modules plus the crate root**, and **5311 distinct
+Contains **835 modules plus the crate root**, and **5270 distinct
 cross-module dependency edges**. Check this source commit against your checkout.
 <!-- module-map:provenance:end -->
 
@@ -110,7 +110,7 @@ app::loading -> -
 app::loading::composition -> assets::csf_file; map::map_file; map::playfield; map::preview; map::waypoints; skirmish_launch; ui::shell::geom
 app::loading::fresh_scenario -> app::frontend::list_maps; app::shell_random_map; map::map_file; map::resolved_terrain; match_bootstrap; sim::scenario_bootstrap
 app::loading::init -> app::frontend::list_maps; app::frontend::skirmish; app::loading::fresh_scenario; app::loading::init_helpers; app::loading::pump; app::presentation::lighting; assets::asset_manager; assets::shp_file; map::actions; map::basic; map::cell_tags; map::events; map::houses; map::lighting; map::map_file; map::overlay; map::resolved_terrain; map::scenario_menu; map::tags; map::terrain; map::theater; map::tile_variant_selector; map::trigger_graph; map::triggers; map::waypoints; match_bootstrap; render::batch; render::bridge_atlas; render::bridge_railing_atlas; render::cursor_atlas; render::gpu; render::overlay_atlas; render::sidebar_cameo_atlas; render::sidebar_chrome; render::sprite_atlas; render::tile_atlas; render::unit_atlas; rules::art_data; rules::ini_parser; rules::overlay_types; rules::process_owner; rules::ruleset; rules::tiberium_type; sim::overlay_grid; sim::scenario_bootstrap; sim::trigger_runtime; sim::world; ui::main_menu
-app::loading::init_helpers -> app::frontend::skirmish; assets::asset_manager; assets::pal_file; map::basic; map::houses; map::map_file; map::resolved_terrain; map::terrain; map::theater; map::trigger_graph; render::batch; render::gpu; render::sidebar_cameo_atlas; render::sprite_atlas; render::tile_atlas; render::unit_atlas; rules::art_data; rules::ini_parser; rules::native_processing; rules::overlay_types; rules::process_owner; rules::ruleset; sim::scenario_bootstrap; sim::scenario_session; sim::world
+app::loading::init_helpers -> app::frontend::skirmish; assets::asset_manager; assets::pal_file; map::basic; map::houses; map::map_file; map::resolved_terrain; map::terrain; map::theater; map::trigger_graph; render::batch; render::gpu; render::sidebar_cameo_atlas; render::sprite_atlas; render::tile_atlas; render::unit_atlas; rules::art_data; rules::ini_parser; rules::native_processing; rules::overlay_types; rules::process_owner; rules::ruleset; sim::scenario_session; sim::world
 app::loading::progress_row -> app::loading::composition; skirmish_launch; ui::shell::geom
 app::loading::pump -> app::audio_runtime; app::loading::composition; app::loading::fresh_scenario; app::loading::init; app::loading::progress_row; app::match_runtime::startup; app::process_assets; app::state; assets::asset_manager; assets::pal_file; assets::pcx_file; map::preview; match_bootstrap; render::batch; render::bit_font; render::gpu; render::loading_screen_chrome; render::shell_surface_present; rules::color_scheme; rules::house_colors; sim::scenario_bootstrap; skirmish_launch; ui::game_screen; ui::main_menu
 app::loading::pump::render -> app::loading::composition; app::loading::progress_row; app::loading::pump; app::renderer_state; render::batch; render::bit_font; render::draw_state; render::gpu; render::loading_screen_chrome; render::shell_surface_present; render::shell_text; rules::color_scheme; ui::shell::geom
@@ -243,7 +243,7 @@ audio::sfx -> assets::asset_manager; assets::aud_file; assets::audio_bag; audio:
 audio::theme -> assets::asset_manager; assets::aud_file; audio::sfx; rules::ini_parser; sim::rng
 audio::voice_queue -> -
 audio::vox -> rules::sound_ini
-headless_scenario -> assets::asset_manager; map::basic; map::map_file; map::resolved_terrain; map::theater; map::tile_variant_selector; map::waypoints; rules::overlay_types; sim::overlay_grid; sim::runtime; sim::scenario_bootstrap; sim::scenario_session; sim::world; util::pixel_conversion
+headless_scenario -> assets::asset_manager; map::map_file; map::resolved_terrain; map::theater; map::tile_variant_selector; map::waypoints; rules::overlay_types; sim::runtime; sim::scenario_bootstrap; sim::scenario_session; sim::world
 map -> -
 map::actions -> rules::ini_parser
 map::authored_overlay -> map::bridge_facts; map::cell_index; map::map_file; map::resolved_terrain; rules::overlay_types; rules::terrain_rules; rules::tiberium_type
@@ -260,7 +260,7 @@ map::events -> rules::ini_parser
 map::houses -> rules::color_scheme; rules::house_colors; rules::ini_parser; rules::ruleset
 map::iso_tile_flood -> -
 map::lat -> map::map_file; map::theater; rules::ini_parser
-map::lighting -> map::entities; rules::art_data; rules::ini_parser; rules::ruleset
+map::lighting -> rules::art_data; rules::ini_parser
 map::map_file -> assets::error; assets::mix_archive; map::actions; map::basic; map::briefing; map::cell_tags; map::entities; map::events; map::overlay; map::preview; map::tags; map::trigger_graph; map::triggers; map::tube_facts; map::tubes; map::variable_names; map::waypoints; rules::error; rules::ini_parser; util::base64; util::lzo
 map::overlay -> rules::ini_parser; rules::overlay_types; util::base64; util::lcw
 map::overlay_types -> rules::overlay_types
@@ -314,7 +314,6 @@ map::rmg::rng -> map::rmg::x87; rng_continuation
 map::rmg::saved_seeds -> map::rmg::description; map::rmg::options; util::legacy_crt_rng; util::native_file_name
 map::rmg::scratch -> -
 map::rmg::settings -> assets::asset_manager; rules::ini_parser
-map::rmg::sqrt_table -> -
 map::rmg::tech_catalog -> map::rmg::phases::tech_buildings; rules::foundation; rules::ini_parser
 map::rmg::theater_blocks -> assets::tmp_file; map::rmg::phases::shore; map::theater
 map::rmg::tiles -> map::theater
@@ -341,7 +340,7 @@ render::bink_movie -> assets::bink_decode; assets::bink_file; render::batch; ren
 render::bit_font -> assets::fnt_file; render::batch; render::gpu; render::shell_text_reveal
 render::bridge_atlas -> assets::asset_manager; assets::pal_file; assets::shp_file; map::overlay; render::batch; render::gpu; render::overlay_atlas; rules::art_data; rules::crate_rules; rules::ini_parser; rules::overlay_types
 render::bridge_railing_atlas -> assets::asset_manager; assets::pal_file; assets::shp_file; render::batch; render::gpu
-render::building_light -> render::batch
+render::building_light -> -
 render::building_zshape -> assets::asset_manager; assets::shp_file; render::batch; render::gpu; render::native_z
 render::combat_light -> render::batch; render::gpu; sim::projectile
 render::current_radar_cell -> map::resolved_terrain; render::minimap_helpers; rules::overlay_types; rules::ruleset; sim::bridge_state; sim::overlay_grid; sim::runtime
@@ -476,8 +475,8 @@ sim::base_plan -> -
 sim::base_plan_generation -> rules::object_type; rules::ruleset; sim::ai_buildable; sim::base_plan; sim::house_state; sim::rng
 sim::bounce -> sim::rng; util::native_x87
 sim::bridge_specs -> map::bridge_facts; map::bridge_rim_tiles; map::resolved_terrain; sim::bridge_state
-sim::bridge_state -> map::bridge_facts; map::resolved_terrain; sim::bridge_specs; sim::bridge_state::damaged_variant; sim::bridge_state::walker; sim::intern; sim::rng
-sim::bridge_state::damaged_variant -> map::resolved_terrain; sim::bridge_state
+sim::bridge_state -> map::bridge_facts; map::resolved_terrain; sim::bridge_specs; sim::bridge_state::damaged_variant; sim::intern
+sim::bridge_state::damaged_variant -> sim::bridge_state
 sim::bridge_state::gap_restamp -> map::resolved_terrain; sim::bridge_state
 sim::bridge_state::ordinary_repair -> sim::bridge_state::publication; sim::bridge_state::ramp_repair
 sim::bridge_state::publication -> map::bridge_facts; sim::bridge_state
@@ -485,7 +484,7 @@ sim::bridge_state::ramp_repair -> map::bridge_rim_tiles; sim::bridge_state::publ
 sim::bridge_state::record_scan -> map::authored_overlay; map::bridge_facts; map::resolved_terrain; sim::bridge_state; sim::bridge_state::damaged_variant; sim::bridge_state::gap_restamp; sim::bridge_state::ordinary_repair; sim::bridge_state::publication; sim::bridge_state::ramp_repair; sim::bridge_state::repair_occupants; sim::bridge_state::rim; sim::bridge_state::walker; sim::bridge_state::zone_activation; sim::cell_rect
 sim::bridge_state::repair_occupants -> sim::bridge_state::publication
 sim::bridge_state::rim -> map::bridge_rim_tiles
-sim::bridge_state::walker -> map::bridge_facts; map::resolved_terrain; sim::bridge_state; sim::rng
+sim::bridge_state::walker -> map::bridge_facts; map::resolved_terrain; sim::bridge_state
 sim::bridge_state::zone_activation -> map::bridge_facts; map::resolved_terrain; sim::bridge_state; sim::bridge_state::damaged_variant; sim::bridge_state::gap_restamp; sim::bridge_state::ordinary_repair; sim::bridge_state::publication; sim::bridge_state::ramp_repair; sim::bridge_state::record_scan; sim::bridge_state::repair_occupants; sim::bridge_state::rim; sim::bridge_state::walker; sim::pathfinding::zone_build
 sim::building_art -> rules::art_data; rules::object_type; rules::ruleset; sim::building_art::storage; sim::components; sim::game_entity; sim::world
 sim::building_art::admission -> rules::art_data; rules::object_type; rules::ruleset; sim::building_art; sim::building_art::power; sim::building_art::storage; sim::components; sim::game_entity; sim::world
@@ -496,7 +495,7 @@ sim::cell_kernel -> util::fixed_math; util::lepton
 sim::cell_rect -> map::cell_index; map::entities; map::playfield; map::resolved_terrain; map::resolved_terrain::zone_class; rules::locomotor_type; sim::entity_store; sim::movement::locomotor; sim::occupancy; sim::overlay_grid; sim::pathfinding::core; sim::pathfinding::zone_map
 sim::cloak_disguise -> sim::cloak_disguise::transitions; sim::intern; sim::rng
 sim::cloak_disguise::transitions -> sim::cloak_disguise
-sim::combat -> map::entities; map::houses; map::resolved_terrain; rules::animation_sequence; rules::mission_data; rules::object_type; rules::overlay_types; rules::ruleset; rules::warhead_type; rules::weapon_type; sim::bridge_state; sim::combat::combat_aoe; sim::combat::combat_targeting; sim::combat::combat_weapon; sim::combat::damage; sim::combat::line_of_fire; sim::combat::threat_range; sim::combat::veterancy; sim::components; sim::entity_store; sim::game_entity; sim::house_state; sim::house_strategy; sim::infantry; sim::intern; sim::mission::authority; sim::mission::concrete_effects; sim::mission::state; sim::movement::turret; sim::occupancy; sim::overlay_grid; sim::production::production_tech; sim::projectile; sim::rng; sim::terrain_object; sim::vision; sim::wave; sim::world; sim::world::damage_consequences; sim::world::infantry_terminal; util::fixed_math; util::lepton; util::native_x87
+sim::combat -> map::entities; map::houses; map::resolved_terrain; rules::animation_sequence; rules::mission_data; rules::object_type; rules::overlay_types; rules::ruleset; rules::warhead_type; rules::weapon_type; sim::bridge_state; sim::combat::combat_aoe; sim::combat::combat_targeting; sim::combat::combat_weapon; sim::combat::damage; sim::combat::line_of_fire; sim::combat::threat_range; sim::combat::veterancy; sim::entity_store; sim::game_entity; sim::house_state; sim::house_strategy; sim::infantry; sim::intern; sim::mission::authority; sim::mission::concrete_effects; sim::mission::state; sim::movement::turret; sim::occupancy; sim::overlay_grid; sim::production::production_tech; sim::projectile; sim::rng; sim::terrain_object; sim::vision; sim::wave; sim::world; sim::world::damage_consequences; sim::world::infantry_terminal; util::fixed_math; util::lepton; util::native_x87
 sim::combat::base_defense_response -> map::entities; map::houses; map::playfield; map::resolved_terrain; rules::locomotor_type; rules::mission_data; rules::ruleset; sim::cell_rect; sim::combat; sim::combat::base_defense_response::admission; sim::combat::combat_weapon; sim::entity_store; sim::house_state; sim::intern; sim::mission::authority; sim::mission::concrete_effects; sim::mission::state; sim::pathfinding::zone_map; sim::rng; sim::team_script_vm; util::native_x87
 sim::combat::base_defense_response::admission -> map::entities; map::resolved_terrain; rules::object_type; rules::ruleset; sim::combat; sim::combat::base_defense_response; sim::combat::combat_weapon; sim::components; sim::entity_store; sim::game_entity; sim::intern; util::fixed_math; util::lepton
 sim::combat::cell_spread -> util::fixed_math
@@ -547,7 +546,7 @@ sim::gate_runtime -> map::entities; map::houses; rules::ruleset; sim::entity_sto
 sim::house_eva -> map::entities; rules::object_type; rules::ruleset; sim::entity_store; sim::game_options; sim::intern; sim::world
 sim::house_state -> map::playfield; rules::ruleset; sim::base_plan; sim::economy; sim::intern; sim::world::house_base; util::native_x87
 sim::house_strategy -> map::houses; sim::house_state; sim::intern
-sim::infantry -> rules::animation_sequence; rules::object_type; rules::ruleset; sim::deploy; sim::entity_store; sim::game_entity; sim::intern; sim::rng; util::fixed_math; util::native_x87::masked
+sim::infantry -> rules::animation_sequence; rules::object_type; rules::ruleset; sim::entity_store; sim::game_entity; sim::intern; sim::rng; util::fixed_math; util::native_x87::masked
 sim::intern -> -
 sim::lifecycle_request -> -
 sim::light_sources -> map::lighting; rules::ruleset; sim::scenario_session; sim::world
@@ -610,16 +609,13 @@ sim::movement::parachute_descent -> sim::debug_event_log; sim::entity_store; uti
 sim::movement::path_markers -> map::entities; map::playfield; map::resolved_terrain; rules::locomotor_type; sim::cell_rect; sim::components; sim::entity_store; sim::game_entity; sim::intern; sim::movement::facing_class; sim::movement::locomotor; sim::occupancy; sim::pathfinding::core
 sim::movement::ready_producer -> rules::locomotor_type; sim::game_entity; sim::movement::locomotor; sim::movement::locomotor_ready; sim::movement::teleport_movement; util::fixed_math
 sim::movement::rocket_movement -> sim::components; sim::debug_event_log; sim::entity_store; sim::intern; sim::movement; sim::movement::locomotion::piggyback; util::fixed_math
-sim::movement::scatter -> map::entities; rules::locomotor_type; rules::ruleset; sim::entity_store; sim::intern; sim::movement; sim::movement::bump_crush; sim::movement::locomotor; sim::movement::movement_commands; sim::occupancy; sim::pathfinding::core; sim::pathfinding::terrain_cost; sim::rng; util::fixed_math
-sim::movement::slope_transition -> map::entities; rules::locomotor_type; sim::game_entity; sim::movement::locomotion::piggyback; sim::movement::locomotor
+sim::movement::slope_transition -> map::entities; sim::game_entity
 sim::movement::teleport_movement -> rules::locomotor_type; rules::ruleset; sim::components; sim::debug_event_log; sim::entity_store; sim::intern; sim::movement::locomotion::piggyback; sim::occupancy; util::fixed_math
 sim::movement::track_entry -> rules::overlay_types; rules::ruleset; sim::components; sim::movement; sim::movement::locomotor; sim::movement::movement_occupancy; sim::movement::movement_tick; sim::pathfinding::cell_entry; sim::pathfinding::core; sim::world
-sim::movement::track_fresh_dispatch -> -
 sim::movement::track_head -> rules::locomotor_type; sim::components; sim::game_entity; sim::movement::drive_track
 sim::movement::track_host -> rules::mission_data; rules::overlay_types; rules::ruleset; sim::components; sim::game_entity; sim::lifecycle_request; sim::mission::state; sim::movement::ground_pose; sim::movement::locomotor; sim::movement::track_process; sim::pathfinding::cell_entry; sim::pathfinding::core; sim::world; util::fixed_math
 sim::movement::track_process -> sim::components; sim::movement::drive_track; util::native_x87
 sim::movement::track_speed -> map::resolved_terrain; rules::locomotor_type; rules::object_type; rules::ruleset; sim::game_entity; sim::pathfinding::core; sim::pathfinding::terrain_speed; util::fixed_math
-sim::movement::track_speed_native -> util::native_x87
 sim::movement::track_turn -> rules::locomotor_type; rules::mission_data; rules::ruleset; sim::components; sim::game_entity; sim::pathfinding::core; sim::world
 sim::movement::tube_movement -> map::entities; map::resolved_terrain; map::retail_trig; map::tube_facts; rules::ruleset; sim::components; sim::entity_store; sim::game_entity; sim::intern; sim::movement::bump_crush; sim::movement::locomotor; sim::movement::movement_commands; sim::occupancy; sim::pathfinding::core; sim::rng; sim::world::substrate; util::lepton; util::native_x87
 sim::movement::tunnel_movement -> sim::movement::locomotor; sim::movement::teleport_movement
@@ -627,7 +623,7 @@ sim::movement::turret -> rules::ruleset; sim::combat; sim::entity_store; sim::ga
 sim::movement::walk_head -> map::resolved_terrain; sim::components; sim::entity_store; sim::game_entity; sim::intern; sim::occupancy; sim::pathfinding::core; sim::rng; util::fixed_math
 sim::movement::walk_host -> rules::overlay_types; rules::ruleset; sim::components; sim::movement::ground_pose; sim::movement::locomotor; sim::pathfinding::core; sim::world
 sim::movement::walk_path -> map::playfield; map::resolved_terrain; rules::locomotor_type; rules::mission_data; rules::overlay_types; rules::ruleset; sim::cell_kernel; sim::components; sim::find_nearby_cell; sim::mission::authority; sim::mission::concrete_effects; sim::mission::state; sim::movement::ground_pose; sim::movement::infantry_entry; sim::movement::movement_tick; sim::pathfinding::core; sim::pathfinding::zone_map; sim::pathfinding::zone_search; sim::world
-sim::multiplayer_checksum -> map::entities; sim::game_entity; sim::intern; sim::wave; sim::world; util::native_x87
+sim::multiplayer_checksum -> sim::intern; sim::world
 sim::native_identity -> map::tubes; rules::ini_parser; sim::world
 sim::naval_base_placement -> map::entities; map::playfield; map::resolved_terrain; rules::locomotor_type; rules::object_type; rules::ruleset; sim::find_nearby_cell; sim::house_state; sim::intern; sim::pathfinding::core; sim::world
 sim::occupancy -> map::cell_index; map::entities; map::resolved_terrain; rules::object_type; sim::components; sim::entity_store; sim::game_entity; sim::intern; sim::movement::locomotor; util::fixed_math
@@ -683,18 +679,18 @@ sim::radiation_light -> map::lighting; rules::ruleset; sim::radiation; sim::worl
 sim::radio -> map::entities; sim::radio::contacts; sim::radio::receive; sim::world
 sim::radio::contacts -> -
 sim::radio::receive -> map::entities; sim::docking::bunker_install; sim::radio; sim::world
-sim::replay -> sim::command; sim::runtime; util::pixel_conversion
+sim::replay -> sim::command; util::pixel_conversion
 sim::rng -> rng_continuation
 sim::rocking -> sim::rocking::impulse; sim::rocking::rocking_system; sim::rocking::self_destruct
 sim::rocking::impulse -> sim::components; util::fixed_math
 sim::rocking::rocking_system -> map::entities; rules::ruleset; sim::components; sim::entity_store; sim::game_entity; sim::rocking::self_destruct; util::fixed_math
 sim::rocking::self_destruct -> sim::game_entity; util::fixed_math
-sim::runtime -> assets::asset_manager; map::authored_overlay; map::basic; map::entities; map::houses; map::map_file; map::resolved_terrain; map::theater; map::trigger_graph; rules::art_data; rules::overlay_types; rules::ruleset; sim::anim_class; sim::command; sim::components; sim::entity_store; sim::game_entity; sim::intern; sim::native_identity; sim::overlay_grid; sim::scenario_bootstrap; sim::scenario_post_map; sim::scenario_session; sim::vision; sim::world; sim::world::authored_load_host; sim::world::world_spawn
-sim::scenario_bootstrap -> map::construction_trace; map::entities; map::houses; map::map_file; map::playfield; map::resolved_terrain; map::waypoints; rng_continuation; rules::ini_parser; rules::locomotor_type; rules::mission_data; rules::object_type; rules::overlay_types; rules::process_owner; rules::ruleset; sim::ai; sim::find_nearby_cell; sim::house_state; sim::mission::state; sim::native_identity; sim::rng; sim::scenario_session; sim::world; sim::world::lifecycle; skirmish_launch; util::native_x87
+sim::runtime -> assets::asset_manager; map::authored_overlay; map::basic; map::entities; map::houses; map::map_file; map::resolved_terrain; map::theater; map::trigger_graph; rules::art_data; rules::overlay_types; rules::ruleset; sim::anim_class; sim::command; sim::components; sim::entity_store; sim::game_entity; sim::intern; sim::native_identity; sim::overlay_grid; sim::scenario_post_map; sim::scenario_session; sim::vision; sim::world; sim::world::authored_load_host; sim::world::world_spawn
+sim::scenario_bootstrap -> map::construction_trace; map::entities; map::houses; map::map_file; map::resolved_terrain; map::waypoints; rng_continuation; rules::ini_parser; rules::locomotor_type; rules::mission_data; rules::object_type; rules::overlay_types; rules::process_owner; rules::ruleset; sim::ai; sim::find_nearby_cell; sim::house_state; sim::mission::state; sim::native_identity; sim::rng; sim::scenario_session; sim::world; sim::world::lifecycle; skirmish_launch; util::native_x87
 sim::scenario_post_map -> map::basic; map::houses; map::lighting; rules::overlay_types; rules::ruleset; sim::crates; sim::ore_growth; sim::ore_twinkle; sim::world
-sim::scenario_session -> sim::game_options; sim::intern; sim::replay; sim::timer; util::pixel_conversion
+sim::scenario_session -> sim::game_options; sim::intern; sim::timer; util::pixel_conversion
 sim::score -> sim::intern; sim::world
-sim::selection -> sim::entity_store
+sim::selection -> -
 sim::sensor_lifecycle -> map::entities; rules::object_type; rules::ruleset; sim::intern; sim::movement::locomotor; sim::world
 sim::slave_deposit -> map::cell_index; map::entities; map::resolved_terrain; rules::ruleset; sim::components; sim::entity_store; sim::intern; sim::movement::ground_pose; sim::movement::locomotor; sim::occupancy
 sim::slave_miner -> rules::ruleset; sim::economy; sim::house_state; sim::intern; sim::miner; sim::miner::miner_system; sim::pathfinding::core; sim::production::production_queue; sim::world; sim::world::lifecycle
@@ -733,7 +729,7 @@ sim::vision::shroud_knowledge -> sim::intern; sim::timer
 sim::voxel_anim -> rules::voxel_anim_type; sim::bounce; sim::intern; sim::rng; util::native_x87
 sim::voxel_frame_catalog -> assets::asset_manager; assets::hva_file; rules::art_data; rules::ruleset; sim::components; sim::entity_store; sim::intern
 sim::wave -> map::resolved_terrain; map::retail_trig; sim::cell_rect; sim::combat; sim::intern; sim::projectile; util::native_x87
-sim::world -> map::actions; map::bridge_facts; map::cell_index; map::construction_trace; map::entities; map::events; map::houses; map::lighting; map::map_file; map::overlay; map::playfield; map::resolved_terrain; map::trigger_graph; map::triggers; map::tubes; rules::art_data; rules::ini_parser; rules::locomotor_type; rules::mission_data; rules::object_type; rules::overlay_types; rules::particle_system_type; rules::ruleset; rules::team_ai_ini; rules::warhead_type; sim::ai; sim::anim_class; sim::animation; sim::bridge_state; sim::cell_rect; sim::combat; sim::combat::combat_aoe; sim::combat::combat_weapon; sim::combat::damage; sim::command; sim::components; sim::crates::state; sim::docking::aircraft_dock; sim::docking::building_dock; sim::entity_store; sim::game_entity; sim::house_state; sim::house_strategy; sim::intern; sim::lifecycle_request; sim::light_sources; sim::mission::authority; sim::mission::retask; sim::mission::state; sim::movement; sim::movement::air_movement; sim::movement::drop_pod_movement; sim::movement::group_destination; sim::movement::infantry_entry; sim::movement::locomotor; sim::movement::movement_tick; sim::movement::rocket_movement; sim::movement::teleport_movement; sim::movement::track_process; sim::movement::track_turn; sim::movement::tunnel_movement; sim::movement::turret; sim::multiplayer_checksum; sim::occupancy; sim::ore_growth; sim::ore_twinkle; sim::overlay_grid; sim::parity_digest; sim::particles; sim::passenger; sim::pathfinding::core; sim::pathfinding::terrain_cost; sim::pathfinding::terrain_speed; sim::pathfinding::zone_incremental; sim::pathfinding::zone_map; sim::power_system; sim::production; sim::production::production_types; sim::projectile; sim::radar; sim::radiation; sim::rng; sim::scenario_bootstrap; sim::scenario_post_map; sim::scenario_session; sim::team_script_vm; sim::tiberium; sim::trigger_runtime; sim::type_handle_table; sim::vision; sim::wave; sim::world::frame_error; sim::world::hash_schema; sim::world::house_base; sim::world::infantry_terminal; sim::world::lifecycle; sim::world::load_object_lifecycle; sim::world::logic_vector; sim::world::substrate; sim::world::techno_ai; sim::world::techno_ai::mission_handlers; sim::world::world_orders; sim::world::world_spawn; sim::world::world_spawn::construction; util::fixed_math
+sim::world -> map::actions; map::bridge_facts; map::cell_index; map::construction_trace; map::entities; map::events; map::houses; map::lighting; map::map_file; map::overlay; map::playfield; map::resolved_terrain; map::trigger_graph; map::triggers; map::tubes; rules::art_data; rules::ini_parser; rules::locomotor_type; rules::mission_data; rules::object_type; rules::overlay_types; rules::particle_system_type; rules::ruleset; rules::team_ai_ini; rules::warhead_type; sim::ai; sim::anim_class; sim::animation; sim::bridge_state; sim::cell_rect; sim::combat; sim::combat::combat_aoe; sim::combat::combat_weapon; sim::combat::damage; sim::command; sim::components; sim::crates::state; sim::docking::aircraft_dock; sim::docking::building_dock; sim::entity_store; sim::game_entity; sim::house_state; sim::house_strategy; sim::intern; sim::lifecycle_request; sim::light_sources; sim::mission::authority; sim::mission::retask; sim::mission::state; sim::movement; sim::movement::air_movement; sim::movement::drop_pod_movement; sim::movement::group_destination; sim::movement::infantry_entry; sim::movement::locomotor; sim::movement::movement_tick; sim::movement::rocket_movement; sim::movement::teleport_movement; sim::movement::track_process; sim::movement::track_turn; sim::movement::tunnel_movement; sim::movement::turret; sim::occupancy; sim::ore_growth; sim::ore_twinkle; sim::overlay_grid; sim::parity_digest; sim::particles; sim::passenger; sim::pathfinding::core; sim::pathfinding::terrain_cost; sim::pathfinding::terrain_speed; sim::pathfinding::zone_incremental; sim::pathfinding::zone_map; sim::power_system; sim::production; sim::production::production_types; sim::projectile; sim::radar; sim::radiation; sim::rng; sim::scenario_bootstrap; sim::scenario_post_map; sim::scenario_session; sim::team_script_vm; sim::tiberium; sim::trigger_runtime; sim::type_handle_table; sim::vision; sim::wave; sim::world::frame_error; sim::world::hash_schema; sim::world::house_base; sim::world::infantry_terminal; sim::world::lifecycle; sim::world::load_object_lifecycle; sim::world::logic_vector; sim::world::substrate; sim::world::techno_ai; sim::world::techno_ai::mission_handlers; sim::world::world_orders; sim::world::world_spawn; sim::world::world_spawn::construction; util::fixed_math
 sim::world::authored_load_host -> assets::asset_manager; map::authored_overlay; map::cell_index; map::resolved_terrain; rules::art_data; sim::anim_class; sim::components; sim::world; sim::world::load_object_lifecycle
 sim::world::bridge_hut_scatter -> map::cell_index; rules::locomotor_type; rules::overlay_types; rules::ruleset; sim::components; sim::find_nearby_cell; sim::movement; sim::movement::locomotor; sim::world; sim::world::frame_error
 sim::world::bridge_orchestrator -> map::bridge_facts; map::resolved_terrain; rules::overlay_types; rules::ruleset; sim::bridge_state; sim::components; sim::intern; sim::rng; sim::world; sim::world::bridge_orchestrator::live_publication::repair_publication; util::fixed_math

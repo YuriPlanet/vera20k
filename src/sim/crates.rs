@@ -32,7 +32,9 @@ use crate::map::bridge_facts::{
     BRIDGE_FLAG_STRUCTURAL, BridgeFlagStamp, BridgeStampFamily, BridgeStampSlot,
     high_bridge_stamp_for_overlay,
 };
-use crate::map::lighting::{LightingProfileUnits, ParsedLightingProfiles};
+use crate::map::lighting::LightingProfileUnits;
+#[cfg(test)]
+use crate::map::lighting::ParsedLightingProfiles;
 use crate::map::overlay_types::OverlayTypeRegistry;
 use crate::rules::crate_rules::CrateRules;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
@@ -142,6 +144,7 @@ struct CrateRandomFrame {
 /// the same member `Gather_Start_Positions` binds and the one VERA models as
 /// `scenario_rng`. Failed attempts spend X then Y. A successful overlay spends
 /// one additional `RandomRanged(0, 0x7fff_fffe)` draw for its crate slot timer.
+#[cfg(test)]
 pub fn place_scenario_start_crates(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -399,6 +402,7 @@ fn draw_crate_candidate(rng: &mut crate::sim::rng::SimRng, frame: CrateRandomFra
     (x as i16 as i32, y as i16 as i32)
 }
 
+#[cfg(test)]
 fn validate_and_stamp_candidate(
     sim: &mut Simulation,
     rules: &CrateRules,
@@ -417,6 +421,7 @@ fn validate_and_stamp_candidate(
     )
 }
 
+#[cfg(test)]
 fn validate_and_stamp_candidate_with_rules(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1126,6 +1131,7 @@ fn crate_surface_at_packed(sim: &Simulation, cell: (i32, i32)) -> CrateSurface {
 }
 
 /// Snap a drawn cell onto a nearby passable cell of the matching surface.
+#[cfg(test)]
 fn snap_to_passable(
     sim: &Simulation,
     path_grid: Option<&PathGrid>,

@@ -42,27 +42,21 @@ pub(crate) struct CombatMods {
     // These verified inputs remain staged until the authoritative fire path
     // adopts `attacker::fire_damage`; production currently reads only defender fields.
     /// Country FirePower mult (House+0x188).
-    #[allow(dead_code)]
     pub attacker_country_firepower: f64,
     /// Per-unit Firepower mult (Techno+0x160); folded with country + base damage
     /// into ONE ftol stage.
-    #[allow(dead_code)]
     pub attacker_unit_firepower: f64,
     /// VeteranCombat (Rules+0x670, ~1.1, double) when the attacker has the
     /// firepower vet/elite ability, else 1.0.
-    #[allow(dead_code)]
     pub attacker_vet_combat: f64,
     /// Occupy/garrison damage mult (Rules+0xf40, float) when the attacker is an
     /// occupant firing from a garrisonable building, else 1.0.
-    #[allow(dead_code)]
     pub attacker_occupy: f64,
     /// Tank-bunker mult (Rules+0xf4c) when the attacker is a tank-bunker
     /// occupant (this+0x2e4 link, non-building), else 1.0.
-    #[allow(dead_code)]
     pub attacker_tank_bunker: f64,
     /// Open-topped transport mult (Rules+0xf58) when the attacker fires from an
     /// OpenTopped transport (this+0x82), else 1.0.
-    #[allow(dead_code)]
     pub attacker_open_topped: f64,
 
     // --- Defender side (ReceiveDamage) — DIVIDE, each ftol-truncated ---

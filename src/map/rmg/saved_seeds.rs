@@ -208,6 +208,7 @@ pub fn allocate_seed_file_name(
 /// retain the player's working values. The setup caller at 0x005969B1 then
 /// synchronizes controls through 0x00596E50, which normalizes the record.
 /// See RANDOM_MAP_SAVED_SEED_SLOTS_GHIDRA_REPORT.md sections 3.5 and 3.6.
+#[cfg(test)]
 pub fn load_saved_seed(
     path: &Path,
     current: &RmgOptions,
@@ -230,11 +231,13 @@ fn options_from_bytes(bytes: &[u8], current: &RmgOptions, default_description: &
 }
 
 /// Write a saved seed.
+#[cfg(test)]
 pub fn save_saved_seed(path: &Path, options: &RmgOptions) -> std::io::Result<()> {
     std::fs::write(path, options.to_sed_bytes())
 }
 
 /// Delete a saved seed.
+#[cfg(test)]
 pub fn delete_saved_seed(path: &Path) -> std::io::Result<()> {
     std::fs::remove_file(path)
 }

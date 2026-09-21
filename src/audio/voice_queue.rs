@@ -142,17 +142,20 @@ impl VoiceQueue {
     }
 
     /// Forget one object entirely (removal, or a hard voice-slot reset).
+    #[cfg(test)]
     pub fn forget(&mut self, owner: u64) {
         self.pending.remove(&owner);
         self.playing.remove(&owner);
     }
 
     /// The id latched for `owner`, if any — `TechnoClass+0x4F0`.
+    #[cfg(test)]
     pub fn pending_for(&self, owner: u64) -> Option<&str> {
         self.pending.get(&owner).map(String::as_str)
     }
 
     /// The id this object's handle is playing — `TechnoClass+0x4F4`.
+    #[cfg(test)]
     pub fn playing_for(&self, owner: u64) -> Option<&str> {
         self.playing.get(&owner).map(String::as_str)
     }

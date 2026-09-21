@@ -736,6 +736,7 @@ impl SoundArbiter {
     }
 
     /// Current glide values, as the device layer must apply them.
+    #[cfg(test)]
     pub fn live_gain(&self, id: EventId) -> Option<(i32, i32)> {
         let event = self.event(id)?;
         Some((event.volume.value(), event.pan.value()))
@@ -1004,6 +1005,7 @@ impl SoundArbiter {
     /// `PRIORITY_ROWS` ceiling here is VERA-internal, gamemd equivalent
     /// UNCHECKED; it is unreachable on stock data, where `Priority=` tops out
     /// at `CRITICAL(4)`.
+    #[cfg(test)]
     fn find_lowest_priority(&mut self, priority: i32) -> Option<u32> {
         for row in 0..priority.clamp(0, PRIORITY_ROWS as i32) as usize {
             for bucket in 0..VOLUME_BUCKETS {
@@ -1350,6 +1352,7 @@ impl SoundArbiter {
     /// [`Self::allocate_channel`]), which is live. Reproducing this layer
     /// needs a fixed decoded-sample budget first; the mechanism is kept and
     /// tested so that budget is the only thing missing.
+    #[cfg(test)]
     pub fn preempt_for_sample_memory(&mut self, priority: i32) -> Vec<EventId> {
         let mut stopped = Vec::new();
         let Some(victim_entry) = self.find_lowest_priority(priority) else {

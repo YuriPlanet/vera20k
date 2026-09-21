@@ -481,6 +481,7 @@ pub fn can_open_still_disguise_gate(
         && !tracked_slot0_present
 }
 
+#[cfg(test)]
 pub fn choose_default_mirage_disguise<T: Copy>(pool: &[Option<T>], random_index: i32) -> Option<T> {
     if pool.is_empty() {
         return None;
@@ -496,6 +497,7 @@ pub struct FireCloakGateResult {
 }
 
 /// `TechnoClass::FireWeaponImpl` / `TechnoClass::GetFireError` closed gate windows.
+#[cfg(test)]
 pub fn evaluate_fire_cloak_gates(
     reveal_on_fire: bool,
     target_house_passes_reveal_check: bool,

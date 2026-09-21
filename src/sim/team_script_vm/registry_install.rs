@@ -246,6 +246,7 @@ impl TeamScriptVm {
         (vm, diagnostics)
     }
 
+    #[cfg(test)]
     pub(crate) fn registry_counts(&self) -> (usize, usize, usize, usize) {
         (
             self.task_forces.len(),
@@ -255,10 +256,12 @@ impl TeamScriptVm {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn team_type_order(&self) -> &[InternedId] {
         &self.team_type_order
     }
 
+    #[cfg(test)]
     pub(crate) fn script_order(&self) -> &[InternedId] {
         &self.script_order
     }
@@ -267,26 +270,32 @@ impl TeamScriptVm {
         self.scripts.get(&id)
     }
 
+    #[cfg(test)]
     pub(crate) fn task_force_order(&self) -> &[InternedId] {
         &self.task_force_order
     }
 
+    #[cfg(test)]
     pub(crate) fn task_force(&self, id: InternedId) -> Option<&TeamTaskForceDefinition> {
         self.task_forces.get(&id)
     }
 
+    #[cfg(test)]
     pub(crate) fn ai_trigger_order(&self) -> &[InternedId] {
         &self.ai_trigger_order
     }
 
+    #[cfg(test)]
     pub(crate) fn ai_trigger(&self, id: InternedId) -> Option<&TeamAiTriggerDefinition> {
         self.ai_triggers.get(&id)
     }
 
+    #[cfg(test)]
     pub(crate) fn team_type_ini(&self, id: InternedId) -> Option<&TeamTypeIniMetadata> {
         self.team_type_ini.get(&id)
     }
 
+    #[cfg(test)]
     pub(crate) fn team_type(&self, id: InternedId) -> Option<&TeamTypeDefinition> {
         self.team_types.get(&id)
     }

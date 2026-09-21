@@ -83,6 +83,7 @@ pub fn build_text(
 /// Selected-unit fade. First `fade_param` characters (capped at 8) tint from
 /// `side_highlight` toward `base_color`; subsequent characters use
 /// `base_color`. `fade_param == 0` => no fade (equivalent to `build_text`).
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub fn build_text_with_fade(
     font: &BitFont,
@@ -159,6 +160,7 @@ pub fn build_text_with_fade(
     out
 }
 
+#[cfg(test)]
 fn lerp_rgb(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
     [
         a[0] + (b[0] - a[0]) * t,

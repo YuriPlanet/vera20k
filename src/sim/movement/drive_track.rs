@@ -3463,6 +3463,7 @@ pub(crate) fn occupant_slot_a4_answers_true(
 /// Select the appropriate RawTrack index from a TurnTrack.
 ///
 /// Uses the short track variant for fast vehicles.
+#[cfg(test)]
 pub fn select_raw_track_index(turn: &TurnTrack, use_short: bool) -> u8 {
     if use_short {
         turn.short_track
@@ -3548,6 +3549,7 @@ pub fn select_drive_track(
 ///
 /// Returns `None` defensively if RawTrack 1 or 2 point data isn't loaded
 /// (never expected in normal operation — these are foundational tracks).
+#[cfg(test)]
 pub fn build_sharp_turn_fallback(current_facing: u8) -> Option<DriveTrackSelection> {
     let cur_dir = facing_to_dir(current_facing);
     let turn_index = cur_dir * FACING_DIRECTIONS + cur_dir; // cur_dir * 9
@@ -3625,6 +3627,7 @@ pub struct DriveTrackPlan {
 
 impl DriveTrackPlan {
     /// True when the curve spans two path nodes.
+    #[cfg(test)]
     pub fn spans_two_nodes(&self) -> bool {
         self.nodes == 2
     }

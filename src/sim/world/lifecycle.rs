@@ -68,6 +68,7 @@ pub(crate) struct UninitContext<'a> {
 }
 
 impl<'a> UninitContext<'a> {
+    #[cfg(test)]
     pub(crate) const fn with_terrain(
         terrain: Option<&'a crate::map::resolved_terrain::ResolvedTerrainGrid>,
     ) -> Self {
@@ -92,6 +93,7 @@ impl<'a> UninitContext<'a> {
         self.terrain
     }
 
+    #[cfg(test)]
     pub(crate) const fn with_bridge_state(
         mut self,
         bridge_state: Option<&'a crate::sim::bridge_state::BridgeRuntimeState>,
@@ -2193,6 +2195,7 @@ impl Simulation {
 
     /// TechnoClass Limbo sends synchronous BREAK to every contact before the
     /// common Object Conceal transaction.
+    #[cfg(test)]
     pub(crate) fn techno_limbo(&mut self, stable_id: u64) -> ConcealOutcome {
         self.techno_limbo_with_context(stable_id, UninitContext::default())
     }

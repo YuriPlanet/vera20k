@@ -28,7 +28,9 @@
 //!   parse only, which this module does not touch).
 
 use crate::map::bridge_facts::BridgeFlags;
-use crate::map::resolved_terrain::{ResolvedTerrainCell, YR_CELL_LAND_TUNNEL};
+use crate::map::resolved_terrain::ResolvedTerrainCell;
+#[cfg(test)]
+use crate::map::resolved_terrain::YR_CELL_LAND_TUNNEL;
 use crate::util::lepton::LEPTONS_PER_LEVEL;
 
 /// Level-unit seed an anchor cell adds to its *effective height* (`GetEffectiveHeight`
@@ -66,6 +68,7 @@ pub const BRIDGE_DECK_HEIGHT_LEVELS: i32 = BRIDGE_DECK_HEIGHT_LEPTONS / LEPTONS_
 
 /// Width of a tileset window: a concrete- or wood-bridge tileset occupies the
 /// first 16 tiles `[base, base + 0x10)` of its theater set. Gated on base != -1.
+#[cfg(test)]
 const BRIDGE_TILESET_WINDOW: i32 = 0x10;
 
 /// Which persistent cell list an object belongs to. The ground list and the
@@ -136,6 +139,7 @@ impl CellBridgeView {
     }
 
     /// `0x200` — bridgehead/transition (on/off-ramp boundary) cell.
+    #[cfg(test)]
     #[inline]
     pub fn is_bridgehead(&self) -> bool {
         self.flags.bridgehead()
@@ -182,6 +186,7 @@ impl CellBridgeView {
     /// < base + 0x10`. Leaf, no calls, no RNG. `base` is
     /// `g_BridgeSet_TileSetBase` 0x00AA0E28, written per theater by
     /// `Read_Theater_TileSets_INI` at 0x00545A80 / 0x00545DDB / 0x00546CB3.
+    #[cfg(test)]
     #[inline]
     pub fn is_bridge_tileset(&self, base: Option<i32>) -> bool {
         base.is_some_and(|b| {
@@ -202,6 +207,7 @@ impl CellBridgeView {
     /// `CellClass::IsWoodBridge` 0x00486770 — the structural twin of
     /// 0x00486750 with `g_WoodBridgeSet_TileSetBase` 0x00ABAD1C substituted,
     /// written at 0x00545A86 / 0x00545DEA / 0x00546CB9.
+    #[cfg(test)]
     #[inline]
     pub fn is_wood_bridge_tileset(&self, wood_base: Option<i32>) -> bool {
         wood_base.is_some_and(|b| {
@@ -215,6 +221,7 @@ impl CellBridgeView {
     /// LandType of `YR_CELL_LAND_TUNNEL` (10). Both conditions are required —
     /// either alone is not a tube cell. This is the low-bridge tube, NOT
     /// subterranean/tunnel (TS-legacy, not modelled).
+    #[cfg(test)]
     #[inline]
     pub fn is_low_bridge_cell(&self, tube_count: usize) -> bool {
         self.tube_index
@@ -269,6 +276,7 @@ impl CellBridgeView {
     ///
     /// (Source: `GATE_BRIDGE_ONBRIDGE_OCCUPANCY_RESOLUTION_GHIDRA_REPORT.md` §b —
     /// Mark `0x007441B0` gates on `Flags&0x100`, Clear `0x00744210` does not.)
+    #[cfg(test)]
     #[inline]
     pub fn occupancy_bit_layer(
         &self,

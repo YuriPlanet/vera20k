@@ -195,6 +195,7 @@ impl PowerBarAnimState {
 
     /// Returns `(empty, surplus, output, drain)` segment counts for drawing.
     /// Draw order top-to-bottom: empty → surplus(green) → output(yellow) → drain(red).
+    #[cfg(test)]
     pub fn segment_counts(&self) -> (i32, i32, i32, i32) {
         let filled = self.surplus_segments + self.output_segments + self.drain_segments;
         let empty = (self.max_segments - filled).max(0);

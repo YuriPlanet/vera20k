@@ -323,6 +323,7 @@ impl OverlayGrid {
     /// The native map reader performs the data-pack overwrite after stamping
     /// overlay identities, including cells whose overlay identity is empty.
     /// Initialization writes directly so it creates no runtime dirtiness.
+    #[cfg(test)]
     pub fn from_overlay_packs(
         entries: &[OverlayEntry],
         data: &OverlayDataPack,
@@ -789,6 +790,7 @@ impl OverlayGrid {
     }
 
     /// Stamp a player-owned wall overlay at a cell.
+    #[cfg(test)]
     pub fn place_owned_wall(
         &mut self,
         rx: u16,
@@ -883,6 +885,7 @@ impl OverlayGrid {
     /// Drained at the first frame boundary with rules, resolved terrain, and an
     /// overlay registry. Partial-input frames retain it so derived terrain and
     /// navigation cannot miss the mutation.
+    #[cfg(test)]
     pub fn take_dirty_cells(&mut self) -> Vec<(u16, u16)> {
         self.take_dirty_cells_with_passability_signal().0
     }
@@ -1198,6 +1201,7 @@ fn publish_wall_dirty_step_without_result(
 /// 4. At full destruction: clear overlay, add to destroyed list
 ///
 /// `damage == -1` bypasses the random check (forced destruction).
+#[cfg(test)]
 pub fn damage_wall_overlay(
     overlay_grid: &mut OverlayGrid,
     registry: &OverlayTypeRegistry,
@@ -1212,6 +1216,7 @@ pub fn damage_wall_overlay(
 /// Runtime-authoritative wall damage. Finalized grids require the resolved
 /// CellClass lookup state so each terminal removal reverses exactly one
 /// wrapping eight-neighbor wall contribution, including fixed-stride aliases.
+#[cfg(test)]
 pub(crate) fn damage_wall_overlay_with_terrain(
     overlay_grid: &mut OverlayGrid,
     registry: &OverlayTypeRegistry,
@@ -1480,6 +1485,7 @@ fn auto_destruct_threshold(overlay_id: u8, full_byte: u8) -> bool {
 /// then apply the per-type auto-destruct safety net.
 ///
 /// Same-type-only matching.
+#[cfg(test)]
 pub fn recompute_wall_connectivity_at(
     grid: &mut OverlayGrid,
     registry: &OverlayTypeRegistry,
@@ -1492,6 +1498,7 @@ pub fn recompute_wall_connectivity_at(
 /// Runtime form of [`recompute_wall_connectivity_at`] using native fixed-grid
 /// cardinal lookup. The coordinate being recomputed is already a real cell;
 /// only its neighbor probes pass through Get_CellClass semantics.
+#[cfg(test)]
 pub(crate) fn recompute_wall_connectivity_at_with_terrain(
     grid: &mut OverlayGrid,
     registry: &OverlayTypeRegistry,
@@ -1814,6 +1821,7 @@ pub(crate) fn refresh_wall_connectivity_after_placement_with_host(
 ///
 /// N/W/S/E receivers each receive a N/E/S/W/self cross update in table order.
 /// Cleanup removals do not recursively expand this fixed scope.
+#[cfg(test)]
 pub fn cleanup_wall_neighbors(
     grid: &mut OverlayGrid,
     registry: &OverlayTypeRegistry,

@@ -126,6 +126,7 @@ impl Animation {
 /// Whether a sequence represents the infantry being in a prone stance.
 ///
 /// This is a temporary stance proxy until the sim carries an explicit prone bit.
+#[cfg(test)]
 pub fn sequence_is_prone(sequence: SequenceKind) -> bool {
     matches!(
         sequence,
@@ -495,6 +496,7 @@ fn tick_animations_impl(
     dying_finished
 }
 
+#[cfg(test)]
 pub fn tick_animations(
     entities: &mut crate::sim::entity_store::EntityStore,
     sequences: &BTreeMap<String, SequenceSet>,

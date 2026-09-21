@@ -377,6 +377,7 @@ impl HomingState {
 /// - `arm_frames`: from `BulletType.Arm`
 /// - `floater`, `very_high`: from `BulletType`
 /// - `missile_rot_var`: from `[General].MissileROTVar` (stock .25; missing-key fallback 1.0)
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub fn attach_homing_state(
     entities: &mut EntityStore,

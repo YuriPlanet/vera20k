@@ -148,6 +148,7 @@ impl PowerupTable {
     /// named, native has already stored `-1` and keeps it, while VERA resolves
     /// the name against the finished set. That needs a multi-layer mod to
     /// reach; recorded as a deferred DRIFT rather than claimed equivalent.
+    #[cfg(test)]
     pub fn anim_for(&self, slot: usize, registered: &[String]) -> Option<&str> {
         let name = self.anims.get(slot)?.as_deref()?;
         registered

@@ -1,5 +1,6 @@
 //! BuildingLightClass searchlight visual resolution and batch lowering.
 
+#[cfg(test)]
 use crate::render::batch::SpriteInstance;
 
 pub const TYPE16_MASK_WIDTH: usize = 256;
@@ -140,6 +141,7 @@ pub fn type16_mask_uv(intensity_index: u8) -> Option<([f32; 2], [f32; 2])> {
 
 /// Lower an already-projected authoritative child-light center to a mask quad.
 /// Child coordinate/angle production remains simulation-owned.
+#[cfg(test)]
 pub fn build_type16_mask_instance(
     projected_center: [f32; 2],
     intensity_index: u8,
@@ -173,6 +175,7 @@ pub struct SpotlightRasterClip {
 /// Clip the mask centered at `screen_center` against an origin-zero target.
 /// Named location: native rectangle helper `0x007BC040` advances source and
 /// destination origins together after intersecting the destination clip.
+#[cfg(test)]
 pub fn clip_type16_mask(
     screen_center: (i32, i32),
     target_size: (usize, usize),
@@ -217,6 +220,7 @@ pub fn blend_type16_rgb565(destination: u16, mask: u8) -> u16 {
 /// Apply already-generated native mask bytes to an RGB565 surface.
 /// This is the exact CPU raster substrate; using an alpha-blended sprite in its
 /// place would change the destination-dependent additive multiplication.
+#[cfg(test)]
 pub fn raster_type16_rgb565(
     destination: &mut [u16],
     destination_pitch: usize,
@@ -236,6 +240,7 @@ pub fn raster_type16_rgb565(
 }
 
 /// RA2/YR `BuildingLightClass::DrawIt` (YR 0x435be0) visual-only contract.
+#[cfg(test)]
 pub fn resolve_building_light_visual(mode: u8, distance_bucket: i32) -> BuildingLightVisual {
     let bucket = distance_bucket.clamp(0, 10) as u8;
     BuildingLightVisual {
@@ -248,6 +253,7 @@ pub fn resolve_building_light_visual(mode: u8, distance_bucket: i32) -> Building
 
 /// Lower the two independently supplied, Z-adjusted cone edges to batch pixels.
 /// Target acquisition remains simulation-owned and deliberately absent here.
+#[cfg(test)]
 pub fn build_searchlight_beam_instances(
     edges: [([f32; 2], [f32; 2]); 2],
     visual: BuildingLightVisual,

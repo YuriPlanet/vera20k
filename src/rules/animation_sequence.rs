@@ -243,6 +243,7 @@ impl SequenceSet {
         self.infantry_actions = Some(actions);
     }
 
+    #[cfg(test)]
     pub(crate) fn infantry_action(
         &self,
         action: i32,

@@ -8,9 +8,12 @@
 //! helpers are `CDTimerClass::Start @ 0x0046B640` and `Remaining @ 0x004B4D70`.
 
 use crate::map::entities::EntityCategory;
+#[cfg(test)]
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::game_entity::GameEntity;
+#[cfg(test)]
 use crate::sim::movement::locomotion::LocomotorRuntimePayload;
+#[cfg(test)]
 use crate::sim::movement::locomotor::MovementLayer;
 
 /// Literal Drive/Ship slope interpolation duration installed by both native
@@ -171,7 +174,7 @@ pub(crate) fn sample_process_entry(entity: &mut GameEntity, sampled_slope: u8, b
 /// Rust has no active stock Tunnel caller. This dormant transaction keeps the
 /// typed pre-restore check, real piggyback END, restored-Drive check, and snap
 /// inseparable on one entity so no generic restoration path can reuse a proof.
-#[allow(dead_code)]
+#[cfg(test)]
 fn restore_ground_tunnel_stashed_drive_and_snap(
     entity: &mut GameEntity,
     sampled_slope: u8,

@@ -121,6 +121,7 @@ pub fn process_tunnel(
 }
 
 /// Route an interrupted tunnel move through its proven state-7 cleanup.
+#[cfg(test)]
 pub fn abort_tunnel_motion(state: &mut TunnelState) -> SpecialMovementOutcome {
     if state.phase == TunnelPhase::Idle {
         return SpecialMovementOutcome::Abort;

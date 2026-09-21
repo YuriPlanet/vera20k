@@ -4,6 +4,7 @@
 //! ordered cells through the generic radar-terrain dirty channel.
 
 use super::BridgeRuntimeState;
+#[cfg(test)]
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 
 pub(super) fn extend_unique_cells(
@@ -21,6 +22,7 @@ impl BridgeRuntimeState {
     /// Compatibility call surface for existing bridge drivers. The state is
     /// owned exclusively by live terrain, including cells without a bridge entry.
     /// Callers retain returned real-cell writes before dispatching other effects.
+    #[cfg(test)]
     pub fn apply_damaged_variant_flood_fill(
         &mut self,
         rx: u16,

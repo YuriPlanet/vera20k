@@ -130,6 +130,7 @@ impl TeleportState {
 
     /// The relocation frame is removed from normal targeting before its cell
     /// and occupancy mutation; it becomes targetable again while materializing.
+    #[cfg(test)]
     pub fn is_targetable(&self) -> bool {
         self.phase == TeleportPhase::ChronoDelay
     }

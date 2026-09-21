@@ -51,6 +51,7 @@ impl TypeHandleTable {
     }
 
     /// Count of interned ids that did NOT resolve to an object (orphans).
+    #[cfg(test)]
     pub fn orphan_count(&self) -> usize {
         self.by_interned.iter().filter(|h| h.is_none()).count()
     }

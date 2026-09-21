@@ -87,6 +87,7 @@ impl MissionDispatchTimer {
     /// Native dispatch does not saturate this subtraction. On the unanchored
     /// start the remainder is the raw delay dword, because the elapsed
     /// subtraction never runs.
+    #[cfg(test)]
     #[inline]
     pub fn remaining_if_pending(self, now: u32) -> Option<i32> {
         if self.due(now) {

@@ -275,6 +275,7 @@ pub fn high_bridge_stamp_for_overlay(id: u8) -> Option<(BridgeStampFamily, u8)> 
     }
 }
 
+#[cfg(test)]
 pub fn stamp_set_bridge_direction(
     cells: &mut [BridgeCellFacts],
     width: u16,
@@ -429,6 +430,7 @@ fn set_direction_zero_flag(cell: &mut BridgeCellFacts, set: bool) {
     }
 }
 
+#[cfg(test)]
 fn stamp_slots(anchor: (u16, u16), direction: u8) -> [(BridgeStampSlot, Option<(u16, u16)>); 6] {
     let f1 = step(anchor, direction);
     let f2 = f1.and_then(|cell| step(cell, direction));
@@ -450,6 +452,7 @@ fn stamp_slots(anchor: (u16, u16), direction: u8) -> [(BridgeStampSlot, Option<(
     ]
 }
 
+#[cfg(test)]
 fn index(width: u16, height: u16, rx: u16, ry: u16) -> Option<usize> {
     if rx >= width || ry >= height {
         return None;
@@ -457,6 +460,7 @@ fn index(width: u16, height: u16, rx: u16, ry: u16) -> Option<usize> {
     Some(ry as usize * width as usize + rx as usize)
 }
 
+#[cfg(test)]
 fn step(cell: (u16, u16), direction: u8) -> Option<(u16, u16)> {
     let (dx, dy) = crate::util::direction::direction_delta(direction)?;
     let rx = cell.0 as i32 + dx;

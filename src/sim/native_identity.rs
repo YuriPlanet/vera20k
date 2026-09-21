@@ -70,6 +70,7 @@ impl NativeUniqueIdCursor {
         Ok(self.value)
     }
 
+    #[cfg(test)]
     pub(crate) fn current_raw(&self) -> u32 {
         self.value
     }

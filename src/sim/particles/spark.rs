@@ -97,6 +97,7 @@ pub enum SparkKernelError {
 
 /// Signed toward-zero lepton→cell — `v / 256` is bit-identical to the
 /// canonical biased shift; delegated so the conversion exists once.
+#[cfg(test)]
 pub fn lepton_to_cell_trunc(value: i32) -> i32 {
     crate::util::direction_tables::lepton_to_cell(value)
 }
@@ -164,6 +165,7 @@ fn add_stored_f32(
     X87Chop53::store_f32(sum).map_err(Into::into)
 }
 
+#[cfg(test)]
 pub fn resolve_collision(
     motion: SparkMotionStep,
     facts: SparkCollisionFacts,
@@ -498,6 +500,7 @@ pub fn advance_color(
     Ok(())
 }
 
+#[cfg(test)]
 pub fn tick_particle_with_facts(
     particle: &mut Particle,
     inputs: SparkTickInputs,

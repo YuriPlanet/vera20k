@@ -44,10 +44,12 @@ pub const STORED_DEPTH_CLEAR: f32 = 1.0;
 /// candidates 32768..65534 too, while equality at 65535 still rejects.
 pub const EMPTY_Z: u16 = u16::MAX;
 
+#[cfg(test)]
 pub fn stored_depth(z: u16) -> f32 {
     f32::from(z) / f32::from(u16::MAX)
 }
 
+#[cfg(test)]
 pub fn stored_z(depth: f32) -> u16 {
     (depth * f32::from(u16::MAX)).round() as u16
 }
@@ -177,6 +179,7 @@ pub struct VoxelDepthRegion {
 /// Eligibility uses the original height; clipping happens afterwards in
 /// each Standard_SHP_blitter call (0x0073B2FE, 0x00437461). This does not
 /// choose the gameplay/type predicate or move the parent's painter position.
+#[cfg(test)]
 pub fn voxel_depth_region(
     rect: [i32; 2],
     packed_gradient: u32,
@@ -259,6 +262,7 @@ pub fn sprite_seed_z(
 
 /// Z of row `row` (0 = top) of a blit seeded by [`sprite_seed_z`]. The walker
 /// steps after each row (`0x00437921`), so row `k` has absorbed `k` increments.
+#[cfg(test)]
 pub fn sprite_row_z(
     gradient: ZGradient,
     screen_top: i32,
@@ -277,6 +281,7 @@ pub fn sprite_row_z(
 /// quantisation; `0x00437E67..0x00437EA7` advances shape rows without stepping Z.
 /// The per-pixel leaf then subtracts the signed shape byte. Raw SHP frames
 /// use the standard walker and do not consume the second shape.
+#[cfg(test)]
 pub fn zshape_seed_z(screen_top: i32, height: i32, z_adjust: i32) -> i32 {
     ((DEFAULT_Z - height - screen_top + 1) & 0xFFFF) + z_adjust
 }
@@ -285,6 +290,7 @@ pub fn zshape_seed_z(screen_top: i32, height: i32, z_adjust: i32) -> i32 {
 /// screen (already lifted by the height level), `height_level` the cell's
 /// `+0x11B` level. Per pixel the tile adds its TMP Z-data byte and draws when
 /// `base + zdata <= zbuf`.
+#[cfg(test)]
 pub fn tile_base_z(screen_top: i32, height_level: i32) -> i32 {
     ((DEFAULT_Z - screen_top - TILE_HEIGHT_ROWS) & 0xFFFF) - (TILE_HEIGHT_ROWS * height_level) / 2
 }
@@ -353,6 +359,7 @@ pub fn depth_for_row(row: f32, origin_y: f32, world_height: f32) -> f32 {
 }
 
 /// Normalised depth of an absolute native Z at camera row `camera_y`.
+#[cfg(test)]
 pub fn depth_for_native_z(z: i32, camera_y: i32, origin_y: f32, world_height: f32) -> f32 {
     depth_for_row((DEFAULT_Z - z + camera_y) as f32, origin_y, world_height)
 }

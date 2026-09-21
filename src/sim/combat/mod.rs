@@ -3226,23 +3226,10 @@ pub(crate) fn capture_kill_credit(
     );
 }
 
-/// Squared distance in leptons between two positions (sub-cell precise).
-///
-/// Uses i64 arithmetic to avoid overflow on large maps — a 200-cell lepton
-/// delta squared is ~2.6 billion, which exceeds i32 max (2.1 billion).
-/// 256 leptons = 1 cell.
-#[allow(dead_code)] // Convenience API — callers currently use lepton_distance_sq_raw.
-pub(crate) fn lepton_distance_sq(
-    a: &crate::sim::components::Position,
-    b: &crate::sim::components::Position,
-) -> i64 {
-    lepton_distance_sq_raw(a.rx, a.ry, a.sub_x, a.sub_y, b.rx, b.ry, b.sub_x, b.sub_y)
-}
-
 /// Squared distance in leptons from raw coordinates.
 ///
-/// Same as `lepton_distance_sq` but takes individual fields instead of
-/// `&Position`, for use with snapshots where positions are destructured.
+/// Takes individual fields rather than a `&Position`, for use with snapshots
+/// where positions are destructured.
 pub(crate) fn lepton_distance_sq_raw(
     ax_cell: u16,
     ay_cell: u16,
@@ -3265,7 +3252,7 @@ pub(crate) fn lepton_distance_sq_raw(
 /// Check if a squared lepton distance is within weapon range.
 ///
 /// Converts weapon range from cells to leptons (×256) before squaring.
-/// Uses i64 to match `lepton_distance_sq()` output.
+/// Uses i64 to match `lepton_distance_sq_raw()` output.
 ///
 /// The scale runs on the fixed-point bits, not through `to_num`, because
 /// `CCINIClass::ReadRange` 0x00474620 multiplies BEFORE truncating: a

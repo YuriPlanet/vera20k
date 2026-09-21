@@ -295,6 +295,7 @@ fn queue_guard(sim: &mut Simulation, building_id: u64) {
 /// links + plays the down sound/anim when occupied, but does NOT reposition the
 /// unit. This legacy clear-only adapter has not been audited as a native
 /// teardown; install/release do not imply a concealed or invulnerable occupant.
+#[cfg(test)]
 pub fn release_clear(sim: &mut Simulation, building_id: u64, rules: &RuleSet) {
     if sim
         .substrate

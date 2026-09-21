@@ -186,6 +186,7 @@ impl GadgetList {
     }
 
     /// G2 — Add_Head: prepend.
+    #[cfg(test)]
     pub fn add_head(&mut self, spec: GadgetSpec) -> GadgetHandle {
         let g = self.alloc(spec);
         let h = g.handle;
@@ -195,6 +196,7 @@ impl GadgetList {
 
     /// G2 — Add(after): insert immediately after an existing gadget.
     /// Returns None when `after` is not in this list.
+    #[cfg(test)]
     pub fn add_after(&mut self, after: GadgetHandle, spec: GadgetSpec) -> Option<GadgetHandle> {
         let pos = self.gadgets.iter().position(|g| g.handle == after)?;
         let g = self.alloc(spec);
@@ -215,6 +217,7 @@ impl GadgetList {
     }
 
     /// Extract_Gadget(id): remove the first gadget carrying a control id.
+    #[cfg(test)]
     pub fn extract_by_id(&mut self, id: u16, focus: &mut FocusState) -> Option<GadgetHandle> {
         let handle = self.gadgets.iter().find(|g| g.id == id)?.handle;
         self.remove(handle, focus);
@@ -249,6 +252,7 @@ impl GadgetList {
 
 /// G18 — focus acquire: steal keyboard focus. Old holder is dirtied and loses its
 /// 0x100 mask bit; the new holder gains it.
+#[cfg(test)]
 pub fn set_focus(list: &mut GadgetList, focus: &mut FocusState, handle: GadgetHandle) {
     if let Some(old) = focus.keyboard.take()
         && let Some(g) = list.get_mut(old)

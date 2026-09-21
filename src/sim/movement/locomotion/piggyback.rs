@@ -334,6 +334,7 @@ pub fn begin(
 /// Transfer the suspended runtime into an explicit output location. The active
 /// state is unchanged because native END transfers an interface; the caller
 /// decides when to install it.
+#[cfg(test)]
 pub fn end_into(
     state: &mut LocomotorState,
     output: Option<&mut Option<LocomotorRuntime>>,
@@ -358,6 +359,7 @@ pub fn end(state: &mut LocomotorState) -> Option<StashedLocomotor> {
 
 /// The nested-runtime save marker used by the clean-room snapshot seam.
 /// Serde persists the following boxed runtime only when this returns one.
+#[cfg(test)]
 pub fn serialized_presence(state: &LocomotorState) -> u8 {
     u8::from(state.piggyback.is_some())
 }

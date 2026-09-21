@@ -24,6 +24,7 @@ Replace this file on each update; do not append a diary.
 | Animation | the parachute canopy: an owner-attached `AnimClass` built by the drop (`ObjectClass::Paradrop @ 0x005F5940`, canopy at `0x005F5A9D`) and wound down at landing (`0x005F3F9D`). Deleted: the app's third stepper (`chute_anim.rs`, `ParachuteAnim`) and `ParachuteRenderConfig`, a second parse of the `PARACH` AnimType's art. The app keeps only the canopy's placement on the body's sort key. Snapshot 179 | this PR |
 | Move phases | the Jumpjet's `AirMovePhase` mirror: readers take the locomotor's own state field (`JumpjetRuntime::phase`, all seven native values) and the mirror is no longer written; the legacy VERA-only jumpjet physics with no caller left. Snapshot 180 | this PR |
 | Dead code | items dead in both builds; superseded test-only duplicates (map-list funnels, `radiation_light_epoch`); test probes gated; the effect asset catalog trimmed to particle images, which changes the rules hash, so snapshot 176 | #421 |
+| Dead code | second sweep, for what the compiler cannot see: `pub` items of the library and items behind `allow(dead_code)`. 90 suppressions removed and 30 put back where the reason is real (native enum values, GPU resource ownership, staged native ports, RNG stream-routing audit anchors); about 40 functions nothing references deleted, with the dead `movement/scatter.rs` module, a terrain render pipeline and instance buffer nothing drew with, the depth-stamp pipeline only a GPU test draws with (now built only there), and stale constants and imports; about 460 functions and constants that only tests call are `#[cfg(test)]`, so the production build no longer carries them. This is a one-time sweep, not a guard: the `dead_code` lint still cannot see an unreferenced `pub` item of the library, so a new one will not be reported. Unreferenced `pub` items kept on purpose: native-value vocabularies with a gap a deletion would hide (`FX_EMP`/`FX_MIRROR`, `REPLAY_FLAG_*`, the rocking constants `SNAP_BACK_RATE` and `APPLY_AREA_FORCE_FLOOR`, `TRACKBAR_WM_HSCROLL_MESSAGE`, the fixed-math `SIM_EPSILON`) and native-derived staged ports (cloak/disguise helpers, house base helpers, gas and smoke particle movers). Three modules only tests reach (`movement/track_speed_native`, `movement/track_fresh_dispatch`, `map/rmg/sqrt_table`) carry the gate on their `mod` line. Non-test warnings 100 to 18; the 17 that remain are fields only tests read and native enum values nothing constructs yet, left visible rather than suppressed | this PR |
 
 Three per-mover world scans went with those: the per-frame dock sweep, the
 whole-entity scan in `interrupt_refinery_docked_miners`, and the per-frame
@@ -79,9 +80,17 @@ confirm).**
 `track_fresh_dispatch.rs`, `track_speed_native.rs`, the `load_object_lifecycle`
 wall arm, `all_to_hunt_score_override`,
 `projectile_slope_reflect_with_elasticity`, `advance_emergency_state`,
-`snap_to_passable`: verified native work with golden or oracle tests. Deleting
-them discards evidence-backed work; wiring each is a port. The six unused
-`state_hash_without_*` probes in `world_hash.rs` are replay-pin provenance.
+`snap_to_passable`, the engineer bridge-repair walker, the retail multiplayer
+checksum: verified native work with golden or oracle tests. Deleting them
+discards evidence-backed work; wiring each is a port. Their functions are
+`#[cfg(test)]` since the second sweep (only tests reach them; a port removes the
+gate), and so are the types only they use. Untested staged ports kept as they were: the House
+base-centre helpers (`world/house_base.rs`, AI-deferred) and the gas and smoke
+wind movers (need `WindDirection=`) behind their `allow(dead_code)`, and four
+`pub` cloak helpers, `suppresses_ordinary_damage` and the wave
+`color_mode`/`registration_bucket` pair (the only record of the native
+wave-type mapping), which nothing references yet. The six unused `state_hash_without_*`
+probes in `world_hash.rs` are replay-pin provenance.
 
 ## Open
 
@@ -127,6 +136,10 @@ release: a chrono warp, a superweapon invoke, a bridge collapse.
   test in `apply_anim_raw_occupation`, so it marks the ground occupation bits.
   The old 128 scale passed that test by accident. Rare; the producer's level
   byte is the coarse input.
+- `tests/refinery_live_rules.rs` read the private `GameEntity::owner` and
+  `type_ref` and did not compile; it uses the accessors since the second sweep,
+  so all 32 integration targets and the binaries build. Integration tests are
+  outside the `--lib` gate, so nothing runs it; it was compiled, not run.
 - Combat death debris never binds a sprite (GSI-05.14); theaters other than
   TEMPERATE were not checked for unbound building animations.
 

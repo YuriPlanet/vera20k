@@ -15,6 +15,7 @@
 //! - Part of sim/ — depends on sim/components (Position, Owner, Selected, Category).
 //! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
 
+#[cfg(test)]
 use crate::sim::entity_store::EntityStore;
 
 /// Drag phase tracks the two-stage selection state machine:
@@ -119,6 +120,7 @@ impl SelectionState {
     }
 
     /// True if the player is currently in any drag state (pending or active).
+    #[cfg(test)]
     pub fn is_dragging(&self) -> bool {
         !matches!(self.phase, DragPhase::None)
     }
@@ -185,7 +187,7 @@ pub enum SelectAction {
 /// Kept as the sim-side primitive for a wholesale unselect. The band-box path no
 /// longer calls it: the native release replaces the selection through the
 /// selection command instead, and an empty box clears nothing at all.
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn deselect_all(entities: &mut EntityStore) {
     let selected_ids: Vec<u64> = entities
         .values()

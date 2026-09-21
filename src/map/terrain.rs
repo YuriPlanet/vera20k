@@ -551,6 +551,7 @@ fn tactical_cardinal_neighbor(rx: u16, ry: u16, direction: u8) -> Option<(u16, u
 /// to the wrong cell.
 ///
 /// Converges in 1-3 iterations on typical RA2 terrain gradients.
+#[cfg(test)]
 pub fn screen_to_iso_with_height(
     screen_x: f32,
     screen_y: f32,
