@@ -22,7 +22,7 @@ use crate::sim::movement::locomotor::{GroundMovePhase, LocomotorState, MovementL
 use crate::sim::movement::movement_blocked::handle_blocked_tick;
 use crate::sim::movement::movement_bridge::resolve_cell_transition_bridge_state;
 use crate::sim::movement::movement_occupancy::{
-    DeferredCellCheck, LiveBuildingEntrySkipMap, detect_deferred_cell_check,
+    BuildingEntrySkipLookup, DeferredCellCheck, detect_deferred_cell_check,
     evaluate_runtime_can_enter_cell_with_transition, naval_terrain_diag,
     runtime_can_enter_cell_args,
 };
@@ -1158,7 +1158,7 @@ pub(super) fn process_cell_crossings(
     entity_cost_grid: Option<&TerrainCostGrid>,
     mover_entity_blocks: Option<&BTreeSet<(u16, u16)>>,
     mover_entity_block_map: Option<&crate::sim::pathfinding::LayeredEntityBlockMap>,
-    live_building_entry_skips: &LiveBuildingEntrySkipMap,
+    live_building_entry_skips: &impl BuildingEntrySkipLookup,
     occupancy: &mut OccupancyGrid,
     cell_occupation: &mut CellOccupationGrid,
     occupancy_enter_order: &mut u64,

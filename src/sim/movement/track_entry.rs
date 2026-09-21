@@ -8,7 +8,7 @@
 use super::MoverSnapshot;
 use super::locomotor::MovementLayer;
 use super::movement_occupancy::{
-    RuntimeCanEnterCellArgs, build_live_building_entry_skip_map,
+    DeferredBuildingEntrySkips, MoverBuildingEntryFacts, RuntimeCanEnterCellArgs,
     evaluate_runtime_can_enter_cell_with_transition,
 };
 use super::movement_tick::{TrackEntryQuery, classify_track_entry, snapshot_mover};
@@ -79,8 +79,31 @@ impl Simulation {
             layers: entry.layers,
             bridge_traversal_allowed: entry.bridge_traversal_allowed,
         };
-        let skips =
-            build_live_building_entry_skip_map(&self.substrate.entities, id, &self.interner, rules);
+        // The mover's borrow above has ended, so the whole store is readable.
+        let mover_entry_facts = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|mover| MoverBuildingEntryFacts::new(mover, rules));
+        #[cfg(debug_assertions)]
+        let skip_check = super::movement_occupancy::live_read_check_enabled().then(|| {
+            super::movement_occupancy::build_live_building_entry_skip_map(
+                &self.substrate.entities,
+                id,
+                &self.interner,
+                rules,
+            )
+        });
+        let skips = DeferredBuildingEntrySkips {
+            mover: mover_entry_facts.as_ref(),
+            rules,
+            interner: &self.interner,
+            #[cfg(debug_assertions)]
+            check: skip_check.as_ref(),
+        }
+        .reading(crate::sim::entity_store::OtherEntities::whole(
+            &self.substrate.entities,
+        ));
         let result = classify_track_entry(
             query,
             id,

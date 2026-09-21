@@ -18,13 +18,15 @@ Replace this file on each update; do not append a diary.
 | `resource_nodes` | the node map, the second growth algorithm, the miner authority switch, the test-only admission seam, and the state they left write-only | #419 |
 | Animation | bridge `BridgeExplosions=` on `AnimStore`; the store's delayed start edge; the whole `WorldEffect` lane, which drew nothing | #420 |
 | Map load | building animations bound tolerantly; the native anim file-name rule; ore twinkle and cliff-collapse roots | #422 |
-| Mover path facts | the crusher flag every move-order caller passed; facts now come from the mover (`from_snapshot`, `from_entity_without_wall_arm`), cell-entry contexts take the wall-arm key from `CrushCapability`. The wall arm on order and Drive tick searches is movement-ledger row I9b, a parity port, not a duplicate | this PR |
-| Animation | `AnimStore`'s private 128-per-level Z scale: one frame, world leptons (104 per level), owner-attached anims follow the owner's actual height, sprites project from exact Z. Prerequisite for the muzzle flashes; snapshot 177 | this PR |
-| Animation | weapon `Anim=` and occupant `OccupantAnim=` muzzle flashes on `AnimStore`, built at the sim's one fire coordinate (`combat/fire_coord.rs`, also the bullet origin and the report sound position). A building's FLH arm now starts from the building coordinate native uses (location minus 128), like its pixel arms. Deleted: the app's second AnimClass stepper, both flash lists and draw paths, the `f32` FLH transforms and pixel-offset math. Snapshot 178 | this PR |
-| Animation | the parachute canopy: an owner-attached `AnimClass` built by the drop (`ObjectClass::Paradrop @ 0x005F5940`, canopy at `0x005F5A9D`) and wound down at landing (`0x005F3F9D`). Deleted: the app's third stepper (`chute_anim.rs`, `ParachuteAnim`) and `ParachuteRenderConfig`, a second parse of the `PARACH` AnimType's art. The app keeps only the canopy's placement on the body's sort key. Snapshot 179 | this PR |
-| Move phases | the Jumpjet's `AirMovePhase` mirror: readers take the locomotor's own state field (`JumpjetRuntime::phase`, all seven native values) and the mirror is no longer written; the legacy VERA-only jumpjet physics with no caller left. Snapshot 180 | this PR |
+| Mover path facts | the crusher flag every move-order caller passed; facts now come from the mover (`from_snapshot`, `from_entity_without_wall_arm`), cell-entry contexts take the wall-arm key from `CrushCapability`. The wall arm on order and Drive tick searches is movement-ledger row I9b, a parity port, not a duplicate | #423 |
+| Animation | `AnimStore`'s private 128-per-level Z scale: one frame, world leptons (104 per level), owner-attached anims follow the owner's actual height, sprites project from exact Z. Prerequisite for the muzzle flashes; snapshot 177 | #424 |
+| Animation | weapon `Anim=` and occupant `OccupantAnim=` muzzle flashes on `AnimStore`, built at the sim's one fire coordinate (`combat/fire_coord.rs`, also the bullet origin and the report sound position). A building's FLH arm now starts from the building coordinate native uses (location minus 128), like its pixel arms. Deleted: the app's second AnimClass stepper, both flash lists and draw paths, the `f32` FLH transforms and pixel-offset math. Snapshot 178 | #425 |
+| Animation | the parachute canopy: an owner-attached `AnimClass` built by the drop (`ObjectClass::Paradrop @ 0x005F5940`, canopy at `0x005F5A9D`) and wound down at landing (`0x005F3F9D`). Deleted: the app's third stepper (`chute_anim.rs`, `ParachuteAnim`) and `ParachuteRenderConfig`, a second parse of the `PARACH` AnimType's art. The app keeps only the canopy's placement on the body's sort key. Snapshot 179 | #426 |
+| Move phases | the Jumpjet's `AirMovePhase` mirror: readers take the locomotor's own state field (`JumpjetRuntime::phase`, all seven native values) and the mirror is no longer written; the legacy VERA-only jumpjet physics with no caller left. Snapshot 180 | #427 |
 | Dead code | items dead in both builds; superseded test-only duplicates (map-list funnels, `radiation_light_epoch`); test probes gated; the effect asset catalog trimmed to particle images, which changes the rules hash, so snapshot 176 | #421 |
-| Dead code | second sweep, for what the compiler cannot see: `pub` items of the library and items behind `allow(dead_code)`. 90 suppressions removed and 30 put back where the reason is real (native enum values, GPU resource ownership, staged native ports, RNG stream-routing audit anchors); about 40 functions nothing references deleted, with the dead `movement/scatter.rs` module, a terrain render pipeline and instance buffer nothing drew with, the depth-stamp pipeline only a GPU test draws with (now built only there), and stale constants and imports; about 460 functions and constants that only tests call are `#[cfg(test)]`, so the production build no longer carries them. This is a one-time sweep, not a guard: the `dead_code` lint still cannot see an unreferenced `pub` item of the library, so a new one will not be reported. Unreferenced `pub` items kept on purpose: native-value vocabularies with a gap a deletion would hide (`FX_EMP`/`FX_MIRROR`, `REPLAY_FLAG_*`, the rocking constants `SNAP_BACK_RATE` and `APPLY_AREA_FORCE_FLOOR`, `TRACKBAR_WM_HSCROLL_MESSAGE`, the fixed-math `SIM_EPSILON`) and native-derived staged ports (cloak/disguise helpers, house base helpers, gas and smoke particle movers). Three modules only tests reach (`movement/track_speed_native`, `movement/track_fresh_dispatch`, `map/rmg/sqrt_table`) carry the gate on their `mod` line. Non-test warnings 100 to 18; the 17 that remain are fields only tests read and native enum values nothing constructs yet, left visible rather than suppressed | this PR |
+| Dead code | second sweep, for what the compiler cannot see: `pub` items of the library and items behind `allow(dead_code)`. 90 suppressions removed and 30 put back where the reason is real (native enum values, GPU resource ownership, staged native ports, RNG stream-routing audit anchors); about 40 functions nothing references deleted, with the dead `movement/scatter.rs` module, a terrain render pipeline and instance buffer nothing drew with, the depth-stamp pipeline only a GPU test draws with (now built only there), and stale constants and imports; about 460 functions and constants that only tests call are `#[cfg(test)]`, so the production build no longer carries them. This is a one-time sweep, not a guard: the `dead_code` lint still cannot see an unreferenced `pub` item of the library, so a new one will not be reported. Unreferenced `pub` items kept on purpose: native-value vocabularies with a gap a deletion would hide (`FX_EMP`/`FX_MIRROR`, `REPLAY_FLAG_*`, the rocking constants `SNAP_BACK_RATE` and `APPLY_AREA_FORCE_FLOOR`, `TRACKBAR_WM_HSCROLL_MESSAGE`, the fixed-math `SIM_EPSILON`) and native-derived staged ports (cloak/disguise helpers, house base helpers, gas and smoke particle movers). Three modules only tests reach (`movement/track_speed_native`, `movement/track_fresh_dispatch`, `map/rmg/sqrt_table`) carry the gate on their `mod` line. Non-test warnings 100 to 18; the 17 that remain are fields only tests read and native enum values nothing constructs yet, left visible rather than suppressed | #428 |
+| Per-mover world scans | the whole-world marker-peer snapshot and building entry-skip map every mover rebuilt every tick (and `track_entry.rs` per entry). The mover is lifted out of the store for its turn (`EntityStore::take_turn`), so the other entities are read live: peers by id from the cell lists `UpdateBridgePassability` walks, skips from the buildings on the queried cell's list. The mover's own facts are captured once as its turn begins. Debug builds still build both whole-world forms and compare every live read against them | this PR |
+| Loader funnels | `load_rules_with_merged_ini` composed the rules layers cold, a second path beside the match load's `NativeRulesProcessOwner::load_noncampaign_scenario`; it now runs startup selection and that rebuild, and `LoadedRules` is gone. `sprite_atlas.rs` kept a `cfg(test)` copy of the effect-name list that had drifted (no `Wake=`, no projectile images); production and tests call the one `collect_effect_names` | this PR |
 
 Three per-mover world scans went with those: the per-frame dock sweep, the
 whole-entity scan in `interrupt_refinery_docked_miners`, and the per-frame
@@ -59,7 +61,7 @@ PRESERVE: the worktree `.claude/worktrees/phase6-audio-lane` (branch
 uncommitted lines of parked bouncer/damage-arm work from 2026-09-03. Do not
 delete it.
 
-**`GroundMovePhase` (for the final audit to confirm).** A seven-value label
+**`GroundMovePhase` (accepted by the #427 review).** A seven-value label
 `update_locomotor_phases` recomputes at the end of every movement pass from
 `path_blocked` and the mover's speed. Only two values are read: `Blocked` by the
 Walk readiness producer and `Idle` by the piggyback end gate. It is not a pure
@@ -69,11 +71,31 @@ a frame around a new order or a cleared block. What the native Walk predicate
 reads there (the next-step coordinate) is the reconciliation movement rows
 GSI-06.13 and GSI-06.14 own; removing the label is that port, not a fold.
 
-**Jumpjet destination (for the final audit to confirm).** `movement_target`
+**Jumpjet destination (accepted by the #427 review).** `movement_target`
 and `JumpjetRuntime::destination` are two native fields, not two copies:
 the Foot destination the order writes, and the locomotor's own cached
 coordinate at `+0x40` that `Move_To` fills and `Process` flies toward. The
 cruise host hands one to the other and clears the order on arrival.
+
+**Owner block sets, built once per moving object's turn (for the final audit to
+confirm).** `bump_crush::build_entity_block_sets` still walks every entity for
+each mover's turn. It is not a lookup table like the two scans that went: A*
+and the blocked-tick handlers take it as whole sets through some fifty
+signatures in `movement/` and `pathfinding/`, and the Drive selection gate asks
+it at every cell crossing. Its native shape is `UnitClass::Can_Enter_Cell`
+walking one cell's object list per neighbour, so replacing it is a port of the
+A* neighbour classification (live reads instead of a turn-start snapshot, which
+can move paths), not a fold of duplicate state. Movement ledger row I2c owns
+it and now has the primitive it was waiting for (`EntityStore::take_turn`).
+
+**Scenario construction helpers only tests call (for the final audit to
+confirm).** `runtime::construct_scenario`, `construct_scenario_with_generated_inits`,
+`init_helpers::construct_app_scenario` and `HeadlessTerrainBootstrap` hold no
+logic of their own: each is `ScenarioBootstrapRng::into_simulation` followed by
+the production `populate_staged_scenario_with_generated_inits` (and
+`bind_staged_app_scenario_metadata`). Production calls the same pieces apart
+because it stages the `Simulation` before terrain Fill. One authority, two call
+shapes; they stay `cfg(test)`.
 
 **Staged native ports with no production caller yet (for the final audit to
 confirm).**
@@ -94,19 +116,8 @@ probes in `world_hash.rs` are replay-pin provenance.
 
 ## Open
 
-**Per-mover world scans.** `movement_tick.rs` rebuilds
-`build_live_building_entry_skip_map` and `snapshot_bridge_marker_peers` (every
-entity's remaining path) for every mover every tick, and `track_entry.rs`
-rebuilds the skip map per entry: O(N^2) against the 20,000-unit target. The
-snapshot exists because the mover holds the entity store mutably. Hoisting needs
-incremental invalidation, because a mover's tick can rewrite other entities'
-paths; `refresh_owner_block_set_if_stale` is the existing model.
-
-**Loader funnels only tests drive.** `construct_scenario`,
-`construct_app_scenario`, `load_rules_with_merged_ini`, `LoadedRules`,
-`HeadlessTerrainBootstrap`: oracle tests exercise these instead of the staged
-production funnel. Also `sprite_atlas.rs` `collect_effect_names`, a `cfg(test)`
-copy of the production list, so the atlas tests validate the copy.
+Nothing open. What this goal does not take on is under Retained and Adjacent
+findings.
 
 ## Production validation
 
