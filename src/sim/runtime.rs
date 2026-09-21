@@ -1116,7 +1116,6 @@ pub(crate) fn finalize_constructed_scenario(
     mut overlay_grid: crate::sim::overlay_grid::OverlayGrid,
     house_roster: &crate::map::houses::HouseRoster,
     skirmish_session: Option<&crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
-    tiberium_queues_preinitialized: bool,
 ) -> crate::sim::scenario_post_map::ScenarioPostMapOutput {
     // Attach the TIBTRE ore-spawner animation index to the terrain objects
     // constructed ahead of the map entities. Its authoritative raw SHP count
@@ -1201,7 +1200,6 @@ pub(crate) fn finalize_constructed_scenario(
             overlay_registry,
             house_roster,
             skirmish_session,
-            tiberium_queues_preinitialized,
         });
     sim.discard_lighting_events();
     output

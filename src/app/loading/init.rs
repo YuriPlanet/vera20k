@@ -2081,7 +2081,7 @@ impl MapLoadInitial {
         // The generator tail, where the match load runs it: growth and spread
         // queues from the painted densities, then the final germination
         // (`RandomMapGenerator::Generate @ 0x00598960` tail). The post-map
-        // finalizer below is therefore told the queues exist.
+        // finalizer below leaves the queues alone.
         let _ = crate::sim::runtime::initialize_native_tiberium_queues(
             &mut simulation,
             &map_data.basic,
@@ -2151,7 +2151,6 @@ impl MapLoadInitial {
             overlay_grid,
             &house_roster,
             Some(&match_launch_descriptor),
-            true,
         );
         let crate_name_id =
             |name: Option<&str>| name.and_then(|name| overlay_registry.id_for_name(name));
@@ -3320,18 +3319,7 @@ pub(crate) fn load_map_from_initial(
             overlay_grid,
             &house_roster,
             Some(&match_launch_descriptor),
-            // Both arms already ran the native growth-then-spread queue
-            // initialization at its native point (authored: between Terrain
-            // and Techno; generated: before the generator tail's germination).
-            true,
         );
-        if let Some(stats) = output.tiberium_queues {
-            log::info!(
-                "Native tiberium queues rebuilt: {} growth entries, {} spread entries",
-                stats.growth_entries,
-                stats.spread_entries,
-            );
-        }
         if !output.navigation_published {
             log::error!("Initial navigation rebuild failed: resolved terrain is unavailable");
         }

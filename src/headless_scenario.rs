@@ -359,7 +359,6 @@ pub(crate) fn load_with_launch(
         overlay_grid,
         &house_roster,
         Some(&launch),
-        true,
     );
     if !post_map.navigation_published {
         return Err("publish headless post-map navigation".to_string());

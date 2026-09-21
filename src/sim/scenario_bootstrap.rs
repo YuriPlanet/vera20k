@@ -4349,6 +4349,18 @@ mod tests {
             "controlled first crate draw must need no FNPC displacement"
         );
         let _crate_timer = reference.next_range_u32_inclusive(0, 0x7FFF_FFFE);
+        // The queues are built where the load builds them, before the post-map
+        // tail, which leaves them alone.
+        let overlay_grid_for_queues = sim.overlay_grid.clone();
+        let _ = crate::sim::runtime::initialize_native_tiberium_queues(
+            &mut sim,
+            &map.basic,
+            &map.special_flags,
+            &rules,
+            &overlays,
+            overlay_grid_for_queues.as_ref(),
+            (SIZE, SIZE),
+        );
         let output = sim.finalize_scenario_post_map(ScenarioPostMapInput {
             map_width: SIZE,
             map_height: SIZE,
@@ -4359,7 +4371,6 @@ mod tests {
             overlay_registry: &overlays,
             house_roster: &house_roster,
             skirmish_session: Some(&launch),
-            tiberium_queues_preinitialized: false,
         });
         assert_eq!(
             output.crates,

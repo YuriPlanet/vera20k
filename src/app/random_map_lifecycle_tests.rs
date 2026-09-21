@@ -505,10 +505,6 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         ui_launch.post_map_output.navigation_published,
         "shared Post_Map_Init must publish first navigation authority"
     );
-    assert!(
-        ui_launch.post_map_output.tiberium_queues.is_none(),
-        "the generator tail built the queues before germination; Post_Map_Init must not rebuild them"
-    );
     assert_eq!(
         ui_launch.post_map_output.crates,
         Some(crate::sim::crates::CratePlacement {

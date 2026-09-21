@@ -8,13 +8,12 @@
 //! draws). The app submits immutable map/session inputs and consumes only the
 //! receipt.
 
-use std::collections::BTreeSet;
-
 use crate::map::basic::{BasicSection, SpecialFlagsSection};
 use crate::map::houses::HouseRoster;
 use crate::map::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::crates::CratePlacement;
+#[cfg(test)]
 use crate::sim::ore_growth::NativeTiberiumRebuildStats;
 use crate::sim::world::Simulation;
 #[cfg(test)]
@@ -31,15 +30,11 @@ pub(crate) struct ScenarioPostMapInput<'a> {
     pub(crate) overlay_registry: &'a OverlayTypeRegistry,
     pub(crate) house_roster: &'a HouseRoster,
     pub(crate) skirmish_session: Option<&'a crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
-    /// Authored Full_Init has already completed the native growth-all then
-    /// spread-all queue scans between Terrain and Techno sections.
-    pub(crate) tiberium_queues_preinitialized: bool,
 }
 
 /// Presentation/logging facts returned after authoritative initialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ScenarioPostMapOutput {
-    pub(crate) tiberium_queues: Option<NativeTiberiumRebuildStats>,
     pub(crate) navigation_published: bool,
     pub(crate) crates: Option<CratePlacement>,
     pub(crate) ore_twinkle: crate::sim::ore_twinkle::OreTwinkleReceipt,
@@ -69,58 +64,6 @@ impl Simulation {
         // regeneration rung reaches `OverlayClass::Mark` with the same source
         // this startup pass uses.
         self.scenario_normal_lighting = input.normal_lighting;
-        let tiberium_queues = if input.tiberium_queues_preinitialized {
-            None
-        } else if let Some(overlay_grid) = self.overlay_grid.as_ref() {
-            self.production.ore_growth_config = crate::sim::ore_growth::OreGrowthConfig::resolve(
-                input.basic,
-                input.special_flags,
-                &self.session,
-            );
-            self.production.ore_growth_state =
-                crate::sim::ore_growth::OreGrowthState::new(input.map_width, input.map_height);
-            // `CellClass+0xE4 FirstObject != 0`: terrain objects plus every
-            // ground-list Techno already constructed.
-            let mut source_object_cells: BTreeSet<(u16, u16)> = self
-                .production
-                .terrain_object_cells
-                .keys()
-                .copied()
-                .collect();
-            source_object_cells.extend(
-                self.substrate.occupancy.occupied_cells_on_layer(
-                    crate::sim::movement::locomotor::MovementLayer::Ground,
-                ),
-            );
-            Some(
-                self.production
-                    .ore_growth_state
-                    .rebuild_native_tiberium_queues_from_overlays(
-                        overlay_grid,
-                        input.overlay_registry,
-                        &input.rules.tiberium_types,
-                        self.resolved_terrain.as_ref(),
-                        &source_object_cells,
-                        self.production.ore_growth_config.grows,
-                        self.production.ore_growth_config.spreads,
-                        self.session.binary_frame,
-                        (input.map_width, input.map_height),
-                    ),
-            )
-        } else {
-            self.production.ore_growth_config = crate::sim::ore_growth::OreGrowthConfig::resolve(
-                input.basic,
-                input.special_flags,
-                &self.session,
-            );
-            self.production.ore_growth_state =
-                crate::sim::ore_growth::OreGrowthState::new(input.map_width, input.map_height);
-            self.production
-                .ore_growth_state
-                .reset_native_tiberium_classes(0, self.session.binary_frame);
-            None
-        };
-
         // Runtime rebuilds use this same sim-owned publication seam. Crate
         // placement below pins the newly published path snapshot.
         let mut navigation_published = self.rebuild_dynamic_navigation(input.rules);
@@ -200,7 +143,6 @@ impl Simulation {
         );
 
         ScenarioPostMapOutput {
-            tiberium_queues,
             navigation_published,
             crates,
             ore_twinkle,
@@ -424,7 +366,6 @@ mod tests {
             overlay_registry: overlays,
             house_roster,
             skirmish_session: None,
-            tiberium_queues_preinitialized: true,
         }
     }
 
@@ -767,6 +708,18 @@ mod tests {
         )
         .expect("fixture session is fully resolved");
 
+        // The queues are built where the load builds them, before the post-map
+        // tail, which leaves them alone.
+        let overlay_grid_for_queues = sim.overlay_grid.clone();
+        let queue_stats = crate::sim::runtime::initialize_native_tiberium_queues(
+            &mut sim,
+            &basic,
+            &special_flags,
+            &rules,
+            &overlays,
+            overlay_grid_for_queues.as_ref(),
+            (MAP_SIZE, MAP_SIZE),
+        );
         let output = sim.finalize_scenario_post_map(ScenarioPostMapInput {
             map_width: MAP_SIZE,
             map_height: MAP_SIZE,
@@ -777,11 +730,10 @@ mod tests {
             overlay_registry: &overlays,
             house_roster: &roster,
             skirmish_session: Some(&descriptor),
-            tiberium_queues_preinitialized: false,
         });
 
         assert_eq!(
-            output.tiberium_queues,
+            queue_stats,
             Some(NativeTiberiumRebuildStats {
                 growth_entries: 1,
                 spread_entries: 1,
@@ -867,7 +819,7 @@ mod tests {
         assert_eq!(seeded.growth_entries, 1);
         assert_eq!(seeded.spread_entries, 1);
 
-        let output = sim.finalize_scenario_post_map(ScenarioPostMapInput {
+        sim.finalize_scenario_post_map(ScenarioPostMapInput {
             map_width: MAP_SIZE,
             map_height: MAP_SIZE,
             basic: &BasicSection::default(),
@@ -877,10 +829,8 @@ mod tests {
             overlay_registry: &overlays,
             house_roster: &HouseRoster::default(),
             skirmish_session: None,
-            tiberium_queues_preinitialized: true,
         });
 
-        assert_eq!(output.tiberium_queues, None);
         let native = sim.production.ore_growth_state.native_tiberium_state();
         assert_eq!(native.classes[0].growth_bitmap, BTreeSet::from([(5, 5)]));
         assert_eq!(native.classes[0].spread_bitmap, BTreeSet::from([(5, 5)]));
@@ -936,6 +886,18 @@ mod tests {
         )
         .expect("fixture session is fully resolved");
 
+        // The queues are built where the load builds them, before the post-map
+        // tail, which leaves them alone.
+        let overlay_grid_for_queues = sim.overlay_grid.clone();
+        let _ = crate::sim::runtime::initialize_native_tiberium_queues(
+            &mut sim,
+            &BasicSection::default(),
+            &SpecialFlagsSection::default(),
+            &rules,
+            &overlays,
+            overlay_grid_for_queues.as_ref(),
+            (MAP_SIZE, MAP_SIZE),
+        );
         let output = sim.finalize_scenario_post_map(ScenarioPostMapInput {
             map_width: MAP_SIZE,
             map_height: MAP_SIZE,
@@ -946,7 +908,6 @@ mod tests {
             overlay_registry: &overlays,
             house_roster: &HouseRoster::default(),
             skirmish_session: Some(&descriptor),
-            tiberium_queues_preinitialized: false,
         });
 
         assert_eq!(
@@ -1023,6 +984,18 @@ mod tests {
             ],
         };
 
+        // The queues are built where the load builds them, before the post-map
+        // tail, which leaves them alone.
+        let overlay_grid_for_queues = sim.overlay_grid.clone();
+        let _ = crate::sim::runtime::initialize_native_tiberium_queues(
+            &mut sim,
+            &BasicSection::default(),
+            &SpecialFlagsSection::default(),
+            &rules,
+            &overlays,
+            overlay_grid_for_queues.as_ref(),
+            (MAP_SIZE, MAP_SIZE),
+        );
         let output = sim.finalize_scenario_post_map(ScenarioPostMapInput {
             map_width: MAP_SIZE,
             map_height: MAP_SIZE,
@@ -1033,10 +1006,8 @@ mod tests {
             overlay_registry: &overlays,
             house_roster: &roster,
             skirmish_session: None,
-            tiberium_queues_preinitialized: false,
         });
 
-        assert_eq!(output.tiberium_queues, None);
         assert!(output.navigation_published);
         assert_eq!(output.crates, None);
         assert_eq!(output.skirmish_order, [None; 3]);
