@@ -59,6 +59,7 @@ These generators now default to **read-only checks**, also spelled `--check`:
 | `tools.spatial_oracle.tube_startup_capture` | Unpatched Windows process startup FPCW/adjacent data at four hardware breakpoints; full executable section integrity | Original initializer inputs for `tools.spatial_oracle.tube_hierarchy`; startup-only evidence, not runtime immutability |
 | `tools.spatial_oracle.walk_paid_step` | 40 original paid Walk steps through the coordinate branch, including facing equality, zero speed, cell boundaries and five chained Slice6 production steps; movement-speed integer supplied | `src/sim/movement/walk_step_tests.rs`; production `walk_step.rs`, Slice6 frame assertions and move-to-fire/save-restore regression |
 | `tools.spatial_oracle.walk_direction_table` | All 65,536 heading words: original sine/cosine indexes and table bits, plus the complete retail table bytes | `src/util/native_trig.rs::tests::every_walk_heading_uses_the_original_trig_entries`; full-heading paid Walk displacement |
+| `tools.spatial_oracle.crate_speed_effect` | 23 original speed-crate recipient loops followed by live Foot speed queries; class/owner/factor gates, native 3-D distance and announcement flag | Native evidence for the open pickup/Foot speed dependency; no Rust production parity claim |
 
 Run them as modules (`python -m ...`). Imports do not emulate or write files;
 `--help` works without retail configuration. `--output <path>` selects another

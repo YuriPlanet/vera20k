@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "23 original speed-effect loops plus subsequent full Foot speed queries: strict 3-D radius and native distance rounding, existing-factor rejection, class selection, vector order/nulls, owner independence and announcement flag. Excludes pickup admission, weighted selection, crate removal, UI suffix, lifecycle producers and Rust parity.",
+  "assumptions": [
+    "Supplied post-selection frame, vector order, object class flags, coordinates, house control byte and selected powerup multiplier.",
+    "Original Infantry/Unit/Aircraft vtables; unused object state zero. PC53/chop ambient state.",
+    "Following original Foot speed calls use the same actor factor, raw speed10 unless overridden, neutral house, rookie/no FASTER, full speed fraction and Unit+6CC=-1. Infantry prone override is outside coverage.",
+    "Retail Powerups.Speed multiplier1.2 and CrateRules.CrateRadius3.0 cells (768 leptons), with explicit contrast cases."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "pickup": "0x00481A00",
+    "speed_loop": "0x00482F4A",
+    "loop_end": "0x00483098",
+    "empty_end": "0x004830AF",
+    "cell_height": "0x0047B3A0",
+    "sqrt": "0x004CAC40",
+    "ftol": "0x007C5F00",
+    "foot_speed": "0x004DB1A0"
+  },
+  "payload_sha256": "03a62c931c0c6e0d12b5785dc79346d7c35f523f458e6ce33605f8a4e98e184d"
+}

@@ -153,7 +153,7 @@ Acceptance before implementation:
 - Native corpus checks, affected production tests, full library tests and Clippy
   precede one fresh critic for this new PR. Integrate accepted work and continue.
 
-## Current Walk checkpoint
+## Accepted Walk increment (PR #440)
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
 Branch `feature/combat-walk-step`, source HEAD `c80821f3`, including the runtime
@@ -222,12 +222,16 @@ prone adjustment, which uses the existing `infantry::apply_prone_speed` owner.
 NavCom/action legality, launch inputs, special warhead effects and the final
 whole-combat audit also remain required; this increment does not close the goal.
 
-Next safe action: publish/merge the validated Walk increment, then continue the
-required combat dependencies. The local
+Published and merged as PR #440, merge `a37e8118`; final PR head `20bf1af0`.
+The local
 comparison checkout `.local/walk-baseline-ec27` retains only a temporary test
 probe; it is not a second implementation to publish.
 
 ## Next dependency: live Foot speed inputs and crate pickup
+
+Current task-owned branch: `feature/combat-foot-speed`, created from fetched
+`origin/main` at `a37e8118`. Walk work is integrated; no Cargo process or critic
+review is pending. The primary checkout remains untouched.
 
 Native4DB1A0 applies type speed, House50C050's category factor and Foot+580,
 truncates, applies FASTER/VeteranSpeed with another truncation, then applies
@@ -251,3 +255,22 @@ effects and subsequent Foot speed, including affected consumers and save/restore
 Use the existing country, crate, Foot and lifecycle owners; adding a supplied
 factor to an isolated speed helper does not complete this dependency. Trace the
 Unit+6CC writer/cleanup before treating its current flag-carrier label as proven.
+
+Native evidence checkpoint: `crate_speed_effect --check` passes 23 original
+recipient loops followed by original Foot4DB1A0 queries on the resulting state.
+The fixture supplies selection/frame/vector state; it replaces no gameplay call.
+Infantry/Unit/Aircraft actual vtables return15/1/2, establishing that the kind2
+gate excludes aircraft. Distinct-house recipients both receive the factor; the
+loop has no house-equality filter. Existing factors, even the binary64 neighbors
+of1.0, refuse stacking. The native distance approximation truncates a767-lepton
+axial offset to766; radius768 still refuses distance768. Flat/elevated/slope,
+null-vector and control-byte contrasts are preserved. The applied stock1.2 factor
+then makes raw speed10 return11, not12, in original Foot speed math. The483054
+annotation is saved/read back. None of these cases executes weighted selection,
+removal or the UI suffix; pickup production code remains to be implemented.
+
+Next safe action: trace selection/removal and their callbacks through481A00 and
+its out-of-function continuations, then implement the coherent pickup-to-speed
+chain using this corpus. Preserve the effect loop's live vector order and its
+exact predicates. Extend native comparisons where integration exposes uncertainty;
+the current evidence does not close the required speed dependency or combat goal.

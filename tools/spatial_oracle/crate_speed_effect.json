@@ -1,0 +1,621 @@
+[
+  {
+    "announce": false,
+    "distances": [],
+    "factors": [],
+    "foot_speeds": [],
+    "input": {
+      "actors": [],
+      "name": "empty"
+    },
+    "object_kinds": [],
+    "visits": []
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "name": "center"
+    },
+    "object_kinds": [
+      15
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      766
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            767,
+            0,
+            0
+          ]
+        }
+      ],
+      "name": "inside"
+    },
+    "object_kinds": [
+      15
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      768
+    ],
+    "factors": [
+      "3ff0000000000000"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            768,
+            0,
+            0
+          ]
+        }
+      ],
+      "name": "at_radius"
+    },
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      768
+    ],
+    "factors": [
+      "3ff0000000000000"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            769,
+            0,
+            0
+          ]
+        }
+      ],
+      "name": "outside"
+    },
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      766
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            542,
+            542,
+            0
+          ]
+        }
+      ],
+      "name": "diagonal_inside"
+    },
+    "object_kinds": [
+      15
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      769
+    ],
+    "factors": [
+      "3ff0000000000000"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            544,
+            544,
+            0
+          ]
+        }
+      ],
+      "name": "diagonal_outside"
+    },
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      766
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            0,
+            0,
+            767
+          ]
+        }
+      ],
+      "name": "vertical_inside"
+    },
+    "object_kinds": [
+      15
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      768
+    ],
+    "factors": [
+      "3ff0000000000000"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            0,
+            0,
+            768
+          ]
+        }
+      ],
+      "name": "vertical_at_radius"
+    },
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "input": {
+      "actors": [
+        {
+          "kind": "infantry"
+        }
+      ],
+      "name": "infantry"
+    },
+    "object_kinds": [
+      15
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "input": {
+      "actors": [
+        {
+          "kind": "unit"
+        }
+      ],
+      "name": "unit"
+    },
+    "object_kinds": [
+      1
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff0000000000000"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "input": {
+      "actors": [
+        {
+          "kind": "aircraft"
+        }
+      ],
+      "name": "aircraft"
+    },
+    "object_kinds": [
+      2
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "0000000000000000"
+    ],
+    "foot_speeds": [
+      0
+    ],
+    "input": {
+      "actors": [
+        {
+          "factor": 0.0
+        }
+      ],
+      "name": "existing_0.0"
+    },
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "input": {
+      "actors": [
+        {
+          "factor": 1.2
+        }
+      ],
+      "name": "existing_1.2"
+    },
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3fefffffffffffff"
+    ],
+    "foot_speeds": [
+      9
+    ],
+    "input": {
+      "actors": [
+        {
+          "factor": 0.9999999999999999
+        }
+      ],
+      "name": "existing_0.9999999999999999"
+    },
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff0000000000001"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "input": {
+      "actors": [
+        {
+          "factor": 1.0000000000000002
+        }
+      ],
+      "name": "existing_1.0000000000000002"
+    },
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [],
+    "factors": [
+      "3ff0000000000000"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "input": {
+      "actors": [
+        {
+          "flags": 1
+        }
+      ],
+      "name": "non_foot_mask"
+    },
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0,
+      0
+    ],
+    "factors": [
+      "3ff3333333333333",
+      null,
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11,
+      null,
+      11
+    ],
+    "input": {
+      "actors": [
+        {
+          "house": 0
+        },
+        null,
+        {
+          "house": 1
+        }
+      ],
+      "name": "distinct_owners_and_null"
+    },
+    "object_kinds": [
+      15,
+      15
+    ],
+    "visits": [
+      0,
+      null,
+      2
+    ]
+  },
+  {
+    "announce": true,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "input": {
+      "actors": [
+        {
+          "player_controlled": 1
+        }
+      ],
+      "name": "controlled_announcement"
+    },
+    "object_kinds": [
+      15
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      768
+    ],
+    "factors": [
+      "3ff0000000000000"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            768,
+            0,
+            0
+          ],
+          "player_controlled": 1
+        }
+      ],
+      "name": "controlled_outside"
+    },
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            0,
+            0,
+            208
+          ]
+        }
+      ],
+      "level": 2,
+      "name": "elevated_center"
+    },
+    "object_kinds": [
+      15
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            0,
+            0,
+            260
+          ]
+        }
+      ],
+      "level": 2,
+      "name": "slope_center",
+      "slope": 1
+    },
+    "object_kinds": [
+      15
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff0000000000000"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "input": {
+      "actors": [
+        {}
+      ],
+      "name": "zero_radius",
+      "radius": 0
+    },
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  }
+]
