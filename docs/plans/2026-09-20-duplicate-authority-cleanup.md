@@ -125,6 +125,8 @@ Release build (`cargo build --release`), zero-interaction fixture maps through
   `AnimStore` rows at both ends; cargo 20 to 0; 0 ERROR lines. The log has no
   line per constructed animation, so the run shows the warp path executing
   without error, not the pixels.
+- 2026-09-21, with the owner block index, both maps again: the miner docks
+  and deposits, the chrono miner warps to the pad twice; 0 ERROR lines.
 
 Not exercised in a release build: a superweapon invoke, a Lightning Storm, a
 bridge collapse, a weapon muzzle flash, a paradrop. Each needs player input or

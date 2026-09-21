@@ -770,8 +770,10 @@ mod tests {
         );
     }
 
-    /// Random edits through the store's own interface, each batch followed by
-    /// a comparison of both owners' sets with a whole-world build.
+    /// Random edits through the store's own interface. Between them one owner
+    /// at a time is brought current, by a fresh loan or by refreshing sets a
+    /// pass still holds, and compared with a whole-world build; the owners
+    /// fall out of step with each other and with the edits.
     #[test]
     fn random_edits_never_leave_the_sets_behind_the_world() {
         let rules = rules();
@@ -785,8 +787,13 @@ mod tests {
             state ^= state << 17;
             state % bound
         };
-        let mut rebuilds = 0;
-        for _ in 0..600 {
+        // Every name the edits can use, interned before the snapshot is taken.
+        for name in ["Americans", "Russians", "MTNK", "GAPOWR", "NABNKR"] {
+            test_intern(name);
+        }
+        let interner = test_interner();
+        let mut held: Option<(usize, LentOwnerBlockSet)> = None;
+        for _ in 0..1200 {
             let id = 1 + next(14);
             let cell = (4 + next(4) as u16, 4 + next(4) as u16);
             let owner = OWNERS[next(2) as usize];
@@ -817,11 +824,68 @@ mod tests {
                     }
                 }
             }
-            if next(3) == 0 {
-                rebuilds += lend_and_check(&mut index, &mut entities, &alliances, &rules);
+            let which = next(2) as usize;
+            let owner = test_intern(OWNERS[which]);
+            let world = |entities: &EntityStore| {
+                build_owner_block_set(entities, OWNERS[which], &alliances, &interner, Some(&rules))
+            };
+            match (next(6), held.take()) {
+                // A pass takes the sets and keeps them across further edits.
+                (0, None) => {
+                    let lent = index.lend_current(
+                        owner,
+                        &mut entities,
+                        &alliances,
+                        &interner,
+                        Some(&rules),
+                    );
+                    assert_eq!(lent.sets, world(&entities));
+                    held = Some((which, lent));
+                }
+                // The pass refreshes what it holds, or hands it back.
+                (0 | 1, Some((held_which, mut lent))) => {
+                    let held_owner = test_intern(OWNERS[held_which]);
+                    index.refresh_lent(
+                        held_owner,
+                        &mut lent,
+                        &mut entities,
+                        &alliances,
+                        &interner,
+                        Some(&rules),
+                    );
+                    let expected = build_owner_block_set(
+                        &entities,
+                        OWNERS[held_which],
+                        &alliances,
+                        &interner,
+                        Some(&rules),
+                    );
+                    assert_eq!(lent.sets, expected);
+                    held = Some((held_which, lent));
+                }
+                (2, Some((held_which, lent))) => {
+                    index.give_back(test_intern(OWNERS[held_which]), lent);
+                }
+                // Another pass asks for one owner, possibly the one on loan.
+                (3, still_held) => {
+                    let lent = index.lend_current(
+                        owner,
+                        &mut entities,
+                        &alliances,
+                        &interner,
+                        Some(&rules),
+                    );
+                    assert_eq!(lent.sets, world(&entities));
+                    index.give_back(owner, lent);
+                    held = still_held;
+                }
+                (_, still_held) => held = still_held,
             }
         }
-        assert_eq!(rebuilds, 1, "only the first loan read every entity");
+        assert_eq!(
+            index.world_rebuilds, 1,
+            "only the first sync read every entity"
+        );
     }
 
     #[test]
