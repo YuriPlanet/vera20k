@@ -1355,19 +1355,21 @@ the prompt itself, not an additional mandatory planning artifact.
 > and validate **[real entry → result → continuation/release]**, including
 > **[important interruption/ownership cases and observable outputs]**.
 > Reuse working behavior, include coherent prerequisites and check affected
-> consumers. After each coherent increment, obtain fresh independent criticism
-> of requirements, original evidence, the complete diff and validation; correct
-> confirmed findings and repeat review until passed. Maintain affected evidence
-> and documentation after independent confirmation, respecting annotation authority.
-> Complete the named scope with a final audit for omissions and cross-mechanism
-> gaps; a helper, passing sample or merged PR
-> alone does not close it. Preserve any remaining in-scope work for continuation.
+> consumers. For substantial/risky changes, run one fresh read-only critic after
+> implementation and validation, before opening each PR. Provide requirements,
+> original evidence, the complete diff and actual validation output. The owner
+> fixes confirmed findings, justifies rejected findings with evidence and validates
+> corrections. Additional critic passes require an explicit user request. Maintain
+> affected evidence and documentation after confirmation, respecting annotation
+> authority. Complete the named scope with the owner's final audit for omissions
+> and cross-mechanism gaps; a helper, passing sample or merged PR alone does not
+> close it. Preserve any remaining in-scope work for continuation.
 
 Carry the current goal-prompt skill's standing PR-creation preference into final
 implementation prompts unless narrowed by the user; merge needs its own authority.
 Preserve established publication authority, budgets and workflow settings. Leave
 design/decomposition/tools open except for real constraints. The scope
-examples in this guide also require that skill's independent correction loop and final
+examples in this guide also require that skill's review cadence and final
 whole-scope acceptance when expanded into implementation prompts.
 If implementation is authorized, preparation alone does not complete the task.
 
@@ -1526,7 +1528,7 @@ illumination and shadow darkening are different responsibilities.
 Use saved retail comparisons and relevant native fixtures with their stated
 coverage. Validate the production GPU output through captures/readbacks where
 needed; CPU math and diagnostic asset renders alone do not establish the scene.
-For scale-sensitive changes, check the affected workload under ENGINE's scale
+For scale-sensitive changes, check the affected workload under the project contract's scale
 contract. Extra zoom/filtering behavior needs an explicit VERA target and must not
 silently change the retail-size comparison bar. This catalogue pass ran no game,
 GPU experiment or performance benchmark.
@@ -1545,8 +1547,8 @@ through real consumers/output, rather than “finish the rendering module.” Ex
 VERA zoom behavior needs an explicit target instead of implied retail parity.
 
 Command queues, pause/game-speed policy, clocks/timers/RNG, snapshot/hash/replay,
-lifecycle cleanup and scale remain standing ENGINE obligations. Check them where
-the selected action depends on them. Preserve one owner per mechanism;
+lifecycle cleanup and scale remain obligations under the project contract. Check them
+where the selected action depends on them. Preserve one owner per mechanism;
 overlapping acceptance does not authorize competing implementations.
 
 ## Keep the goal intact while working
@@ -1565,7 +1567,7 @@ and the handoffs it can break: repeated trips/attacks, replacement orders,
 contention, provider/target loss or relevant saved-state continuation. These are
 case-selection aids, not a fixed test quota or a substitute for exhaustive scope.
 Keep the native comparison bar separate from Rust regressions and rendered/audio
-output checks, as ENGINE requires.
+output checks, as the project contract requires.
 
 One owner carries the result across PRs and resumptions. Follow the existing
 [checkpoint convention](../../.agents/skills/_shared/handoff.md) for sustained
@@ -1588,10 +1590,13 @@ ignoring an explicit stop/budget limit.
 > movement/firing for both variants. Cover interruption and repeated use, with
 > saved-state checks where affected. Include broken required handoffs and check
 > other consumers of changed shared state. Complete this loop and retain its
-> evidence. After each coherent increment, obtain fresh independent review of
-> original evidence, the complete diff and validation; correct findings and repeat
-> review until passed. Update affected evidence after confirmation and finish with
-> a whole-scope omission/regression audit. This does not certify the entire infantry
+> evidence. For substantial/risky changes, run one fresh read-only critic after
+> implementation and validation, before opening each PR. Provide requirements,
+> original evidence, the complete diff and actual validation output. The owner
+> fixes confirmed findings, justifies rejected findings with evidence and validates
+> corrections. Additional critic passes require an explicit user request. Update
+> affected evidence after confirmation and finish with the owner's whole-scope
+> omission/regression audit. This does not certify the entire infantry
 > roster or either unit's unrelated abilities. Preserve outstanding in-scope behavior
 > for continuation. Apply the goal-prompt skill's standing PR-creation preference,
 > preserving any narrower instructions and separate merge authority.
