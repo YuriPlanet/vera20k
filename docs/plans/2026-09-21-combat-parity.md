@@ -231,9 +231,12 @@ probe; it is not a second implementation to publish.
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
 Branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Source increment: `c3e4876fb7a843181f7cadf5c3ef9f4683c9b2ad` migrates Ground
-rendering and entity picking to retained Display. Committed on the owned branch;
-this checkpoint accompanies it. No tracked implementation WIP remains.
+Current source HEAD: `bae495bff341bcccc905a3b97d8f13068adf0a9e`; this checkpoint
+accompanies the validated increment. No tracked implementation WIP remains.
+Preceding checkpoint: `783eeb236c8c49295222d149fbdf8037012a4bcc`.
+`c3e4876fb7a843181f7cadf5c3ef9f4683c9b2ad` migrated Ground rendering and entity
+picking to retained Display. The current increment resolves type FlightLevel through
+its rules owner and carries original Fly vertical-controller comparisons.
 Preceding checkpoint HEAD: `3cace950259197a4db3b0075d752a32beeaf5c44`; animation
 source increment: `17520993c5e79ec1752736a0a9f2a5774bde887d`.
 No PR or critic pass for this branch. Production pickup and the complete Display
@@ -328,7 +331,18 @@ checks, not complete rendered gamemd parity.
 
 ### Evidence and validation
 
-Current source `c3e4876f`: full `cargo test -p vera20k --lib` **9,110 passed,
+Current source `bae495bf`: full `cargo test -p vera20k --lib` **9,113 passed,
+0 failed,135 ignored**,30.45s (`.local/flight-level-all-tests.log`). The three
+new regressions cover all30 native reader/getter cases, locomotor type selection,
+and production paradrop height/Foot coordinates/cargo across bincode restore.
+Replay pins are unchanged. `cargo clippy -p vera20k --lib` passed with1,033
+warnings in53s (`.local/flight-level-clippy.log`). Fresh original-executable
+`flight_level --check` and `fly_height --check` both passed. Two initial compile
+attempts used nonexistent/private fixture mutation APIs; the final fixture now
+supplies FlightLevel through its actual INI text. All owned Cargo runs are terminal.
+The new rules reader still needs a fresh release retail map load before merge.
+
+Previous Display source `c3e4876f`: full `cargo test -p vera20k --lib` **9,110 passed,
 0 failed, 135 ignored**,18.38s; `.local/display-consumers-tests-4.log`. Existing
 replay pins unchanged. Earlier attempts corrected the new integration test's
 layer placement (sim must not name app/render, including tests) and fixture
@@ -406,6 +420,46 @@ index4 calls normal descent54C550. Comments54CC0D,4CD4E7 and41CC67 are saved
 and read back. No binary, signature or boundary edits.
 
 ### Required continuation
+
+The Fly height prerequisite now has reproducible evidence:
+`tools.spatial_oracle.fly_height` executes136 original4CDD0D..4CDFBC/4CE145
+steps with actual Aircraft/Unit vtables, QueryInterface and GetHeight/SetHeight.
+This remains native-only evidence, not Rust controller parity. The fixture supplies
+post-horizontal state, native+51 and captured IsDropship; no call is substituted.
+It excludes the earlier crash relocation, following descent drift and phase/Display
+transactions. Climb is min(delta,IsDropship?16:hasPassenger?10:20); ordinary
+descent clamps its step to20..50 and can undershoot a nonzero target. Bridge Z
+and OnBridge write ordering is visible in the saved results.
+
+Type+C95 is **IsDropship**, ctor7113B9=false and reader712350..712373 key84447C;
+no stock rulesmd type sets it. It is not currently a Rust rules field. Aircraft
+auxiliary interface7E2250 at owner+6C0 is returned by QueryInterface414290 for
+IID820F501C-4F39-11D2-9B70-00104B972FE8 (literals7E9B40/822410). Its+14
+function41B7D0 checks owner+118 FirstPassenger, not Carryall; use existing
+passenger cargo ownership when porting the climb input. Its+0C function41B6A0
+supplies a0/100 landing base height via type+DFC/radio/mission/building gates.
+Original414290 was falsely named Destructor; renamed QueryInterface. Comments
+4142C1,4CDE64,712336 saved and read back. No signature/boundary/binary changes.
+
+`ObjectType::flight_level(general)` now models717800: only exactly-1 falls back.
+The type reader712336/71234A and constructor711050 (EBP=-1 from710CED) establish
+the field. The30-case `flight_level` corpus is consumed by Rust rules tests;
+Fly construction, attack recovery and paradrop initialization use this owner.
+The existing I16F16 altitude adapter saturates non-retail values outside its range;
+native integer altitude/target state remains part of the required Fly migration.
+The getter change adds no serialized field to Simulation. A new release retail
+load is required for this rules change before merge; the prior load predates it.
+Fly constructor4CC9A0 clears target+38, speed+40/+48, phase+50/+51 and fall
+accumulator+58. Link4CCA20 only sets full+18 from AircraftType.AirportBound+E0D;
+it does not seed the target. Do not mistake the legacy Rust construction target
+for a native runtime initializer. The extra+50 store4CD3C3 is a failed Ground
+landing transition: layer changed to Ground, +50 clear, owner virtual+550 false;
+it sets+50, clears OnBridge and SetHeight(GetHeight()+10) inside Mark0/1.
+For Aircraft, BeginTakeoff's four virtual refusals resolve through7E22A4 to
+70EFD0 (+504>0),4DE770 (Foot timer+6A0/+6A8),70C5B0 (+270) and70C5C0 (+271).
+`world/techno_ai_cloak.rs` already records missing EMP and an unproven dormant
+timer claim; recheck writers/reachability rather than adopting false defaults.
+Its teleport predicates are an existing owner lead for the two warp bytes.
 
 1. Complete explicit Fly resubmissions:4CD2A0 enters Mark(REMOVE)4CD324 and
    RemoveDisplay4CD333 only for health>0 with loco+50/+51, runs their height
