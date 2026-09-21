@@ -1,12 +1,12 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `ab69e36a72809c01fee43beeef9bb64e55feff6b` (2026-09-21), cargo-modules 0.26.0.
+Generated snapshot: `0058692777bcf058169a53199b95da6b312ec909` (2026-09-21), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
 External crates and the sysroot are excluded from the dependency graph.
-Contains **836 modules plus the crate root**, and **5281 distinct
+Contains **836 modules plus the crate root**, and **5280 distinct
 cross-module dependency edges**. Check this source commit against your checkout.
 <!-- module-map:provenance:end -->
 
@@ -688,7 +688,7 @@ sim::rocking::rocking_system -> map::entities; rules::ruleset; sim::components; 
 sim::rocking::self_destruct -> sim::game_entity; util::fixed_math
 sim::runtime -> assets::asset_manager; map::authored_overlay; map::basic; map::entities; map::houses; map::map_file; map::resolved_terrain; map::theater; map::trigger_graph; rules::art_data; rules::overlay_types; rules::ruleset; sim::anim_class; sim::command; sim::components; sim::entity_store; sim::game_entity; sim::intern; sim::native_identity; sim::overlay_grid; sim::scenario_post_map; sim::scenario_session; sim::vision; sim::world; sim::world::authored_load_host; sim::world::world_spawn
 sim::scenario_bootstrap -> map::construction_trace; map::entities; map::houses; map::map_file; map::resolved_terrain; map::waypoints; rng_continuation; rules::ini_parser; rules::locomotor_type; rules::mission_data; rules::object_type; rules::overlay_types; rules::process_owner; rules::ruleset; sim::ai; sim::find_nearby_cell; sim::house_state; sim::mission::state; sim::native_identity; sim::rng; sim::scenario_session; sim::world; sim::world::lifecycle; skirmish_launch; util::native_x87
-sim::scenario_post_map -> map::basic; map::houses; map::lighting; rules::overlay_types; rules::ruleset; sim::crates; sim::ore_twinkle; sim::world
+sim::scenario_post_map -> map::houses; map::lighting; rules::overlay_types; rules::ruleset; sim::crates; sim::ore_twinkle; sim::world
 sim::scenario_session -> sim::game_options; sim::intern; sim::timer; util::pixel_conversion
 sim::score -> sim::intern; sim::world
 sim::selection -> -

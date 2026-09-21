@@ -725,7 +725,7 @@ impl App {
             // The developer shortcut carries an authored-map sandbox through
             // the unverified legacy Battle loader. It has no artificial AI
             // opponent or starting forces; this is not campaign admission.
-            let session = quickplay_launch_session(quickplay);
+            let session = quickplay_launch_session(quickplay, quickplay_opponent_count());
             let mut clock = crate::match_bootstrap::OrdinaryMatchSeedClock;
             let seed = crate::match_bootstrap::read_match_seed(&mut clock);
             let request = crate::app::loading::pump::LoadingRequest::unverified_legacy_skirmish(
@@ -740,12 +740,29 @@ impl App {
     }
 }
 
+/// `RA2_QUICKPLAY_OPPONENTS=<n>`: how many opponent houses the quickplay
+/// sandbox adds (default none, at most seven). They are named `Computer1`,
+/// `Computer2`, ... like any skirmish AI house, so a fixture map can own
+/// objects by those names and a second side exists without the shell.
+fn quickplay_opponent_count() -> usize {
+    std::env::var("RA2_QUICKPLAY_OPPONENTS")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .unwrap_or(0)
+        .min(7)
+}
+
 /// `RA2_QUICKPLAY=<map>`: VERA-internal authored-map sandbox using the legacy
-/// Battle loader, with one local house and no generated opponents or forces.
-fn quickplay_launch_session(selected_map: String) -> crate::skirmish_launch::SkirmishLaunchSession {
+/// Battle loader, with one local house and no generated forces. Opponent
+/// houses exist only when asked for: the fixture has to give each one objects,
+/// because an empty house is defeated at once and ends the session.
+fn quickplay_launch_session(
+    selected_map: String,
+    opponent_count: usize,
+) -> crate::skirmish_launch::SkirmishLaunchSession {
     use crate::skirmish_launch::{
-        LaunchCountry, LaunchStartPosition, LaunchTeam, SkirmishLaunchMode, SkirmishLaunchOptions,
-        SkirmishLaunchSession, SkirmishLocalSlot,
+        AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam, SkirmishAiSlot,
+        SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLaunchSession, SkirmishLocalSlot,
     };
     SkirmishLaunchSession {
         mode: SkirmishLaunchMode {
@@ -774,8 +791,21 @@ fn quickplay_launch_session(selected_map: String) -> crate::skirmish_launch::Ski
         },
         // An empty AI house is still a contender: its automatic defeat would
         // award victory to the fixture owner and end the comparison session.
-        opponents: Vec::new(),
-        pre_fill_house_roster: crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(0),
+        opponents: (0..opponent_count)
+            .map(|index| SkirmishAiSlot {
+                country: LaunchCountry::Russia,
+                country_random: false,
+                // Stock slots after the local DarkBlue.
+                color_index: 3 + index as u8,
+                color_random: false,
+                start_position: LaunchStartPosition::Position(1 + index as u8),
+                team: LaunchTeam::None,
+                difficulty: AiDifficulty::Easy,
+            })
+            .collect(),
+        pre_fill_house_roster: crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(
+            opponent_count,
+        ),
         options: SkirmishLaunchOptions {
             // VERA developer shortcut: fixture maps carry their own objects.
             // Both native starting-force gates must be off: UnitCount=0 alone
@@ -792,8 +822,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn quickplay_opponents_are_houses_without_forces() {
+        let session = quickplay_launch_session("combatfixture.map".into(), 2);
+        assert_eq!(session.opponents.len(), 2);
+        assert_ne!(
+            session.opponents[0].color_index,
+            session.opponents[1].color_index
+        );
+        assert!(
+            session
+                .opponents
+                .iter()
+                .all(|slot| slot.color_index != session.local.color_index)
+        );
+        // Still a fixture sandbox: the map supplies every object.
+        assert!(!session.options.bases);
+        assert_eq!(session.options.unit_count, 0);
+    }
+
+    #[test]
     fn quickplay_authored_fixture_does_not_add_starting_forces() {
-        let session = quickplay_launch_session("rendering-fixture.map".into());
+        let session = quickplay_launch_session("rendering-fixture.map".into(), 0);
         assert_eq!(
             session.selected_map_file.as_deref(),
             Some("rendering-fixture.map")
@@ -831,7 +880,7 @@ mod tests {
             .paths
             .ra2_dir;
         for previous_empty_opponent in [false, true] {
-            let mut session = quickplay_launch_session(path.clone());
+            let mut session = quickplay_launch_session(path.clone(), 0);
             if previous_empty_opponent {
                 // Reproduce the v3 launch defect without adding any MCVs.
                 // Its empty second contender must still exercise ordinary

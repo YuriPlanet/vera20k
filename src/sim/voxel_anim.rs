@@ -22,8 +22,9 @@
 //! residual on `BounceState` — and no harness or replay fixture exercises this
 //! module at all, so nothing red catches a regression here.
 //! - Trigger: a death whose type authors `DebrisTypes=`.
-//! - Player effect: the tyres a dying harvester throws are invisible; the SHP
-//!   half of the same block does draw, so the death is not silent.
+//! - Player effect: the tyres a dying harvester throws are invisible, and so
+//!   is the SHP half of the same block (`combat/mod.rs` takes its draws and
+//!   binds no art: GSI-05.14); the death still plays its explosion animation.
 //! - Frequency: 36 stock sections author `DebrisTypes=`, of which 32 reach the
 //!   block in gamemd — the Chrono Miner, the War Miner, the Slave Miner, the
 //!   demolitions truck, the fire truck and the civilian traffic. Against them,

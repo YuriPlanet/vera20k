@@ -561,6 +561,7 @@ impl App {
         } else {
             None
         };
+        request_quickplay_screenshot(state);
         let retail_screenshot_current_frame =
             std::mem::take(&mut state.match_state.input.retail_screenshot_requested);
         let pending_retail_screenshot = state
@@ -665,6 +666,40 @@ impl App {
         crate::app::loading::pump::after_loading_frame_presented(state);
 
         Ok(())
+    }
+}
+
+/// `RA2_QUICKPLAY_SCREENSHOT_AT=<tick>[,<tick>...]`: ask for the ordinary
+/// screenshot (the ScreenCapture hotkey's path) when the simulation reaches
+/// each listed tick, so an unattended release run leaves frames to look at.
+fn request_quickplay_screenshot(state: &mut AppState) {
+    static TICKS: std::sync::OnceLock<Vec<u64>> = std::sync::OnceLock::new();
+    static TAKEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let ticks = TICKS.get_or_init(|| {
+        let mut ticks: Vec<u64> = std::env::var("RA2_QUICKPLAY_SCREENSHOT_AT")
+            .ok()
+            .map(|value| {
+                value
+                    .split(',')
+                    .filter_map(|tick| tick.trim().parse().ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        ticks.sort_unstable();
+        ticks
+    });
+    let taken = TAKEN.load(std::sync::atomic::Ordering::Relaxed);
+    let (Some(&due), Some(runtime)) = (ticks.get(taken), state.match_state.sim_runtime.as_ref())
+    else {
+        return;
+    };
+    if runtime.simulation.session.tick >= due {
+        TAKEN.store(taken + 1, std::sync::atomic::Ordering::Relaxed);
+        log::info!(
+            "Quickplay screenshot at tick {}",
+            runtime.simulation.session.tick
+        );
+        state.match_state.input.retail_screenshot_requested = true;
     }
 }
 
