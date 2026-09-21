@@ -818,35 +818,6 @@ impl AnimClassSpawnDescriptor {
     }
 }
 
-/// A parachute SHP rendering above a paradropped infantry during descent.
-///
-/// Spawned by `tick_parachute_anims` when an entity gains
-/// `parachute_state.is_some()`. Removed when the entity lands
-/// (`parachute_state.is_none()`) or dies. The chute follows the entity's
-/// world position via `target_id` lookup; no separate altitude state.
-///
-/// Frame advancement: frames `0..end_frame` play once on the first cycle
-/// (deploy phase implicit in `0..loop_start`); on `frame >= end_frame`,
-/// wrap to `loop_start` (loop phase). For PARACH: deploy = frames 0-19,
-/// loop = frames 20-39.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ParachuteAnim {
-    /// Stable ID of the descending entity. Render looks up screen position
-    /// each frame via `sim.entities.get(target_id)`.
-    pub target_id: u64,
-    /// Current animation frame (0..end_frame).
-    pub frame: u16,
-    /// Frame to wrap to on `frame >= end_frame`. Copied from
-    /// ParachuteRenderConfig at spawn time.
-    pub loop_start: u16,
-    /// Wraparound bound (exclusive). Copied from ParachuteRenderConfig.
-    pub end_frame: u16,
-    /// Gameplay frames per image frame. Copied from ParachuteRenderConfig.
-    pub frame_delay: u16,
-    /// Gameplay frames accumulated since last image-frame advance.
-    pub elapsed_frames: u16,
-}
-
 /// Emitted by the refinery dock state machine for EVERY due dump gate of
 /// `UnitClass::Mission_Unload @ 0x0073D630` state 3 (`HarvesterDumpRate × 900
 /// <= unit+0xF8`, `0x0073E355..0x0073E374`), including the final gate that finds

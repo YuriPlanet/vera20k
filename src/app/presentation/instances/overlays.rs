@@ -295,11 +295,20 @@ pub(crate) fn build_anim_class_instances(
         state.render_width() as f32 / z2,
         state.render_height() as f32 / z2,
     );
+    let parachute_type = state
+        .rules()
+        .and_then(|rules| rules.general.parachute_shp.as_deref())
+        .and_then(|name| sim.interner.get(name));
     for &stable_id in sim.tactical_registration_order() {
         let Some(anim) = sim.anim(stable_id) else {
             continue;
         };
         if anim.runtime.inactive || anim.building_slot.is_some() {
+            continue;
+        }
+        // The canopy is placed by `build_parachute_instances`, on its owner's
+        // sort key.
+        if parachute_type.is_some_and(|ty| parachute_canopy_owner(anim, ty).is_some()) {
             continue;
         }
         let type_name: &str = sim.interner.resolve(anim.type_id);
@@ -553,6 +562,17 @@ fn presentation_anim_frame_count(
 /// level boundary). The lift is the same `AdjustForZ(z)` the projection
 /// subtracted, so depth can cancel exactly what was drawn, as
 /// `AnimClass::DrawIt @ 0x00422CA0` does.
+/// The falling object a canopy hangs on: an owner-attached anim of the
+/// `[General] Parachute=` type.
+fn parachute_canopy_owner(
+    anim: &crate::sim::anim_class::AnimObject,
+    parachute_type: crate::sim::intern::InternedId,
+) -> Option<u64> {
+    (anim.type_id == parachute_type)
+        .then_some(anim.owner_entity)
+        .flatten()
+}
+
 fn anim_world_render_coords(
     world: crate::sim::anim_class::AnimWorldCoord,
 ) -> (f32, f32, u16, u16, u8, i32) {
@@ -1168,23 +1188,40 @@ pub(crate) fn build_parachute_instances(
         state.render_width() as f32 / z,
         state.render_height() as f32 / z,
     );
-    let config = match state
+    // The canopy is a simulation `AnimClass` attached to the falling object
+    // (`Simulation::attach_parachute_anim`); this pass only places it on the
+    // body's sort key. The generic anim pass skips it (`is_parachute_canopy`).
+    let Some(shp_name) = state
         .rules()
-        .and_then(|r| r.general.parachute_render.as_ref())
-    {
-        Some(c) => c,
-        None => return,
+        .and_then(|r| r.general.parachute_shp.as_deref())
+    else {
+        return;
+    };
+    let Some(parachute_type) = sim.interner.get(shp_name) else {
+        return;
     };
 
-    for anim in &state.match_state.match_presentation.parachute_anims {
-        let entity = match sim.entities().get(anim.target_id) {
+    for &anim_id in sim.tactical_registration_order() {
+        let Some(anim) = sim.anim(anim_id) else {
+            continue;
+        };
+        let Some(target_id) = parachute_canopy_owner(anim, parachute_type) else {
+            continue;
+        };
+        if anim.runtime.inactive {
+            continue;
+        }
+        let Ok(frame) = u16::try_from(anim.runtime.current_frame) else {
+            continue;
+        };
+        let entity = match sim.entities().get(target_id) {
             Some(e) => e,
             None => continue,
         };
         // The body's own key for this frame. Absent means the body was culled
         // or never emitted, in which case there is nothing for a canopy to
         // hang on and nothing to sort it against.
-        let Some(&body_depth) = body_depths.get(&anim.target_id) else {
+        let Some(&body_depth) = body_depths.get(&target_id) else {
             continue;
         };
         // Draw the chute exactly where the body is drawn, so it follows the
@@ -1197,9 +1234,9 @@ pub(crate) fn build_parachute_instances(
         // Single-facing anim (no Facings= in art.ini for PARACH).
         let key = ShpSpriteKey {
             palette_context: crate::render::sprite_atlas::ShpPaletteContext::GlobalAnim,
-            type_id: config.shp_name.clone(),
+            type_id: shp_name.to_string(),
             facing: 0,
-            frame: anim.frame,
+            frame,
             house_color: HouseColorIndex(0),
         };
         let Some(entry) = atlas.get(&key) else {
@@ -1223,7 +1260,7 @@ pub(crate) fn build_parachute_instances(
 
         let Some(parent) = ground_objects
             .iter_mut()
-            .find(|object| object.parent.id == anim.target_id)
+            .find(|object| object.parent.id == target_id)
         else {
             continue;
         };
@@ -1249,7 +1286,7 @@ pub(crate) fn build_parachute_instances(
                         (entity.position.rx, entity.position.ry),
                         state
                             .rules()
-                            .and_then(|r| r.art_registry.anim_runtime_config(&config.shp_name)),
+                            .and_then(|r| r.art_registry.anim_runtime_config(shp_name)),
                         false,
                     ),
                     alpha: 1.0,

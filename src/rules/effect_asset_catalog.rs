@@ -222,6 +222,11 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
             insert(name);
         }
     }
+    // `[General] Parachute=`: the canopy `ObjectClass::Unlimbo` attaches to a
+    // dropped object (`sim::movement::parachute_descent`).
+    if let Some(name) = rules.general.parachute_shp.as_deref() {
+        insert(name);
+    }
     // `[General] WarpOut=`: the teleport locomotor constructs it at both ends
     // of a relocation (`sim::movement::teleport_movement`).
     insert(&rules.general.warp_out.name);

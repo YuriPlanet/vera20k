@@ -294,6 +294,10 @@ pub fn try_drop(
                 ));
             }
 
+            // `ObjectClass::Unlimbo`'s parachute arm builds the canopy once the
+            // object is placed and its coordinate set.
+            sim.attach_parachute_anim(rules, passenger_id);
+
             // 7. ChuteSound at drop cell.
             sim.sound_events.push(SimSoundEvent::ChuteSound {
                 rx: drop_rx,

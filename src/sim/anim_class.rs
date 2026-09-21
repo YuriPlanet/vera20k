@@ -6,7 +6,8 @@
 //! edge, logic-frame timing, loops, reverse/ping-pong, Next, trailer, sound
 //! identity, owner attachment, conceal, and deferred deletion. Its producers
 //! are building slots and damage fires, tile and crate animations, combat
-//! explosions, weapon and occupant muzzle flashes, teleport warps,
+//! explosions, weapon and occupant muzzle flashes, parachute canopies,
+//! teleport warps,
 //! superweapon invokes, Lightning Storm bolts, bridge collapse explosions,
 //! wakes and ore twinkles.
 //!
@@ -1332,7 +1333,7 @@ impl Simulation {
     /// object's actual height including locomotor altitude, so an anim attached
     /// to an airborne or elevated owner follows it. The attach/detach round
     /// trip is exact because the same value is subtracted and added back.
-    fn anim_owner_coords(&self, owner_id: u64) -> Option<AnimWorldCoord> {
+    pub(crate) fn anim_owner_coords(&self, owner_id: u64) -> Option<AnimWorldCoord> {
         let owner = self.substrate.entities.get(owner_id)?;
         let centre = crate::sim::movement::ground_pose::object_center_coord_with_foundation(
             owner,
