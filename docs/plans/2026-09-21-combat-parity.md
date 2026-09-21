@@ -231,16 +231,15 @@ probe; it is not a second implementation to publish.
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
 Branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Current validated source: `fa615a67a48be364e890b2801e52cdaf28283cdc`; this
-checkpoint accompanies it. No tracked implementation WIP remains. Preceding
-checkpoint HEAD: `20b31f3b8979b587016e98ace1136d33d17a0996`. Prior FlightLevel
-source: `bae495bff341bcccc905a3b97d8f13068adf0a9e`.
-Preceding checkpoint: `783eeb236c8c49295222d149fbdf8037012a4bcc`.
-`c3e4876fb7a843181f7cadf5c3ef9f4683c9b2ad` migrated Ground rendering and entity
-picking to retained Display. The current increment ports integer Fly height stepping, migrates its state and
-consumers, and corrects the native bridge/slope comparison fixture.
-Preceding checkpoint HEAD: `3cace950259197a4db3b0075d752a32beeaf5c44`; animation
-source increment: `17520993c5e79ec1752736a0a9f2a5774bde887d`.
+Current validated source: `450c408bd78490e5a2f42b0b392144ceb91271b1`; this
+checkpoint accompanies it. The increment ports the live Carryall landing base
+into Fly move orders and preserves exact-height/query cadence. Display native
+fixture correction: `f4347849`. No tracked implementation WIP remains.
+Preceding checkpoint HEAD: `a000fe86c8802c63f3ffd05539819f12390795d5`;
+integer Fly height source: `fa615a67a48be364e890b2801e52cdaf28283cdc`.
+Prior FlightLevel source: `bae495bff341bcccc905a3b97d8f13068adf0a9e`.
+`c3e4876f` migrated Ground rendering/picking to retained Display;
+`17520993` implemented the current animation Display lifecycle.
 No PR or critic pass for this branch. Production pickup and the complete Display
 consumer migration remain unfinished. Preserve the primary checkout and untracked
 `.local/`. The prompt-writing request is finished; continue the active combat goal.
@@ -473,14 +472,55 @@ Type+C95 IsDropship: ctor7113B9=false, reader712350..712373 key84447C; no stock
 rulesmd type sets it. Aircraft auxiliary interface7E2250 at owner+6C0 comes from
 QueryInterface414290 for IID820F501C-4F39-11D2-9B70-00104B972FE8. Its+14 function
 41B7D0 checks owner+118 FirstPassenger. Its+0C function41B6A0 supplies a0/100
-landing base from Carryall/type+DFC, cargo head+118, radio, mission7 and
-contacted-building gates; that owner is not ported. Carryall reader41CCAA uses
-literal818028 and stores+DFC at41CCC7 (comment saved/read back). Rust has no
-Carryall rules field yet. The contacted building+16A9/+16CB identities still
-need proof; do not infer them from likely names.
+landing base, now implemented by `aircraft/landing_base.rs` and consumed by the
+production air destination owner. Carryall/type+DFC has ctorfalse41C8D0 and
+reader41CC9B..41CCC7, literal818028. An empty Carryall in effective mission7
+**Enter** uses base0 when raw radio slot0 is a Building with UnitRepair+16A9 or
+Helipad+16CB. Otherwise a Carryall with any contact or cargo head uses100;
+other cases use0. Mission5B3040 chooses current unless exactly-1, then queued.
+65AE30 scans every contact;65AD40 reads raw slot0 and never compacts a hole.
+Existing Mission, Contacts, PassengerCargo and ObjectType owners supply these
+inputs. No cached landing-base state or snapshot version was added.
+
+The building identities are now established by literal81AAF0/reader460915/
+store460929 (UnitRepair) and literal81AC48/reader4604DB/store4604E0 (Helipad).
+Ctor45DD9A clears EBX;45E0C0/45E18D seed both bytes false. Ghidra comments at
+41C8D0,41B6A0,460929,4604E0 were saved and read back. No boundary/type/binary edits.
+`fly_landing_base` records nine original Carryall reads and249 original MoveTo
+query/decision slices4CCE71..4CCED1/4CCED9, with real QueryInterface, radio,
+Mission, RTTI and GetHeight. Covers cargo, contact holes, queued/current mission,
+building gates, phases, health, signed/wide height, ramps, OnBridge and six
+missing-cell query-order cases. Stops BEFORE BeginTakeoff; full MoveTo and phase
+callbacks are excluded. All three updated native harness checks pass.
+
+Move orders now use exact physical height through the current terrain surface,
+not the saturated altitude cache. GetHeight remains lazy behind the native
+health/takeoff/landing short circuits: it may stamp the shared Dummy coordinate.
+The new production comparison checks all249 decisions, and four saved cargo/
+contact/queued-mission continuations check recomputation through the same owner.
+Final `cargo test -p vera20k --lib` passed: **9,119 passed,0 failed,135 ignored**,
+17.72s (`.local/fly-landing-base-final-tests.log`). This includes the six new
+Dummy-cadence vectors and four save/restore cases. `cargo clippy -p vera20k --lib`
+passed with1,027 warnings in24.40s (`.local/fly-landing-base-clippy.log`). All
+owned native/Rust validation processes are terminal. An earlier
+full run passed9,119 before the lazy-query correction; do not substitute that
+run for the final source. Initial compilation exposed two missing test-fixture
+field initializers and an invalid MissionDispatchTimer constructor; corrected.
+
+Display evidence correction: `display_entity_layer` and `display_non_entity`
+also omitted Map+140 table length. Both now initialize it; entity queries assert
+the real cell for every ground/Jumpjet bridge read. The matching Rust fixture
+now populates dense grid slot10,10 rather than putting that cell at slot0.
+Four original entity answers changed: Jumpjet marked=true/onBridge=false/
+falling=false at bridge Z416 ->Ground, Z624/915 ->Air; Fly slope Z260 ->Ground.
+The nine mixed-object histories did not change. All88 corrected entity queries
+pass Rust's focused display tests;
+the former ramp/bridge comparison claims were invalid. Production layer code
+already agrees with the corrected evidence and did not require a behavior edit.
 `ObjectType::flight_level(general)` models717800 with exact-1 fallback;30 native
 reader/getter cases remain checked. A new release retail load for FlightLevel and
-IsDropship is required before merge; the prior release load predates both changes.
+IsDropship and Carryall is required before merge; the prior release load predates
+these changes.
 
 The newly stored takeoff flag still lacks its native clearing callback:4CE680
 clears BOTH flags unconditionally at4CE756/4CE763, then thresholds select facing/
@@ -499,9 +539,10 @@ versus repeated mutable-target division, and unconditional takeoff flag clears.
 Prior QueryInterface rename414290 and comments4142C1/4CDE64/712336 remain saved.
 No signature, function-boundary or binary edits.
 
-Next safe implementation: port Carryall landing-base ownership and the native
-phase callbacks together with their Mark/Display transaction. Verify missing
-radio/building inputs first. Full MoveTo destination XYZ, mode+5C and null-stop
+Next safe implementation: port native phase callbacks with their Mark/Display
+transaction, starting with the takeoff callback and existing FacingClass owners.
+Full MoveTo
+destination XYZ, mode+5C and null-stop
 behavior, EMP/Foot timer producers, continuous horizontal slowdown and target
 selection, descent drift and crash relocation remain required too.
 
@@ -526,6 +567,46 @@ selection, descent drift and crash relocation remain required too.
    54C81A..54C9FB has Mark/SetCoords/pickup and no direct Display submit;
    Process54B17F/54B18E separately compares live entry/exit queries. Preserve
    those distinctions; generic per-frame cache refresh is not equivalent.
+   Takeoff4CE680 itself never writes Z: a pure takeoff arm therefore has equal
+   entry/exit live layers and still performs Remove/Submit/Mark. After clearing
+   both flags it uses bridge-normalized height minus the live landing base:
+   above target-target/3, SecondaryFacing+3A0.Set(PrimaryFacing+388.destination);
+   otherwise above target/2, PrimaryFacing.Set(direction to DestXY) and target
+   speed=1. Reuse the existing two FacingClass owners; establish initialization
+   and migrate remaining 8-bit steering rather than adding another facing field.
+   Techno ctor6F2EEB..6F2EFC constructs BOTH FacingClasses with4C91C0 (zero
+   direction/rate, timer anchored to the current frame). Aircraft InitFromType
+   413F80, called by ctor413E2E, sets BOTH rates from Type+71C ROT at413FE7/
+   414001, then Secondary.SetCurrent(Primary.Current)414006..414015. Reader
+   714B14..714B2F uses literal81B164 ROT. No Turret=yes or TurretROT gate.
+   Aircraft Unlimbo414403..414417 snaps SecondaryFacing to authored facing<<8.
+   FacingClass::set_rot currently takesu8, whereas native4C9680 acceptsi32,
+   clamps only >=127 and shifts the low byte; negative input is not clamped
+   tozero/127. Address this range while migrating aircraft ROT and consumers.
+   Comments413FDE/4C9680 saved and read back.
+
+   Landing4CE840 has589 instructions and is not a flag-only counterpart. It
+   includes AirportBound/radio or Aircraft4196B0 admission, refusal ->BeginTakeoff
+   and FNPC56DC20 (or ReceiveDamage), below300 animation/sound, touchdown height/
+   flags/speed, AirSpatial removal, Foot+55C retained source-cell replacement,
+   eight old-neighbor decrements (only for a nonzero old packed source) and
+   eight new-neighbor increments at Cell+122,
+   and destination/NavCom cleanup. Cell+122 ALREADY belongs to overlay_grid's
+   retained_wall_neighbor_counts plane; generalize that authority and its
+   save/hash/consumers, never create a competing aircraft count plane. Trace
+   Foot ctor4D31EF/4D3243..4D324A initializes+55C/+55E=(0,0). BOTH landing arms
+   install the current cell (4CEDCF/4CEE42) and increment new neighbors
+   (4CEE24/4CEE97); a zero old source only skips decrements. Constructor comment
+   saved/read back. Trace other writers and teardown too. Aircraft4196B0 is a real admission
+   wrapper with team/map, occupants/alliance and shroud gates; the existing
+   always-clear Winged cell leaf does not implement that wrapper. Phase changed-
+   Ground admission uses vtable+550 ->4DDC60. Its existing listing was read
+   without defining a new Ghidra function:4DDC60..4DDDDB checks nonnull cell,
+   Map578460 mode1 playfield, Cell47C3D0 occupant/self/raw radio slot0, unresolved
+   Type+D54 and occupant+2D0 branches, then Cell4834A0 and an Aircraft-array
+   A8E394/A8E3A0 scan for another+90 true/+81 false owner with NavCom+5A4 equal
+   to the supplied cell. Do not reduce this to the Winged cell leaf. Resolve
+   the raw type/occupant fields and arguments before implementing it.
 2. Finish Display consumers beyond the migrated Ground parent path. Legacy
    `entity_draw_band` still queries altitude; Air/Top VXL, SHP, projectile,
    particle and wave draws remain separate or fully depth-sorted buckets.
