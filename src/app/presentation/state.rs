@@ -95,15 +95,6 @@ pub(crate) struct MatchPresentationState {
     pub(crate) theater_ext: String,
     /// Target/action lines — colored lines from selected units to command destinations.
     pub(crate) target_lines: crate::app::presentation::target_lines::TargetLineState,
-    /// Fire events from the current sim tick — position data for future muzzle
-    /// flash rendering and projectile origin computation. Drained each frame.
-    pub(crate) pending_fire_effects: Vec<crate::sim::world::SimFireEvent>,
-    /// Active garrison muzzle flash animations. Short-lived one-shot entries
-    /// spawned when a garrisoned building fires. Ticked each frame, removed on completion.
-    pub(crate) garrison_muzzle_flashes: Vec<crate::sim::components::GarrisonMuzzleFlash>,
-    /// Active non-garrison weapon muzzle flash animations spawned from weapon `Anim=`.
-    /// App-owned presentation state; combat only emits the fire facts.
-    pub(crate) weapon_muzzle_flashes: Vec<crate::sim::components::WeaponMuzzleFlash>,
     /// Active parachute animations, one per descending paradropped infantry.
     /// Polling-based lifecycle: spawned when an entity gains parachute_state
     /// in the sim, removed on landing or death. Render-only; not snapshotted.
@@ -167,8 +158,10 @@ pub(crate) struct MatchPresentationState {
     pub(crate) pause_menu_has_saves: bool,
     pub(crate) pause_menu_interaction: crate::ui::shell::pause_menu::PauseMenuInteraction,
     pub(crate) sound_dialog: Option<crate::ui::shell::sound::SoundState>,
-    pub(crate) abort_buttons: crate::ui::shell::button::ShellButtonInteraction<crate::ui::shell::abort::AbortButton>,
-    pub(crate) saved_game_browser: Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,
+    pub(crate) abort_buttons:
+        crate::ui::shell::button::ShellButtonInteraction<crate::ui::shell::abort::AbortButton>,
+    pub(crate) saved_game_browser:
+        Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,
     /// Client-side in-game Options (0xBBB) state: the six [Options] values plus
     /// transient interaction flags. `game_speed` mirrors the launched sim and
     /// queues an authoritative transition on close; `sim_speed_tps` is its local

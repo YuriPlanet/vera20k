@@ -24,6 +24,7 @@ pub(crate) mod combat_fire_gate;
 pub(crate) mod combat_targeting;
 pub(crate) mod combat_weapon;
 pub(crate) mod damage;
+pub(crate) mod fire_coord;
 pub(crate) mod fire_decision;
 pub(crate) mod greatest_threat;
 pub(crate) mod in_range;

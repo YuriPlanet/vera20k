@@ -29,6 +29,14 @@ impl PixelConversionBounds {
         if x >= self.width || y >= self.height {
             return (0, 0);
         }
+        Self::isometric_pixel_to_leptons(x, y)
+    }
+
+    /// `TacticalClass::IsometricPixelToWorld @ 0x006D2070`: the same matrix
+    /// (`Tactical+0xDE4`, first element `0x408888CE` = 4.2667) as
+    /// `PixelOffsetToLeptons @ 0x006D2360`, with no bounds guard. Shares that
+    /// function's documented rational-arithmetic policy.
+    pub fn isometric_pixel_to_leptons(x: i32, y: i32) -> (i32, i32) {
         let scale = |k: i64| ((4_473_959 * k) / 1_048_576) as i32;
         let (x, y) = (i64::from(x), i64::from(y));
         (scale(x + 2 * y), scale(2 * y - x))

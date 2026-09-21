@@ -2717,6 +2717,16 @@ pub(super) fn resolve_attacker_fire(
             .saturating_sub(snap.burst_remaining)
             .min(weapon_burst.saturating_sub(1))
     };
+    // One fire coordinate per shot: the bullet origin, the muzzle animation and
+    // the report sound all take it (`combat::fire_coord`).
+    let fire = super::fire_coord::fire_coordinate(
+        world,
+        rules,
+        &super::fire_coord::FireSource::from(snap),
+        obj,
+        selected.slot,
+        burst_index,
+    );
     let warhead = selected.warhead;
     // `TechnoClass::Fire_At @ 0x006FDD50`, damage chain: the firepower fold
     // (`0x006FE33D..0x006FE34D`, country x per-unit x `Damage=`, not
@@ -2764,13 +2774,7 @@ pub(super) fn resolve_attacker_fire(
             &mut world.substrate.entities,
             world.resolved_terrain.as_ref(),
         );
-        let origin_world_z_leptons = world
-            .substrate
-            .entities
-            .get(snap.stable_id)
-            .map(|entity| object_world_z_leptons(entity, world.resolved_terrain.as_ref()))
-            .or(snap.pos_exact_z_leptons)
-            .unwrap_or_else(|| i32::from(snap.pos_z).wrapping_mul(LEPTONS_PER_LEVEL as i32));
+        let origin_world_z_leptons = fire.source_z;
         let impact = ProjectileCoord::new(
             i32::from(target_rx) * 256 + target_sub_x.to_num::<i32>(),
             i32::from(target_ry) * 256 + target_sub_y.to_num::<i32>(),
@@ -2780,54 +2784,12 @@ pub(super) fn resolve_attacker_fire(
             TargetKind::Entity(id) => ProjectileTarget::Entity(id),
             TargetKind::Cell(rx, ry) => ProjectileTarget::Cell { rx, ry },
         };
-        // `TechnoClass::Fire_At` launches the bullet FROM the fire coordinate —
-        // `GetFLH @ 0x006F3AD0`, the muzzle — and derives the launch velocity as
-        // `target - FLH`, so the barrel offset sets both where the shot starts
-        // and which way it leaves. Natively the muzzle animation and the report
-        // sound at `0x006FF3BE`/`0x006FF38B` are handed the identical local.
-        //
-        // RESIDUAL: VERA's muzzle flashes are not. `app/presentation/
-        // fire_effects.rs::resolve_fire_origin_from_sim` recomputes a fire
-        // origin in `f32` from the body facing only (no turret offset), so
-        // the flash and the shot can start at different points on a turreted
-        // unit. The flashes belong on `AnimStore`, built from this coordinate.
-        //
-        // The aim facing is the turret's when the attacker has one and the
-        // body's otherwise; the body facing supplies the base rotation.
+        // `TechnoClass::Fire_At` launches the bullet FROM the fire coordinate
+        // and derives the launch velocity as `target - FLH`, so the barrel
+        // offset sets both where the shot starts and which way it leaves.
+        let mut origin = fire.coord;
+        let aim_facing16 = fire.aim_facing16;
         let body_facing16 = crate::sim::movement::turret::body_facing_to_turret(snap.facing);
-        let aim_facing16 = snap
-            .barrel_facing
-            .as_ref()
-            .map_or(body_facing16, |barrel| barrel.current(binary_frame));
-        let flh_delta = rules
-            .art_registry
-            .get(&obj.image)
-            .or_else(|| rules.art_registry.get(&obj.id))
-            .and_then(|art| {
-                let flh = crate::rules::flh::resolve_flh(
-                    art.primary_fire_flh,
-                    art.secondary_fire_flh,
-                    art.elite_primary_fire_flh,
-                    art.elite_secondary_fire_flh,
-                    matches!(selected.slot, WeaponSlot::Primary),
-                    snap.veterancy,
-                );
-                crate::util::flh_transform::native_flh_world_delta(
-                    flh.forward,
-                    flh.lateral,
-                    flh.height,
-                    art.turret_offset,
-                    aim_facing16,
-                    body_facing16,
-                    burst_index,
-                )
-            })
-            .unwrap_or((0, 0, 0));
-        let mut origin = ProjectileCoord::new(
-            i32::from(snap.pos_rx) * 256 + snap.sub_x.to_num::<i32>() + flh_delta.0,
-            i32::from(snap.pos_ry) * 256 + snap.sub_y.to_num::<i32>() + flh_delta.1,
-            origin_world_z_leptons + flh_delta.2,
-        );
         let projectile_type = weapon
             .projectile
             .as_deref()
@@ -3210,14 +3172,11 @@ pub(super) fn resolve_attacker_fire(
         target: snap.target,
         report_sound_id,
         garrison_muzzle_index: snap.garrison.as_ref().map(|gs| gs.fire_index),
-        occupant_anim: if is_garrison {
-            weapon
-                .occupant_anim
-                .as_ref()
-                .map(|s| world.interner.intern(s))
-        } else {
-            None
-        },
+        fire_coord: fire.coord,
+        fire_offset_y: fire.offset_y,
+        muzzle_anim: super::fire_coord::muzzle_anim_name(weapon, fire.aim_facing16, is_garrison)
+            .map(|name| world.interner.intern(name)),
+        occupied_building: is_garrison,
     });
     if weapon.reveal_on_fire {
         out.reveal_events.push(RevealEvent {

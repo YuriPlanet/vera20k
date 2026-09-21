@@ -743,9 +743,50 @@ pub struct SimFireEvent {
     /// For garrison fire: which muzzle port index fired (for fire port positioning).
     /// None = normal weapon FLH, Some(idx) = garrison fire port index.
     pub garrison_muzzle_index: Option<u8>,
-    /// For garrison fire: the weapon's OccupantAnim interned ID (e.g., "UCFLASH").
-    /// Pushed through the event so the render layer doesn't need to re-derive the weapon.
-    pub occupant_anim: Option<InternedId>,
+    /// The shot's fire coordinate in world leptons (`combat::fire_coord`): the
+    /// bullet origin, the muzzle animation and the report sound share it.
+    pub fire_coord: crate::sim::projectile::ProjectileCoord,
+    /// `fire_coord.y` minus the firer coordinate's Y; a building's muzzle
+    /// animation derives its `ZAdjust` from it.
+    pub fire_offset_y: i32,
+    /// The muzzle `AnimClass` type this shot constructs, if any: the weapon's
+    /// `Anim=` by aim facing, or `OccupantAnim=` for an occupied building.
+    pub muzzle_anim: Option<InternedId>,
+    /// The shot came from an occupied building's occupant.
+    pub occupied_building: bool,
+}
+
+#[cfg(test)]
+impl SimFireEvent {
+    /// A primary-weapon shot by unit `attacker_id` from cell (0, 0), with no
+    /// report, no muzzle animation and a zero fire coordinate.
+    pub(crate) fn for_test(attacker_id: u64) -> Self {
+        Self {
+            attacker_id,
+            attacker_type_ref: crate::sim::intern::test_intern("TESTFIRER"),
+            weapon_slot: crate::sim::combat::combat_weapon::WeaponSlot::Primary,
+            weapon_id: crate::sim::intern::test_intern("TESTWEAPON"),
+            facing: 0,
+            veterancy: 0,
+            origin_snapshot: FireOriginSnapshot {
+                rx: 0,
+                ry: 0,
+                sub_x: crate::util::fixed_math::SimFixed::ZERO,
+                sub_y: crate::util::fixed_math::SimFixed::ZERO,
+                z: 0,
+                facing: 0,
+                category: EntityCategory::Unit,
+                burst_index: 0,
+            },
+            target: crate::sim::combat::TargetKind::Cell(0, 0),
+            report_sound_id: None,
+            garrison_muzzle_index: None,
+            fire_coord: crate::sim::projectile::ProjectileCoord::new(0, 0, 0),
+            fire_offset_y: 0,
+            muzzle_anim: None,
+            occupied_building: false,
+        }
+    }
 }
 
 /// Borrowed names for the three native RNG authorities.

@@ -6,8 +6,9 @@
 //! edge, logic-frame timing, loops, reverse/ping-pong, Next, trailer, sound
 //! identity, owner attachment, conceal, and deferred deletion. Its producers
 //! are building slots and damage fires, tile and crate animations, combat
-//! explosions, teleport warps, superweapon invokes, Lightning Storm bolts,
-//! bridge collapse explosions, wakes and ore twinkles.
+//! explosions, weapon and occupant muzzle flashes, teleport warps,
+//! superweapon invokes, Lightning Storm bolts, bridge collapse explosions,
+//! wakes and ore twinkles.
 //!
 //! ## Residuals — two `AnimClass::AI` arms are not built
 //!

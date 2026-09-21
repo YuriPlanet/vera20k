@@ -4820,7 +4820,7 @@ fn infantry_standing_fire_waits_for_fire_frame() {
         Some("GIAttack")
     );
     assert_eq!(ev.garrison_muzzle_index, None);
-    assert_eq!(ev.occupant_anim, None);
+    assert!(!ev.occupied_building);
     assert!(
         store
             .get(1)
@@ -5016,9 +5016,11 @@ fn garrison_fire_keeps_occupant_anim_and_sound_path() {
     assert_eq!(result.consequences.fire_events().len(), 1);
     let ev = &result.consequences.fire_events()[0];
     assert_eq!(ev.garrison_muzzle_index, Some(0));
+    assert!(ev.occupied_building);
     assert_eq!(
-        ev.occupant_anim.map(|id| interner.resolve(id)),
-        Some("UCFLASH")
+        ev.muzzle_anim.map(|id| interner.resolve(id)),
+        Some("UCFLASH"),
+        "an occupied building's shot constructs the weapon's OccupantAnim="
     );
     assert_eq!(
         ev.report_sound_id.map(|id| interner.resolve(id)),

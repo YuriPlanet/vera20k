@@ -680,13 +680,6 @@ fn advance_in_game_runtime_mode(
 
     if decision.run_sim {
         let tick_lane = decision.tick_lane;
-        let garrison_flash_start_tick = state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation)
-            .map(|sim| sim.session.tick)
-            .unwrap_or(0);
         let frame_committed = advance_one_simulation_frame(state, tick_lane);
         crate::app::presentation::sidebar_render::advance_sidebar_credits_after_frame(
             state,
@@ -699,23 +692,10 @@ fn advance_in_game_runtime_mode(
             };
             state.platform.frame_pacer.record_admitted_frame(now_ms);
         }
-        let garrison_flash_elapsed_ticks = state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation)
-            .map(|sim| sim.session.tick.saturating_sub(garrison_flash_start_tick))
-            .unwrap_or(0);
         // Building one-shots, refinery particles, and their logic-frame clocks
         // were finalized inside the authoritative sim transaction. Only the
         // independent wall-clock terrain-overlay timer remains app-owned.
         crate::app::presentation::building_anim::tick_terrain_overlay_animations(state, 16);
-        crate::app::presentation::building_anim::tick_garrison_muzzle_flashes(
-            state,
-            garrison_flash_elapsed_ticks.saturating_mul(u64::from(SIM_TICK_MS)) as u32,
-        );
-        finish_fire_effect_batch(&mut state.match_state.match_presentation.pending_fire_effects);
-        crate::app::presentation::fire_effects::tick_weapon_muzzle_flashes(state, 16);
         crate::app::presentation::chute_anim::tick_parachute_anims(state);
     }
 
@@ -796,8 +776,6 @@ fn advance_one_simulation_frame(state: &mut AppState, tick_lane: TickLane) -> bo
             }));
         }
     }
-
-    begin_fire_effect_batch(&mut state.match_state.match_presentation.pending_fire_effects);
 
     for _ in 0..1 {
         // Compute local owner before mutable borrow of simulation.
@@ -881,12 +859,8 @@ fn advance_one_simulation_frame(state: &mut AppState, tick_lane: TickLane) -> bo
                 }
                 sim.prepare_fog_view_for(owner);
             }
-            // Drain fire events for render-side muzzle flash / projectile origin.
+            // Fire events position the weapon report sounds.
             drained_fire_events = frame_fire_events;
-            append_fire_effect_batch(
-                &mut state.match_state.match_presentation.pending_fire_effects,
-                &drained_fire_events,
-            );
             // The radar event array is the local client's (RadarClass). A
             // match without a minimap renderer has no such client, so nothing
             // is admitted and the radar-gated EVA lines stay silent.
@@ -952,11 +926,6 @@ fn advance_one_simulation_frame(state: &mut AppState, tick_lane: TickLane) -> bo
                     state
                         .match_state
                         .match_presentation
-                        .garrison_muzzle_flashes
-                        .retain(|flash| flash.building_id != stable_id);
-                    state
-                        .match_state
-                        .match_presentation
                         .parachute_anims
                         .retain(|anim| anim.target_id != stable_id);
                 }
@@ -974,7 +943,7 @@ fn advance_one_simulation_frame(state: &mut AppState, tick_lane: TickLane) -> bo
                 | LifecycleOutput::ClearRedraw { .. } => {}
             }
         }
-        crate::app::presentation::fire_effects::spawn_non_garrison_fire_effects(
+        crate::app::presentation::fire_effects::queue_weapon_report_sounds(
             state,
             &drained_fire_events,
         );
@@ -1034,18 +1003,6 @@ fn refresh_cell_lighting(state: &mut AppState) {
         &runtime.resources.rules,
         presentation.in_game_options.detail_level,
     );
-}
-
-fn begin_fire_effect_batch(pending: &mut Vec<SimFireEvent>) {
-    pending.clear();
-}
-
-fn append_fire_effect_batch(pending: &mut Vec<SimFireEvent>, events: &[SimFireEvent]) {
-    pending.extend(events.iter().cloned());
-}
-
-fn finish_fire_effect_batch(pending: &mut Vec<SimFireEvent>) {
-    pending.clear();
 }
 
 fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffect]) {
@@ -1484,8 +1441,7 @@ pub(crate) fn rules_hash(rules: &crate::rules::ruleset::RuleSet) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        ExactStepError, ExactStepReceipt, append_fire_effect_batch, begin_fire_effect_batch,
-        finish_fire_effect_batch, upsert_overlay_entries, validate_exact_step_receipt,
+        ExactStepError, ExactStepReceipt, upsert_overlay_entries, validate_exact_step_receipt,
         world_point_to_cell,
     };
     use crate::map::entities::EntityCategory;
@@ -1628,56 +1584,6 @@ mod tests {
             100,
             "terrain cost authority must be rebuilt from the cleared resolved cell"
         );
-    }
-
-    fn fire_event(attacker_id: u64, occupant_anim: Option<InternedId>) -> SimFireEvent {
-        SimFireEvent {
-            attacker_id,
-            attacker_type_ref: test_intern("CABHUT"),
-            weapon_slot: WeaponSlot::Primary,
-            weapon_id: test_intern("UCWEAPON"),
-            facing: 0,
-            veterancy: 0,
-            origin_snapshot: FireOriginSnapshot {
-                rx: 10,
-                ry: 20,
-                sub_x: SimFixed::ZERO,
-                sub_y: SimFixed::ZERO,
-                z: 0,
-                facing: 0,
-                category: EntityCategory::Structure,
-                burst_index: 0,
-            },
-            target: TargetKind::Cell(12, 20),
-            report_sound_id: None,
-            garrison_muzzle_index: occupant_anim.map(|_| 0),
-            occupant_anim,
-        }
-    }
-
-    #[test]
-    fn fire_effect_batch_accumulates_fixed_tick_events_until_finish() {
-        let mut pending = vec![fire_event(99, Some(test_intern("STALE")))];
-        begin_fire_effect_batch(&mut pending);
-        assert!(pending.is_empty());
-
-        append_fire_effect_batch(&mut pending, &[fire_event(1, Some(test_intern("UCFLASH")))]);
-        append_fire_effect_batch(
-            &mut pending,
-            &[
-                fire_event(2, Some(test_intern("UCCONS"))),
-                fire_event(3, None),
-            ],
-        );
-
-        let attacker_ids: Vec<u64> = pending.iter().map(|ev| ev.attacker_id).collect();
-        assert_eq!(attacker_ids, vec![1, 2, 3]);
-        assert_eq!(pending[0].occupant_anim, Some(test_intern("UCFLASH")));
-        assert_eq!(pending[1].occupant_anim, Some(test_intern("UCCONS")));
-        assert_eq!(pending[2].occupant_anim, None);
-
-        finish_fire_effect_batch(&mut pending);
-        assert!(pending.is_empty());
     }
 
     #[test]

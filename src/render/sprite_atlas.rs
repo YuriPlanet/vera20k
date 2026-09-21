@@ -227,9 +227,8 @@ pub struct SpriteAtlas {
     pub make_frame_counts: HashMap<String, u16>,
     /// Building/world-animation type → available non-shadow frame count.
     /// Building consumers use this only to ensure their live animation frame is
-    /// resident; the AnimClass, projectile-image and muzzle flash presentation
-    /// (`app/presentation/instances/overlays.rs`, `fire_effects.rs`) read the
-    /// same map.
+    /// resident; the AnimClass and projectile-image presentation
+    /// (`app/presentation/instances/overlays.rs`) reads the same map.
     pub active_anim_frame_counts: HashMap<String, u16>,
     /// Per-building-type bounding boxes for selection brackets and click picking.
     /// Computed by unioning all SHP frame rects for each building type.

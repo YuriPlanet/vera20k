@@ -24,7 +24,6 @@ use crate::render::tactical_draw_plan::{
 use crate::rules::art_data::{AnimLayer, AnimTypeRuntimeConfig, anim_translucency_source_alpha};
 use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::overlay_types::OverlayTypeFlags;
-use crate::sim::components::WeaponMuzzleFlash;
 use crate::sim::projectile::ProjectileCoord;
 use crate::util::fixed_math::SimFixed;
 
@@ -977,212 +976,6 @@ fn native_static_terrain_instances(
     })
 }
 
-/// Build SpriteInstances for garrison muzzle flash animations (OccupantAnim).
-///
-/// Each flash is positioned at the building's screen origin + pixel offset
-/// from art.ini MuzzleFlashN. Mirrors `build_damage_fire_instances` but reads
-/// from the `AppState.garrison_muzzle_flashes` queue instead of per-entity overlays.
-pub(crate) fn build_garrison_muzzle_flash_instances(
-    state: &AppState,
-    paged: &mut [Vec<SpriteInstance>],
-) {
-    let (atlas, art_reg) = match (
-        &state.match_state.match_presentation.sprite_atlas,
-        state.rules().map(|rules| &rules.art_registry),
-    ) {
-        (Some(a), Some(r)) => (a, r),
-        _ => return,
-    };
-    let z = state.match_state.input.zoom_level;
-    let (cam_x, cam_y, sw, sh) = (
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-        state.render_width() as f32 / z,
-        state.render_height() as f32 / z,
-    );
-    let (origin_y, world_height) = state
-        .match_state
-        .match_presentation
-        .terrain_grid
-        .as_ref()
-        .map(|g| (g.origin_y, g.world_height))
-        .unwrap_or((0.0, 1.0));
-
-    for flash in &state.match_state.match_presentation.garrison_muzzle_flashes {
-        if !in_view(
-            flash.screen_x,
-            flash.screen_y,
-            200.0,
-            200.0,
-            cam_x,
-            cam_y,
-            sw,
-            sh,
-            200.0,
-        ) {
-            continue;
-        }
-        let cfg: Option<&AnimTypeRuntimeConfig> =
-            art_reg.anim_runtime_config(&flash.runtime.type_name);
-        let start = cfg.map(|config| config.start).unwrap_or(0);
-        let frame = (start + flash.runtime.current_frame).max(0) as u16;
-        let key = ShpSpriteKey {
-            palette_context: crate::render::sprite_atlas::ShpPaletteContext::GlobalAnim,
-            type_id: flash.runtime.type_name.clone(),
-            facing: 0,
-            frame,
-            house_color: HouseColorIndex(0),
-        };
-        let Some(entry) = atlas.get(&key) else {
-            continue;
-        };
-        let fx: f32 = flash.screen_x + entry.offset_x;
-        let fy: f32 = flash.screen_y + entry.offset_y;
-        let tint: [f32; 3] = state
-            .match_state
-            .match_presentation
-            .lighting
-            .grid()
-            .anim_tint_at((flash.rx, flash.ry), cfg);
-        let palette_light = anim_palette_light(state, (flash.rx, flash.ry), cfg, false);
-        let depth: f32 = garrison_flash_depth(
-            origin_y,
-            world_height,
-            flash.screen_y,
-            flash.z,
-            flash.z_adjust,
-        );
-        // (flash.z_adjust carries the native occupied-building value, e.g. -200,
-        // applied as a toward-camera sort bias inside garrison_flash_depth.)
-        let alpha: f32 = anim_instance_alpha(
-            cfg,
-            flash.runtime.current_frame,
-            anim_shp_frame_count(state, &flash.runtime.type_name),
-        );
-        paged[entry.page as usize].push(SpriteInstance {
-            position: [fx, fy],
-            size: entry.pixel_size,
-            uv_origin: entry.uv_origin,
-            uv_size: entry.uv_size,
-            depth,
-            tint,
-            palette_light,
-            alpha,
-            ..Default::default()
-        });
-    }
-}
-
-fn garrison_flash_depth(
-    origin_y: f32,
-    world_height: f32,
-    screen_y: f32,
-    z: u8,
-    z_adjust: i32,
-) -> f32 {
-    // ZAdjust is a signed pixel sort bias with neutral 0; negative pulls the
-    // flash toward the camera (the occupied-building flash uses -200 so it
-    // draws in front of the wall). The 1000-neutral convention belongs to
-    // the per-cell terrain z path, not anim draws. Anim SHP draws also carry
-    // the constant -2px bias.
-    let base_depth = compute_sprite_depth_params(origin_y, world_height, screen_y, z);
-    apply_shape_z_adjust(base_depth, z_adjust + ANIM_DRAW_DEPTH_BIAS_PX, world_height)
-}
-
-fn weapon_muzzle_flash_key(flash: &WeaponMuzzleFlash) -> ShpSpriteKey {
-    ShpSpriteKey {
-        palette_context: crate::render::sprite_atlas::ShpPaletteContext::GlobalAnim,
-        type_id: flash.shp_name.clone(),
-        facing: 0,
-        frame: flash.frame,
-        house_color: HouseColorIndex(0),
-    }
-}
-
-/// Build SpriteInstances for non-garrison weapon muzzle flash animations.
-///
-/// These flashes are spawned at a fixed FLH fire origin when combat emits a
-/// non-garrison fire event with a weapon `Anim=` entry.
-pub(crate) fn build_weapon_muzzle_flash_instances(
-    state: &AppState,
-    paged: &mut [Vec<SpriteInstance>],
-) {
-    let atlas = match &state.match_state.match_presentation.sprite_atlas {
-        Some(a) => a,
-        None => return,
-    };
-    let z = state.match_state.input.zoom_level;
-    let (cam_x, cam_y, sw, sh) = (
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-        state.render_width() as f32 / z,
-        state.render_height() as f32 / z,
-    );
-    let (origin_y, world_height) = state
-        .match_state
-        .match_presentation
-        .terrain_grid
-        .as_ref()
-        .map(|g| (g.origin_y, g.world_height))
-        .unwrap_or((0.0, 1.0));
-
-    for flash in &state.match_state.match_presentation.weapon_muzzle_flashes {
-        if !in_view(
-            flash.screen_x,
-            flash.screen_y,
-            96.0,
-            96.0,
-            cam_x,
-            cam_y,
-            sw,
-            sh,
-            96.0,
-        ) {
-            continue;
-        }
-        let key = weapon_muzzle_flash_key(flash);
-        let Some(entry) = atlas.get(&key) else {
-            continue;
-        };
-        let cfg: Option<&AnimTypeRuntimeConfig> = state
-            .rules()
-            .and_then(|rules| rules.art_registry.anim_runtime_config(&flash.shp_name));
-        let tint = state
-            .match_state
-            .match_presentation
-            .lighting
-            .grid()
-            .anim_tint_at((flash.rx, flash.ry), cfg);
-        let palette_light = anim_palette_light(state, (flash.rx, flash.ry), cfg, false);
-        // Muzzle anims (e.g. GCMUZZLE, VTMUZZLE) carry their art section's
-        // ZAdjust= as a sort bias plus the constant -2px anim bias.
-        let type_z_adjust: i32 = cfg.map(|c| c.z_adjust).unwrap_or(0);
-        let base_depth =
-            compute_sprite_depth_params(origin_y, world_height, flash.screen_y, flash.z);
-        let depth = apply_shape_z_adjust(
-            base_depth,
-            type_z_adjust + ANIM_DRAW_DEPTH_BIAS_PX,
-            world_height,
-        );
-        let alpha: f32 =
-            anim_instance_alpha(cfg, i32::from(flash.frame), i32::from(flash.total_frames));
-        paged[entry.page as usize].push(SpriteInstance {
-            position: [
-                flash.screen_x + entry.offset_x,
-                flash.screen_y + entry.offset_y,
-            ],
-            size: entry.pixel_size,
-            uv_origin: entry.uv_origin,
-            uv_size: entry.uv_size,
-            depth,
-            tint,
-            palette_light,
-            alpha,
-            ..Default::default()
-        });
-    }
-}
-
 fn projectile_authoritative_screen_position(
     coordinate: ProjectileCoord,
 ) -> Option<(f32, f32, u16, u16, u8)> {
@@ -1539,10 +1332,9 @@ mod tests {
 
     use super::{
         ANIM_DRAW_DEPTH_BIAS_PX, AnimRenderDestination, CRATE_BODY_FRAME, anim_instance_alpha,
-        anim_render_destination, apply_shape_z_adjust, garrison_flash_depth,
-        ordinary_overlay_accepts_identity, ordinary_overlay_z, overlay_body_frame,
-        overlay_display_identity, overlay_render_identity, terrain_object_is_render_visible,
-        weapon_muzzle_flash_key,
+        anim_render_destination, apply_shape_z_adjust, ordinary_overlay_accepts_identity,
+        ordinary_overlay_z, overlay_body_frame, overlay_display_identity, overlay_render_identity,
+        terrain_object_is_render_visible,
     };
     use crate::map::overlay::TerrainObject;
     use crate::map::overlay_types::OverlayTypeRegistry;
@@ -1553,7 +1345,6 @@ mod tests {
     use crate::rules::overlay_types::OverlayTypeFlags;
     use crate::rules::ruleset::RuleSet;
     use crate::rules::tiberium_type::TiberiumTypeRegistry;
-    use crate::sim::components::{AnimRuntime, GarrisonMuzzleFlash, WeaponMuzzleFlash};
     use crate::sim::intern::StringInterner;
     use crate::sim::overlay_grid::OverlayCell;
     use crate::sim::production::ProductionState;
@@ -1955,72 +1746,6 @@ mod tests {
             ),
             (tib01.checked_sub(1).expect("registered base - 1"), 8),
             "signed base-relative display selection must not change live density state"
-        );
-    }
-
-    #[test]
-    fn weapon_muzzle_flash_key_uses_shp_name_and_frame() {
-        let flash = WeaponMuzzleFlash {
-            attacker_id: 1,
-            shp_name: "MGUN-N".to_string(),
-            screen_x: 100.0,
-            screen_y: 200.0,
-            rx: 10,
-            ry: 11,
-            z: 0,
-            frame: 3,
-            total_frames: 4,
-            rate_ms: 67,
-            elapsed_ms: 0,
-        };
-        let key = weapon_muzzle_flash_key(&flash);
-        assert_eq!(key.type_id, "MGUN-N");
-        assert_eq!(key.frame, 3);
-        assert_eq!(key.facing, 0);
-    }
-
-    #[test]
-    fn garrison_flash_depth_applies_native_z_adjust_as_depth_bias() {
-        let flash = GarrisonMuzzleFlash {
-            building_id: 42,
-            runtime: AnimRuntime {
-                type_name: "UCFLASH".to_string(),
-                current_frame: 0,
-                frame_step: 1,
-                delay_logic_frames: 0,
-                reload_logic_frames: 1,
-                rate_elapsed_logic_frames: 0,
-                loop_remaining: 1,
-                first_ai_guard: false,
-                expired: false,
-                constructor_reverse: false,
-                elapsed_logic_ms: 0,
-            },
-            pixel_x: 0,
-            pixel_y: 0,
-            screen_x: 100.0,
-            screen_y: 200.0,
-            rx: 10,
-            ry: 11,
-            z: 0,
-            z_adjust: -200,
-        };
-
-        let world_height: f32 = 1000.0;
-        let neutral = garrison_flash_depth(0.0, world_height, flash.screen_y, flash.z, 0);
-        let biased =
-            garrison_flash_depth(0.0, world_height, flash.screen_y, flash.z, flash.z_adjust);
-        assert!(
-            biased < neutral,
-            "z_adjust=-200 must pull the flash toward the camera (smaller depth), \
-             without shifting its screen row"
-        );
-        let expected_delta: f32 = -200.0 / world_height;
-        assert!(
-            (biased - neutral - expected_delta).abs() < 1e-6,
-            "bias magnitude must be z_adjust pixels over world_height (got {} vs {})",
-            biased - neutral,
-            expected_delta
         );
     }
 
