@@ -525,7 +525,7 @@ fn shroud_current_sight_psychic_never_gapped_and_mixed_views_are_nontransitive()
 #[test]
 fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
     use crate::rules::locomotor_type::LocomotorKind;
-    use crate::sim::movement::locomotor::{AirMovePhase, LocomotorState, MovementLayer};
+    use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
     use crate::sim::timer::CdTimer;
     let (mut sim, rules, a) = fixture();
     let b = sim.interner.intern("Alliance");
@@ -554,7 +554,10 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
         loco.altitude = crate::util::fixed_math::SimFixed::from_num(208);
         // Keep the admitted high-flight height through the actual Process below.
         loco.target_altitude = loco.altitude;
-        loco.air_phase = AirMovePhase::Cruising;
+        let runtime = loco.jumpjet_runtime_mut().expect("jumpjet runtime");
+        runtime.phase = crate::sim::movement::jumpjet_flight::STATE_TRANSLATE;
+        // The kernel flies toward its own target height, not `target_altitude`.
+        runtime.flight.target_height = 208;
         entity.locomotor = Some(loco);
     }
     sim.refresh_fog(None, &vision::VisionConfig::default(), Some(&rules));
@@ -651,7 +654,9 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
         .locomotor
         .as_mut()
         .unwrap()
-        .air_phase = AirMovePhase::Cruising;
+        .jumpjet_runtime_mut()
+        .unwrap()
+        .phase = crate::sim::movement::jumpjet_flight::STATE_TRANSLATE;
     sim.refresh_high_flying_sight_before_process(2, None, None);
     assert_eq!(
         sim.substrate

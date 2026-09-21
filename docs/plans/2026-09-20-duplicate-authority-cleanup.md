@@ -22,6 +22,7 @@ Replace this file on each update; do not append a diary.
 | Animation | `AnimStore`'s private 128-per-level Z scale: one frame, world leptons (104 per level), owner-attached anims follow the owner's actual height, sprites project from exact Z. Prerequisite for the muzzle flashes; snapshot 177 | this PR |
 | Animation | weapon `Anim=` and occupant `OccupantAnim=` muzzle flashes on `AnimStore`, built at the sim's one fire coordinate (`combat/fire_coord.rs`, also the bullet origin and the report sound position). A building's FLH arm now starts from the building coordinate native uses (location minus 128), like its pixel arms. Deleted: the app's second AnimClass stepper, both flash lists and draw paths, the `f32` FLH transforms and pixel-offset math. Snapshot 178 | this PR |
 | Animation | the parachute canopy: an owner-attached `AnimClass` built by the drop (`ObjectClass::Paradrop @ 0x005F5940`, canopy at `0x005F5A9D`) and wound down at landing (`0x005F3F9D`). Deleted: the app's third stepper (`chute_anim.rs`, `ParachuteAnim`) and `ParachuteRenderConfig`, a second parse of the `PARACH` AnimType's art. The app keeps only the canopy's placement on the body's sort key. Snapshot 179 | this PR |
+| Move phases | the Jumpjet's `AirMovePhase` mirror: readers take the locomotor's own state field (`JumpjetRuntime::phase`, all seven native values) and the mirror is no longer written; the legacy VERA-only jumpjet physics with no caller left. Snapshot 180 | this PR |
 | Dead code | items dead in both builds; superseded test-only duplicates (map-list funnels, `radiation_light_epoch`); test probes gated; the effect asset catalog trimmed to particle images, which changes the rules hash, so snapshot 176 | #421 |
 
 Three per-mover world scans went with those: the per-frame dock sweep, the
@@ -57,6 +58,22 @@ PRESERVE: the worktree `.claude/worktrees/phase6-audio-lane` (branch
 uncommitted lines of parked bouncer/damage-arm work from 2026-09-03. Do not
 delete it.
 
+**`GroundMovePhase` (for the final audit to confirm).** A seven-value label
+`update_locomotor_phases` recomputes at the end of every movement pass from
+`path_blocked` and the mover's speed. Only two values are read: `Blocked` by the
+Walk readiness producer and `Idle` by the piggyback end gate. It is not a pure
+mirror: both readers see the value sampled at the end of the mover's last pass,
+so replacing it with a live read of `path_blocked` moves Walk `Is_Moving_Now` by
+a frame around a new order or a cleared block. What the native Walk predicate
+reads there (the next-step coordinate) is the reconciliation movement rows
+GSI-06.13 and GSI-06.14 own; removing the label is that port, not a fold.
+
+**Jumpjet destination (for the final audit to confirm).** `movement_target`
+and `JumpjetRuntime::destination` are two native fields, not two copies:
+the Foot destination the order writes, and the locomotor's own cached
+coordinate at `+0x40` that `Move_To` fills and `Process` flies toward. The
+cruise host hands one to the other and clears the order on arrival.
+
 **Staged native ports with no production caller yet (for the final audit to
 confirm).**
 `track_fresh_dispatch.rs`, `track_speed_native.rs`, the `load_object_lifecycle`
@@ -75,10 +92,6 @@ rebuilds the skip map per entry: O(N^2) against the 20,000-unit target. The
 snapshot exists because the mover holds the entity store mutably. Hoisting needs
 incremental invalidation, because a mover's tick can rewrite other entities'
 paths; `refresh_owner_block_set_if_stale` is the existing model.
-
-**Move phases / Jumpjet destination.** `air_phase` is hashed and also mirrors
-`JumpjetRuntime` (`jumpjet_cruise.rs::air_phase_for`); `movement_target` and
-`JumpjetRuntime::destination` are both live in `world/jumpjet_cruise.rs`.
 
 **Loader funnels only tests drive.** `construct_scenario`,
 `construct_app_scenario`, `load_rules_with_merged_ini`, `LoadedRules`,
@@ -122,4 +135,4 @@ release: a chrono warp, a superweapon invoke, a bridge collapse.
 - The separate `vera20k-engine-authority` checkout, branch
   `feature/persistent-facing-authority`: dirty facing, turret, walk-head
   and snapshot files. No open lead above touches them; its snapshot bump must
-  land after 179.
+  land after 180.
