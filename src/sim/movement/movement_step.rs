@@ -1019,9 +1019,10 @@ pub(super) fn advance_lepton_position(
     if shared_track_kind(locomotor).is_some() {
         return AdvanceResult::DriveTrackActive;
     }
-    // Retain the generic nontrack integration and its whole-lepton Walk
-    // fixture path. Live Walk dispatch executes the native polar step through
-    // WalkHost; Drive/Ship never enter this adapter.
+    // Live Walk still enters this generic nontrack adapter. Its normalized
+    // vector is not the native paid polar step (75BFA9..75C0CB); WalkHost
+    // currently owns only the boundary/completion transactions. Replace this
+    // Walk arm when the numeric chain is integrated. Drive/Ship never enter.
     let whole_lepton_result = locomotor
         .as_ref()
         .is_some_and(|locomotor| locomotor.kind == LocomotorKind::Walk);

@@ -52,7 +52,7 @@ Acceptance before implementation:
 - Relevant Ghidra annotations are saved and read back. Focused tests, the full
   library suite and library Clippy pass before the one independent PR review.
 
-## Current state
+## Accepted first mechanism (PR #439)
 
 The implementation moves Infantry facing from entity/cell orders and
 retaliation into the fire-start receiver. It updates the existing body FacingClass
@@ -120,5 +120,58 @@ step remains required. These are leads, not a complete inventory.
 FacingClass::snap's live-angle equality discrepancy is now corrected
 against original-code execution: cancel the timer while retaining the old target.
 
-Next: publish/merge the validated
-increment and continue the required combat chains. The whole-combat goal is open.
+Published and merged as PR #439, merge `d47a9247`; final source correction
+`c0b854a9`. No Cargo process or review remains pending for that increment.
+
+## Next mechanism: paid Walk step used by combat approach
+
+Current branch `feature/combat-walk-step`, based on refreshed `origin/main`
+`d47a9247`, in the same owned worktree. The whole-combat goal remains open.
+
+Native `WalkLocomotionClass::ProcessMovement @ 0075AEC0` takes the paid-head
+arm at `0075BD25`. Outside the `<17` completion arm and owner movement refusal,
+`0075BFA9` sets Foot speed fraction to one, queries Infantry's movement speed
+through `+538 -> 00521D80`, computes the head direction and calls the actual
+Walk facing setter at `0075C035`. `0075C067..0075C0CB` computes signed-heading
+sine/cosine displacement and truncates the final world coordinates. The result
+selects the existing same-cell or boundary transaction. Rust currently reaches
+`advance_lepton_position` and a direct normalized vector instead; the source
+comment claiming a live native-polar WalkHost dispatch is incorrect.
+
+Acceptance before implementation:
+
+- Original instruction witnesses cover the numeric step, speed input, direction
+  update and resulting same-cell/boundary decision, including diagonals and small
+  speed/offset contrasts; distinguish supplied speed from the full getter chain.
+- Production Walk pays this step once per native visit through existing Foot,
+  facing and coordinate owners, preserving completion, occupation and height
+  transactions. Remove the competing generic Walk calculation and false claims.
+- Reuse/complete live speed prerequisites, including Infantry's prone override;
+  do not duplicate a track-owned speed calculation as another Walk authority.
+- Demonstrate approach-to-fire behavior and save/restore through production
+  commands/frames; validate deterministic SimFixed math and documented rounding.
+- Native corpus checks, affected production tests, full library tests and Clippy
+  precede one fresh critic for this new PR. Integrate accepted work and continue.
+
+`tools/spatial_oracle/walk_paid_step.py --check` passes 35 original-code vectors.
+The actual constructor, speed setter, coordinate/cell getters, Walk facing setter
+and trigonometric routines execute; only the movement-speed integer is supplied.
+Examples at supplied speed 6: native south advances (-1,+6), west (-6,-1), and
+northeast (+4,-5), showing why a direct normalized vector is insufficient.
+The live-turn equality witness retains body destination `3FFF` but moves north:
+the displacement uses the freshly computed SI direction, not the retained body.
+Ghidra comments at `75BFA9` and `75C067` are saved and read back. Corrected the
+false production-dispatch comment in `movement_step`; runtime port is unfinished.
+
+Speed prerequisite audit: `+538 -> Infantry521D80` calls Foot4DB1A0 and then
+applies prone adjustment (Crawls: speed minus truncated speed/3; otherwise
+speed plus truncated speed/2). Rust's `infantry::apply_prone_speed` already owns
+that adjustment. `track_speed::advance` and
+`drive_locomotion::owner_current_speed_from_fraction` own current track production
+speed, but their documented house/crate/CTF gaps remain; `track_speed_native` is
+an isolated numeric oracle comparison, not a production replacement. Preserve
+SimFixed policy when completing the common getter's inputs and consumers.
+
+Next safe action: port/integrate the paid numeric Walk chain using the saved
+witnesses and proper Foot speed/facing owners; remove its generic competitor.
+No Rust runtime change, Cargo process, new critic or new PR is pending here.

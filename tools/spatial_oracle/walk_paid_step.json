@@ -1,0 +1,1472 @@
+[
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 0,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2496,
+        2368,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_0_-256_speed_1",
+      "rot": 5,
+      "speed": 1
+    },
+    "previous": 0,
+    "proposed": [
+      2496,
+      2623,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 0,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2496,
+        2368,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_0_-256_speed_6",
+      "rot": 5,
+      "speed": 6
+    },
+    "previous": 0,
+    "proposed": [
+      2496,
+      2618,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 0,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2496,
+        2368,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_0_-256_speed_17",
+      "rot": 5,
+      "speed": 17
+    },
+    "previous": 0,
+    "proposed": [
+      2496,
+      2607,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 8315,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2752,
+        2368,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_256_-256_speed_1",
+      "rot": 5,
+      "speed": 1
+    },
+    "previous": 8315,
+    "proposed": [
+      2496,
+      2623,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 8315,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2752,
+        2368,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_256_-256_speed_6",
+      "rot": 5,
+      "speed": 6
+    },
+    "previous": 8315,
+    "proposed": [
+      2500,
+      2619,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 8315,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2752,
+        2368,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_256_-256_speed_17",
+      "rot": 5,
+      "speed": 17
+    },
+    "previous": 8315,
+    "proposed": [
+      2508,
+      2612,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 16383,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2752,
+        2624,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_256_0_speed_1",
+      "rot": 5,
+      "speed": 1
+    },
+    "previous": 16383,
+    "proposed": [
+      2497,
+      2624,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 16383,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2752,
+        2624,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_256_0_speed_6",
+      "rot": 5,
+      "speed": 6
+    },
+    "previous": 16383,
+    "proposed": [
+      2502,
+      2624,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 16383,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2752,
+        2624,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_256_0_speed_17",
+      "rot": 5,
+      "speed": 17
+    },
+    "previous": 16383,
+    "proposed": [
+      2513,
+      2624,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 24451,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2752,
+        2880,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_256_256_speed_1",
+      "rot": 5,
+      "speed": 1
+    },
+    "previous": 24451,
+    "proposed": [
+      2496,
+      2624,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 24451,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2752,
+        2880,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_256_256_speed_6",
+      "rot": 5,
+      "speed": 6
+    },
+    "previous": 24451,
+    "proposed": [
+      2500,
+      2628,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 24451,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2752,
+        2880,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_256_256_speed_17",
+      "rot": 5,
+      "speed": 17
+    },
+    "previous": 24451,
+    "proposed": [
+      2508,
+      2635,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 32767,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2496,
+        2880,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_0_256_speed_1",
+      "rot": 5,
+      "speed": 1
+    },
+    "previous": 32767,
+    "proposed": [
+      2495,
+      2625,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 32767,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2496,
+        2880,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_0_256_speed_6",
+      "rot": 5,
+      "speed": 6
+    },
+    "previous": 32767,
+    "proposed": [
+      2495,
+      2630,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 32767,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2496,
+        2880,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_0_256_speed_17",
+      "rot": 5,
+      "speed": 17
+    },
+    "previous": 32767,
+    "proposed": [
+      2495,
+      2641,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 41082,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2240,
+        2880,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_-256_256_speed_1",
+      "rot": 5,
+      "speed": 1
+    },
+    "previous": 41082,
+    "proposed": [
+      2495,
+      2624,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 41082,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2240,
+        2880,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_-256_256_speed_6",
+      "rot": 5,
+      "speed": 6
+    },
+    "previous": 41082,
+    "proposed": [
+      2491,
+      2628,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 41082,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2240,
+        2880,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_-256_256_speed_17",
+      "rot": 5,
+      "speed": 17
+    },
+    "previous": 41082,
+    "proposed": [
+      2483,
+      2635,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 49153,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2240,
+        2624,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_-256_0_speed_1",
+      "rot": 5,
+      "speed": 1
+    },
+    "previous": 49153,
+    "proposed": [
+      2495,
+      2623,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 49153,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2240,
+        2624,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_-256_0_speed_6",
+      "rot": 5,
+      "speed": 6
+    },
+    "previous": 49153,
+    "proposed": [
+      2490,
+      2623,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 49153,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2240,
+        2624,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_-256_0_speed_17",
+      "rot": 5,
+      "speed": 17
+    },
+    "previous": 49153,
+    "proposed": [
+      2479,
+      2623,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 57221,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2240,
+        2368,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_-256_-256_speed_1",
+      "rot": 5,
+      "speed": 1
+    },
+    "previous": 57221,
+    "proposed": [
+      2495,
+      2623,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 57221,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2240,
+        2368,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_-256_-256_speed_6",
+      "rot": 5,
+      "speed": 6
+    },
+    "previous": 57221,
+    "proposed": [
+      2491,
+      2619,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 57221,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2240,
+        2368,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_-256_-256_speed_17",
+      "rot": 5,
+      "speed": 17
+    },
+    "previous": 57221,
+    "proposed": [
+      2483,
+      2612,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 12948,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2687,
+        2557,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_191_-67_speed_1",
+      "rot": 5,
+      "speed": 1
+    },
+    "previous": 12948,
+    "proposed": [
+      2496,
+      2623,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 12948,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2687,
+        2557,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_191_-67_speed_6",
+      "rot": 5,
+      "speed": 6
+    },
+    "previous": 12948,
+    "proposed": [
+      2501,
+      2622,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 12948,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2687,
+        2557,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_191_-67_speed_17",
+      "rot": 5,
+      "speed": 17
+    },
+    "previous": 12948,
+    "proposed": [
+      2512,
+      2618,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 35997,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2423,
+        2853,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_-73_229_speed_1",
+      "rot": 5,
+      "speed": 1
+    },
+    "previous": 35997,
+    "proposed": [
+      2495,
+      2624,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 35997,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2423,
+        2853,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_-73_229_speed_6",
+      "rot": 5,
+      "speed": 6
+    },
+    "previous": 35997,
+    "proposed": [
+      2494,
+      2629,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 35997,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2423,
+        2853,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "heading_-73_229_speed_17",
+      "rot": 5,
+      "speed": 17
+    },
+    "previous": 35997,
+    "proposed": [
+      2490,
+      2640,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": true,
+    "facing": 24451,
+    "input": {
+      "current": [
+        2559,
+        2559,
+        104
+      ],
+      "head": [
+        2752,
+        2752,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "boundary_2559",
+      "rot": 5,
+      "speed": 17
+    },
+    "previous": 24451,
+    "proposed": [
+      2571,
+      2570,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": true,
+    "facing": 57221,
+    "input": {
+      "current": [
+        2560,
+        2560,
+        104
+      ],
+      "head": [
+        2368,
+        2368,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "boundary_2560",
+      "rot": 5,
+      "speed": 17
+    },
+    "previous": 57221,
+    "proposed": [
+      2547,
+      2548,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 24451,
+    "input": {
+      "current": [
+        261,
+        261,
+        0
+      ],
+      "head": [
+        280,
+        280,
+        0
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "boundary_261",
+      "rot": 5,
+      "speed": 17
+    },
+    "previous": 24451,
+    "proposed": [
+      273,
+      272,
+      0
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 16383,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2752,
+        2624,
+        104
+      ],
+      "initial_duration": 0,
+      "initial_facing": 33059,
+      "initial_previous": 33059,
+      "initial_start": 4294967295,
+      "name": "zero_speed",
+      "rot": 5,
+      "speed": 0
+    },
+    "previous": 16383,
+    "proposed": [
+      2496,
+      2624,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 16383,
+    "input": {
+      "current": [
+        2496,
+        2624,
+        104
+      ],
+      "head": [
+        2496,
+        2368,
+        104
+      ],
+      "initial_duration": 1,
+      "initial_facing": 16383,
+      "initial_previous": 0,
+      "initial_start": 100,
+      "name": "snap_equality_keeps_destination",
+      "rot": 32,
+      "speed": 6
+    },
+    "previous": 0,
+    "proposed": [
+      2496,
+      2618,
+      104
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  }
+]
