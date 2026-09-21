@@ -87,12 +87,14 @@ Trace their use before changes. Untangle affected ownership, consolidate duplica
 finish required migrations and remove obsolete code/state. Preserve intentional
 differences, validate affected paths and keep cleanup within task scope.
 
-State and shared decisions have one owner. Before writing simulation state or
-adding a decision helper, find the existing writers and name the owner in the PR.
-Never add a second writer, a mirror field or a local variant of a shared helper;
-extend or fix the owner, in a prior PR when large. Keep new and consolidated
-simulation state private to its owning module, mutated only through the owner, so a
-second writer fails to compile.
+Simulation state and shared decisions have one authoritative owner. Before adding
+state or decision logic, find existing writers and name the owner in the PR. Extend
+or fix that owner instead of introducing competing state or duplicated decision
+logic. Keep authoritative state private to its owning module and expose mutations
+through the owner.
+
+Derived caches and indexes are allowed when their source of truth, update or
+invalidation rules, and consistency validation are explicit.
 
 Use relevant rows in the [dependency map](docs/module-map.md); verify against source.
 Refresh with `python tools/module_map.py` after dependency, layout, visibility or
@@ -104,11 +106,14 @@ and use integration evidence appropriate to the change, including runtime reprod
 when needed. Reassess worsening fixes.
 Design/plan artifacts are optional; implementation authority includes design choices.
 
-Port gameplay one native call chain at a time, from trigger to leaf across every class
-it crosses, and delete the replaced path in the same change. Record the RNG draws,
-timer writes and detach calls the chain passes in its residuals or ledger row, even
-when they are not ported. Behavior invented where a native body exists is a recorded
-residual with a reason, never a silent default.
+Port one bounded gameplay mechanism at a time, tracing its native call chains from
+trigger through all required effects across class boundaries. Migrate affected
+consumers and delete superseded paths in the same change. Shared dependencies still
+used by other mechanisms remain with their existing owner.
+
+Record the RNG draws, timer writes and detach calls the chain passes in its residuals
+or ledger row, even when they are not ported. Behavior invented where a native body
+exists is a recorded residual with a reason, never a silent default.
 
 Promote coherent prerequisites when a smaller patch creates broken behavior, duplicate
 authority or predictable rework. Choose branch/PR boundaries to keep dependencies
