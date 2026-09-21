@@ -909,6 +909,15 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     // frame (`values_mut`) would quietly turn that back into a whole-world
     // read per frame, with correct results and no other symptom.
     let world_reads = rec.movement_pass_cache.block_index_world_rebuilds();
+    // The blocker plane follows the same log. It is rebuilt from the whole map
+    // only when the terrain or overlay epoch moves (a harvested cell, a wall, a
+    // tree), which this script does a couple of dozen times; a rebuild per
+    // moving object's turn would be thousands.
+    let plane_reads = rec.movement_pass_cache.blocker_plane_world_rebuilds();
+    assert!(
+        plane_reads <= 60,
+        "the blocker plane was rebuilt from the whole map {plane_reads} times"
+    );
     assert!(
         world_reads <= 2,
         "the block index read every entity {world_reads} times; look for a new all-entity mutable walk"

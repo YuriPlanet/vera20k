@@ -4591,10 +4591,18 @@ fn scale_benchmark_many_movers_on_hills() {
         })
         .count();
     println!(
-        "SCALE movers={} live_objects={live_objects} frames={frames} avg_ms={:.2} worst_ms={:.2} moved={moved} entity_bytes={}",
+        "SCALE movers={} live_objects={live_objects} frames={frames} avg_ms={:.2} worst_ms={:.2} moved={moved} entity_bytes={} world_reads={}/{}",
         ids.len(),
         total.as_secs_f64() * 1000.0 / frames as f64,
         worst.as_secs_f64() * 1000.0,
         std::mem::size_of::<crate::sim::game_entity::GameEntity>(),
+        scenario
+            .sim()
+            .movement_pass_cache
+            .block_index_world_rebuilds(),
+        scenario
+            .sim()
+            .movement_pass_cache
+            .blocker_plane_world_rebuilds(),
     );
 }

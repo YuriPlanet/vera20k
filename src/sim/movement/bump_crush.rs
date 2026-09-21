@@ -154,6 +154,32 @@ pub(crate) fn build_blocker_neighbor_counts_with_overlays(
     interner: &crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> BlockerNeighborCounts {
+    let mut counts = blocker_plane_without_entities(
+        width,
+        height,
+        resolved_terrain,
+        overlay_grid,
+        overlay_registry,
+    );
+    for entity in entities.values() {
+        if let Some(source) = blocker_plane_source(entity, interner, rules) {
+            source.add_to(&mut counts);
+        }
+    }
+    counts
+}
+
+/// The part of the blocker plane that no entity contributes to: the retained
+/// wall plane (or, for legacy constructors, the current wall overlays) and
+/// every cell's terrain-object occupation. It changes only with the terrain
+/// and overlay mutation epochs.
+pub(crate) fn blocker_plane_without_entities(
+    width: u16,
+    height: u16,
+    resolved_terrain: Option<&ResolvedTerrainGrid>,
+    overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
+    overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+) -> BlockerNeighborCounts {
     let retained_wall_counts = overlay_grid.and_then(|grid| {
         if grid.retained_wall_neighbor_counts().is_some() {
             assert_eq!(
@@ -201,29 +227,65 @@ pub(crate) fn build_blocker_neighbor_counts_with_overlays(
             }
         }
     }
+    counts
+}
 
-    for entity in entities.values() {
-        // Dying corpses are off the occupancy grid — don't let them inflate the
-        // A* dynamic-blocker neighbor costs.
-        if entity.dying || !entity.lifecycle.cell_marked {
-            continue;
-        }
-        if entity.passenger_role.is_inside_transport() || entity.occupancy_list_layer().is_none() {
-            continue;
-        }
-        let pos = (entity.position.rx, entity.position.ry);
-        if entity.category == EntityCategory::Structure {
-            let (width, height) = rules
-                .and_then(|r| r.object(interner.resolve(entity.type_ref())))
-                .map(|obj| crate::sim::production::foundation_dimensions(&obj.foundation))
-                .unwrap_or((1, 1));
-            counts.add_building_expanded_foundation(pos.0, pos.1, width, height);
-        } else {
-            counts.add_single_cell_neighbor_source(pos.0, pos.1);
+/// What one entity adds to the blocker plane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BlockerPlaneSource {
+    Cell(u16, u16),
+    /// A building: its foundation expanded by one cell all round.
+    Building {
+        origin: (u16, u16),
+        size: (u16, u16),
+    },
+}
+
+impl BlockerPlaneSource {
+    pub(crate) fn add_to(self, counts: &mut BlockerNeighborCounts) {
+        match self {
+            Self::Cell(x, y) => counts.add_single_cell_neighbor_source(x, y),
+            Self::Building { origin, size } => {
+                counts.add_building_expanded_foundation(origin.0, origin.1, size.0, size.1)
+            }
         }
     }
 
-    counts
+    /// The exact inverse of [`Self::add_to`]: the counts wrap.
+    pub(crate) fn remove_from(self, counts: &mut BlockerNeighborCounts) {
+        match self {
+            Self::Cell(x, y) => counts.remove_single_cell_neighbor_source(x, y),
+            Self::Building { origin, size } => {
+                counts.remove_building_expanded_foundation(origin.0, origin.1, size.0, size.1)
+            }
+        }
+    }
+}
+
+/// The one rule for what an entity adds to the blocker plane.
+pub(crate) fn blocker_plane_source(
+    entity: &GameEntity,
+    interner: &crate::sim::intern::StringInterner,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+) -> Option<BlockerPlaneSource> {
+    // Dying corpses are off the occupancy grid: don't let them inflate the
+    // A* dynamic-blocker neighbor costs.
+    if entity.dying || !entity.lifecycle.cell_marked {
+        return None;
+    }
+    if entity.passenger_role.is_inside_transport() || entity.occupancy_list_layer().is_none() {
+        return None;
+    }
+    let pos = (entity.position.rx, entity.position.ry);
+    if entity.category == EntityCategory::Structure {
+        let size = rules
+            .and_then(|r| r.object(interner.resolve(entity.type_ref())))
+            .map(|obj| crate::sim::production::foundation_dimensions(&obj.foundation))
+            .unwrap_or((1, 1));
+        Some(BlockerPlaneSource::Building { origin: pos, size })
+    } else {
+        Some(BlockerPlaneSource::Cell(pos.0, pos.1))
+    }
 }
 
 // ---------------------------------------------------------------------------
