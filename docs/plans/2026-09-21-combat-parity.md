@@ -227,14 +227,18 @@ The local
 comparison checkout `.local/walk-baseline-ec27` retains only a temporary test
 probe; it is not a second implementation to publish.
 
-## Current dependency: Display membership required by movement pickup
+## Current dependency: Aircraft firing and Fly state
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
 Branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Current validated source: `d7c155501e7f260024dc965b415b2c3aa8431979`:
-aircraft approach distance, strict raw-lepton range and shared target coordinates,
+Current validated source: `4a32f4c3bd6a29d1ca9b531cac71b1fe6143853b`: shared fire emission separated from
+admission, with original Aircraft release/entry witnesses and corrected native
+class identities. This is preparation for the open aircraft mission firing and
+pending-ammo migration, not a shot-behavior completion claim. Previous checkpoint:
+`0cbfa458`. Range source `d7c155501e7f260024dc965b415b2c3aa8431979` remains intact,
 including native0x0 foundations. No tracked implementation WIP remains after this
-checkpoint commit. Previous checkpoint: `d4ab9da0`. Facing source
+checkpoint commit. The dependency map is retired by user instruction: do not use
+or refresh it, regardless of the older branch contract text. Facing source
 `be8e2d62ce1fcdfc6d968954204878670f6ebd38` and evidence
 `ae5b3042e66091c584b1bc2335272fca6f360cbc` remain intact, including80 original
 Fly takeoff callbacks. Aircraft attack-state, emission and Fly prerequisites below
@@ -678,9 +682,72 @@ still call26/27 Open/Rescue; that is stale identity, not a distinct native chain
 Mission24 Open dispatches to base5B2F50; Mission15 Hunt reaches414A80, so do not
 rename415A50 to Hunt from an incorrectly counted vtable entry.
 
+### Aircraft admission/emission boundary and release witnesses
+
+The world receiver now hands its existing admitted shot to one private
+`emit_admitted_fire` function. The borrowed `AdmittedFire` carries the existing
+selected weapon, source and target facts; it adds no retained state or copies of
+emission logic. Every existing fire consumer still reaches this production body.
+Admission, infantry fire-action writes, shot order and inline receiver commits
+retain their previous caller. Acceptance for this preparatory refactor is unchanged
+production results/RNG/save behavior through the full lib suite, plus Clippy.
+It does **not** enable aircraft mission shots or complete the release migration.
+
+`aircraft_attack_release.{py,json,meta.json}` preserves316 original state4
+successful-release loops and post-reveal continuations, plus72 original
+state1/3/10 entry-housekeeping prefixes. SelectWeapon and FireAt are explicit
+scratch callbacks; original GetWeapon, auxiliary+18 and Fighter reads execute.
+The intervening map reveal is excluded. No emitted-shot, damage, scheduling or
+whole-burst parity claim. Important native facts for the implementation:
+
+- Set pending+6C8 BEFORE the first SelectWeapon, even for Burst<=0. Do not use
+  a projectile count or returned Bullet pointer as proof of mission success.
+- Loop body reselects before every FireAt and again before its next Burst test;
+  it does not repeat GetFireError. A cached selected weapon across the entire
+  burst would miss target/selection changes from synchronous effects.
+- The success arm does not debit Ammo+2FC. Auxiliary+18 selects state6 and
+  latch+6D2=true; otherwise Fighter chooses1 for Ammo>0 or10, also latching.
+  Both return slot0 raw ROF. The remaining arm selects5, returns1, and retains
+  the incoming6D2 value. Witness fixtures supply6D2=false.
+- State1/3 consume pending with wrapping signed DEC; state10 clears pending
+  but decrements only positive Ammo. All three clear6D2. Prefixes stop before
+  the target/ammo guards and navigation, so these are not state1 completion.
+- Common FireAt emission must be callable after a single admission, with live
+  target/weapon reads and synchronous receiver commit between burst shots.
+  Existing batch ammo deduction must migrate with the mission pending owner;
+  merely bypassing the active-Attack gate would double-charge ammo.
+
+Ghidra41A9E0 was falsely named Aircraft What_Weapon_Should_I_Use. Actual vtable
++3C0 and Mission_Attack41832E establish GetFireError; renamed accordingly.
+It first propagates common6FC0B0's errors, then tests6C9/118 and SecondaryFacing
+against DirectionToTarget unless Fighter. Its0/1/2 returns are admission results,
+not weapon indexes. GetROF6FCFA0 is also now named and annotated. Labels and
+comments were saved and read back; no prototypes, boundaries or binary edits.
+
+Original WhatAmI leaves establish **Unit1, Aircraft2, Building6, Infantry15**.
+The initial GetROF class6/Ammo>1 shortcut belongs to Building; class1 Type+6C4
+per-burst delays belong to Unit. The old techno_rearm oracle called class1
+Aircraft, and Rust's comment called it Infantry. Both labels are corrected.
+All267 existing numeric outputs/events/RNG states remain identical after input
+key renames. Its metadata now records execution of the four original RTTI leaves.
+This is evidence correction, not a new aircraft one-frame rearm implementation.
+
+Final validation for4a32f4c3: `cargo test -p vera20k --lib` passed **9,123 tests,
+0 failed,135 ignored**,17.41s after a7m23s fresh build
+(`.local/aircraft-emission-split-tests.log`). `cargo clippy -p vera20k --lib`
+passed with1,026 warnings in1m45s (`.local/aircraft-emission-split-clippy.log`).
+Both native `--check` commands passed; the release fixture's final shape contains
+316 release rows and72 entry rows. A mechanical comparison confirmed every
+emission statement is unchanged by extraction. No new snapshot schema or replay
+pin; no release retail load or PR/critic in this increment. All owned processes
+are terminal. This run used the owned worktree's `target` cache (CARGO_TARGET_DIR
+was unset), rather than the earlier main-checkout shared cache; preserve it and
+check actual Cargo/config state before continuing.
+
 ### Next safe implementation
 
-First resolve the Aircraft pending-ammo/+6D2 and emission chain above. Fly MoveTo
+Continue the semantic Aircraft pending-ammo/+6D2 and emission migration above,
+using the now-shared production emitter and saved release witnesses. Fly MoveTo
 reads that retained byte; it cannot borrow the legacy completion latch. Preserve
 the validated range correction while replacing the false final-release path and
 porting its required FindFireLocation/NavCom/state1/state10 effects.
