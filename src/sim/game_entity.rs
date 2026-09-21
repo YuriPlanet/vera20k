@@ -850,9 +850,9 @@ pub struct GameEntity {
     pub too_big_to_fit_under_bridge: bool,
     /// Whether this entity is playing its death animation (health=0, not yet despawned).
     /// Dying entities are excluded from combat targeting, pathfinding, and selection.
-    /// Every production writer calls `EntityStore::note_dying_transition` first:
-    /// a dying object stays cell-marked until its terminal UnInit, and the
-    /// movement blocker plane cache keys on that epoch (debug builds cross-check).
+    /// A dying object stays cell-marked until its terminal UnInit. Products
+    /// derived from the entities (the movement pass's blocker plane and block
+    /// sets) follow the flag through the store's touch log, like any other field.
     pub dying: bool,
     /// Retained Infantry lifetime policy; sprite animation stores progress only.
     pub(crate) infantry_terminal: Option<crate::sim::world::InfantryTerminal>,

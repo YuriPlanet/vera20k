@@ -384,6 +384,35 @@ pub(crate) fn build_owner_block_set(
     product
 }
 
+/// Touched entities waiting for a consumer to re-derive them.
+#[derive(Debug, Default)]
+pub(crate) struct TouchedBacklog {
+    /// Ids are not enough: re-derive from every entity.
+    pub(crate) everything: bool,
+    pub(crate) ids: BTreeSet<u64>,
+}
+
+impl TouchedBacklog {
+    fn absorb(&mut self, touched: &TouchedEntities) {
+        match touched {
+            TouchedEntities::All => self.set_everything(),
+            TouchedEntities::Ids(ids) if !self.everything => {
+                self.ids.extend(ids.iter().copied());
+                // Nobody is taking this backlog: stop growing it.
+                if self.ids.len() > 1 << 16 {
+                    self.set_everything();
+                }
+            }
+            TouchedEntities::Ids(_) => {}
+        }
+    }
+
+    fn set_everything(&mut self) {
+        self.everything = true;
+        self.ids = BTreeSet::new();
+    }
+}
+
 /// Each owner's block sets, kept between movement passes.
 #[derive(Debug, Default)]
 pub(crate) struct OwnerBlockIndex {
@@ -397,6 +426,12 @@ pub(crate) struct OwnerBlockIndex {
     /// blocked cells come from its type. Never dereferenced.
     rules_seen: Option<usize>,
     last_loan: u64,
+    /// Drained from the store but not yet re-derived here.
+    pending: TouchedBacklog,
+    /// The same ids, for the movement pass's other product derived from the
+    /// entities (the blocker plane). The store's log has one consumer, this
+    /// index, which passes on what it takes.
+    forwarded: TouchedBacklog,
     /// How many times the placements were rebuilt from every entity.
     #[cfg(test)]
     pub(crate) world_rebuilds: usize,
@@ -410,6 +445,20 @@ pub(crate) struct LentOwnerBlockSet {
 }
 
 impl OwnerBlockIndex {
+    /// Move the store's touch log into this index's backlog and the
+    /// forwarded one.
+    fn drain_log(&mut self, entities: &mut EntityStore) {
+        let touched = entities.take_touched();
+        self.pending.absorb(&touched);
+        self.forwarded.absorb(&touched);
+    }
+
+    /// Everything touched since the last call, for the blocker plane.
+    pub(crate) fn take_forwarded(&mut self, entities: &mut EntityStore) -> TouchedBacklog {
+        self.drain_log(entities);
+        std::mem::take(&mut self.forwarded)
+    }
+
     /// Bring the shared placements to the entities' current state and tell
     /// every owner what moved.
     fn sync_placements(
@@ -428,12 +477,13 @@ impl OwnerBlockIndex {
             self.placements = None;
             self.rules_seen = rules_now;
         }
-        let touched = entities.take_touched();
-        match (self.placements.as_mut(), touched) {
-            (Some(placements), TouchedEntities::Ids(ids)) => {
+        self.drain_log(entities);
+        let touched = std::mem::take(&mut self.pending);
+        match self.placements.as_mut().filter(|_| !touched.everything) {
+            Some(placements) => {
                 let mut dirty = Dirty::default();
-                // Sorted and deduplicated: each entity is re-derived once.
-                for id in ids.into_iter().collect::<BTreeSet<u64>>() {
+                // A set: each entity is re-derived once.
+                for id in touched.ids {
                     placements.rederive(id, entities, interner, rules, &mut dirty);
                 }
                 // A view that stopped being asked for would collect dirt for
@@ -445,7 +495,7 @@ impl OwnerBlockIndex {
                     view.dirty.len() <= limit
                 });
             }
-            _ => {
+            None => {
                 self.placements = Some(Placements::of_everyone(entities, interner, rules));
                 self.owners.clear();
                 #[cfg(test)]

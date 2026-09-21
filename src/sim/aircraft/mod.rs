@@ -716,7 +716,6 @@ pub fn tick_aircraft_missions(
         // announces, and that runs through the combat kill loop.
         if m.self_destruct {
             let infantry_terminal = sim.begin_raw_infantry_death(m.id, None);
-            sim.substrate.entities.note_dying_transition();
             if let Some(entity) = sim.substrate.entities.get_mut(m.id) {
                 if !infantry_terminal {
                     entity.health.current = 0;
@@ -890,7 +889,6 @@ pub fn tick_aircraft_missions(
     for m in &mutations {
         if m.paradrop_silent_despawn {
             let infantry_terminal = sim.begin_raw_infantry_death(m.id, None);
-            sim.substrate.entities.note_dying_transition();
             if let Some(entity) = sim.substrate.entities.get_mut(m.id) {
                 if !infantry_terminal {
                     entity.health.current = 0;

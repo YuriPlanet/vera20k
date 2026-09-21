@@ -333,8 +333,7 @@ impl BlockerNeighborCounts {
     }
 
     /// Reverse one single-cell producer's eight raw-byte neighbor increments.
-    /// Overlay removal wiring is intentionally deferred to its owning batch.
-    #[cfg(test)]
+    /// The counts wrap, so this is the exact inverse of the add.
     pub(crate) fn remove_single_cell_neighbor_source(&mut self, x: u16, y: u16) {
         for dy in -1i32..=1 {
             for dx in -1i32..=1 {
@@ -364,6 +363,25 @@ impl BlockerNeighborCounts {
         }
     }
 
+    /// Reverse [`Self::add_building_expanded_foundation`].
+    pub(crate) fn remove_building_expanded_foundation(
+        &mut self,
+        origin_x: u16,
+        origin_y: u16,
+        width: u16,
+        height: u16,
+    ) {
+        let min_x = origin_x as i32 - 1;
+        let min_y = origin_y as i32 - 1;
+        let max_x = origin_x as i32 + width as i32;
+        let max_y = origin_y as i32 + height as i32;
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                self.decrement_i32(x, y);
+            }
+        }
+    }
+
     fn increment_i32(&mut self, x: i32, y: i32) {
         if x < 0 || y < 0 || x >= self.width as i32 || y >= self.height as i32 {
             return;
@@ -372,8 +390,6 @@ impl BlockerNeighborCounts {
         self.counts[idx] = self.counts[idx].wrapping_add(1);
     }
 
-    // Retained with the deferred single-cell removal seam above.
-    #[cfg(test)]
     fn decrement_i32(&mut self, x: i32, y: i32) {
         if x < 0 || y < 0 || x >= self.width as i32 || y >= self.height as i32 {
             return;

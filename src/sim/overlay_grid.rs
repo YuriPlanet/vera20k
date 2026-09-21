@@ -110,6 +110,12 @@ pub struct OverlayGrid {
     /// points do. Not game state; never serialized.
     #[serde(skip)]
     mutation_epoch: u64,
+    /// Bumped only when the retained wall-neighbour plane itself changes. The
+    /// movement blocker plane reads nothing else from a grid that retains one,
+    /// so ore growth and harvesting, which move `mutation_epoch` most frames,
+    /// do not make it rebuild. Not game state; never serialized.
+    #[serde(skip)]
+    wall_plane_epoch: u64,
     /// Cells whose overlay identity was erased this tick *without* a native
     /// attribute recalc. Presentation must drop their render entry, but
     /// `CrateSlot__RemoveCrateOverlayFromCell @ 0x004A1AA0` ends at its two
@@ -207,6 +213,7 @@ impl OverlayGrid {
             retained_wall_neighbor_counts: None,
             dirty_cells: Vec::new(),
             mutation_epoch: 0,
+            wall_plane_epoch: 0,
             synchronous_passability_changed: false,
             removed_render_cells: Vec::new(),
             synchronous_navigation_cells: Vec::new(),
@@ -231,6 +238,7 @@ impl OverlayGrid {
     #[cfg(test)]
     pub(crate) fn retain_zero_wall_plane_for_tests(&mut self) {
         self.mutation_epoch = self.mutation_epoch.wrapping_add(1);
+        self.wall_plane_epoch = self.wall_plane_epoch.wrapping_add(1);
         self.retained_wall_neighbor_counts = Some(vec![0u8; self.cells.len()]);
     }
 
@@ -260,6 +268,7 @@ impl OverlayGrid {
             retained_wall_neighbor_counts: Some(retained_wall_neighbor_counts),
             dirty_cells: Vec::new(),
             mutation_epoch: 0,
+            wall_plane_epoch: 0,
             synchronous_passability_changed: false,
             removed_render_cells: Vec::new(),
             synchronous_navigation_cells: Vec::new(),
@@ -472,6 +481,16 @@ impl OverlayGrid {
         true
     }
 
+    /// The epoch under which the movement blocker plane's wall part is
+    /// current: the wall plane's own when one is retained, else (legacy
+    /// constructors, which scan wall identities instead) every mutation.
+    pub(crate) fn blocker_plane_epoch(&self) -> (bool, u64) {
+        match self.retained_wall_neighbor_counts {
+            Some(_) => (true, self.wall_plane_epoch),
+            None => (false, self.mutation_epoch),
+        }
+    }
+
     /// Read the retained wall contribution plane. `Some(all-zero)` is
     /// authoritative and must not fall back to a final-identity scan.
     pub(crate) fn retained_wall_neighbor_counts(&self) -> Option<&[u8]> {
@@ -503,6 +522,7 @@ impl OverlayGrid {
         add: bool,
     ) {
         self.mutation_epoch = self.mutation_epoch.wrapping_add(1);
+        self.wall_plane_epoch = self.wall_plane_epoch.wrapping_add(1);
         // Native wall lifecycle evidence: OverlayClass::Mark increments at
         // 0x005FC762..0x005FC775; DestroyOverlay decrements at
         // 0x00481070..0x00481082; cleanup auto-removal's conditional decrement

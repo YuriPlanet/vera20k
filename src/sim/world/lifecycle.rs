@@ -3203,7 +3203,6 @@ impl Simulation {
         self.notify_pointer_expired(stable_id, context);
 
         let _ = self.techno_limbo_with_context(stable_id, context);
-        self.substrate.entities.note_dying_transition();
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.lifecycle.object_alive = false;
             entity.dying = true;
