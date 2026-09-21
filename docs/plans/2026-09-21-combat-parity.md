@@ -231,7 +231,11 @@ probe; it is not a second implementation to publish.
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
 Branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Source increment: `17520993c5e79ec1752736a0a9f2a5774bde887d`; preceding HEAD `4aae0c2b`.
+Source increment: `c3e4876fb7a843181f7cadf5c3ef9f4683c9b2ad` migrates Ground
+rendering and entity picking to retained Display. Committed on the owned branch;
+this checkpoint accompanies it. No tracked implementation WIP remains.
+Preceding checkpoint HEAD: `3cace950259197a4db3b0075d752a32beeaf5c44`; animation
+source increment: `17520993c5e79ec1752736a0a9f2a5774bde887d`.
 No PR or critic pass for this branch. Production pickup and the complete Display
 consumer migration remain unfinished. Preserve the primary checkout and untracked
 `.local/`. The prompt-writing request is finished; continue the active combat goal.
@@ -268,7 +272,8 @@ GetCoords422BE0 is shared by ownership, sound and sorting. GetYSort422BC0 adds
 retained +104 to owner-resolved X+Y with wrapping integer arithmetic. Presentation
 now consumes this retained adjustment. Next424801 replaces the type without
 recopying +104; Start's Mark(REDRAW) is not parent Display resubmission. Current
-type layer and registered layer can differ: the renderer still needs migration.
+type layer and registered layer can differ; animation routing now reads retained
+Display membership rather than querying the current type again.
 
 SetOwner424B50 gates old-owner Remove/Submit on entry +74; attachment always
 removes, stores owner-relative coordinates and submits Ground. Expiry425150
@@ -297,13 +302,55 @@ flattened rendering Image are not certified by this change.
 Global JumpjetControls CruiseHeight: ctor665C3A default400, reader67447E, retail500;
 Object5F4260 uses this Rules field while Jumpjet54B8D0 uses linked loco+2C.
 
+### Current Display consumers
+
+Simulation and SimView expose read-only Display vectors separately from the
+explicit `logic_order` used by the existing radar consumer. Ground builders
+use only the Ground vector; the planner restores its ranks after class/atlas
+emission. Removed presentation coordinate/YSortAdjust copies, the full Y-sort,
+and entity-store fallback. Class key calculation remains in `display_registry`.
+Entity rendering/picking traverse Display; band-box preflight retains its separate
+bulk live-Building exception. Conceal and equal-key resubmission affect consumers.
+Animation iteration/canopies use Display, and destination uses historical layer.
+Top SHP ranking now reads Top membership, but absent-member fallback and separate
+upper VXL/SHP/effect buckets still make upper rendering incomplete.
+
+Original Tactical Draw6D3D10 calls6D8DB0 at6D465F. The latter reads the five
+vectors at8A0360 (stride18) in forward order6D8F19..6D95A9, without GetLayer or
+Y-sorting. Building postpass after Ground and the later object+110 pass remain
+separate. Annotation6D8F39 was saved/read back. No binary/signature/boundary edits.
+
+A native relocation/adjacent-sort history now runs through the frame-tick entry,
+entity-picking candidate order and actual Ground atlas lowering. The GPU regression
+uses that original history after Display save/restore, with overlapping atlas
+sprites where a full sort would change a visible pixel. These are bounded ordering
+checks, not complete rendered gamemd parity.
+
 ### Evidence and validation
 
-Full `cargo test -p vera20k --lib`: **9,113 passed, 0 failed, 134 ignored**.
+Current source `c3e4876f`: full `cargo test -p vera20k --lib` **9,110 passed,
+0 failed, 135 ignored**,18.38s; `.local/display-consumers-tests-4.log`. Existing
+replay pins unchanged. Earlier attempts corrected the new integration test's
+layer placement (sim must not name app/render, including tests) and fixture
+interner; the final test lives in the app boundary and drives `advance_tick`.
+Building key/INI coverage now exercises Display submission at its sim authority.
+Four `terrain_ground_gpu_tests::` passed with `--ignored --test-threads=1`,1.21s,
+including retained-history color overlap, vehicle shadow ordering, mixed
+TMP/SHP/VXL destination edits and20k batching. Log `.local/display-consumers-gpu.log`.
+`cargo clippy -p vera20k --lib` passed with1,033 warnings,35.40s;
+`.local/display-consumers-clippy.log`. Fresh original-executable checks passed:
+`crate_ground_membership`6 histories, `display_anim_owner`24 histories and
+`display_non_entity`9 cases, with `VERA20K_GAMEMD_EXE` explicitly bound to the
+verified retail binary. No corpus files changed. All owned validation processes
+are terminal. This source increment has GPU ordering proof, not a new successful
+whole-game capture; the prior release-load result and capture limitation follow.
+
+
+Previous animation source: full `cargo test -p vera20k --lib`: **9,113 passed, 0 failed, 134 ignored**.
 Log `.local/anim-display-tests-3.log`; existing replay pins are unchanged.
 Earlier attempt exposed three stale/synthetic fixture assumptions, corrected
 against original expiry behavior and the restored reverse-link invariant.
-`cargo clippy -p vera20k --lib` passed with1,033 warnings in1m27s.
+Previous animation source: `cargo clippy -p vera20k --lib` passed with1,033 warnings in1m27s.
 Log `.local/anim-display-clippy.log`. All owned validation processes are terminal.
 User amendment: the dependency map has been removed from GitHub main and is no
 longer used. Do not consult or refresh it, even if this branch's older contract
@@ -330,7 +377,7 @@ silently weaken v2. Retained run, failure manifest and stderr are under
 `.local/anim-display-retail-soviet/`; the owned child exited1 without timeout.
 All owned build/validation processes are terminal.
 
-Original executable comparisons passed this increment:
+Original executable comparisons for the preceding animation increment:
 - `display_anim_owner --check`:24 six-step histories, all five vectors, signed/
   wrapping sort, marked/unmarked detach, moving owner and expiry. Rust consumes
   every step and checks production save/restore. Building coordinates, multiple
@@ -365,17 +412,30 @@ and read back. No binary, signature or boundary edits.
    helpers, then unconditionally submits4CD4E7 before Mark(PUT), even when the
    live layer stayed equal. Aircraft Landable=false takes an earlier branch;
    type+E0A is proven by reader41CC54/41CC67, literal81804C, ctorfalse41C8E2.
-   Existing Rules has `landable`; do not add another authority.4CD75A/4CD792
+   Existing Rules has `landable`; do not add another authority. Helper4CE840
+   behind+51 handles landing (dock/bridge base height, refusal/alternate cells,
+   touchdown+slot cleanup);4CE680 behind+50 clears both flags and stages takeoff
+   facing/speed. Neither is a substitute for the missing native vertical-motion
+   owner. Current AirMovePhase/tick_altitude is synthetic; do not infer native
+   flags just from its names. Proven full-object writers:4CF9A5 clears+51 and
+   sets+50, then type virtual+BC supplies+38;4CFADF clears+50, sets+51, clears+52
+   and zeroes+38 after its refusal/docking gates. ILoco offsets+4C/+4D address
+   these same full-object+50/+51 bytes. Comments4CF9A5/4CFADF saved/read back.
+   Another +50=1 store exists at4CD3C3; retain that transition too.4CE5A0 is
+   separate +53/+54 facing damping, not the missing vertical-motion owner.
+   4CD75A/4CD792
    are another explicit relocation pair. DropIn5F400E/5F4196 and Jumpjet
    **crash** relocation54CBD4..54CC0D remain open. Normal State4 touchdown
    54C81A..54C9FB has Mark/SetCoords/pickup and no direct Display submit;
    Process54B17F/54B18E separately compares live entry/exit queries. Preserve
    those distinctions; generic per-frame cache refresh is not equivalent.
-2. Migrate presentation/input from Logic-based `tactical_registration_order()`
-   and full sorting to Display. Current fallback appends store objects; Anim
-   destination still derives live Layer rather than historical membership.
-   `overlays.rs`, `render/build_instances.rs` and `instances/helpers.rs` are
-   known consumers. Preserve layer-specific order and deletion visibility.
+2. Finish Display consumers beyond the migrated Ground parent path. Legacy
+   `entity_draw_band` still queries altitude; Air/Top VXL, SHP, projectile,
+   particle and wave draws remain separate or fully depth-sorted buckets.
+   Parachute canopies are still folded into the body parent instead of their
+   own Anim Display slot. Preserve actual layer order and remove the remaining
+   Top absent-members fallback when its required Fly writers are ported. Do not
+   mistake the Ground/picking migration for complete Display/render parity.
 3. Finish movement pickup: passive guards, Tag49/Scenario+34BE, free-MCV
    preemption, multiplayer eligibility, water fallback, removal/replacement
    before effects, returns and every selected effect's downstream owner.
