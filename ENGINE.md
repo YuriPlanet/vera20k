@@ -115,9 +115,14 @@ Record the RNG draws, timer writes and detach calls the chain passes in its resi
 or ledger row, even when they are not ported. Behavior invented where a native body
 exists is a recorded residual with a reason, never a silent default.
 
-Promote coherent prerequisites when a smaller patch creates broken behavior, duplicate
-authority or predictable rework. Choose branch/PR boundaries to keep dependencies
-coherent and reviewable. Record adjacent findings without absorbing their backlog.
+Follow native dependencies across subsystem and class boundaries wherever the selected
+behavior requires them. Newly discovered prerequisite state, lifecycle transitions and
+call chains are in scope. Establish their initialization, updates, ordering and cleanup
+through the proper owners, and revise the implementation plan when evidence demands it.
+Preserve explicit user exclusions and stop instructions; record unrelated findings as
+follow-ups.
+
+Choose branch/PR boundaries to keep dependencies coherent and reviewable.
 Residuals name trigger, effect, frequency and downstream risk; deferring required loop or
 determinism/authority/lifecycle work cannot close that loop.
 
