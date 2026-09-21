@@ -26,7 +26,7 @@ pub(crate) struct OwnerChangeAuthority(());
 /// One entity held out of the store for its turn; see [`EntityStore::take_turn`].
 pub(crate) struct EntityTurn<'a> {
     store: &'a mut EntityStore,
-    entity: Option<GameEntity>,
+    entity: Option<Box<GameEntity>>,
 }
 
 impl EntityTurn<'_> {
@@ -66,7 +66,7 @@ impl<'a> OtherEntities<'a> {
     }
 
     pub(crate) fn get(&self, stable_id: u64) -> Option<&'a GameEntity> {
-        self.store.entities.get(&stable_id)
+        self.store.entities.get(&stable_id).map(Box::as_ref)
     }
 }
 
@@ -84,8 +84,11 @@ impl<'a> OtherEntities<'a> {
 /// deserialize finalizer (the primary map is bulk-loaded, bypassing `insert`).
 #[derive(Debug, Clone)]
 pub struct EntityStore {
-    /// Primary storage: stable_id -> GameEntity.
-    entities: BTreeMap<u64, GameEntity>,
+    /// Primary storage: stable_id -> GameEntity. Boxed: an entity is about 3 KB,
+    /// and map nodes that hold pointers keep insert, remove and `take_turn` from
+    /// moving entities around. serde writes a `Box<T>` as its `T`, so the saved
+    /// form is unchanged.
+    entities: BTreeMap<u64, Box<GameEntity>>,
     /// Derived InfantryClass registry, in monotonic construction-ID order.
     /// Uninit retains an entry; remove compacts it. Class/category is immutable
     /// while stored, like indexed identity (replace through remove/insert).
@@ -146,7 +149,7 @@ impl EntityStore {
         let owner = entity.owner();
         let type_ref = entity.type_ref();
         let infantry = entity.category == crate::map::entities::EntityCategory::Infantry;
-        if let Some(old) = self.entities.insert(id, entity) {
+        if let Some(old) = self.entities.insert(id, Box::new(entity)) {
             self.index_remove(old.owner(), id);
             self.type_count_remove(old.owner(), old.type_ref());
         }
@@ -165,7 +168,7 @@ impl EntityStore {
     /// Remove an entity by stable_id. Returns the removed entity if it existed.
     /// Maintains the `by_owner` index.
     pub fn remove(&mut self, stable_id: u64) -> Option<GameEntity> {
-        let removed = self.entities.remove(&stable_id);
+        let removed = self.entities.remove(&stable_id).map(|entity| *entity);
         if let Some(ref e) = removed {
             self.index_remove(e.owner(), stable_id);
             self.type_count_remove(e.owner(), e.type_ref());
@@ -217,7 +220,7 @@ impl EntityStore {
 
     /// Look up an entity by stable_id (immutable).
     pub fn get(&self, stable_id: u64) -> Option<&GameEntity> {
-        self.entities.get(&stable_id)
+        self.entities.get(&stable_id).map(Box::as_ref)
     }
 
     /// Mutate ordinary entity payload. Indexed identity is read through accessors;
@@ -225,7 +228,7 @@ impl EntityStore {
     /// Replacing a stored entity wholesale is unsupported: remove/insert through
     /// the owning lifecycle instead so its indexes and registrations are updated.
     pub fn get_mut(&mut self, stable_id: u64) -> Option<&mut GameEntity> {
-        self.entities.get_mut(&stable_id)
+        self.entities.get_mut(&stable_id).map(Box::as_mut)
     }
 
     /// Lift one entity out of the store for its own turn, so it can be mutated
@@ -284,24 +287,24 @@ impl EntityStore {
 
     /// Iterate all entities in deterministic stable_id order (immutable).
     pub fn iter_sorted(&self) -> impl Iterator<Item = (u64, &GameEntity)> {
-        self.entities.iter().map(|(&k, v)| (k, v))
+        self.entities.iter().map(|(&k, v)| (k, v.as_ref()))
     }
 
     /// Iterate all entity values in deterministic stable_id order (immutable).
     pub fn values_sorted(&self) -> impl Iterator<Item = &GameEntity> {
-        self.entities.values()
+        self.entities.values().map(Box::as_ref)
     }
 
     /// Iterate all entities in stable_id order (immutable).
     /// With BTreeMap, this is always deterministic.
     pub fn values(&self) -> impl Iterator<Item = &GameEntity> {
-        self.entities.values()
+        self.entities.values().map(Box::as_ref)
     }
 
     /// Iterate all entities mutably in stable_id order.
     /// With BTreeMap, this is always deterministic.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut GameEntity> {
-        self.entities.values_mut()
+        self.entities.values_mut().map(Box::as_mut)
     }
 
     /// Stable IDs owned by the given owner, in sorted order.
@@ -401,7 +404,7 @@ impl serde::Serialize for EntityStore {
 
 impl<'de> serde::Deserialize<'de> for EntityStore {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let entities = BTreeMap::<u64, GameEntity>::deserialize(deserializer)?;
+        let entities = BTreeMap::<u64, Box<GameEntity>>::deserialize(deserializer)?;
         let mut store = Self {
             entities,
             infantry_registry: Vec::new(),

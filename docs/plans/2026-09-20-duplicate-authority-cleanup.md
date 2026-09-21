@@ -25,7 +25,7 @@ Replace this file on each update; do not append a diary.
 | Move phases | the Jumpjet's `AirMovePhase` mirror: readers take the locomotor's own state field (`JumpjetRuntime::phase`, all seven native values) and the mirror is no longer written; the legacy VERA-only jumpjet physics with no caller left. Snapshot 180 | #427 |
 | Dead code | items dead in both builds; superseded test-only duplicates (map-list funnels, `radiation_light_epoch`); test probes gated; the effect asset catalog trimmed to particle images, which changes the rules hash, so snapshot 176 | #421 |
 | Dead code | second sweep, for what the compiler cannot see: `pub` items of the library and items behind `allow(dead_code)`. 90 suppressions removed and 30 put back where the reason is real (native enum values, GPU resource ownership, staged native ports, RNG stream-routing audit anchors); about 40 functions nothing references deleted, with the dead `movement/scatter.rs` module, a terrain render pipeline and instance buffer nothing drew with, the depth-stamp pipeline only a GPU test draws with (now built only there), and stale constants and imports; about 460 functions and constants that only tests call are `#[cfg(test)]`, so the production build no longer carries them. This is a one-time sweep, not a guard: the `dead_code` lint still cannot see an unreferenced `pub` item of the library, so a new one will not be reported. Unreferenced `pub` items kept on purpose: native-value vocabularies with a gap a deletion would hide (`FX_EMP`/`FX_MIRROR`, `REPLAY_FLAG_*`, the rocking constants `SNAP_BACK_RATE` and `APPLY_AREA_FORCE_FLOOR`, `TRACKBAR_WM_HSCROLL_MESSAGE`, the fixed-math `SIM_EPSILON`) and native-derived staged ports (cloak/disguise helpers, house base helpers, gas and smoke particle movers). Three modules only tests reach (`movement/track_speed_native`, `movement/track_fresh_dispatch`, `map/rmg/sqrt_table`) carry the gate on their `mod` line. Non-test warnings 100 to 18; the 17 that remain are fields only tests read and native enum values nothing constructs yet, left visible rather than suppressed | #428 |
-| Per-mover world scans | the whole-world marker-peer snapshot and building entry-skip map every mover rebuilt every tick (and `track_entry.rs` per entry). The mover is lifted out of the store for its turn (`EntityStore::take_turn`), so the other entities are read live: peers by id from the cell lists `UpdateBridgePassability` walks, skips from the buildings on the queried cell's list. The mover's own facts are captured once as its turn begins. Debug builds still build both whole-world forms and compare every live read against them | this PR |
+| Per-mover world scans | the whole-world marker-peer snapshot and building entry-skip map every mover rebuilt every tick (and `track_entry.rs` per entry). The mover is lifted out of the store for its turn (`EntityStore::take_turn`), so the other entities are read live: peers by id from the cell lists `UpdateBridgePassability` walks, skips from the buildings on the queried cell's list. The mover's own facts are captured once as its turn begins. Debug builds still build both whole-world forms and compare every live read against them. Two of the three scans; the owner block sets are under Open | this PR |
 | Loader funnels | `load_rules_with_merged_ini` composed the rules layers cold, a second path beside the match load's `NativeRulesProcessOwner::load_noncampaign_scenario`; it now runs startup selection and that rebuild, and `LoadedRules` is gone. `sprite_atlas.rs` kept a `cfg(test)` copy of the effect-name list that had drifted (no `Wake=`, no projectile images); production and tests call the one `collect_effect_names` | this PR |
 
 Three per-mover world scans went with those: the per-frame dock sweep, the
@@ -77,26 +77,6 @@ the Foot destination the order writes, and the locomotor's own cached
 coordinate at `+0x40` that `Move_To` fills and `Process` flies toward. The
 cruise host hands one to the other and clears the order on arrival.
 
-**Owner block sets, built once per moving object's turn (for the final audit to
-confirm).** `bump_crush::build_entity_block_sets` still walks every entity for
-each mover's turn. It is not a lookup table like the two scans that went: A*
-and the blocked-tick handlers take it as whole sets through some fifty
-signatures in `movement/` and `pathfinding/`, and the Drive selection gate asks
-it at every cell crossing. Its native shape is `UnitClass::Can_Enter_Cell`
-walking one cell's object list per neighbour, so replacing it is a port of the
-A* neighbour classification (live reads instead of a turn-start snapshot, which
-can move paths), not a fold of duplicate state. Movement ledger row I2c owns
-it and now has the primitive it was waiting for (`EntityStore::take_turn`).
-
-**Scenario construction helpers only tests call (for the final audit to
-confirm).** `runtime::construct_scenario`, `construct_scenario_with_generated_inits`,
-`init_helpers::construct_app_scenario` and `HeadlessTerrainBootstrap` hold no
-logic of their own: each is `ScenarioBootstrapRng::into_simulation` followed by
-the production `populate_staged_scenario_with_generated_inits` (and
-`bind_staged_app_scenario_metadata`). Production calls the same pieces apart
-because it stages the `Simulation` before terrain Fill. One authority, two call
-shapes; they stay `cfg(test)`.
-
 **Staged native ports with no production caller yet (for the final audit to
 confirm).**
 `track_fresh_dispatch.rs`, `track_speed_native.rs`, the `load_object_lifecycle`
@@ -116,16 +96,58 @@ probes in `world_hash.rs` are replay-pin provenance.
 
 ## Open
 
-Nothing open. What this goal does not take on is under Retained and Adjacent
-findings.
+**Owner block sets, the third per-mover world scan.**
+`bump_crush::build_entity_block_sets` still walks every entity for each moving
+object's turn (`prepare_movement_pass`, `refresh_owner_block_set_if_stale`, and
+once more per Walk path search). A* and the blocked-tick handlers take the
+result as whole sets through some fifty signatures, and the Drive selection
+gate asks it at every cell crossing, so it cannot become a per-cell lookup the
+way the other two did without changing what A* sees. Same lead, not done;
+movement ledger row I2c carries the measurements.
+
+**Scenario construction only tests call.** `runtime::construct_scenario`,
+`construct_scenario_with_generated_inits`, `init_helpers::construct_app_scenario`
+and `HeadlessTerrainBootstrap::construct_scenario` only sequence production
+functions (`ScenarioBootstrapRng::into_simulation`, then
+`populate_staged_scenario_with_generated_inits`), but
+`build_headless_terrain_bootstrap` is a test-only terrain Fill funnel with its
+own order, and all of them create the `Simulation` after Fill where production
+stages it before, so what Fill does to the staged owner is untested on that
+path.
 
 ## Production validation
 
-Release build, `RA2_QUICKPLAY=minerloop.map`, 2026-09-21: loads, 0 ERROR lines,
-full SearchOre, Harvest, ReturnToRefinery, Dock, deposit, SearchOre cycle
-(overlay-grid ore, radio-bus dock). That run first failed to load any map
-(`required SHP for animation type [CAARAY_A]`); fixed in #422. Still to run in
-release: a chrono warp, a superweapon invoke, a bridge collapse.
+Release build (`cargo build --release`), zero-interaction fixture maps through
+`RA2_QUICKPLAY`, log read from `logs/ra2.log`:
+
+- 2026-09-21, `minerloop.map` (Americans NAREFN + HARV): loads, 0 ERROR lines,
+  full SearchOre, Harvest, ReturnToRefinery, Dock, deposit, SearchOre cycle
+  (overlay-grid ore, radio-bus dock). The first such run failed to load any map
+  (`required SHP for animation type [CAARAY_A]`); fixed in #422.
+- 2026-09-21, after the live per-turn reads, same map: the miner drives onto
+  the refinery pad through the live building-entry skips (bib cell and radio
+  contact), Dock at (41,85), cargo 40 to 0, next cycle starts; 0 ERROR lines.
+- 2026-09-21, `chronoloop.map` (the same map with GAREFN + CMIN): two full
+  cycles; each ReturnToRefinery to Dock covers (38,88) to (41,85) inside about
+  a second, which is the teleport relocation and with it the WarpOut
+  `AnimStore` rows at both ends; cargo 20 to 0; 0 ERROR lines. The log has no
+  line per constructed animation, so the run shows the warp path executing
+  without error, not the pixels.
+
+Not exercised in a release build: a superweapon invoke, a Lightning Storm, a
+bridge collapse, a weapon muzzle flash, a paradrop. Each needs player input or
+a second house, and the release binary has neither an input script nor a
+quickplay opponent (by design: an empty AI house is defeated at once and ends
+the session); desktop automation cannot reach a development executable. Their
+production functions are exercised in the test profile by tests that go through
+`Simulation`: `a_fired_shot_constructs_its_muzzle_anim_in_the_store`,
+`commit_builds_the_flash_before_it_tears_the_firer_down`,
+`a_drop_attaches_a_canopy_that_winds_down_at_landing_and_plays_out`,
+`launch_constructs_the_invoke_anim_and_plays_its_report`,
+`relocate_spawns_departure_and_arrival_warpout_rows`, the Lightning Storm bolt
+tests and the bridge orchestrator's `BridgeExplosions=` tests. The known
+release-only hazard class, a side effect inside `debug_assert!`, is denied by
+clippy (`debug_assert_with_mut_call`), and clippy is clean on every merged PR.
 
 ## Adjacent findings (not this goal's backlog)
 

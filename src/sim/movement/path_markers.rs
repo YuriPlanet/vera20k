@@ -828,6 +828,72 @@ mod tests {
     }
 
     #[test]
+    fn live_peers_read_the_others_now_and_the_mover_as_its_turn_began() {
+        let interner = StringInterner::new();
+        let mut entities = EntityStore::new();
+        for id in [1, 2] {
+            let mut entity =
+                crate::sim::game_entity::GameEntity::test_default(id, "UNIT", "Americans", 4, 4);
+            entity.navigation.path_replay.reference_cell = Some((4, 4));
+            entity.navigation.path_replay.directions = vec![2, 2];
+            entities.insert(entity);
+        }
+        let snapshot = snapshot_bridge_marker_peers(&entities, None, &interner);
+        let mover = bridge_marker_peer(&entities, 1, None, &interner).expect("mover is stored");
+        let live = |entities: &EntityStore, check| {
+            [1, 2, 3].map(|id| {
+                LiveBridgeMarkerPeers {
+                    mover_id: 1,
+                    mover: Some(&mover),
+                    others: OtherEntities::whole(entities),
+                    rules: None,
+                    interner: &interner,
+                    #[cfg(debug_assertions)]
+                    check,
+                }
+                .peer(id)
+                .map(Cow::into_owned)
+            })
+        };
+
+        // Untouched world: every live read is the whole-world snapshot's entry,
+        // which the debug check asserts as well.
+        let read = live(&entities, Some(&snapshot));
+        assert_eq!(read[0].as_ref(), snapshot.peers.get(&1));
+        assert_eq!(read[1].as_ref(), snapshot.peers.get(&2));
+        assert_eq!(read[2], None);
+
+        // Both entities change. The peer is read as it is now; the mover keeps
+        // the facts captured when its turn began.
+        for id in [1, 2] {
+            entities
+                .get_mut(id)
+                .unwrap()
+                .navigation
+                .path_replay
+                .directions = vec![6, 6, 6];
+        }
+        let read = live(&entities, None);
+        assert_eq!(read[0].as_ref().unwrap().path_directions, [2, 2]);
+        assert_eq!(read[1].as_ref().unwrap().path_directions, [6, 6, 6]);
+
+        // Lifted out of the store, the mover is still answered from its capture.
+        let mut turn = entities.take_turn(1).expect("mover is stored");
+        let (_, others) = turn.split();
+        let lifted = LiveBridgeMarkerPeers {
+            mover_id: 1,
+            mover: Some(&mover),
+            others,
+            rules: None,
+            interner: &interner,
+            #[cfg(debug_assertions)]
+            check: None,
+        };
+        assert_eq!(lifted.peer(1).unwrap().path_directions, [2, 2]);
+        assert_eq!(lifted.peer(2).unwrap().path_directions, [6, 6, 6]);
+    }
+
+    #[test]
     fn gsi_04_12_marker_drive_deck_track_fallback_uses_unconsumed_handoff() {
         let mut interner = StringInterner::new();
         let mover_type = interner.intern("MOVER");

@@ -1419,6 +1419,54 @@ mod tests {
     use crate::sim::intern::test_interner;
     use crate::sim::occupancy::{CellListInsertion, RawCellOccupationGrid};
 
+    /// The production lookup asked about every cell of a window, which must be
+    /// the whole-world map exactly: same cells, same ids, and never an empty
+    /// set (`cell_entry` branches on `ignored_blockers.is_some()`).
+    fn live_skip_map(
+        entities: &EntityStore,
+        mover_id: u64,
+        interner: &crate::sim::intern::StringInterner,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> LiveBuildingEntrySkipMap {
+        // Construction copies the type's `Foundation=` onto the entity
+        // (`world/construction.rs`), and that copy is what marks the cells. The
+        // fixtures build their structures by hand, so do the same for them.
+        let mut entities = entities.clone();
+        for structure in entities.values_mut() {
+            if let Some(object) = rules.object(interner.resolve(structure.type_ref())) {
+                structure.foundation = object.foundation.clone();
+            }
+        }
+        let entities = &entities;
+        let occupancy = OccupancyGrid::rebuild(entities);
+        let mover = entities
+            .get(mover_id)
+            .and_then(|mover| MoverBuildingEntryFacts::new(mover, Some(rules)));
+        let live = DeferredBuildingEntrySkips {
+            mover: mover.as_ref(),
+            rules: Some(rules),
+            interner,
+            #[cfg(debug_assertions)]
+            check: None,
+        }
+        .reading(crate::sim::entity_store::OtherEntities::whole(entities));
+        let mut map = LiveBuildingEntrySkipMap::new();
+        for x in 0..48 {
+            for y in 0..48 {
+                if let Some(ids) = live.skips_at((x, y), &occupancy) {
+                    assert!(!ids.is_empty(), "an empty skip set at {:?}", (x, y));
+                    map.insert((x, y), ids.into_owned());
+                }
+            }
+        }
+        assert_eq!(
+            map,
+            build_live_building_entry_skip_map(entities, mover_id, interner, Some(rules)),
+            "the per-cell lookup and the whole-world map disagree"
+        );
+        map
+    }
+
     #[test]
     fn gsi_04_12_marker_deferred_repath_refreshes_same_tick_scatter_path() {
         let ini = crate::rules::ini_parser::IniFile::from_str(
@@ -1813,7 +1861,7 @@ mod tests {
         entities.insert(refinery);
         let interner = crate::sim::intern::test_interner();
 
-        let skips = build_live_building_entry_skip_map(&entities, 1, &interner, Some(&rules));
+        let skips = live_skip_map(&entities, 1, &interner, &rules);
 
         assert!(skips.get(&(13, 11)).is_some_and(|ids| ids.contains(&100)));
         assert!(!skips.get(&(12, 11)).is_some_and(|ids| ids.contains(&100)));
@@ -1844,7 +1892,7 @@ mod tests {
         entities.insert(refinery);
         let interner = crate::sim::intern::test_interner();
 
-        let skips = build_live_building_entry_skip_map(&entities, 1, &interner, Some(&rules));
+        let skips = live_skip_map(&entities, 1, &interner, &rules);
 
         assert!(skips.get(&(13, 11)).is_some_and(|ids| ids.contains(&100)));
         assert!(!skips.get(&(12, 11)).is_some_and(|ids| ids.contains(&100)));
@@ -1880,7 +1928,7 @@ mod tests {
         entities.insert(gate);
         let interner = crate::sim::intern::test_interner();
 
-        let skips = build_live_building_entry_skip_map(&entities, 1, &interner, Some(&rules));
+        let skips = live_skip_map(&entities, 1, &interner, &rules);
         assert!(skips.get(&(10, 10)).is_some_and(|ids| ids.contains(&100)));
         assert!(skips.get(&(11, 10)).is_some_and(|ids| ids.contains(&100)));
         assert!(skips.get(&(12, 10)).is_some_and(|ids| ids.contains(&100)));
@@ -1890,7 +1938,7 @@ mod tests {
             phase: BuildingGatePhase::Opening,
             ..Default::default()
         });
-        let skips = build_live_building_entry_skip_map(&entities, 1, &interner, Some(&rules));
+        let skips = live_skip_map(&entities, 1, &interner, &rules);
         assert!(!skips.get(&(10, 10)).is_some_and(|ids| ids.contains(&100)));
 
         entities.get_mut(100).unwrap().building_gate = Some(BuildingGateRuntime {
@@ -1898,7 +1946,7 @@ mod tests {
             phase: BuildingGatePhase::OpenStable,
             ..Default::default()
         });
-        let skips = build_live_building_entry_skip_map(&entities, 1, &interner, Some(&rules));
+        let skips = live_skip_map(&entities, 1, &interner, &rules);
         assert!(!skips.get(&(10, 10)).is_some_and(|ids| ids.contains(&100)));
     }
 
@@ -1931,7 +1979,7 @@ mod tests {
         entities.insert(gate);
         let interner = crate::sim::intern::test_interner();
 
-        let skips = build_live_building_entry_skip_map(&entities, 1, &interner, Some(&rules));
+        let skips = live_skip_map(&entities, 1, &interner, &rules);
 
         assert!(skips.get(&(10, 10)).is_some_and(|ids| ids.contains(&100)));
     }
@@ -1962,7 +2010,7 @@ mod tests {
 
         // Empty bunker: the footprint cell is row-exempt (vehicle exception),
         // so a vehicle may path through it.
-        let skips = build_live_building_entry_skip_map(&entities, 1, &interner, Some(&rules));
+        let skips = live_skip_map(&entities, 1, &interner, &rules);
         assert!(
             skips.get(&(10, 10)).is_some_and(|ids| ids.contains(&100)),
             "empty bunker footprint is passable"
@@ -1971,7 +2019,7 @@ mod tests {
         // Occupied bunker: the gate that was previously dead (bunker_occupant
         // read-but-never-set) is now live — the footprint blocks again.
         entities.get_mut(100).unwrap().bunker_occupant = Some(1);
-        let skips = build_live_building_entry_skip_map(&entities, 1, &interner, Some(&rules));
+        let skips = live_skip_map(&entities, 1, &interner, &rules);
         assert!(
             !skips.get(&(10, 10)).is_some_and(|ids| ids.contains(&100)),
             "occupied bunker footprint blocks"
