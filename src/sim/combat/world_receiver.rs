@@ -1808,10 +1808,6 @@ pub(super) fn resolve_attacker_fire(
     out: &mut CombatEmit,
 ) {
     let sound_enabled = sound_enabled(world);
-
-    let handles = world.rule_handles;
-    let scenario_no_damage = world.session.no_damage;
-
     let delayed_building_slot = snap
         .pending_building_fire
         .map(|pending| pending.weapon_slot);
@@ -2689,6 +2685,59 @@ pub(super) fn resolve_attacker_fire(
         out.pending_infantry_updates.push((snap.stable_id, None));
     }
 
+    emit_admitted_fire(
+        world,
+        rules,
+        overlay_registry,
+        AdmittedFire {
+            snap,
+            obj,
+            selected,
+            target_coords: (target_rx, target_ry, target_sub_x, target_sub_y),
+            target_type_ref,
+            is_garrison,
+        },
+        binary_frame,
+        out,
+    );
+}
+
+/// Borrowed result of this receiver's existing admission and fire-action work.
+/// This is call-local data, never a saved permission to fire on a later frame.
+/// Native Mission_Attack418403 checks legality once before its burst loop;
+/// separating emission keeps that eventual caller from repeating admission for
+/// every FireAt call. The aircraft mission handoff remains an open migration.
+struct AdmittedFire<'a> {
+    snap: &'a AttackerSnapshot,
+    obj: &'a ObjectType,
+    selected: combat_weapon::SelectedWeapon<'a>,
+    target_coords: (u16, u16, SimFixed, SimFixed),
+    target_type_ref: InternedId,
+    is_garrison: bool,
+}
+
+/// Existing FireAt delivery and bookkeeping, shared by the world receiver.
+/// The caller still owns legality, fire-action timing and inline damage commit.
+fn emit_admitted_fire(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    shot: AdmittedFire<'_>,
+    binary_frame: u32,
+    out: &mut CombatEmit,
+) {
+    let AdmittedFire {
+        snap,
+        obj,
+        selected,
+        target_coords: (target_rx, target_ry, target_sub_x, target_sub_y),
+        target_type_ref,
+        is_garrison,
+    } = shot;
+    let weapon = selected.weapon;
+    let handles = world.rule_handles;
+    let scenario_no_damage = world.session.no_damage;
+
     // Spawner weapon: gamemd's Fire_At short-circuits here. It calls
     // `SpawnManagerClass::SetTarget` and returns NULL — no bullet, no damage,
     // no detonation effects, and no rearm timer write (the rearm write lives
@@ -3255,9 +3304,9 @@ pub(super) fn resolve_attacker_fire(
         // gamemd-derived: `TechnoClass::GetROF @ 0x006FCFA0`, mid-burst branch.
         // The gap between shots inside a burst is drawn, not fixed.
         //
-        // RESIDUAL (GSI-08.05) — the infantry override ahead of the draw is not
-        // modelled. Native checks `InfantryTypeClass::BurstDelay{1..4}`
-        // (`+0xE44 + idx*4`, sentinel `-1`) first for an infantry firer and
+        // RESIDUAL (GSI-08.05) — the Unit override ahead of the draw is not
+        // modelled. Native checks UnitType's per-burst delays
+        // (`+0xE44 + idx*4`, sentinel `-1`) first for a Unit firer and
         // returns the authored value without drawing. No stock section authors
         // any `BurstDelay%d=`, so every stock burst reaches the draw and the
         // draw count is unchanged; a mod that authors one would diverge, and
