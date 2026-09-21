@@ -280,6 +280,7 @@ impl TeamScriptState {
         self.advance_pending
     }
 
+    #[cfg(test)]
     pub fn wait_frames_remaining(&self) -> u32 {
         self.delay_remaining_frames
     }
@@ -288,6 +289,7 @@ impl TeamScriptState {
         &self.members
     }
 
+    #[cfg(test)]
     pub(crate) fn response_suspension_state(&self) -> (bool, bool, bool, i32, i32) {
         (
             self.response_latch_7d,
@@ -375,6 +377,7 @@ impl TeamScriptVm {
     ///
     /// This remains useful for scenario seams that do not yet instantiate
     /// TaskForce-backed members. New callers should use `create_team_from_type`.
+    #[cfg(test)]
     pub fn create_team(
         &mut self,
         owner: InternedId,
@@ -397,6 +400,7 @@ impl TeamScriptVm {
 
     /// Resolve the TeamType attachments and admit matching candidates in
     /// TaskForce-entry order, preserving input order within each type.
+    #[cfg(test)]
     pub fn create_team_from_type(
         &mut self,
         owner: InternedId,
@@ -520,6 +524,7 @@ impl TeamScriptVm {
         removed
     }
 
+    #[cfg(test)]
     pub fn set_delay(&mut self, id: u64, remaining_frames: u32) -> bool {
         let Some(team) = self.teams.get_mut(&id) else {
             return false;
@@ -528,6 +533,7 @@ impl TeamScriptVm {
         true
     }
 
+    #[cfg(test)]
     pub fn set_wait_condition_complete(&mut self, id: u64, complete: bool) -> bool {
         let Some(team) = self.teams.get_mut(&id) else {
             return false;
@@ -738,6 +744,7 @@ impl TeamScriptVm {
         }
     }
 
+    #[cfg(test)]
     fn insert_refused_team(
         &mut self,
         owner: InternedId,
@@ -764,6 +771,7 @@ impl TeamScriptVm {
         id
     }
 
+    #[cfg(test)]
     fn insert_team(
         &mut self,
         owner: InternedId,

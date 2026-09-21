@@ -92,6 +92,7 @@ impl TiberiumTypeRegistry {
         self.types.get(id.0 as usize)
     }
 
+    #[cfg(test)]
     pub fn id_by_name(&self, name: &str) -> Option<TiberiumTypeId> {
         self.by_name.get(&name.to_ascii_uppercase()).copied()
     }

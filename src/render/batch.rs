@@ -461,8 +461,6 @@ impl InstanceBufferPool {
 /// - `overlay_pipeline` (UI/debug): depth write ON, LessEqual — for passes that
 ///   intentionally update the shared depth buffer.
 pub struct BatchRenderer {
-    /// Render pipeline for terrain (depth write + Less compare).
-    pipeline: wgpu::RenderPipeline,
     /// Render pipeline with depth write ON, LessEqual compare.
     /// Used for UI/debug passes that intentionally write depth.
     overlay_pipeline: wgpu::RenderPipeline,
@@ -529,10 +527,6 @@ pub struct BatchRenderer {
     ui_camera_buffer: wgpu::Buffer,
     /// UI camera bind group — always zoom=1.0.
     ui_camera_bind_group: wgpu::BindGroup,
-    /// Per-frame instance buffer. Recreated each frame in prepare_instances().
-    instance_buffer: Option<wgpu::Buffer>,
-    /// Number of instances in the current buffer.
-    instance_count: u32,
 }
 
 impl BatchRenderer {
@@ -770,48 +764,6 @@ impl BatchRenderer {
             width: crate::render::building_light::TYPE16_ATLAS_WIDTH as u32,
             height: crate::render::building_light::TYPE16_MASK_HEIGHT as u32,
         };
-
-        // Terrain pipeline: depth buffer enabled (write + Less compare).
-        // Terrain tiles sort correctly against each other via the depth buffer.
-        let pipeline: wgpu::RenderPipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Batch Pipeline (Terrain)"),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_depth"),
-                    buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: INSTANCE_STRIDE,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &instance_attrs,
-                    }],
-                    compilation_options: Default::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_main"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: surface_format,
-                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: Default::default(),
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
-                multisample: wgpu::MultisampleState::default(),
-                multiview: None,
-                cache: None,
-            });
 
         // Overlay pipeline: depth write ON, LessEqual compare.
         // Used for UI/debug passes that intentionally update depth.
@@ -1293,7 +1245,6 @@ impl BatchRenderer {
             });
 
         Self {
-            pipeline,
             overlay_pipeline,
             zsprite_read_pipeline,
             zsprite_write_pipeline,
@@ -1317,8 +1268,6 @@ impl BatchRenderer {
             camera_bind_group,
             ui_camera_buffer,
             ui_camera_bind_group,
-            instance_buffer: None,
-            instance_count: 0,
         }
     }
 
@@ -1591,49 +1540,6 @@ impl BatchRenderer {
         queue.write_buffer(&self.ui_camera_buffer, 0, bytemuck::bytes_of(&ui_uniform));
     }
 
-    /// Upload instance data for this frame.
-    ///
-    /// Creates a new GPU buffer from the provided instances. Must be called
-    /// before draw_batch() each frame. The buffer is stored in the renderer
-    /// so it remains valid during the render pass.
-    pub fn prepare_instances(&mut self, gpu: &GpuContext, instances: &[SpriteInstance]) {
-        if instances.is_empty() {
-            self.instance_buffer = None;
-            self.instance_count = 0;
-            return;
-        }
-        self.instance_buffer = Some(gpu.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Batch Instances"),
-                contents: bytemuck::cast_slice(instances),
-                usage: wgpu::BufferUsages::VERTEX,
-            },
-        ));
-        self.instance_count = instances.len() as u32;
-    }
-
-    /// Draw all prepared instances with the given texture.
-    ///
-    /// Issues a single instanced draw call: 6 vertices (one quad) × N instances.
-    /// Call prepare_instances() first to upload this frame's instance data.
-    pub fn draw_batch<'a>(
-        &'a self,
-        render_pass: &mut wgpu::RenderPass<'a>,
-        texture: &'a BatchTexture,
-    ) {
-        let Some(instance_buffer) = &self.instance_buffer else {
-            return;
-        };
-        if self.instance_count == 0 {
-            return;
-        }
-        render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        render_pass.set_bind_group(1, &texture.bind_group, &[]);
-        render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
-        render_pass.draw(0..6, 0..self.instance_count);
-    }
-
     /// Create a standalone instance buffer (not stored in the renderer).
     ///
     /// Use this when drawing multiple batches per render pass — each batch
@@ -1655,30 +1561,6 @@ impl BatchRenderer {
                     usage: wgpu::BufferUsages::VERTEX,
                 });
         Some((buffer, instances.len() as u32))
-    }
-
-    /// Draw voxel sprite instances using the voxel sprite pipeline.
-    ///
-    /// Bind groups: 0 = camera, 1 = unit atlas (R8Uint), 2 = PaletteSet (palette
-    /// + house_ramp + sampler). The fragment shader does the byte → (palette
-    /// or house_ramp) → fx pipeline per pixel.
-    pub fn draw_voxel_sprites<'a>(
-        &'a self,
-        render_pass: &mut wgpu::RenderPass<'a>,
-        atlas: &'a BatchTexture,
-        palette_bind_group: &'a wgpu::BindGroup,
-        buffer: &'a wgpu::Buffer,
-        count: u32,
-    ) {
-        if count == 0 {
-            return;
-        }
-        render_pass.set_pipeline(&self.voxel_sprite_pipeline);
-        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        render_pass.set_bind_group(1, &atlas.bind_group, &[]);
-        render_pass.set_bind_group(2, palette_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, buffer.slice(..));
-        render_pass.draw(0..6, 0..count);
     }
 
     /// Draw a sub-range of voxel sprite instances using the voxel sprite pipeline.
@@ -1797,77 +1679,6 @@ impl BatchRenderer {
             height,
         };
         (texture, batch_tex)
-    }
-
-    /// Upload RGBA pixel data as a bilinear-filtered texture (smooth interpolation).
-    ///
-    /// Unlike `create_texture()` which uses nearest-neighbor (pixel art), this uses
-    /// linear filtering for smooth gradients. Used by the fog mask renderer where
-    /// per-cell values need to blend smoothly across tile boundaries.
-    /// Uses Rgba8Unorm (not sRGB) so interpolation is linear in value space.
-    pub fn create_texture_bilinear(
-        &self,
-        gpu: &GpuContext,
-        rgba_data: &[u8],
-        width: u32,
-        height: u32,
-    ) -> BatchTexture {
-        let texture: wgpu::Texture = gpu.device.create_texture_with_data(
-            &gpu.queue,
-            &wgpu::TextureDescriptor {
-                label: Some("Batch Texture (Bilinear)"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            },
-            wgpu::util::TextureDataOrder::LayerMajor,
-            rgba_data,
-        );
-
-        let view: wgpu::TextureView = texture.create_view(&Default::default());
-        let sampler: wgpu::Sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Batch Sampler (Linear)"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            ..Default::default()
-        });
-
-        let bind_group: wgpu::BindGroup =
-            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Batch Texture BG (Bilinear)"),
-                layout: &self.texture_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::TextureView(&self.default_source_indices),
-                    },
-                ],
-            });
-
-        BatchTexture {
-            bind_group,
-            view,
-            width,
-            height,
-        }
     }
 
     /// Draw instances using the overlay pipeline (LessEqual, depth write ON).
@@ -2030,6 +1841,7 @@ impl BatchRenderer {
     /// else. Compare is `Less` for the same reason gamemd's blitter tests
     /// before it stores — a body behind nearer terrain must not stamp through
     /// it.
+    #[cfg(test)]
     pub fn draw_with_buffer_depth_stamp<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,

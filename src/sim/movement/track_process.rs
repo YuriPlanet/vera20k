@@ -354,6 +354,7 @@ impl TrackProcess {
         }
     }
 
+    #[cfg(test)]
     pub fn budget(&self) -> i32 {
         self.budget
     }

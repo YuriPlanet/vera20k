@@ -102,6 +102,7 @@ impl PcxFile {
         rgba
     }
 
+    #[cfg(test)]
     pub fn to_rgba_with_color_key(&self, transparent_rgb: [u8; 3]) -> Vec<u8> {
         if self.is_direct_rgb() {
             let mut rgba = Vec::with_capacity(self.pixels.len() / 3 * 4);

@@ -155,28 +155,34 @@ impl Default for HouseStrategyEmergencyState {
 }
 
 impl HouseStrategyEmergencyState {
+    #[cfg(test)]
     pub(crate) const fn mode(&self) -> i32 {
         self.mode
     }
 
+    #[cfg(test)]
     pub(crate) const fn all_to_hunt_bias(&self) -> bool {
         self.all_to_hunt_bias
     }
 
+    #[cfg(test)]
     pub(crate) const fn last_building_attack_frame(&self) -> i32 {
         self.last_building_attack_frame
     }
 
+    #[cfg(test)]
     pub(crate) const fn last_attacker_house_index(&self) -> i32 {
         self.last_attacker_house_index
     }
 
     /// Trigger action 9 and Team script opcode 30 write state four directly.
+    #[cfg(test)]
     pub(crate) fn set_state_four(&mut self) {
         self.mode = 4;
     }
 
     /// Called only after the exact All-To-Hunt reverse scan completes.
+    #[cfg(test)]
     pub(crate) fn set_all_to_hunt_bias(&mut self) {
         self.all_to_hunt_bias = true;
     }
@@ -248,10 +254,12 @@ impl BaseReservationState {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn bounds(&self) -> (i32, i32, i32, i32) {
         (self.min_x, self.min_y, self.width, self.height)
     }
 
+    #[cfg(test)]
     pub(crate) fn perimeter_cells(&self) -> &[u32] {
         &self.perimeter_cells
     }
@@ -467,6 +475,7 @@ pub struct HouseState {
 
 impl HouseState {
     /// Active offline EventClass house-scan eligibility.
+    #[cfg(test)]
     pub const fn event_dispatch_eligible(&self) -> bool {
         self.is_human || self.player_control
     }

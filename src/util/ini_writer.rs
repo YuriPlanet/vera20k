@@ -25,6 +25,7 @@
 /// to the end of that section. When the section is absent, a new section is
 /// appended at the end of the file. An empty input yields a fresh section.
 /// Lines that are not valid UTF-8 are passed through verbatim, never matched.
+#[cfg(test)]
 pub fn set_ini_value(content: &[u8], section: &str, key: &str, value: &str) -> Vec<u8> {
     let target_section = section.trim();
     let target_key = key.trim();

@@ -222,6 +222,7 @@ impl Wave {
         wave
     }
 
+    #[cfg(test)]
     pub fn replace_recorded_cells(&mut self, cells: Vec<WaveRecordedCell>) {
         self.recorded_cells = cells;
     }
@@ -230,19 +231,6 @@ impl Wave {
         let dx = i64::from(self.target.x) - i64::from(self.source.x);
         let dy = i64::from(self.target.y) - i64::from(self.source.y);
         dx * dx + dy * dy >= CONSTRUCTOR_MIN_XY_DISTANCE * CONSTRUCTOR_MIN_XY_DISTANCE
-    }
-
-    pub const fn color_mode(&self) -> WaveColorMode {
-        match self.wave_type {
-            0 => WaveColorMode::FramebufferSonicDistortion,
-            1 | 2 => WaveColorMode::FixedLaserChannelAdd,
-            3 => WaveColorMode::FramebufferMagnetronDistortion,
-            _ => WaveColorMode::None,
-        }
-    }
-
-    pub const fn registration_bucket(&self) -> u8 {
-        WAVE_DISPLAY_REGISTRATION_BUCKET
     }
 
     /// Constructor tail: lifecycle/geometry runs once, but DamageArea does not.
@@ -631,7 +619,7 @@ const TAN_PI_OVER_EIGHT_F64: NativeF64Bits = NativeF64Bits::from_bits(0x3fda_827
 const INV_TAN_PI_OVER_EIGHT_F64: NativeF64Bits = NativeF64Bits::from_bits(0x4003_504f_2e96_fc59);
 
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)] // machine-fixture diagnostics retained beside the behavior fields
+ // machine-fixture diagnostics retained beside the behavior fields
 struct Type0NonmagneticGeometry {
     source: ProjectileCoord,
     target: ProjectileCoord,

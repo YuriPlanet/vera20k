@@ -77,6 +77,7 @@ impl IniSection {
 
     /// Read3Int (P8): comma "%d,%d,%d". All-defaults on ABSENT key. Each field
     /// atoi-lenient; missing trailing fields keep the corresponding default.
+    #[cfg(test)]
     pub fn read_3int(&self, key: &str, default: [i32; 3]) -> [i32; 3] {
         self.fold_rules_values(key, default, |mut current, raw| {
             for (index, token) in strtrim_ascii(raw).split(',').enumerate().take(3) {
@@ -97,6 +98,7 @@ impl IniSection {
     }
 
     /// ReadPoint/ReadSize (P9, COMMA): "%d,%d". All-defaults on ABSENT key.
+    #[cfg(test)]
     pub fn read_point(&self, key: &str, default: (i32, i32)) -> (i32, i32) {
         let [x, y] = self.read_minmax(key, [default.0, default.1]);
         (x, y)
@@ -104,6 +106,7 @@ impl IniSection {
 
     /// ReadRect (P9, COMMA): "%d,%d,%d,%d". gamemd seeds "0,0,0,0" so missing
     /// fields keep the default component; all-defaults on ABSENT key.
+    #[cfg(test)]
     pub fn read_rect(&self, key: &str, default: (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
         let current = [default.0, default.1, default.2, default.3];
         let out = self.fold_rules_values(key, current, |mut current, raw| {
@@ -142,6 +145,7 @@ impl IniSection {
     /// P4/P18; corpus harness scans stock for present-empty Speed/Range.
     ///
     /// Retail provenance: INI speed conversion — `CCINIClass__ReadSpeed` @ `0x00474810`.
+    #[cfg(test)]
     pub fn read_speed(&self, key: &str, default: i32) -> i32 {
         self.fold_rules_values(key, default, |current, raw| {
             let parsed = parse_read_int(-1, raw);

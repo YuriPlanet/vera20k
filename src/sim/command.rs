@@ -213,6 +213,7 @@ impl CommandRecord {
         &self.bytes
     }
 
+    #[cfg(test)]
     #[inline]
     pub fn into_bytes(self) -> [u8; COMMAND_RECORD_LEN] {
         self.bytes

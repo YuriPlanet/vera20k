@@ -2779,6 +2779,7 @@ impl ResolvedTerrainGrid {
 
     /// Apply one represented runtime `SetBridgeDirection_*` flag transaction
     /// through the same real-or-dummy seam used by map load.
+    #[cfg(test)]
     pub(crate) fn apply_runtime_bridge_flag_stamp(
         &mut self,
         stamp: BridgeFlagStamp,
@@ -3098,6 +3099,7 @@ impl ResolvedTerrainGrid {
     /// `y*512+x` slot and directly tests its pointer. Its active save-table and
     /// EMP callers establish valid coordinates; Rust therefore returns `false`
     /// outside the fixed array instead of reproducing native out-of-array UB.
+    #[cfg(test)]
     pub(crate) fn cellclass_allocation_probe(&self, x: i32, y: i32) -> bool {
         let Some((rx, ry)) = crate::map::cell_index::canonical_cell_coord(x, y) else {
             return false;
@@ -3766,6 +3768,7 @@ impl ResolvedTerrainGrid {
         Some((nx as u16, ny as u16))
     }
 
+    #[cfg(test)]
     pub fn walk_directions_from(&self, start: (u16, u16), directions: &[u8]) -> Option<(u16, u16)> {
         let mut coord = start;
         for &direction in directions {
@@ -3780,6 +3783,7 @@ impl ResolvedTerrainGrid {
     /// optional so tests can exercise bridge facts without retail theater data;
     /// when it is absent, theater membership fields are `None` and the
     /// comparator must keep that group `UNCHECKED`.
+    #[cfg(test)]
     pub fn bridge_oracle_cell_facts(
         &self,
         coords: &[(u16, u16)],

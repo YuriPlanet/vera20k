@@ -305,6 +305,7 @@ impl VoxQueue {
     }
 
     /// `PlayNextQueued`'s `DAT_00B1D428 == 0` gate.
+    #[cfg(test)]
     pub fn dequeue_allowed(&self) -> bool {
         self.pause_depth == 0
     }

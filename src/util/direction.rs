@@ -77,6 +77,7 @@ impl Ra2Direction {
         self.index() * FACING_UNITS_PER_DIRECTION
     }
 
+    #[cfg(test)]
     pub fn short_name(self) -> &'static str {
         match self {
             Self::North => "N",

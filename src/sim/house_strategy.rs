@@ -12,10 +12,14 @@
 use std::collections::BTreeMap;
 
 use crate::map::houses::HouseAllianceMap;
-use crate::sim::house_state::{HouseState, HouseStrategyEmergencyState};
+use crate::sim::house_state::HouseState;
+#[cfg(test)]
+use crate::sim::house_state::HouseStrategyEmergencyState;
 use crate::sim::intern::{InternedId, StringInterner};
 
+#[cfg(test)]
 const LOW_WALLET_THRESHOLD: i32 = 25;
+#[cfg(test)]
 const ATTACK_SUPPRESSION_FRAMES: i32 = 900;
 const ANGER_DECAY_PERIOD_FRAMES: i32 = 100;
 
@@ -111,6 +115,7 @@ pub(crate) enum EmergencyAction {
 /// `available_wallet` is deliberately a callback: state zero can transition to
 /// one and immediately query a second time in the same invocation. Collapsing
 /// this to a single sampled value would erase observable call count/order.
+#[cfg(test)]
 pub(crate) fn advance_emergency_state(
     state: &mut HouseStrategyEmergencyState,
     current_frame: i32,
@@ -148,6 +153,7 @@ pub(crate) fn advance_emergency_state(
 /// so this helper remains disconnected until the expanding-ring score path is
 /// implemented. Translating native score `1` into the current nearest-first
 /// tuple would be an approximation, not parity.
+#[cfg(test)]
 pub(crate) fn all_to_hunt_score_override(
     attacker_house: &HouseState,
     candidate_owner: InternedId,

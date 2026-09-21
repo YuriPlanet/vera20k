@@ -40,6 +40,7 @@ impl Rect {
     }
 }
 
+#[cfg(test)]
 pub fn radar_minimap_rect(screen_w: f32) -> Rect {
     radar_minimap_rect_with_spec(screen_w, SidebarChromeLayoutSpec::stock())
 }
@@ -257,17 +258,6 @@ pub struct SidebarView {
 
 pub fn default_active_tab() -> SidebarTab {
     SidebarTab::Building
-}
-
-pub fn tab_for_category(category: ProductionCategory) -> SidebarTab {
-    match category {
-        ProductionCategory::Building => SidebarTab::Building,
-        ProductionCategory::Defense => SidebarTab::Defense,
-        ProductionCategory::Infantry => SidebarTab::Infantry,
-        ProductionCategory::Vehicle => SidebarTab::Vehicle,
-        ProductionCategory::Aircraft => SidebarTab::Vehicle,
-        ProductionCategory::Ship => SidebarTab::Vehicle,
-    }
 }
 
 /// Compute the vertical layout of chrome sections for a given screen height.

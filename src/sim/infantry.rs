@@ -32,7 +32,6 @@
 
 use crate::rules::object_type::ObjectType;
 use crate::sim::animation::SequenceKind;
-use crate::sim::deploy::DeployPhase;
 use crate::sim::game_entity::GameEntity;
 use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 
@@ -493,15 +492,6 @@ pub fn apply_prone_speed(speed: SimFixed, crawls: bool) -> SimFixed {
         whole_speed + whole_speed / 2
     };
     SimFixed::from_num(adjusted)
-}
-
-pub fn is_deploy_locked(entity: &GameEntity) -> bool {
-    matches!(
-        entity.deploy_state,
-        Some(DeployPhase::Deploying { .. })
-            | Some(DeployPhase::Deployed)
-            | Some(DeployPhase::Undeploying { .. })
-    )
 }
 
 #[cfg(test)]

@@ -198,6 +198,7 @@ static TS_NORMALS: [[f32; 3]; TS_NORMAL_COUNT] = [
 ///
 /// Mode 4 (RA2) uses the 245-entry table. Mode 2 (TS) uses the 36-entry table.
 /// Out-of-range indices return Vec3::Z (pointing up) as a safe fallback.
+#[cfg(test)]
 pub fn get_normal(normals_mode: u8, index: u8) -> Vec3 {
     let table: &[[f32; 3]] = match normals_mode {
         4 => &RA2_NORMALS,
@@ -217,6 +218,7 @@ pub fn get_normal(normals_mode: u8, index: u8) -> Vec3 {
 /// Uses N·L (dot product of normal and light direction) for directional
 /// diffuse lighting, plus an ambient base level. Returns a brightness
 /// multiplier clamped to [0.0, 1.0].
+#[cfg(test)]
 pub fn diffuse_shade(normal: Vec3, light_dir: Vec3, ambient: f32, diffuse: f32) -> f32 {
     let n_dot_l: f32 = normal.dot(light_dir).max(0.0);
     (ambient + diffuse * n_dot_l).clamp(0.0, 1.0)

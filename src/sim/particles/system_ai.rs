@@ -26,7 +26,6 @@ use super::spark_world::{SparkCollisionWorld, SparkWorldError};
 
 // Errors retained at the production Spark begin/query/finish boundary. Railgun
 // alone remains dormant in the behavior dispatch below.
-#[allow(dead_code)]
 #[derive(Debug, Error)]
 pub(crate) enum SparkSystemTickError {
     #[error("particle type {0:?} is not behavior-3 Spark")]

@@ -135,6 +135,7 @@ impl VoxelAnimStore {
     }
 
     /// Ids in store order, for a walk that mutates the store as it goes.
+    #[cfg(test)]
     pub(crate) fn ids(&self) -> Vec<u64> {
         self.0.keys().copied().collect()
     }

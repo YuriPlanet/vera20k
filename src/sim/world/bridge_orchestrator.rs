@@ -221,6 +221,7 @@ fn apply_one_bridge_damage_event(
 /// `_High` 0x005749C0, which classify the anchor overlay into the NS or EW
 /// band, walk back up to two cells to the canonical edge anchor, and call
 /// the matching `CollapseBridge_*`.
+#[cfg(test)]
 pub(crate) fn dispatch_bridge_collapse_from_hut(
     sim: &mut Simulation,
     rules: &RuleSet,

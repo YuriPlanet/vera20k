@@ -6,7 +6,9 @@
 //! This module reports those effects; the world owner applies animation, damage,
 //! occupancy and lifecycle changes in the same master-frame rung.
 
-use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
+#[cfg(test)]
+use crate::util::fixed_math::SIM_ONE;
+use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 
 use super::rocket_movement::SpecialMovementOutcome;
 
@@ -82,6 +84,7 @@ pub fn landing_from_virtual_unlimbo(
 
 /// Initialize a distinct DropPod process. It deliberately does not alter an
 /// entity's base locomotor or use parachute state.
+#[cfg(test)]
 pub fn begin_drop_pod_state(
     target: (u16, u16),
     altitude: SimFixed,

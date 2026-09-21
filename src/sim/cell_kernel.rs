@@ -3,6 +3,7 @@
 //! These helpers intentionally keep floor, deck, coordinate lookup, and object-list
 //! selection separate: YR composes them at their individual call sites.
 
+#[cfg(test)]
 use crate::sim::map::bridge_topology::BRIDGE_DECK_HEIGHT_LEPTONS;
 use crate::util::fixed_math::isqrt_i64;
 use crate::util::lepton::{
@@ -76,6 +77,7 @@ pub fn world_to_cell_trunc(world: i32) -> i32 {
 
 /// Native invalid-cell coordinates are process-global sentinels. At the Rust map
 /// boundary, represent that unproven raw value as `None` rather than manufacture it.
+#[cfg(test)]
 pub fn checked_cell_from_world(
     world_x: i32,
     world_y: i32,
@@ -102,6 +104,7 @@ pub fn cell_floor_height(
 }
 
 /// Apply the high-bridge deck only when a caller has already selected that layer.
+#[cfg(test)]
 pub fn selected_cell_surface_height(floor_z: i32, deck_selected: bool) -> i32 {
     if deck_selected {
         floor_z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS)

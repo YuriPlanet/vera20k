@@ -219,6 +219,7 @@ impl ScenarioDescriptor {
     ///
     /// Map bounds, theater, objects, and active registration order are rebuilt
     /// by the ordinary map loader; a recording is never a snapshot restore.
+    #[cfg(test)]
     pub fn from_native_replay_header(header: &crate::sim::replay::NativeReplayHeader) -> Self {
         Self {
             seed: header.seed,

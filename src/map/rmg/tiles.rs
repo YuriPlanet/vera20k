@@ -152,6 +152,7 @@ impl TileIds {
     }
 
     /// Sand-terrain membership: the sand base tile or its LAT range.
+    #[cfg(test)]
     pub fn is_sand_lat(&self, tile: i32) -> bool {
         base_or_lat(tile, self.sand, self.sand_lat)
     }

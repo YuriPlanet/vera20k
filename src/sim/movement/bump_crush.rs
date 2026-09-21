@@ -846,6 +846,7 @@ pub fn collect_crush_victims(
 /// path. The event is skipped when CrushSound is absent. Caller must invoke BEFORE
 /// removing the victim from the EntityStore so victim.position and
 /// victim.type_ref are still valid.
+#[cfg(test)]
 pub fn emit_crush_kill_sounds(
     victim: &crate::sim::game_entity::GameEntity,
     rules: &crate::rules::ruleset::RuleSet,

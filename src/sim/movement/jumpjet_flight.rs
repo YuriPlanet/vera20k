@@ -179,6 +179,7 @@ impl JumpjetFlight {
         f64::from_bits(self.current_speed_bits)
     }
 
+    #[cfg(test)]
     pub fn target_speed(&self) -> f64 {
         f64::from_bits(self.target_speed_bits)
     }

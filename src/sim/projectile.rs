@@ -195,6 +195,7 @@ pub struct ProjectileRotAltitudeDecision {
 
 /// Pack the proven high-byte ROT control word. Native FISTP rounding is used
 /// before the low-byte truncation.
+#[cfg(test)]
 pub fn projectile_rot_turn_word(varied_rot: f64, target_distance: i32, course_locked: bool) -> u16 {
     if course_locked {
         return 0;
@@ -232,6 +233,7 @@ fn projectile_rot_turn_word_fixed(
 }
 
 /// Apply the closed VeryHigh/Airburst clearance admission and error bands.
+#[cfg(test)]
 pub fn projectile_rot_altitude_decision(
     target_is_aircraft: bool,
     airburst: bool,
@@ -519,6 +521,7 @@ pub enum ProjectileCellObstacle {
     Overlay,
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub fn projectile_cell_obstacle(
     candidate_z: i32,
@@ -614,6 +617,7 @@ impl ProjectileCollisionMotion {
 /// Original Bullet AI467666..467778: inverse slope, Elasticity scalar,
 /// negate LOCAL Z, forward slope, negate world Y. Native stores every matrix
 /// intermediate as chopped f32 and retains resulting doubles until copyback.
+#[cfg(test)]
 pub(crate) fn projectile_slope_reflect_with_elasticity(
     velocity: ProjectileVelocity,
     slope_type: u8,
@@ -657,6 +661,7 @@ pub struct ProjectileBurstPlan {
     pub random_coordinate_calls: u32,
 }
 
+#[cfg(test)]
 pub fn projectile_burst_plan(airburst: bool, cluster: i32) -> ProjectileBurstPlan {
     if airburst {
         return ProjectileBurstPlan {

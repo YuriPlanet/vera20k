@@ -146,6 +146,7 @@ pub(crate) enum LocalHierarchyPatchResult {
 
 /// Existing callers without live bounds retain cached-class admission here.
 /// Their live mode1 wiring is a separate required delivery step.
+#[cfg(test)]
 pub(crate) fn incremental_rebuild_zone_hierarchy_around_cell(
     hierarchy: &mut ZoneHierarchy,
     base: &BaseZoneTopology,

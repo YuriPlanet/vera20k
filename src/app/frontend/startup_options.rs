@@ -99,16 +99,6 @@ impl Default for RetailStartupOptions {
 }
 
 impl RetailStartupOptions {
-    /// Read the switch table straight from the process argument vector.
-    ///
-    /// Native's switch table writes process-global fields that every later
-    /// reader consults where it needs them, so a consumer does not have to be
-    /// handed the result through the launch dispatch. `AssetManager` already
-    /// resolves `-CD` from the process argv the same way.
-    pub fn from_process_arguments() -> Self {
-        consume_retail_switches(std::env::args_os().skip(1).collect()).0
-    }
-
     fn apply(&mut self, recognized: RecognizedSwitch) {
         match recognized {
             RecognizedSwitch::Usage => self.usage_requested = true,

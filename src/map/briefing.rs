@@ -15,6 +15,7 @@ pub struct BriefingSection {
 
 impl BriefingSection {
     /// Returns the briefing as a single paragraph for simple UI display.
+    #[cfg(test)]
     pub fn joined_text(&self) -> Option<String> {
         if self.lines.is_empty() {
             None

@@ -5,18 +5,23 @@
 //! are deliberately separate. This is not wired into production until its live
 //! owners retain native precision; no fixed-point mirror is maintained here.
 
-use crate::util::native_x87::{
-    NativeF32Bits, NativeF64Bits, NativeX87Error, X87Chop53 as X, X87Ordering, sqrt_approx_f32,
-};
+use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
+#[cfg(test)]
+use crate::util::native_x87::{NativeX87Error, X87Chop53 as X, X87Ordering, sqrt_approx_f32};
 
 // Original qwords7E6240/7E6248/7E6250 (Ship7F1308/7F1310/7F1318)
 // are promoted float constants, unlike the actual binary64 crush cap7E3548.
+#[cfg(test)]
 const DESTINATION_FLOOR: NativeF64Bits = NativeF64Bits::from_bits(0x3fd3_3333_4000_0000);
+#[cfg(test)]
 const SINKING_FLOOR: NativeF64Bits = NativeF64Bits::from_bits(0x3fb9_9999_a000_0000);
+#[cfg(test)]
 const SINKING_DECEL: NativeF64Bits = NativeF64Bits::from_bits(0x3f58_9374_c000_0000);
+#[cfg(test)]
 const CRUSH_CAP: NativeF64Bits = NativeF64Bits::from_bits(0x3fc9_9999_9999_999a);
 
 /// Actual Foot4D3710 finite clamp. Negative zero survives the equality arms.
+#[cfg(test)]
 pub(crate) fn set_fraction(value: NativeF64Bits) -> Result<NativeF64Bits, NativeX87Error> {
     let number = X::load_f64(value)?;
     if X::compare(number, X::load_i32(0)) == X87Ordering::Less {
@@ -41,6 +46,7 @@ pub(crate) struct FootSpeedInputs {
 
 /// Foot4DB1A0 consumes low32 after each native signed64 ftol, then optionally
 /// halves the signed final i32. Each operand is a live getter input.
+#[cfg(test)]
 pub(crate) fn current_speed(input: FootSpeedInputs) -> Result<i32, NativeX87Error> {
     let house = X::load_f32(input.house_multiplier)?;
     let house = X::load_f64(X::store_f64(house)?)?;
@@ -67,6 +73,7 @@ pub(crate) fn current_speed(input: FootSpeedInputs) -> Result<i32, NativeX87Erro
 /// Drive4B1024..1082 / Ship6A06F4..0752 sum z²+y²+x², store a qword, call
 /// Sqrt_Approx4CAC40 and ftol. `destination` already contains the native surface
 /// Z and structural bridge offset supplied by the actual destination-cell query.
+#[cfg(test)]
 pub(crate) fn braking_distance(
     current: [i32; 3],
     destination: [i32; 3],
@@ -110,6 +117,7 @@ pub(crate) struct TrackSpeedOutput {
 
 /// Update retained fractions only; fresh target calculation is a different
 /// native ProcessMovement operation. A retry still executes this prefix.
+#[cfg(test)]
 pub(crate) fn track_prefix(input: TrackSpeedInputs) -> Result<TrackSpeedOutput, NativeX87Error> {
     let mut output = TrackSpeedOutput {
         target: input.target,
@@ -186,6 +194,7 @@ pub(crate) fn track_prefix(input: TrackSpeedInputs) -> Result<TrackSpeedOutput, 
 }
 
 /// Original retry flag masks only the already-evaluated getter contribution.
+#[cfg(test)]
 pub(crate) fn invocation_budget(current_speed: i32, residual: i32, retry: bool) -> i32 {
     residual.wrapping_add(if retry { 0 } else { current_speed })
 }

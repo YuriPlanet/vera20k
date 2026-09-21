@@ -520,6 +520,7 @@ pub(crate) fn spawn_terrain_tile_animations(
 /// TerrainClass__Read_Map_Section @ 0x0071CA70), terrain objects before map
 /// entities, then terrain-attached animations. Presentation atlases consume
 /// the constructed simulation afterward; nothing here touches the GPU.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn construct_scenario<F>(
     map_data: &crate::map::map_file::MapFile,
@@ -557,6 +558,7 @@ where
 /// Generated-map variant of the shared construction funnel. The binding table
 /// proves that launch-time RMG already consumed every Techno constructor word;
 /// projection validates the complete table before creating its first entity.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn construct_scenario_with_generated_inits<F>(
     map_data: &crate::map::map_file::MapFile,

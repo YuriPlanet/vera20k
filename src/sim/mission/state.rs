@@ -55,6 +55,7 @@ impl MissionId {
     }
 
     /// Return the dispatch-table index only for known dispatched missions.
+    #[cfg(test)]
     pub fn dispatch_index(self) -> Option<usize> {
         let raw = self.0;
         (0..MISSION_COUNT as i32)

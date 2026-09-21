@@ -215,7 +215,6 @@ use crate::assets::bink_file::{BinkHeader, BinkVersion};
 use crate::assets::error::AssetError;
 
 /// Bundle IDs for modern Bink (BIKi/BIKk).
-#[allow(dead_code)]
 #[derive(Clone, Copy)]
 #[repr(usize)]
 enum Src {
@@ -269,20 +268,9 @@ impl BinkFrame {
             v: vec![0u8; uv_size].into_boxed_slice(),
         }
     }
-
-    #[allow(dead_code)]
-    fn plane_mut(&mut self, idx: usize) -> (&mut [u8], usize) {
-        match idx {
-            0 => (&mut self.y, self.stride_y),
-            1 => (&mut self.u, self.stride_uv),
-            2 => (&mut self.v, self.stride_uv),
-            _ => panic!("invalid plane idx"),
-        }
-    }
 }
 
 /// Per-bundle state.
-#[allow(dead_code)]
 struct Bundle {
     len_bits: u32,
     tree: HuffmanTree,
@@ -301,7 +289,6 @@ struct HuffmanTree {
     syms: [u8; 16],
 }
 
-#[allow(dead_code)]
 pub struct BinkDecoder {
     version: BinkVersion,
     width: u32,

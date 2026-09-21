@@ -126,6 +126,7 @@ pub enum LoadingArtVariant {
 }
 
 impl LoadingArtVariant {
+    #[cfg(test)]
     pub fn from_country_name(country: &str) -> Option<Self> {
         match country.to_ascii_lowercase().as_str() {
             "yuricountry" | "yuri" => Some(Self::Yuri),
@@ -254,25 +255,6 @@ struct RenderedLoadingEntry {
     width: u32,
     height: u32,
     rgba: Vec<u8>,
-}
-
-pub fn build_loading_screen_atlas(
-    gpu: &GpuContext,
-    batch: &BatchRenderer,
-    assets: &AssetManager,
-    variant: LoadingArtVariant,
-    width: LoadingScreenWidth,
-    progress_ramp: &[Color; 16],
-) -> Option<LoadingScreenAtlas> {
-    build_loading_screen_atlas_with_composition(
-        gpu,
-        batch,
-        assets,
-        variant,
-        width,
-        progress_ramp,
-        None,
-    )
 }
 
 /// Build the native loading atlas with optional selected-map preview/marker

@@ -69,6 +69,7 @@ pub const SIM_TICK_HZ: u32 = 45;
 // ---------------------------------------------------------------------------
 
 /// Convert an `i32` to `SimFixed`.
+#[cfg(test)]
 #[inline]
 pub fn sim_from_i32(val: i32) -> SimFixed {
     SimFixed::from_num(val)
@@ -96,6 +97,7 @@ pub fn sim_from_f32(val: f32) -> SimFixed {
 
 /// Convert `f64` to `SimFixed` for intermediate calculations during data loading.
 /// Only use at data-load boundaries — never within sim tick logic.
+#[cfg(test)]
 #[inline]
 pub fn sim_from_f64(val: f64) -> SimFixed {
     SimFixed::from_num(val)
@@ -111,6 +113,7 @@ pub fn sim_from_f64(val: f64) -> SimFixed {
 /// value (the client passes `SIM_TICK_MS` = 22 ms).
 ///
 /// Example: `dt_from_tick_ms(66)` ≈ 0.066 (stored as 4325/65536).
+#[cfg(test)]
 #[inline]
 pub fn dt_from_tick_ms(tick_ms: u32) -> SimFixed {
     SimFixed::from_num(tick_ms) / SimFixed::from_num(1000u16)
@@ -121,12 +124,14 @@ pub fn dt_from_tick_ms(tick_ms: u32) -> SimFixed {
 // ---------------------------------------------------------------------------
 
 /// Fixed-point absolute value.
+#[cfg(test)]
 #[inline]
 pub fn fixed_abs(val: SimFixed) -> SimFixed {
     val.abs()
 }
 
 /// Fixed-point clamp to `[min, max]`.
+#[cfg(test)]
 #[inline]
 pub fn fixed_clamp(val: SimFixed, min: SimFixed, max: SimFixed) -> SimFixed {
     if val < min {
@@ -141,18 +146,21 @@ pub fn fixed_clamp(val: SimFixed, min: SimFixed, max: SimFixed) -> SimFixed {
 /// Fixed-point linear interpolation: `a + (b - a) * t`.
 ///
 /// `t` should be in `[0, 1]` but is not clamped internally.
+#[cfg(test)]
 #[inline]
 pub fn fixed_lerp(a: SimFixed, b: SimFixed, t: SimFixed) -> SimFixed {
     a + (b - a) * t
 }
 
 /// Fixed-point `max(a, b)`.
+#[cfg(test)]
 #[inline]
 pub fn fixed_max(a: SimFixed, b: SimFixed) -> SimFixed {
     if a >= b { a } else { b }
 }
 
 /// Fixed-point `min(a, b)`.
+#[cfg(test)]
 #[inline]
 pub fn fixed_min(a: SimFixed, b: SimFixed) -> SimFixed {
     if a <= b { a } else { b }
@@ -165,6 +173,7 @@ pub fn fixed_min(a: SimFixed, b: SimFixed) -> SimFixed {
 /// guarantee convergence for the entire non-negative I16F16 range.
 ///
 /// Returns `SIM_ZERO` for zero or negative inputs.
+#[cfg(test)]
 pub fn fixed_sqrt(val: SimFixed) -> SimFixed {
     if val <= SIM_ZERO {
         return SIM_ZERO;
@@ -191,6 +200,7 @@ pub fn fixed_sqrt(val: SimFixed) -> SimFixed {
 ///
 /// **Warning:** Overflows if `dx` or `dy` exceed ~181 (since 181² ≈ 32,761 ≈ SimFixed max).
 /// For large cell deltas (maps > 181 cells), use `int_distance_to_sim()` instead.
+#[cfg(test)]
 #[inline]
 pub fn fixed_distance_sq(dx: SimFixed, dy: SimFixed) -> SimFixed {
     dx * dx + dy * dy
@@ -324,6 +334,7 @@ pub fn dir_to_cell_delta(facing: u8) -> (i32, i32) {
 ///
 /// Examples: Speed=4 (HARV) → ~0.586 cells/sec, Speed=6 (MTNK) → ~0.879,
 /// Speed=11 (E1) → ~1.641, Speed=100 → ~14.941. Speed=0 → 0 (immobile).
+#[cfg(test)]
 pub fn ra2_speed_to_cells_per_second(raw_speed: i32) -> SimFixed {
     if raw_speed <= 0 {
         return SIM_ZERO;

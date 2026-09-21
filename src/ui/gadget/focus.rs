@@ -41,6 +41,7 @@ impl FocusState {
 
     /// G25 — clear the attached list: forget the current list so the next tick
     /// takes the G5 reset path (the sanctioned page-swap mechanism).
+    #[cfg(test)]
     pub fn clear_attached_list(&mut self) {
         self.current_list = None;
     }

@@ -18,11 +18,13 @@ pub(crate) use crate::rules::overlay_types::{
 
 /// Check if an overlay index is one of the four high-bridge map-load anchors
 /// that dispatch through `SetBridgeDirection`.
+#[cfg(test)]
 pub fn is_high_bridge_anchor_overlay_index(id: u8) -> bool {
     crate::map::bridge_facts::high_bridge_stamp_for_overlay(id).is_some()
 }
 
 /// Get the binary `SetBridgeDirection` direction for a high-bridge anchor.
+#[cfg(test)]
 pub fn high_bridge_stamp_direction(id: u8) -> Option<u8> {
     crate::map::bridge_facts::high_bridge_stamp_for_overlay(id).map(|(_, dir)| dir)
 }

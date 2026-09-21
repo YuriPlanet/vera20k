@@ -38,7 +38,7 @@ impl CaptureManagerState {
     /// already-controlled target, so a stable id can occur at most once.
     // The capture-acquisition producer is not wired yet, but this is the
     // controller-owned insertion seam it must use.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn link_controlled_entity(&mut self, stable_id: u64) {
         if !self.controlled_entity_ids.contains(&stable_id) {
             self.controlled_entity_ids.push(stable_id);

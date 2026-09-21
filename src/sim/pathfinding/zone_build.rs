@@ -46,9 +46,7 @@ pub(crate) struct BaseZoneTopology {
     pub(crate) zone_ids: Vec<ZoneId>,
     // Retained as exact base-topology state for incremental-repair parity
     // fixtures; current production projections consume the derived rows.
-    #[allow(dead_code)]
     pub(crate) zone_count: ZoneId,
-    #[allow(dead_code)]
     pub(crate) adjacency: ZoneAdjacency,
     /// Raw `MapClass+0x18[row][base_cluster]` values. Label 1 and `0xffff`
     /// remain represented here even though the flattened compatibility maps
@@ -168,7 +166,6 @@ pub(crate) enum BridgeRecordFilter {
     /// Frequency: zero today — this variant is dead, and the live equivalent
     /// `find_high_bridge_record` correctly ignores activity. Downstream risk:
     /// it becomes a bridge move-refusal the moment anything wires this up.
-    #[allow(dead_code)]
     HighActiveOnly,
 }
 
@@ -182,7 +179,6 @@ fn bridge_record_matches(record: &BridgeEndpointRecord, filter: BridgeRecordFilt
 
 /// Build a zone map and adjacency graph for one MovementZone.
 #[cfg(test)]
-#[allow(dead_code)]
 pub(crate) fn build_zone_map(
     path_grid: &PathGrid,
     cost_grid: Option<&TerrainCostGrid>,

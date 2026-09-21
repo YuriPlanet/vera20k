@@ -122,7 +122,7 @@ pub(crate) enum PathSearchFailure {
 /// The recovered path entry contract uses a default total attempt cap of 5.
 const MAX_CORRIDOR_RETRIES: u8 = 5;
 
-#[allow(dead_code)]
+#[cfg(test)]
 const BLOCKED_DESTINATION_ALTERNATE_MARGIN: i32 = 6;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
@@ -246,6 +246,7 @@ include!("native_path_entry.rs");
 /// final movement legality because the recovered node flood-fill is 8-neighbor while
 /// the actual step predicate also applies tighter per-move checks. Treat zone gating
 /// here as a best-effort reject, not closed parity.
+#[cfg(test)]
 pub fn find_path_zoned(
     grid: &PathGrid,
     start: (u16, u16),
@@ -282,6 +283,7 @@ pub fn find_path_zoned(
     )
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn find_path_zoned_marker(
     grid: &PathGrid,
@@ -708,51 +710,7 @@ fn find_path_zoned_marker_inner_detailed(
     Err(PathSearchFailure::CompatibilityCorridorExhausted)
 }
 
-/// Zone-aware path search for layered (bridge-capable) paths.
-///
-/// Checks zone connectivity before invoking the layered A* pathfinder.
-/// Bridge cells redirect to ground endpoint zones via `zone_at(Bridge)`,
-/// so a single ground-layer reachability check covers cross-bridge paths.
-pub fn find_layered_path_zoned(
-    grid: &PathGrid,
-    ground_blocks: Option<&BTreeSet<(u16, u16)>>,
-    bridge_blocks: Option<&BTreeSet<(u16, u16)>>,
-    start: (u16, u16),
-    start_layer: MovementLayer,
-    goal: (u16, u16),
-    zone_grid: Option<&ZoneGrid>,
-    mz: MovementZone,
-    terrain_costs: Option<&TerrainCostGrid>,
-    movement_zone: Option<MovementZone>,
-    resolved_terrain: Option<&ResolvedTerrainGrid>,
-    entity_block_map: Option<&LayeredEntityBlockMap>,
-    urgency: u8,
-    mover_is_crusher: bool,
-    is_infantry: bool,
-) -> Option<Vec<LayeredPathStep>> {
-    find_layered_path_zoned_marker(
-        grid,
-        ground_blocks,
-        bridge_blocks,
-        start,
-        start_layer,
-        goal,
-        zone_grid,
-        mz,
-        terrain_costs,
-        movement_zone,
-        resolved_terrain,
-        entity_block_map,
-        None,
-        None,
-        urgency,
-        mover_is_crusher,
-        is_infantry,
-        true,
-        None,
-    )
-}
-
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn find_layered_path_zoned_marker(
     grid: &PathGrid,
@@ -1128,14 +1086,14 @@ fn manhattan(a: (u16, u16), b: (u16, u16)) -> i32 {
     (a.0 as i32 - b.0 as i32).abs() + (a.1 as i32 - b.1 as i32).abs()
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn chebyshev(a: (u16, u16), b: (u16, u16)) -> i32 {
     (a.0 as i32 - b.0 as i32)
         .abs()
         .max((a.1 as i32 - b.1 as i32).abs())
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn zone_cost_estimate(
     zg: &ZoneGrid,
     mz: MovementZone,
@@ -1194,7 +1152,7 @@ pub(crate) fn zone_cost_estimate(
     estimate.saturating_add(chebyshev(goal_center, goal))
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn accepts_blocked_destination_alternate(
     helper_result: i32,
     original: (u16, u16),

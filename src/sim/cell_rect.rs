@@ -9,8 +9,10 @@ use std::collections::BTreeMap;
 
 use crate::map::entities::EntityCategory;
 use crate::map::playfield::{lepton_to_packed_cell_component, rect_playfield_corners};
+#[cfg(test)]
+use crate::map::resolved_terrain::SharedCellDummySnapshot;
 use crate::map::resolved_terrain::{
-    ResolvedTerrainCell, ResolvedTerrainGrid, SharedCellDummy, SharedCellDummySnapshot, zone_class,
+    ResolvedTerrainCell, ResolvedTerrainGrid, SharedCellDummy, zone_class,
 };
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::sim::entity_store::EntityStore;
@@ -54,6 +56,7 @@ impl PartialEq for CellRef<'_> {
 impl Eq for CellRef<'_> {}
 
 impl CellRef<'_> {
+    #[cfg(test)]
     pub fn dummy_snapshot(&self) -> Option<SharedCellDummySnapshot> {
         match self {
             CellRef::Real(_) => None,
@@ -739,6 +742,7 @@ pub struct CellRectOccupancyContext<'a> {
     pub playfield_bounds: Option<PlayfieldBounds>,
 }
 
+#[cfg(test)]
 pub fn check_passability_rect(ctx: CellRectPassabilityContext<'_>) -> bool {
     check_passability_rect_with_raw_occupation(ctx, None)
 }
@@ -1077,6 +1081,7 @@ fn rect_is_in_playfield_height_aware(
 
 /// Explicit mode-zero `MapClass::IsCellInPlayfield @ 0x00578460` seam.
 /// No CellClass lookup or dummy state is touched.
+#[cfg(test)]
 pub fn cell_is_in_playfield_geometry_only(cell: (i32, i32), bounds: PlayfieldBounds) -> bool {
     bounds.contains_geometry_packed(cell.0, cell.1)
 }

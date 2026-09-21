@@ -1210,6 +1210,7 @@ impl LiveOverlayCells {
     ///
     /// Native evidence: `OverlayClass::Mark @ 0x005FC570`, wall success corridor
     /// `0x005FC6F4..0x005FC775`, and common tail `0x005FD1FA..0x005FD227`.
+    #[cfg(test)]
     pub(crate) fn mark_authored_wall(
         &mut self,
         registry: &OverlayTypeRegistry,

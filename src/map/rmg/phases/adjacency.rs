@@ -93,7 +93,6 @@ pub(crate) fn border_cells_of(scratch: &RmgScratch, region: i32) -> Vec<(i32, i3
 /// the sort of thing that surfaces much later as an off-by-one somewhere else.
 /// The active connector/low-deck driver uses this to gate whether a region is
 /// substantial enough for its candidate search.
-#[allow(dead_code)]
 pub(crate) fn region_cell_count(scratch: &RmgScratch, region: i32) -> i32 {
     let width = scratch.width() as i32;
     let mut count = 0;

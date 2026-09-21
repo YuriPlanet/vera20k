@@ -13,6 +13,7 @@
 
 /// 0x20 = ASCII space; gamemd `strtrim` strips bytes <= 0x20 (space + all ASCII
 /// control) at BOTH ends before the enum name compare. ASCII-only by design.
+#[cfg(test)]
 const STRTRIM_MAX: u32 = 0x20;
 
 /// One name->id row in an enum table.
@@ -29,6 +30,7 @@ pub struct EnumByName {
 /// MovementZone -> -1; Action -> 0) — the CALLER passes the right `default_id`;
 /// this helper does not bake one in. The trim mirrors the gamemd enum readers,
 /// which run strtrim (bytes <= 0x20 both ends) before the `_stricmp` compare.
+#[cfg(test)]
 pub fn enum_by_name(value: &str, table: &[EnumByName], default_id: i32) -> i32 {
     let trimmed = value.trim_matches(|c: char| (c as u32) <= STRTRIM_MAX);
     table

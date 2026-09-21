@@ -42,9 +42,7 @@ use crate::util::fixed_math::{
 use super::bump_crush;
 use super::drive_locomotion;
 use super::locomotor::{GroundMovePhase, MovementLayer};
-use super::movement_bridge::{
-    BRIDGE_Z_OFFSET, BridgeStateUpdate, apply_pending_bridge_render_state,
-};
+use super::movement_bridge::{BRIDGE_Z_OFFSET, apply_pending_bridge_render_state};
 use super::movement_occupancy::{
     DeferredCellCheck, build_live_building_entry_skip_map, handle_deferred_occupancy,
 };
@@ -1211,7 +1209,6 @@ fn advance_ordinary_mover(
     let mut aborted_for_stuck: bool = false;
     let mut active_layer: MovementLayer;
     let mut debug_events: Vec<(u32, DebugEventKind)> = Vec::new();
-    let mut pending_bridge_update: BridgeStateUpdate = BridgeStateUpdate::Unchanged;
     // Vehicle crush/bump needs immutable EntityStore access, which conflicts
     // with the mutable entity borrow. When detected, we save the target cell
     // and layer, break out of the while loop, release the borrow, then handle
@@ -1983,7 +1980,7 @@ fn advance_ordinary_mover(
                 }
                 deferred_cell_check = crossing.deferred_cell_check;
                 deferred_wall_override = crossing.deferred_wall_override;
-                pending_bridge_update = crossing.pending_bridge_update;
+                let pending_bridge_update = crossing.pending_bridge_update;
                 active_layer = crossing.active_layer;
                 debug_events.extend(crossing.debug_events);
                 aborted_for_stuck = crossing.aborted_for_stuck;

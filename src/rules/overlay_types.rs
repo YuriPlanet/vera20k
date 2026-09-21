@@ -15,6 +15,7 @@ use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainRules};
 use crate::rules::tiberium_type::{TiberiumType, TiberiumTypeId, TiberiumTypeRegistry};
 use std::collections::HashSet;
 
+#[cfg(test)]
 const STOCK_FLAT_RIPARIUS_VARIANT_COUNT: usize = 12;
 const TIBERIUM_FLAT_VARIANT_COUNT: usize = 12;
 const NATIVE_TIBERIUM_PRIMARY_IMAGE_COUNT: usize = 12;
@@ -225,11 +226,6 @@ impl Default for OverlayTypeFlags {
 }
 
 impl OverlayTypeFlags {
-    /// Whether this overlay type should use the unit palette instead of theater palette.
-    pub fn uses_unit_palette(&self) -> bool {
-        self.tiberium || self.wall || self.is_veins || self.is_veinhole_monster
-    }
-
     /// Y pixel offset applied before the sprite is centred on its cell.
     ///
     /// The active YR overlay draw path biases Tiberium, Wall and Crate overlays
@@ -480,6 +476,7 @@ impl OverlayTypeRegistry {
     /// the Riparius image index plus `RandomRanged(0, 0xB)`. The returned IDs
     /// come from the parsed registry positions and require `Tiberium=yes`, so no
     /// internal overlay IDs are baked into Rust.
+    #[cfg(test)]
     pub fn stock_flat_riparius_variant_ids(&self) -> Option<[u8; 12]> {
         let mut ids: Vec<u8> = Vec::with_capacity(STOCK_FLAT_RIPARIUS_VARIANT_COUNT);
         let mut found = [false; STOCK_FLAT_RIPARIUS_VARIANT_COUNT];
@@ -576,6 +573,7 @@ impl OverlayTypeRegistry {
     }
 }
 
+#[cfg(test)]
 fn stock_flat_riparius_variant_index(name: &str) -> Option<usize> {
     let prefix = name.get(..3)?;
     if !prefix.eq_ignore_ascii_case("TIB") {

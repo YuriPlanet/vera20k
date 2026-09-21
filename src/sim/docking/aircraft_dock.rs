@@ -149,6 +149,7 @@ impl<'de> serde::Deserialize<'de> for AirfieldDocks {
 
 impl AirfieldDocks {
     /// Whether there are no registered airfields (including empty registrations).
+    #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
         self.slots.is_empty()
     }
@@ -232,6 +233,7 @@ impl AirfieldDocks {
     }
 
     /// Look up which (airfield, pad_index) this aircraft is parked on.
+    #[cfg(test)]
     pub fn pad_for(&self, aircraft_sid: u64) -> Option<(u64, u32)> {
         self.aircraft_to_pad.get(&aircraft_sid).copied()
     }

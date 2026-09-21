@@ -259,6 +259,7 @@ impl Simulation {
 
 impl Simulation {
     /// Spawn entities from parsed map placements into EntityStore.
+    #[cfg(test)]
     pub fn spawn_from_map(
         &mut self,
         entities: &[MapEntity],
@@ -873,6 +874,7 @@ impl Simulation {
     /// held from `FactoryClass::StartProduction @ 0x004C9C70` through delivery.
     /// Production and other limbo constructors share the same manager/child
     /// transaction; later delivery only Unlimbos this retained identity.
+    #[cfg(test)]
     pub(crate) fn create_production_object_limbo_at_height(
         &mut self,
         type_id: &str,
@@ -1164,6 +1166,7 @@ impl Simulation {
     /// playfield gate and Mark(PUT) own the result, and eligible logic
     /// registration happens last. A failed attempt keeps the constructed
     /// identity in limbo for its caller to retain or discard.
+    #[cfg(test)]
     pub(crate) fn unlimbo(&mut self, ge: GameEntity) -> (u64, RevealOutcome) {
         let position = RevealPosition {
             rx: ge.position.rx,

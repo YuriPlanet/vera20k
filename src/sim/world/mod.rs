@@ -99,7 +99,6 @@ use crate::map::resolved_terrain::{
 };
 use crate::map::trigger_graph::TriggerGraph;
 use crate::map::triggers::TriggerMap;
-use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
@@ -2617,6 +2616,7 @@ impl Simulation {
     /// Apply one live runtime setter and update only the allocated real-cell
     /// serialized values it changed. Missing slots remain owned solely by the
     /// process dummy and are intentionally absent from Scenario payload.
+    #[cfg(test)]
     pub(crate) fn apply_runtime_bridge_flag_stamp(
         &mut self,
         stamp: crate::map::bridge_facts::BridgeFlagStamp,
@@ -2909,26 +2909,31 @@ impl Simulation {
     pub(crate) fn scatter_rng(&mut self) -> &mut SimRng {
         &mut self.scenario_rng
     } // bump displacement, idle/forced scatter, passenger unload exit, sell-eject
-    #[allow(dead_code)] // Stream-routing audit anchor; callers currently co-borrow the field.
+     // Stream-routing audit anchor; callers currently co-borrow the field.
+    #[cfg(test)]
     pub(crate) fn subcell_rng(&mut self) -> &mut SimRng {
         &mut self.scenario_rng
     } // infantry sub-cell rotation, paradrop sub-cell
-    #[allow(dead_code)] // Stream-routing audit anchor; callers currently co-borrow the field.
+     // Stream-routing audit anchor; callers currently co-borrow the field.
+    #[cfg(test)]
     pub(crate) fn smudge_rng(&mut self) -> &mut SimRng {
         &mut self.scenario_rng
     } // destruction smudge/survivor/debris, smudge type pick
-    #[allow(dead_code)] // Stream-routing audit anchor; callers currently co-borrow the field.
+     // Stream-routing audit anchor; callers currently co-borrow the field.
+    #[cfg(test)]
     pub(crate) fn wall_damage_rng(&mut self) -> &mut SimRng {
         &mut self.scenario_rng
     } // overlay/wall damage roll
     pub(crate) fn bridge_rng(&mut self) -> &mut SimRng {
         &mut self.scenario_rng
     } // bridge collapse/debris/explosion
-    #[allow(dead_code)] // Stream-routing audit anchor; callers currently co-borrow the field.
+     // Stream-routing audit anchor; callers currently co-borrow the field.
+    #[cfg(test)]
     pub(crate) fn ore_rng(&mut self) -> &mut SimRng {
         &mut self.scenario_rng
     } // ore growth/spread queue + direction + variant, TIBTRE
-    #[allow(dead_code)] // Stream-routing audit anchor; callers currently co-borrow the field.
+     // Stream-routing audit anchor; callers currently co-borrow the field.
+    #[cfg(test)]
     pub(crate) fn anim_rng(&mut self) -> &mut SimRng {
         &mut self.scenario_rng
     } // building damage-fire type/start-frame
@@ -2949,11 +2954,13 @@ impl Simulation {
     }
 
     // --- Main/global gameplay stream ---
-    #[allow(dead_code)] // Named Main-stream audit anchor retained beside direct borrows.
+     // Named Main-stream audit anchor retained beside direct borrows.
+    #[cfg(test)]
     pub(crate) fn weapon_spread_rng(&mut self) -> &mut SimRng {
         &mut self.main_rng
     } // verified main-only weapon/warhead property rolls; not detonation scatter
-    #[allow(dead_code)] // Named Main-stream audit anchor for the staged House AI consumer.
+     // Named Main-stream audit anchor for the staged House AI consumer.
+    #[cfg(test)]
     pub(crate) fn house_ai_rng(&mut self) -> &mut SimRng {
         &mut self.main_rng
     } // HouseClass superpower/AI gate roll
@@ -2975,6 +2982,7 @@ impl Simulation {
     }
 
     /// Mutable occupancy access for the few above-sim callers that unmark cells.
+    #[cfg(test)]
     pub fn occupancy_mut(&mut self) -> &mut OccupancyGrid {
         &mut self.substrate.occupancy
     }
@@ -3918,6 +3926,7 @@ impl Simulation {
     /// The body must tolerate an id whose entity is absent — there is no item
     /// guard here. `uninit` always conceals before freeing the store
     /// slot, so the order never references a removed entity in practice.
+    #[cfg(test)]
     pub(crate) fn for_each_live_object<F: FnMut(&mut Simulation, u64)>(&mut self, mut body: F) {
         let result: Result<(), std::convert::Infallible> =
             self.try_for_each_live_object(|sim, id| {
@@ -4279,6 +4288,7 @@ impl Simulation {
     /// House counts, the `by_owner` index, and the entity owner move exactly once
     /// for every live transfer, regardless of whether capture or garrison code
     /// requested it.
+    #[cfg(test)]
     pub(crate) fn change_owner(&mut self, stable_id: u64, new_owner: InternedId) {
         self.change_owner_impl(stable_id, new_owner, None);
     }
@@ -4868,6 +4878,7 @@ impl Simulation {
     ///
     /// Tries an incremental update first (diffing against the previous PathGrid).
     /// Falls back to full rebuild if too many cells changed or no previous state.
+    #[cfg(test)]
     pub fn rebuild_zone_grid(&mut self, path_grid: &PathGrid) {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return;
@@ -6379,21 +6390,9 @@ impl Simulation {
                 }
             }
 
-            // --- Phase 7: Scatter + Production + Repairs + Docks + Ore ---
+            // --- Phase 7: Production + Repairs + Docks + Ore ---
             // DEPENDS ON: combat (dead entities removed), movement (positions stable).
             // PRODUCES: new entities (spawned units), credit changes, ore growth.
-            // Idle scatter disabled — units were moving on their own after reaching
-            // destination. Needs further RE to match original engine conditions before
-            // re-enabling.
-            // scatter::tick_idle_scatter(
-            //     &mut self.entities,
-            //     Some(rules),
-            //     path_grid,
-            //     &self.terrain_costs,
-            //     &mut self.scenario_rng, // idle-scatter — scenario stream (dormant)
-            //     self.session.tick,
-            //     &self.interner,
-            // );
             // Phase 7, FIRST production step — the authoritative factory sweep (C1:
             // factories step BEFORE the house tail `run_late_region`). The previous
             // tick's tail reconcile prepared the registry; `step_all` charges each armed

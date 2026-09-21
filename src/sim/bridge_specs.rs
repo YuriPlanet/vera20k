@@ -13,7 +13,9 @@ use crate::sim::bridge_state::{
     AnchorSpan, Axis, BridgeRuntimeState, DamageState, Direction, Phase,
 };
 
+#[cfg(test)]
 const BRIDGE_GATE_BIT: u32 = 0x0100;
+#[cfg(test)]
 const NO_ZONE_CONNECTION: i16 = -1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,6 +96,7 @@ pub struct BridgeZoneIdPolicyDecision {
     pub return_no_zone: bool,
 }
 
+#[cfg(test)]
 pub fn low_bridge_overlay_damage_step_ra2(
     triple: BridgeOverlayTriple,
     damage: i32,
@@ -151,6 +154,7 @@ pub fn low_bridge_overlay_damage_step_ra2(
     }
 }
 
+#[cfg(test)]
 pub fn low_bridge_connected_section_selector_yr(
     center_overlay_type_index: i32,
     primary_probe_in_family_range: bool,
@@ -214,6 +218,7 @@ pub fn decode_zone_connection_record(record: &[u8]) -> ZoneConnectionRecord {
     }
 }
 
+#[cfg(test)]
 pub fn zone_connection_matches_cell(record: &[u8], cell: (i16, i16), dist: i16) -> bool {
     let decoded = decode_zone_connection_record(record);
     if decoded.skip_if_nonzero != 0 {
@@ -234,6 +239,7 @@ pub fn zone_connection_matches_cell(record: &[u8], cell: (i16, i16), dist: i16) 
     }
 }
 
+#[cfg(test)]
 pub fn get_cell_zone_id_bridge_policy_decision(
     target: BridgeZoneIdPolicyTarget,
     on_bridge: bool,
@@ -271,10 +277,12 @@ pub fn get_cell_zone_id_bridge_policy_decision(
     }
 }
 
+#[cfg(test)]
 fn in_range_inclusive(x: i32, lo: i32, hi: i32) -> bool {
     x >= lo && x <= hi
 }
 
+#[cfg(test)]
 fn pattern_a_new_index(center_overlay_type_index: i32) -> Option<i32> {
     match center_overlay_type_index {
         0x60 => Some(0x61),
@@ -285,6 +293,7 @@ fn pattern_a_new_index(center_overlay_type_index: i32) -> Option<i32> {
     }
 }
 
+#[cfg(test)]
 fn pattern_b_new_index(center_overlay_type_index: i32) -> Option<i32> {
     match center_overlay_type_index {
         0xe3 => Some(0xe4),
@@ -295,6 +304,7 @@ fn pattern_b_new_index(center_overlay_type_index: i32) -> Option<i32> {
     }
 }
 
+#[cfg(test)]
 fn classify_low_bridge_band(center_overlay_type_index: i32) -> Option<LowBridgeConnectedBand> {
     let x = center_overlay_type_index;
 
@@ -581,6 +591,7 @@ fn perpendicular_direction(axis: Axis, phase: Phase) -> Direction {
 /// - **Matching raw pavement tiles**: independently update the connected
 ///   terrain's raw damage flag, including cells without bridge-runtime entries.
 /// `is_high_bridge` selects the native concrete or Wood tile-set base.
+#[cfg(test)]
 pub fn update_ramp_perpendicular(
     state: &mut BridgeRuntimeState,
     anchor_pos: (u16, u16),

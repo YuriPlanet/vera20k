@@ -64,6 +64,7 @@ impl CrateAuthority {
 
     /// Accepted coordinates in native ascending slot order. Negative packed
     /// values are malformed snapshot state and cannot name a Rust grid cell.
+    #[cfg(test)]
     pub(crate) fn occupied_cells(&self) -> impl Iterator<Item = (u16, u16)> + '_ {
         self.slots.iter().filter_map(|slot| {
             if slot.is_empty() {

@@ -20,7 +20,6 @@
 //! clamps, some `Factory` fields) are forward-declared seams consumed by later
 //! slices (P4 cancel, P6 prereq revalidation) and are intentionally unused here, so
 //! dead-code is allowed module-wide.
-#![allow(dead_code)]
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -837,19 +836,6 @@ impl FactoryRegistry {
         }
         object.completion_accounted = true;
         true
-    }
-
-    /// Drop a `(owner, category)` factory if it holds no active object and an empty queue
-    /// (replaces `prune_empty_queues`). Returns `true` if removed.
-    pub(crate) fn prune_idle(&mut self, owner: InternedId, category: ProductionCategory) -> bool {
-        let idle = self
-            .factories
-            .get(&(owner, category))
-            .map_or(false, |f| f.object.is_none() && f.queue.is_empty());
-        if idle {
-            self.factories.remove(&(owner, category));
-        }
-        idle
     }
 
     /// Drop EVERY idle factory (no active object AND empty queue) registry-wide — the

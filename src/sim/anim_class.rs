@@ -179,22 +179,25 @@ const BUILDING_RENDER_ORIGIN_LEPTONS: i32 = 128;
 const DAMAGE_FIRE_SLOT_COUNT: usize = 8;
 // Retained with the verified multiplayer-feedback spawn seam until command
 // feedback owns its production call site.
-#[allow(dead_code)]
+#[cfg(test)]
 const MULTIPLAYER_FEEDBACK_Z_ADJUST: i32 = -5000;
-#[allow(dead_code)]
+#[cfg(test)]
 const SYNC_EXEMPT_NATIVE_UNIQUE_ID: i32 = -2;
 
 /// Pure YR `AnimClass_UpdateBouncePhysics` directional-frame projection.
+#[cfg(test)]
 pub fn directional_tumble_frame(running_frames: i32, bucket8: i32, global_frame: i32) -> i32 {
     let running = running_frames.max(1);
     running * ((-1 - bucket8) & 7) + (global_frame / 3).rem_euclid(running)
 }
 
+#[cfg(test)]
 pub fn settled_bounce_frame(running_frames: i32) -> i32 {
     running_frames.wrapping_mul(8).wrapping_add(1)
 }
 
 /// `AnimClass_Update` @ 0x00423f37: landing consumes two inclusive rolls.
+#[cfg(test)]
 pub fn bounce_spawn_count(has_spawns: bool, spawn_count: i32, roll_a: i32, roll_b: i32) -> i32 {
     if !has_spawns || spawn_count <= 0 {
         return 0;
@@ -835,7 +838,7 @@ impl Simulation {
 
     // The move-feedback producer is not wired yet; keep the verified
     // sync-exempt allocation path available for that activation slice.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn spawn_multiplayer_feedback_anim_at_world(
         &mut self,
         rules: &RuleSet,

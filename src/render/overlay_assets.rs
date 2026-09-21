@@ -23,13 +23,6 @@ pub fn overlay_shp_candidates(name: &str, theater_ext: &str) -> Vec<String> {
     ]
 }
 
-/// Generate candidate SHP filenames for a terrain object (from [Terrain] section).
-///
-/// Terrain objects like "INTREE01" may have theater-specific variants.
-pub fn terrain_shp_candidates(name: &str, theater_ext: &str) -> Vec<String> {
-    overlay_shp_candidates(name, theater_ext)
-}
-
 /// Optional debug remap for problematic resource overlays.
 ///
 /// When `RA2_FORCE_TIB3_TO_TIB01=1`, remap `TIB3_20` to `TIB01`.

@@ -899,6 +899,7 @@ impl RockingState {
     pub const DEADBAND: SimFixed = SimFixed::lit("0.00002");
 
     /// Returns true when the body-rocking transform is neutral.
+    #[cfg(test)]
     pub fn is_neutral(&self) -> bool {
         !self.is_ship_rocking
             && self.angle_sideways.abs() <= Self::DEADBAND

@@ -21,7 +21,6 @@ use crate::assets::error::AssetError;
 const MAX_CHANNELS: usize = 2;
 const MAX_BANDS: usize = 26;
 
-#[allow(dead_code)]
 pub struct BinkAudioDecoder {
     sample_rate: u32,
     channels: u16,

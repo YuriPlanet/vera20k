@@ -1,5 +1,6 @@
 //! Evidence-bounded YR aircraft runtime contracts.
 
+#[cfg(test)]
 use std::collections::HashSet;
 
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
@@ -62,6 +63,7 @@ pub struct FireLocationSearch {
 /// Search the first usable sixteen-angle ring for an aircraft firing cell.
 ///
 /// Named location: `AircraftClass::FindFireLocation`.
+#[cfg(test)]
 pub fn find_fire_location(
     input: FireLocationSearch,
     blocked_cells: &HashSet<(u16, u16)>,
@@ -135,6 +137,7 @@ pub enum AircraftUpdateStep {
 
 /// Return the proved slot-23 update sequence without assigning semantics to its predicates.
 /// Named location: `AircraftClass::Update` (`yr_1001` 0x414bb0).
+#[cfg(test)]
 pub fn aircraft_update_steps(
     alive_after_firing: bool,
     firing_or_landing: bool,
@@ -182,6 +185,7 @@ pub fn paradrop_edge_facing_word(default_edge: i32, alternate_type_state: bool) 
 }
 
 /// Only the proved counter transition is represented; YR volley cadence remains residual.
+#[cfg(test)]
 pub fn volley_next_state(fire_pending: bool, remaining_releases: u32) -> (u32, u8) {
     let remaining = if fire_pending {
         remaining_releases.saturating_sub(1)

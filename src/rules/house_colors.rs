@@ -31,16 +31,6 @@ pub struct HouseColorIndex(pub u8);
 /// Used for Neutral, Special, Civilian buildings that have no player color.
 pub const NO_REMAP: HouseColorIndex = HouseColorIndex(255);
 
-/// Returns true if the given owner is a non-player house that should NOT receive
-/// player color remapping. These buildings render with their original palette.
-pub fn is_non_player_house(owner: &str) -> bool {
-    let up = owner.to_ascii_uppercase();
-    matches!(
-        up.as_str(),
-        "NEUTRAL" | "SPECIAL" | "CIVILIAN" | "GOODGUY" | "BADGUY"
-    )
-}
-
 /// Number of shades per house color band (matches palette indices 16–31).
 const RAMP_SIZE: usize = 16;
 

@@ -403,6 +403,7 @@ pub enum SessionMode {
 impl SessionMode {
     /// Map gamemd's raw `g_GameMode` int to a session mode. Writer-proofed:
     /// 0=Campaign, 3=Lan, 4=Wol, 5=Skirmish; every other value is `Other`.
+    #[cfg(test)]
     pub fn from_game_mode(raw: i32) -> Self {
         match raw {
             0 => SessionMode::Campaign,

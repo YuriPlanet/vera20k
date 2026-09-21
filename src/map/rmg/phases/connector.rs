@@ -221,7 +221,7 @@ pub(crate) fn jitter(rng: &mut RmgRng) -> i32 {
 /// wrong number of draws. Kept only because its tests still pin the guard
 /// order, the endpoint geometry and the per-shape draw counts, all of which
 /// the replacement relies on. Delete once those tests are moved across.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn select_ramp_site(mask: u8, cell: (i32, i32), rng: &mut RmgRng) -> Option<RampSite> {
     let (x, y) = (cell.0, cell.1);
 
@@ -330,7 +330,7 @@ pub(crate) fn select_ramp_site(mask: u8, cell: (i32, i32), rng: &mut RmgRng) -> 
 /// transcription slip.
 /// SUPERSEDED with [`select_ramp_site`]; the live fallbacks are inline in
 /// `carve::try_carve_connector_at_cell`.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn fallback_ramp_sites(mask: u8, cell: (i32, i32)) -> Vec<RampSite> {
     let (x, y) = (cell.0, cell.1);
     let mut sites = Vec::new();
@@ -367,7 +367,7 @@ pub(crate) fn fallback_ramp_sites(mask: u8, cell: (i32, i32)) -> Vec<RampSite> {
 
 /// Is this attempt late enough for the fallback shapes?
 /// SUPERSEDED with [`select_ramp_site`].
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn fallback_allowed(leniency: f32) -> bool {
     leniency > FALLBACK_LENIENCY
 }

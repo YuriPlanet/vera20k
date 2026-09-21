@@ -211,6 +211,7 @@ fn neighbor_tile(cells: &[MapCell], by_coord: &HashMap<(u16, u16), usize>, x: i3
 ///
 /// The third parameter remains for the existing map-build API; all lookup
 /// data needed by the pass has already been resolved into `lat_config`.
+#[cfg(test)]
 pub fn apply_lat(cells: &mut [MapCell], lat_config: &LatConfig, _lookup: &TilesetLookup) {
     if lat_config.grounds.is_empty() {
         return;

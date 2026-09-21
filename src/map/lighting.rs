@@ -14,9 +14,11 @@
 
 use std::collections::HashMap;
 
+#[cfg(test)]
 use crate::map::entities::{EntityCategory, MapEntity};
 use crate::rules::art_data::AnimTypeRuntimeConfig;
 use crate::rules::ini_parser::IniFile;
+#[cfg(test)]
 use crate::rules::ruleset::RuleSet;
 
 /// Maximum combined lighting value per channel in current compatibility tint output.
@@ -375,6 +377,7 @@ impl CellLightGrid {
         );
     }
 
+    #[cfg(test)]
     pub fn set_compat_tint(&mut self, cell: (u16, u16), tint: [f32; 3]) {
         self.insert_profiled_light(cell, tint, 1.0);
     }
@@ -424,6 +427,7 @@ impl CellLightGrid {
         self.tint_or_default(cell)
     }
 
+    #[cfg(test)]
     pub fn terrain_object_tint_at(&self, cell: (u16, u16)) -> [f32; 3] {
         self.tint_for_common_scalar_or_default(cell)
     }
@@ -560,6 +564,7 @@ fn key_to_rgb(key: LightRgbKey) -> [f32; 3] {
 }
 
 /// Return signed building body draw-depth adjustment from art.ini ExtraLight.
+#[cfg(test)]
 pub fn building_body_depth_adjustment(extra_light: i32) -> i32 {
     extra_light
 }
@@ -658,6 +663,7 @@ pub fn cell_tint(config: &LightingConfig, z: u8) -> [f32; 3] {
 ///
 /// Terrain uses the ground-level lighting value across all cells so repeating
 /// tile textures do not expose the map grid through per-cell tint boundaries.
+#[cfg(test)]
 pub fn terrain_tint(config: &LightingConfig) -> [f32; 3] {
     cell_tint(config, 0)
 }
@@ -917,6 +923,7 @@ pub fn point_light_area_cells(
 ///
 /// Iterates all structure entities on the map and checks their ObjectType
 /// for light emission properties parsed from rules.ini.
+#[cfg(test)]
 pub fn collect_building_lights(entities: &[MapEntity], rules: Option<&RuleSet>) -> Vec<PointLight> {
     let Some(rules) = rules else {
         return Vec::new();

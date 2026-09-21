@@ -33,9 +33,9 @@ pub use settings::RmgSettings;
 pub use tiles::TileIds;
 pub use x87::{Gaussian, TruncF64};
 
-pub(crate) use crate::map::construction_trace::{
-    RmgConstructionEvent, RmgConstructionOutcome, RmgConstructionPhase, RmgConstructionTrace,
-};
+pub(crate) use crate::map::construction_trace::{RmgConstructionPhase, RmgConstructionTrace};
+#[cfg(test)]
+pub(crate) use crate::map::construction_trace::{RmgConstructionEvent, RmgConstructionOutcome};
 use crate::map::map_file::MapFile;
 use crate::rng_continuation::MapGenRngContinuation;
 

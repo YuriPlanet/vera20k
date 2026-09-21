@@ -131,6 +131,7 @@ impl DamageState {
     /// (`0` for NS, `9` for EW) regardless of the stored variant. The renderer
     /// re-derives Latin-square jitter from cell `(x, y)` per the binary
     /// `DrawOverlay_Body` path (RE doc §3.3.1, ledger #4).
+    #[cfg(test)]
     pub fn render_state_byte(self, axis: Axis) -> u8 {
         match self {
             DamageState::Healthy { .. } => match axis {
@@ -1450,6 +1451,7 @@ impl BridgeRuntimeState {
     ///   1. Anchor spans collected into `BTreeSet<u16>` for sorted iteration.
     ///   2. Within each span, cells iterated in slot order 0..=5.
     ///   3. `None` slots skipped.
+    #[cfg(test)]
     pub fn body_cell_repair_state(
         &mut self,
         scan_cells: &[(u16, u16)],
@@ -1865,6 +1867,7 @@ fn index_of(width: u16, height: u16, rx: u16, ry: u16) -> Option<usize> {
 /// Used by the engineer-repair trigger. Inclusive bounds `-2..=+2` produce
 /// exactly 25 cells when the center is interior; off-map negative cells are
 /// silently dropped.
+#[cfg(test)]
 pub fn cells_in_5x5_scan(center: (u16, u16)) -> impl Iterator<Item = (u16, u16)> {
     let (cx, cy) = (center.0 as i32, center.1 as i32);
     (-2..=2i32).flat_map(move |dy| {

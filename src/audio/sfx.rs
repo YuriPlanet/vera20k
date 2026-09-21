@@ -593,6 +593,7 @@ impl PlayShifts {
 /// `Attack=`/`Decay=` exceed its own `Sounds=` list — no stock entry does.
 /// Player effect: VERA plays a valid sample (or nothing) where gamemd would
 /// misbehave. Frequency: never on retail data. Downstream risk: none.
+#[cfg(test)]
 pub fn select_playout(entry: &SoundEntry, rng: &mut impl SampleRng) -> Vec<usize> {
     select_playout_pass(entry, rng, true)
 }
@@ -1293,24 +1294,6 @@ impl SfxPlayer {
         self.rng.ranged(0, 99)
     }
 
-    /// Forget one object's latch and playing index — object removal.
-    ///
-    /// RESIDUAL: **nothing calls this today.** The app layer has no
-    /// entity-removal hook that reaches `SfxPlayer`, so the intended
-    /// "object died, drop its voice state" edge is unwired. It is inert
-    /// rather than a leak: [`VoiceQueue::drain`] prunes `playing` at the top
-    /// of every pass, and `pending` can only ever hold the single live owner,
-    /// so no state survives a removed object. Trigger: none. Player effect:
-    /// none. Frequency: never. Downstream risk: the moment voices move into
-    /// the 16-channel pool, per-object state can outlive its object and this
-    /// must be wired to removal or deleted with the single-slot design.
-    pub fn forget_unit_voice(&mut self, owner: u64) {
-        self.voice_queue.forget(owner);
-        if self.current_voice_owner == Some(owner) {
-            self.current_voice_owner = None;
-        }
-    }
-
     /// `VoxClass::PlayEVA @ 0x00752700`: find the entry by name (`stricmp`
     /// scan of `0xB1D4A4`; a miss becomes `QueueVoice(-1, ..)`, which its
     /// index guard rejects), then `QueueVoice(index, type_override, -1)` —
@@ -1884,11 +1867,6 @@ impl SfxPlayer {
     /// Sound events currently holding one of the 16 channels.
     pub fn busy_channel_count(&self) -> usize {
         self.arbiter.busy_channel_count()
-    }
-
-    /// Number of EVA announcements waiting in the `VoxClass` queues.
-    pub fn queued_voice_count(&self) -> usize {
-        self.vox.queued_count()
     }
 
     /// `VoxClass::PumpAndCheckActive @ 0x007529E0`'s answer: the stream is

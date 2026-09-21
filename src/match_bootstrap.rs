@@ -114,6 +114,7 @@ impl LoadingStartup {
         }
     }
 
+    #[cfg(test)]
     pub fn seed_or_else(&self, unverified_fallback: impl FnOnce() -> u32) -> u32 {
         match self {
             Self::Accepted(startup) => startup.seed.value,

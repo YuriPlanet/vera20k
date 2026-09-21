@@ -9,10 +9,16 @@
 //! ## Dependency rules
 //! Same as sim/: depends on rules/ + map/; never render / ui / audio / net.
 
-use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
-use crate::sim::bridge_state::{Axis, BridgeRuntimeState, RepairOutcome, StateOutcome};
+#[cfg(test)]
+use crate::map::resolved_terrain::ResolvedTerrainCell;
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
+#[cfg(test)]
+use crate::sim::bridge_state::RepairOutcome;
+use crate::sim::bridge_state::{Axis, BridgeRuntimeState, StateOutcome};
+#[cfg(test)]
 use crate::sim::rng::SimRng;
 
+#[cfg(test)]
 const REPAIR_VARIANT_LIMIT_INCLUSIVE: u8 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +68,7 @@ impl BridgeRuntimeState {
     /// Engineer repair entry for a gamemd-style 5x5 scan. The outer dispatch
     /// chooses LOW if any scanned cell is a low bridge tile/ramp or low bridge
     /// overlay; otherwise it scans the HIGH overlay family.
+    #[cfg(test)]
     pub fn repair_bridge_from_engineer_scan(
         &mut self,
         scan_cells: &[(u16, u16)],
@@ -80,6 +87,7 @@ impl BridgeRuntimeState {
         }
     }
 
+    #[cfg(test)]
     fn repair_bridge_low_from_scan(
         &mut self,
         scan_cells: &[(u16, u16)],
@@ -97,6 +105,7 @@ impl BridgeRuntimeState {
         RepairOutcome::default()
     }
 
+    #[cfg(test)]
     fn repair_bridge_high_from_scan(
         &mut self,
         scan_cells: &[(u16, u16)],
@@ -118,6 +127,7 @@ impl BridgeRuntimeState {
     /// `DestroyBridge_Low` 0x0057BAA0. Same axis classes, same three-case
     /// start-cell shift, dispatching into the repair walkers instead of the
     /// destroy ones.
+    #[cfg(test)]
     fn repair_bridge_low(
         &mut self,
         rx: u16,
@@ -145,6 +155,7 @@ impl BridgeRuntimeState {
     /// `DestroyBridge_High` 0x0057CCF0 uses — then shifts the start cell by
     /// probing the two neighbours against the union band 0xCD..=0xE8 before
     /// entering the walker.
+    #[cfg(test)]
     fn repair_bridge_high(
         &mut self,
         rx: u16,
@@ -167,6 +178,7 @@ impl BridgeRuntimeState {
     }
 
     /// `MapClass::RepairBridgeWalker_NS_Low` 0x0057F6A0.
+    #[cfg(test)]
     fn repair_bridge_walker_ns_low(
         &mut self,
         sx: u16,
@@ -207,6 +219,7 @@ impl BridgeRuntimeState {
     }
 
     /// `MapClass::RepairBridgeWalker_EW_Low` 0x0057FBC0.
+    #[cfg(test)]
     fn repair_bridge_walker_ew_low(
         &mut self,
         sx: u16,
@@ -247,6 +260,7 @@ impl BridgeRuntimeState {
     }
 
     /// `MapClass::RepairBridgeWalker_NS_High` 0x005800D0.
+    #[cfg(test)]
     fn repair_bridge_walker_ns_high(
         &mut self,
         sx: u16,
@@ -287,6 +301,7 @@ impl BridgeRuntimeState {
     }
 
     /// `MapClass::RepairBridgeWalker_EW_High` 0x00580600.
+    #[cfg(test)]
     fn repair_bridge_walker_ew_high(
         &mut self,
         sx: u16,
@@ -326,6 +341,7 @@ impl BridgeRuntimeState {
         outcome
     }
 
+    #[cfg(test)]
     fn apply_repair_to_strip_cell(
         &mut self,
         triple: [Option<(u16, u16)>; 3],
@@ -387,6 +403,7 @@ impl BridgeRuntimeState {
         }
     }
 
+    #[cfg(test)]
     fn sync_anchor_span_damage_state(&mut self, span_id: u16) {
         let anchor_pos = self.anchor_span(span_id).map(|span| span.anchor);
         if let Some((arx, ary)) = anchor_pos {
@@ -397,6 +414,7 @@ impl BridgeRuntimeState {
         }
     }
 
+    #[cfg(test)]
     fn repair_transition(overlay: u8, family: RepairFamily) -> RepairTransition {
         match family {
             RepairFamily::LowNs => match overlay {
@@ -433,10 +451,12 @@ impl BridgeRuntimeState {
     /// currently retains `Seed(0)`; the native fresh-process state is verified,
     /// while cross-match process retention remains UNCHECKED. Accepted generated
     /// maps retain their post-RMG cursor for the current match.
+    #[cfg(test)]
     fn repair_variant_offset(rng: &mut SimRng) -> u8 {
         rng.next_range_u32_inclusive_scaled(0, u32::from(REPAIR_VARIANT_LIMIT_INCLUSIVE)) as u8
     }
 
+    #[cfg(test)]
     fn is_low_repair_outer_candidate(
         overlay: Option<u8>,
         terrain_cell: Option<&ResolvedTerrainCell>,
@@ -447,10 +467,12 @@ impl BridgeRuntimeState {
                 .unwrap_or(false)
     }
 
+    #[cfg(test)]
     fn is_low_repair_overlay(overlay: u8) -> bool {
         (0x4A..=0x65).contains(&overlay)
     }
 
+    #[cfg(test)]
     fn is_high_repair_overlay(overlay: u8) -> bool {
         (0xCD..=0xE8).contains(&overlay)
     }

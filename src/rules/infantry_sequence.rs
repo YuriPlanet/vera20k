@@ -311,6 +311,7 @@ pub type InfantrySequenceRegistry = HashMap<String, InfantrySequenceDef>;
 ///
 /// Returns `None` for an empty ReadString result. Partial conversions retain
 /// constructor values; malformed nonempty input still returns that record.
+#[cfg(test)]
 pub fn parse_sequence_value(value: &str) -> Option<InfantrySequenceEntry> {
     let value = crate::rules::ini_value::truncate_bytes(value, 31);
     if crate::rules::ini_value::strtrim_ascii(value).is_empty() {

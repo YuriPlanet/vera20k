@@ -103,6 +103,7 @@ impl SlaveHarvester {
     }
 
     /// Total credit value of all bales currently carried.
+    #[cfg(test)]
     pub fn cargo_value(&self) -> u32 {
         self.cargo.iter().map(|b| b.value as u32).sum()
     }
@@ -510,6 +511,7 @@ impl SlaveMinerConfig {
 /// transfers the SMIN's existing pool, retaining every constructor RNG draw.
 ///
 /// Returns the new YAREFN stable_id, or None if deploy failed.
+#[cfg(test)]
 pub fn deploy_slave_miner(sim: &mut Simulation, stable_id: u64, rules: &RuleSet) -> Option<u64> {
     deploy_slave_miner_with_overlay_context(sim, stable_id, rules, None)
 }
@@ -661,6 +663,7 @@ pub(crate) fn deploy_slave_miner_with_overlay_context(
 /// 4. Transfer slave bindings to the new SMIN entity and rewrite slave masters
 ///
 /// Returns the new SMIN stable_id, or None if undeploy failed.
+#[cfg(test)]
 pub fn undeploy_slave_miner(sim: &mut Simulation, stable_id: u64, rules: &RuleSet) -> Option<u64> {
     undeploy_slave_miner_with_overlay_context(sim, stable_id, rules, None)
 }

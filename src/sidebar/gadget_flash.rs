@@ -185,6 +185,7 @@ impl SidebarGadgetState {
     /// Frame index for a tab gadget. Caller passes whether this tab is the
     /// currently-active tab (the externally driven latch-ON mirror,
     /// study §2.5 / G22 Kind 2).
+    #[cfg(test)]
     pub fn tab_frame(&self, tab_index: usize, is_active_tab: bool) -> u8 {
         if self.tab_disabled[tab_index] {
             return 2;

@@ -50,6 +50,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
 use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+#[cfg(test)]
 use glam::IVec3;
 
 /// `SpawnParticleWithInsert` range used by fire systems — particles inserted
@@ -166,7 +167,7 @@ pub(super) fn tick_particle(
 /// Bridge-layer interaction is deferred to C6 — fire particles pass
 /// through bridges in the binary too (no bridge check in fire move).
 // Ground-height ownership is not wired into the live particle tick yet.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(super) fn move_fire(p: &mut Particle, old_ground: i32, new_ground: i32) {
     if p.velocity <= SIM_ZERO {
         return;

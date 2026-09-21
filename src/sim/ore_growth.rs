@@ -250,6 +250,7 @@ impl NativeTiberiumQueue {
     }
 
     /// Entry-array counter (`+0x10C` / `+0xF0`).
+    #[cfg(test)]
     pub fn array_len(&self) -> usize {
         self.entries.len()
     }
@@ -259,6 +260,7 @@ impl NativeTiberiumQueue {
     }
 
     /// Entries referenced by the heap, in heap slot order (slot 1 first).
+    #[cfg(test)]
     pub fn iter_heap(&self) -> impl Iterator<Item = &NativeTiberiumQueueEntry> + '_ {
         self.heap
             .iter()
@@ -267,15 +269,11 @@ impl NativeTiberiumQueue {
     }
 
     /// The entry at heap slot `slot + 1` (slot 0 is the root).
+    #[cfg(test)]
     pub fn heap_entry(&self, slot: usize) -> Option<&NativeTiberiumQueueEntry> {
         self.heap
             .get(slot + 1)
             .map(|&index| &self.entries[index as usize])
-    }
-
-    /// The root entry without popping it.
-    pub fn peek_root(&self) -> Option<&NativeTiberiumQueueEntry> {
-        self.heap_entry(0)
     }
 
     /// Native insert: append, then heap-insert while capacity allows.
@@ -763,6 +761,7 @@ impl OreGrowthState {
     }
 
     /// Native `GrowthProcessor` for one tiberium type.
+    #[cfg(test)]
     pub fn process_native_growth_for_type(
         &mut self,
         type_id: TiberiumTypeId,

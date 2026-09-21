@@ -761,7 +761,6 @@ fn render_solid_entry(label: &str, width: u32, height: u32, color: [u8; 4]) -> R
     }
 }
 
-#[allow(dead_code)]
 fn render_primitive_bevel_entry(
     label: &str,
     width: u32,

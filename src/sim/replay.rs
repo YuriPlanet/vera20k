@@ -170,14 +170,7 @@ impl NativeReplayHeader {
         self.scenario_name[..len].copy_from_slice(&name.as_bytes()[..len]);
     }
 
-    pub fn scenario_name_bytes(&self) -> &[u8; NATIVE_REPLAY_SCENARIO_NAME_LEN] {
-        &self.scenario_name
-    }
-
-    pub fn options_bytes(&self) -> &[u8; NATIVE_REPLAY_OPTIONS_LEN] {
-        &self.options
-    }
-
+    #[cfg(test)]
     pub fn set_options_bytes(&mut self, options: [u8; NATIVE_REPLAY_OPTIONS_LEN]) {
         self.options = options;
     }
@@ -288,6 +281,7 @@ impl NativeReplay {
     /// The native stream has no tag for an omitted command batch. Its presence
     /// is known from session mode, frame, and network cadence, so the scheduler
     /// supplies that decision after each presentation record is decoded.
+    #[cfg(test)]
     pub fn decode_with_command_schedule(
         bytes: &[u8],
         mut has_command_batch: impl FnMut(usize, &NativeReplayPresentation) -> bool,
@@ -328,6 +322,7 @@ impl NativeReplay {
     /// caller must rebuild the scenario from the header, after which frames are
     /// exposed in stream order for the scheduler's presentation and command
     /// rungs.
+    #[cfg(test)]
     pub fn initialize_playback<S, E>(
         &self,
         initialize_scenario: impl FnOnce(&NativeReplayHeader) -> std::result::Result<S, E>,
@@ -536,6 +531,7 @@ impl<'a, S> NativeReplayStream<'a, S> {
     }
 
     /// Finish through the verified native caller/session cadence.
+    #[cfg(test)]
     pub fn finish_scheduled_frame(
         &mut self,
         frame: i32,
@@ -571,6 +567,7 @@ pub fn selection_checksum(selected_objects: &[u32]) -> u32 {
 /// A zero kind is the native null sentinel. Other kinds occupy the high byte
 /// and the object's heap-pool identity (or the kind-specific raw value) is
 /// truncated to 24 bits.
+#[cfg(test)]
 pub fn pack_selection_identity(kind: u8, raw_value: u32) -> u32 {
     if kind == 0 {
         u32::MAX
@@ -614,6 +611,7 @@ fn encode_frame(
     Ok(())
 }
 
+#[cfg(test)]
 fn decode_presentation(
     bytes: &[u8],
     cursor: &mut usize,
@@ -645,6 +643,7 @@ fn decode_presentation(
     })
 }
 
+#[cfg(test)]
 fn decode_command_batch(
     bytes: &[u8],
     cursor: &mut usize,
@@ -660,6 +659,7 @@ fn decode_command_batch(
     Ok(commands)
 }
 
+#[cfg(test)]
 fn take<const N: usize>(
     bytes: &[u8],
     cursor: &mut usize,
@@ -762,6 +762,7 @@ impl ReplayRunner {
     /// resources and navigation re-snapshots per frame just as a recorded
     /// app session did - nothing is caller-substitutable and a mid-match
     /// path-grid change replays faithfully.
+    #[cfg(test)]
     pub fn run_runtime(
         runtime: &mut crate::sim::runtime::SimRuntime,
         replay: &ReplayLog,

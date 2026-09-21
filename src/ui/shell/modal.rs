@@ -92,6 +92,7 @@ impl ModalKind {
 /// (The three target modals only ever populate up to `third`, so the
 /// fourth-without-third ordering is not produced in practice; the cascade follows
 /// the "fourth slot present -> 0x121" rule regardless.)
+#[cfg(test)]
 pub fn message_box_kind(third_slot: Option<&str>, fourth_slot: Option<&str>) -> ModalKind {
     if slot_populated(fourth_slot) {
         ModalKind::ThreeButton
@@ -104,6 +105,7 @@ pub fn message_box_kind(third_slot: Option<&str>, fourth_slot: Option<&str>) -> 
 
 /// A CSF slot is populated iff present with a non-null first char (the native test
 /// is a non-null pointer AND `*ptr != 0`).
+#[cfg(test)]
 fn slot_populated(slot: Option<&str>) -> bool {
     matches!(slot, Some(s) if !s.is_empty())
 }
@@ -139,6 +141,7 @@ impl ModalResult {
     /// Map a resolved message-box control id to its native result, or `None` for a
     /// control that produces no result (the body static). OK(`0x5AE`)->0,
     /// Cancel(control 2)->1, third(`0x5AF`)->2.
+    #[cfg(test)]
     pub fn from_message_box_control(control: u16) -> Option<ModalResult> {
         let code = match control {
             control::OK => 0,
@@ -152,6 +155,7 @@ impl ModalResult {
     /// Quit-confirm (0x120) semantics: ONLY the OK click (message-box result 0)
     /// quits; Cancel(1), third(2), and dismissed(-1) all stay. ESC resolves to
     /// IDCANCEL -> result 1 -> stay.
+    #[cfg(test)]
     pub fn quit_confirm_quits(self) -> bool {
         matches!(self, ModalResult::MessageBox(0))
     }

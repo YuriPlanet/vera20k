@@ -199,30 +199,37 @@ impl FreshScenarioLoadContextDescriptor {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn physical_source(&self) -> &LoadedMapSource {
         &self.physical_source
     }
 
+    #[cfg(test)]
     pub(crate) fn materialization(&self) -> FreshMapMaterialization {
         self.materialization
     }
 
+    #[cfg(test)]
     pub(crate) fn signed_new_ini_format(&self) -> i32 {
         self.signed_new_ini_format
     }
 
+    #[cfg(test)]
     pub(crate) fn match_seed(&self) -> u32 {
         self.match_seed
     }
 
+    #[cfg(test)]
     pub(crate) fn authored_pack_bodies_enabled(&self) -> bool {
         self.materialization == FreshMapMaterialization::Authored && self.signed_new_ini_format > 1
     }
 
+    #[cfg(test)]
     pub(crate) fn startup_provenance(&self) -> FreshStartupProvenance {
         self.startup_provenance
     }
 
+    #[cfg(test)]
     pub(crate) fn family(&self) -> FreshScenarioFamily {
         match &self.prefix {
             FreshScenarioPrefixReceipt::StockOffline { .. } => FreshScenarioFamily::StockOffline,

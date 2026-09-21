@@ -163,7 +163,6 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
 // reconstructed after the authority migration. These constants and comments
 // describe that historical execution; they are not current-state projections.
 // Keep the receipt distinct from the current full-hash and absolute RNG gates.
-#[allow(dead_code)]
 #[rustfmt::skip]
 mod schema166_receipt {
 /// Committed final-hash baseline. Captured from the first green run. Re-baselines

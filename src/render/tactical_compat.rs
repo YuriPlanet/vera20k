@@ -121,6 +121,7 @@ pub enum TacticalCompatError {
     NativeX87(#[from] NativeX87Error),
 }
 
+#[cfg(test)]
 pub fn resolve_spark_point(
     command: SparkPointCommand,
     color_list: &[[u8; 3]],
@@ -246,6 +247,7 @@ pub const fn z_passes(candidate: i32, stored: u16) -> bool {
     candidate < stored as i32
 }
 
+#[cfg(test)]
 fn select_color_pair(
     command: SparkPointCommand,
     color_list: &[[u8; 3]],

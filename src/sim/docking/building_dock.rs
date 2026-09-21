@@ -58,7 +58,9 @@ use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::pathfinding::PathGrid;
-use crate::sim::radio::{self, RadioMessage, RadioPayload, RadioResponse};
+#[cfg(test)]
+use crate::sim::radio::RadioResponse;
+use crate::sim::radio::{self, RadioMessage, RadioPayload};
 use crate::sim::world::Simulation;
 use crate::util::fixed_math::ra2_speed_to_leptons_per_second;
 
@@ -141,6 +143,7 @@ pub enum RepairResponse {
 
 impl RepairResponse {
     /// The `RadioClass` response code this maps to on the dock bus.
+    #[cfg(test)]
     pub fn radio_response(self) -> RadioResponse {
         match self {
             RepairResponse::Roger { .. } => RadioResponse::Roger,

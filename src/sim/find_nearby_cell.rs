@@ -307,6 +307,7 @@ where
 /// early-out there, while selection still re-runs the projection on every stored
 /// candidate to split the pools. That is why bridge-aware collection stores no
 /// projection result below.
+#[cfg(test)]
 fn collect_candidates(
     seed: (i32, i32),
     q: &NearbyQuery<'_>,

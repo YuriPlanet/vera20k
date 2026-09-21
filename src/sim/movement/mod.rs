@@ -50,7 +50,7 @@ use crate::sim::pathfinding::zone_map::ZoneGrid;
 use crate::sim::rng::SimRng;
 #[cfg(test)]
 use crate::util::fixed_math::SIM_ZERO;
-use crate::util::fixed_math::{SIM_ONE, SimFixed, facing_from_delta_int};
+use crate::util::fixed_math::{SimFixed, facing_from_delta_int};
 
 // --- Internal submodules ---
 pub(crate) mod at_coord;
@@ -101,7 +101,6 @@ pub mod locomotion;
 pub mod locomotor;
 pub mod parachute_descent;
 pub mod rocket_movement;
-pub mod scatter;
 pub mod teleport_movement;
 pub mod tube_movement;
 pub mod tunnel_movement;
@@ -488,6 +487,7 @@ pub fn facing_from_delta(dx: i32, dy: i32) -> u8 {
 ///
 /// This bridge mirrors FootClass::AI's per-tick "ok to end piggyback" check
 /// without changing existing movement ownership for non-migrated special flows.
+#[cfg(test)]
 pub fn tick_locomotor_piggyback_restore(entities: &mut EntityStore) -> usize {
     let mut restored = 0usize;
     let keys = entities.keys_sorted();

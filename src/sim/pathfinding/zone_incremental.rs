@@ -117,7 +117,6 @@ pub(crate) fn recalculate_zone_rectangle<H: ZoneBatchHost>(
 pub(crate) enum ZoneRepairKind {
     AssignOrphaned,
     // Verified repair arm retained until its terrain mutation owner is wired.
-    #[allow(dead_code)]
     MergeAdjacent,
 }
 

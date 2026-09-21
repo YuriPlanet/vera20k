@@ -481,6 +481,7 @@ pub(crate) fn build_anim_class_instances(
 /// returns the weight the family gives the incoming sprite pixel. An art type
 /// the registry does not know draws opaque, matching the resolver's own
 /// no-keys result.
+#[cfg(test)]
 fn anim_instance_alpha(
     config: Option<&AnimTypeRuntimeConfig>,
     current_frame: i32,

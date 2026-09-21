@@ -105,6 +105,7 @@ impl Simulation {
     /// the recorded batch still uses [`Self::queue_commands`] and the canonical
     /// due filter, malformed future-stamped replay entries are discarded, and
     /// pre-existing simulation work remains untouched.
+    #[cfg(test)]
     pub(crate) fn take_due_replay_commands(
         &mut self,
         commands: impl IntoIterator<Item = CommandEnvelope>,
