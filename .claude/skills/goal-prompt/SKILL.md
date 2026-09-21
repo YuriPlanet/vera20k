@@ -17,7 +17,7 @@ Make these and the review cadence below explicit in every implementation goal;
 brevity must not erase them.
 
 Keep the prompt concise, usually a few connected paragraphs. Reference
-[ENGINE.md](../../../ENGINE.md) for shared rules. Preserve explicit scope, exclusions,
+[AGENTS.md](../../../AGENTS.md) for shared rules. Preserve explicit scope, exclusions,
 publication authority (including established user preferences), model/effort, time/token
 limits and invocations such as `/goal` or `/loop`; invent none. Save prompt files only
 when asked. Leave design, decomposition and tools open except for real constraints;
@@ -47,7 +47,7 @@ rejected findings with evidence, and have the owner validate fixes and affected
 conclusions. Do not run critics per implementation increment or repeat reviews after
 fixes or revisions unless the user explicitly asks. Keep delegation prompts short.
 Adjacent discoveries do not automatically expand implementation scope; follow
-ENGINE.md's prerequisite guidance.
+AGENTS.md's prerequisite guidance.
 
 For reverse-engineering goals, include evidence maintenance: after independent
 confirmation, correct relevant Ghidra labels/comments and source annotations, and
@@ -81,7 +81,7 @@ authorized work; ask only for missing authority or an undiscoverable user-only d
 Preserve the selected completion standard. Exhaustive parity leaves every unresolved,
 unverified, approximate, missing or residual in-scope mechanism open. Require a final
 whole-scope reverse audit by the owner for omissions, cross-mechanism gaps and
-regressions, plus applicable production and ENGINE.md validation. Ranked or refactoring
+regressions, plus applicable production and AGENTS.md validation. Ranked or refactoring
 goals may finish with explicitly allowed deferrals or evidence-backed no-change
 decisions. Never silently substitute that standard for exhaustive closure.
 

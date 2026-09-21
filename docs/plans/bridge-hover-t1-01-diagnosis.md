@@ -269,7 +269,7 @@ hashes cover `position.z` and `bridge_occupancy.deck_level`
 (`bridge_parity_harness_tests.rs:340-342`), so a Hover unit *would* move them if one were
 present. **Prediction, UNCHECKED until the suite runs.** If either moves, the change reached
 further than this analysis says — investigate rather than re-baseline, and follow the
-pending-re-baseline rule in ENGINE.md if the tree is not clean.
+pending-re-baseline rule in AGENTS.md if the tree is not clean.
 
 **Unchanged and still broken:** Drive movers cross cell boundaries through the
 `DriveTrackCellJump` arm with no terrain, bridge-traversal or cliff check at all

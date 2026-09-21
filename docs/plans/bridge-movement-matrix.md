@@ -289,7 +289,7 @@ correctness requires it.** Concretely:
 - New locomotor/kind/relation/order-source combinations are **not** added. If one turns out to be
   load-bearing, it replaces a row rather than extending the matrix, and the replacement is stated
   in the slice report.
-- Refactors, cleanups and style edits are out of scope inside a slice, per `ENGINE.md`.
+- Refactors, cleanups and style edits are out of scope inside a slice, per `AGENTS.md`.
 - The excluded set (§6) is closed. Re-deriving an exclusion is a symptom that the ledger was not
   adopted.
 

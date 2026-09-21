@@ -83,7 +83,7 @@ mod schema166_receipt {
     /// Committed final-hash baseline for the recorded bridge crossing.
     ///
     /// **This is a Rust-vs-prior-Rust regression ratchet, NOT gamemd parity
-    /// evidence.** ENGINE.md is explicit that replay fixtures and Rust-derived
+    /// evidence.** AGENTS.md is explicit that replay fixtures and Rust-derived
     /// hashes are regression ratchets; only machine-derived goldens (binary
     /// emulation, live capture, retail bytes) are parity references. What this
     /// constant proves is that the committed crossing — path, per-tick positions,

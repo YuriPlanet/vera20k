@@ -22,7 +22,7 @@ For each mechanism:
    deterministic continuation and snapshot compatibility where state changes. Preserve
    math widths/evaluation order, scheduler/RNG order and supported platform builds.
 6. Describe the concrete maintenance benefit. Run focused checks and, for the final
-   Rust candidate, the full library tests and library Clippy required by ENGINE.md.
+   Rust candidate, the full library tests and library Clippy required by AGENTS.md.
 7. Obtain fresh independent read-only criticism of requirements, original evidence,
    design, full diff and literal validation. Resolve confirmed findings and re-review
    until passed. Update documentation and independently confirmed Ghidra annotations
@@ -64,7 +64,7 @@ Implemented areas:
 - Shared Building/Tile animation conversion bounds are explicit match/save/replay
   inputs. The user selected this compatibility policy. Snapshot/hash schema 171
   records those bounds and HasEngineer. The fixed rational conversion deliberately
-  omits native intermediate float32 rounding, under ENGINE.md's numeric policy.
+  omits native intermediate float32 rounding, under AGENTS.md's numeric policy.
 - Existing formation speed caps continue to limit live type speed. Fly height
   feedback follows XY movement onto the destination terrain, allowing actual
   landing there while preserving exact Z and save/restore continuation.

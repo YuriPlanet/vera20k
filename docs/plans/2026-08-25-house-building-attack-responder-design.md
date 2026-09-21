@@ -103,7 +103,7 @@ Parser/snapshot tests pin four Rules values, ToProtect, map bytes including abse
 
 Integration tests enter normal `commit_damage_events` for Building and ToProtect victims, assert native call ordering even on nullified/fatal hits, and verify per-receiver RNG/state visibility. A production-style `Simulation` test runs deterministic skirmish mode from damage through mission commence, attacker loss, Rescue anchor search/move and AreaGuard continuation.
 
-Focused validation while working is `cargo test -p vera20k --lib <module/filter>`, after checking no other Cargo/rustc process owns the target directory. The phase-wide full `cargo test -p vera20k --lib` remains reserved for the end of the larger goal as required by `ENGINE.md`.
+Focused validation while working is `cargo test -p vera20k --lib <module/filter>`, after checking no other Cargo/rustc process owns the target directory. The phase-wide full `cargo test -p vera20k --lib` remains reserved for the end of the larger goal as required by `AGENTS.md`.
 
 ## Architectural Decisions
 

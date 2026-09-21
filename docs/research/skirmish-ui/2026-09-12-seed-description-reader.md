@@ -76,7 +76,7 @@ $env:VERA20K_GAMEMD_EXE = '<retail install>/gamemd.exe'
 python -m tools.storage_oracle.sed_description --check
 ```
 
-Before any Cargo command, follow the shared compiler preflight in `ENGINE.md`.
+Before any Cargo command, follow the shared compiler preflight in `AGENTS.md`.
 Focused checks are `cargo test -p vera20k --lib map::rmg::description::` and
 `cargo test -p vera20k --lib map::rmg::saved_seeds::`.
 

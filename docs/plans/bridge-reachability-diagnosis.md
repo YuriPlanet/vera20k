@@ -83,7 +83,7 @@ them today's ordinary crossing:
 
 **Did VERA invent a gate gamemd lacks?** Not the gate itself — gamemd has the corridor filter.
 VERA invented its **scope**: it applies the filter to a candidate class the binary explicitly
-exempts. Per `ENGINE.md`, that is an invented gate in `sim/` and the fix is to delete its
+exempts. Per `AGENTS.md`, that is an invented gate in `sim/` and the fix is to delete its
 over-reach, not to add a bridge special case beside it. VERA also invented the *refusal* semantics
 at `zone_search.rs:810` (gamemd downgrades, never refuses) — a second, separate divergence that is
 not what fires on Bay of Pigs (see §4, cause 1b).
@@ -240,7 +240,7 @@ fixture and none of them is what refuses the Bay of Pigs order.
   `src/sim/movement/mod.rs:234-238`, with no address and no verified owner. gamemd's per-step
   legality is `CheckBridgeTraversal 0x004D9C60` (virtual, slot 0x1B0, returns 0 = allowed /
   7 = blocked), which VERA already ports as `check_bridge_traversal` in the same expansion. Per
-  `ENGINE.md`, deleting the invented gate beats patching it — but that is a separate slice with its
+  `AGENTS.md`, deleting the invented gate beats patching it — but that is a separate slice with its
   own evidence, and patching it here is the smaller, safer move today.
 
 ---

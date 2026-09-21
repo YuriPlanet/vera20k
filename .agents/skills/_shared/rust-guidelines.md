@@ -3,7 +3,7 @@
 The rules agents get wrong, taken from Microsoft's *Pragmatic Rust Guidelines*
 (<https://microsoft.github.io/rust-guidelines/agents/all.txt>, 2026-09-15, MIT) and the
 [Rust API Guidelines checklist](https://rust-lang.github.io/api-guidelines/checklist.html).
-Ids link to the full text. `ENGINE.md` wins on conflict: gamemd-exact semantics,
+Ids link to the full text. `AGENTS.md` wins on conflict: gamemd-exact semantics,
 determinism and state authority outrank style.
 
 ## Porting

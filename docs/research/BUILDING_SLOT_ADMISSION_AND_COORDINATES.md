@@ -19,7 +19,7 @@ Building slot creation, damaged replacement, retained-slot reposition on Reveal,
 and both live/eager Tile construction use one converter. Signed X >= width or
 Y >= height returns a zero offset, matching Tactical6D2360. Negative offsets
 remain admitted. The matrix is the fixed rational value of native f32 4.2667,
-with truncation toward zero and explicit low32 wrapping. Per ENGINE.md, intermediate
+with truncation toward zero and explicit low32 wrapping. Per AGENTS.md, intermediate
 native float32 rounding is intentionally omitted; extreme offsets can differ by
 leptons but remain deterministic. Arbitrary native saved Tactical matrices are
 not imported or claimed compatible. No local resize writes this match input.

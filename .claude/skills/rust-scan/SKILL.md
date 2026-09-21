@@ -5,7 +5,7 @@ description: "Review VERA20k Rust for determinism, state/lifecycle, correctness,
 
 # Rust scan
 
-Apply `ENGINE.md` and [review guidance](../_shared/review.md). Read relevant
+Apply `AGENTS.md` and [review guidance](../_shared/review.md). Read relevant
 [general](references/general-review.md) and [simulation](references/sim-risks.md)
 lenses, including code outside `sim/` that feeds authoritative state.
 

@@ -284,7 +284,7 @@ writers preserve the valid `0|3` invariant.
   and the active low-bridge Tube path is a different mechanism, so no ordinary
   stock caller exists. The exact hook location is nevertheless specified below
   so later activation cannot generalize it. [doc: report §§2–3; GHIDRA
-  `0x00742BE3`; ENGINE.md TS exclusion]
+  `0x00742BE3`; AGENTS.md TS exclusion]
 - **EXACTIFICATION-RESIDUAL — unused native timer dword.** It is indeterminate,
   never read by this lifecycle, and need not be serialized, hashed, or seeded.
   Trigger frequency and player effect are zero. [doc: report §2]

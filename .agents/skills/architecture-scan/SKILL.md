@@ -5,7 +5,7 @@ description: "Review VERA20k ownership, dependencies, APIs, and code placement w
 
 # Architecture scan
 
-Apply `ENGINE.md` and [review guidance](../_shared/review.md). Inspect the requested
+Apply `AGENTS.md` and [review guidance](../_shared/review.md). Inspect the requested
 boundary and its consumers using the relevant [lenses](references/review-lenses.md).
 
 - No target: begin at `Cargo.toml`, `src/lib.rs`, `src/main.rs`, and module contracts.
@@ -18,7 +18,7 @@ Trace state owners, mutation paths, public seams, and callers, resolving relevan
 re-exports, macros, traits, and conditional compilation. Distinguish active
 migrations from settled architecture. File size, nesting, visibility, and
 implementation counts are clues, not defects. Use `cargo metadata --no-deps`
-only when manifest topology needs it; follow ENGINE's Cargo coordination.
+only when manifest topology needs it; follow the project contract's Cargo coordination.
 
 Report each finding's owner, consumers, source, consequence, trigger/frequency,
 and improvement direction with migration risks. State checkout/HEAD, inspected

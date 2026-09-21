@@ -23,7 +23,7 @@ rg -n '^sim::movement -> ' docs/module-map.md
 rg -n -- ' -> (.*; )?sim::movement(;|$)' docs/module-map.md
 ```
 
-Refresh in the relevant checkout with committed source/build inputs; follow [ENGINE.md](../ENGINE.md).
+Refresh in the relevant checkout with committed source/build inputs; follow [AGENTS.md](../AGENTS.md).
 
 ```powershell
 python tools/module_map.py

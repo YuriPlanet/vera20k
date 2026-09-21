@@ -34,7 +34,7 @@ Reuse working behavior rather than refactoring merely to visit every entry.
 Movement, presentation, AI and save are interleaved; any required integration
 belongs to the selected goal regardless of where its other entry appears.
 
-[ENGINE.md](../../ENGINE.md) governs evidence, architecture, scale, validation and
+[AGENTS.md](../../AGENTS.md) governs evidence, architecture, scale, validation and
 delivery. Rendering, audio, input, persistence, determinism and cleanup remain
 obligations of every affected loop. This document grants no implementation,
 publication or scheduling authority. The source observations remain dated to
@@ -1347,7 +1347,7 @@ Use current branch/HEAD and reproduction when available; an unknown discrepancy
 can be investigated inside the goal without inventing a finding. This brief is
 the prompt itself, not an additional mandatory planning artifact.
 
-> Follow ENGINE.md. Deliver **[outcome]** because **[problem or capability]**.
+> Follow AGENTS.md. Deliver **[outcome]** because **[problem or capability]**.
 > The scope is **[full object/family, named loop, or bounded fix]**, including
 > **[variants and necessary interactions]**. Start from **[relevant evidence and
 > known current context]**, verifying assumptions against current source.
@@ -1578,7 +1578,7 @@ ignoring an explicit stop/budget limit.
 
 ### Filled example: one loop, two unit variants
 
-> Follow ENGINE.md. Complete GI and Guardian GI sustained deployed combat like
+> Follow AGENTS.md. Complete GI and Guardian GI sustained deployed combat like
 > retail (U3), preserving existing playable behavior. Scope includes both units'
 > normal deploy input, stance/animation and movement gates, actual deployed
 > targeting/firing, undeploy/replacement orders and relevant damage/death cleanup.

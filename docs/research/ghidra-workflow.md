@@ -1,6 +1,6 @@
 # Ghidra working notes
 
-[ENGINE.md](../../ENGINE.md) defines evidence and delivery. These notes cover tool
+[AGENTS.md](../../AGENTS.md) defines evidence and delivery. These notes cover tool
 behavior and recurring interpretation errors; choose the investigation method yourself.
 
 ## Connect to the intended program

@@ -54,7 +54,6 @@ tools/research_index/.cache/
 /*.md
 !/README.md
 !/CLAUDE.md
-!/ENGINE.md
 !/AGENTS.md
 
 /*.js

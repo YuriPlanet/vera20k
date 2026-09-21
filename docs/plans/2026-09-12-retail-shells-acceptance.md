@@ -4,7 +4,7 @@ The requested scope is **all player-facing VERA20k shells**, starting with
 Skirmish. The July [stock-skirmish design](2026-07-25-exact-stock-skirmish-shell-ui-design.md)
 and `tools/exact_shell_ui_matrix` cover only a subset. They cannot certify this
 whole task. Correct existing behavior is retained; missing or unproven required
-behavior remains open. The 20,000-unit / 30-player scale exception in ENGINE.md
+behavior remains open. The 20,000-unit / 30-player scale exception in AGENTS.md
 remains explicit; retail-size comparisons do not certify the extended roster.
 
 Prioritize ordinary player journeys and frequently visible differences. The user's

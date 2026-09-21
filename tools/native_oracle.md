@@ -33,7 +33,7 @@ is accepted, including under optimized Python. No executable is distributed here
 Both halves matter: the Python command checks current native output against the
 reference; the Rust test checks production conversion against that reference.
 Python success alone does not show Rust parity. Normal Rust tests use committed
-outputs and do not require Unicorn or an executable. Follow `ENGINE.md` before Cargo.
+outputs and do not require Unicorn or an executable. Follow `AGENTS.md` before Cargo.
 
 These generators now default to **read-only checks**, also spelled `--check`:
 

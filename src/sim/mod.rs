@@ -6,7 +6,7 @@
 //! preserving each mechanism's operations, widths and RNG order.
 //!
 //! RuleSet supplies authored rules/art data. Native hardcoded rules and
-//! constants carry evidence near their implementation; see ENGINE.md.
+//! constants carry evidence near their implementation; see AGENTS.md.
 //!
 //! ## Key types
 //! - `world::Simulation` owns mutable gameplay state and object lifecycle.

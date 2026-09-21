@@ -7,7 +7,7 @@ Status: ready to run; not launched.
 
 V1 is the bounded capture contract plus offline CLI. It is not gamemd parity, save/replay compatibility, stable semantic hashing, a profiler, full-world exporter, graph UI, live server/IPC, remote control, or MCP integration; those require later goals.
 
-Read and obey AGENTS.md and ENGINE.md. Reconcile Git, ownership, worktrees, processes, and current origin/main; preserve other tasks. Repeat reconciliation before every slice touching shared runtime, render, diagnostics, schema, or Cargo files, deferring overlaps owned elsewhere.
+Read and obey AGENTS.md. Reconcile Git, ownership, worktrees, processes, and current origin/main; preserve other tasks. Repeat reconciliation before every slice touching shared runtime, render, diagnostics, schema, or Cargo files, deferring overlaps owned elsewhere.
 
 First run the architecture-aware brainstorm process. Trace `SimRuntime`/`SimView`, the committed-frame seam in `app::match_runtime::sim_tick`, selection reconciliation, diagnostics/replay history, unit-inspector/debug events, render submission/readback, tactical-capture publication, and CLI conventions. Treat placements as hypotheses.
 
