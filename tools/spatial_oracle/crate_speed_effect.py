@@ -74,6 +74,11 @@ def fixture(case):
 def execute(case):
     u, sp, pointers, indexes = fixture(case)
     visits, distances, kinds = [], [], []
+    # Preserve exact binary64 fixture inputs for consumers whose JSON decoder
+    # does not round-trip the immediate neighbors of1.0.
+    initial_factors = [None if p == 0 else f'{struct.unpack("<Q", u.mem_read(p + 0x580, 8))[0]:016x}'
+                       for p in pointers]
+    multiplier_bits = f'{struct.unpack("<Q", u.mem_read(sp + 0x20, 8))[0]:016x}'
 
     def observe(_u, address, _size, _data):
         eax = u.reg_read(UC_X86_REG_EAX)
@@ -105,7 +110,8 @@ def execute(case):
         assert u.reg_read(UC_X86_REG_ESP) == sp + 4
         assert bytes(u.mem_read(pointer, 0x800)) == initial
         speeds.append(struct.unpack('<i', struct.pack('<I', u.reg_read(UC_X86_REG_EAX)))[0])
-    return dict(input=case, visits=visits, distances=distances, object_kinds=kinds,
+    return dict(input=case, initial_factors=initial_factors, multiplier_bits=multiplier_bits,
+                visits=visits, distances=distances, object_kinds=kinds,
                 factors=[None if p == 0 else f'{struct.unpack("<Q", u.mem_read(p + 0x580, 8))[0]:016x}'
                          for p in pointers],
                 foot_speeds=speeds, announce=announce)

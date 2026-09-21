@@ -1,0 +1,910 @@
+[
+  {
+    "after_steps": [
+      {
+        "layers": [
+          [],
+          [],
+          [
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          -1,
+          -1
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            1,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          -1
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            1,
+            2,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2
+        ]
+      }
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            256,
+            0,
+            0
+          ],
+          "kind": "unit"
+        },
+        {
+          "kind": "infantry"
+        },
+        {
+          "kind": "unit"
+        }
+      ],
+      "name": "sorted_insert_stable_ties",
+      "steps": [
+        {
+          "actor": 0,
+          "op": "submit"
+        },
+        {
+          "actor": 1,
+          "op": "submit"
+        },
+        {
+          "actor": 2,
+          "op": "submit"
+        }
+      ]
+    }
+  },
+  {
+    "after_steps": [
+      {
+        "layers": [
+          [],
+          [],
+          [
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          -1,
+          -1
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            1,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          -1
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            1,
+            2,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            2,
+            1,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2
+        ]
+      }
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            256,
+            0,
+            0
+          ],
+          "kind": "unit"
+        },
+        {
+          "kind": "infantry"
+        },
+        {
+          "kind": "unit"
+        }
+      ],
+      "name": "resubmit_removes_old_and_reinserts_after_ties",
+      "steps": [
+        {
+          "actor": 0,
+          "op": "submit"
+        },
+        {
+          "actor": 1,
+          "op": "submit"
+        },
+        {
+          "actor": 2,
+          "op": "submit"
+        },
+        {
+          "actor": 1,
+          "op": "submit"
+        }
+      ]
+    }
+  },
+  {
+    "after_steps": [
+      {
+        "layers": [
+          [],
+          [],
+          [
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          -1,
+          -1
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            1,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          -1
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            1,
+            2,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            2,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          -1,
+          2
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            2,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          -1,
+          2
+        ]
+      }
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            256,
+            0,
+            0
+          ],
+          "kind": "unit"
+        },
+        {
+          "kind": "infantry"
+        },
+        {
+          "kind": "unit"
+        }
+      ],
+      "name": "remove_compacts_and_clears_registration",
+      "steps": [
+        {
+          "actor": 0,
+          "op": "submit"
+        },
+        {
+          "actor": 1,
+          "op": "submit"
+        },
+        {
+          "actor": 2,
+          "op": "submit"
+        },
+        {
+          "actor": 1,
+          "op": "remove"
+        },
+        {
+          "actor": 1,
+          "op": "remove"
+        }
+      ]
+    }
+  },
+  {
+    "after_steps": [
+      {
+        "layers": [
+          [],
+          [],
+          [
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          -1,
+          -1
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            1,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          -1
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            1,
+            2,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            1,
+            2,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          4,
+          2
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            2,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          -1,
+          2
+        ]
+      }
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            256,
+            0,
+            0
+          ],
+          "kind": "unit"
+        },
+        {
+          "kind": "infantry"
+        },
+        {
+          "kind": "unit"
+        }
+      ],
+      "name": "wrong_cached_layer_falls_back_to_ground",
+      "steps": [
+        {
+          "actor": 0,
+          "op": "submit"
+        },
+        {
+          "actor": 1,
+          "op": "submit"
+        },
+        {
+          "actor": 2,
+          "op": "submit"
+        },
+        {
+          "actor": 1,
+          "layer": 4,
+          "op": "cached_layer"
+        },
+        {
+          "actor": 1,
+          "op": "remove"
+        }
+      ]
+    }
+  },
+  {
+    "after_steps": [
+      {
+        "layers": [
+          [],
+          [],
+          [
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          -1,
+          -1
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            1,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          -1
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            1,
+            2,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            1,
+            2,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            1,
+            2,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2
+        ]
+      }
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            256,
+            0,
+            0
+          ],
+          "kind": "unit"
+        },
+        {
+          "kind": "infantry"
+        },
+        {
+          "kind": "unit"
+        }
+      ],
+      "name": "null_submit_and_remove",
+      "steps": [
+        {
+          "actor": 0,
+          "op": "submit"
+        },
+        {
+          "actor": 1,
+          "op": "submit"
+        },
+        {
+          "actor": 2,
+          "op": "submit"
+        },
+        {
+          "op": "submit"
+        },
+        {
+          "op": "remove"
+        }
+      ]
+    }
+  },
+  {
+    "after_steps": [
+      {
+        "layers": [
+          [],
+          [],
+          [
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          -1,
+          -1,
+          -1
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            0,
+            1
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          -1,
+          -1
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            0,
+            1,
+            2
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2,
+          -1
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            0,
+            1,
+            2,
+            3
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2,
+          2
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            0,
+            1,
+            2,
+            3
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2,
+          2
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            0,
+            1,
+            2,
+            3
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2,
+          2
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            0,
+            1,
+            2,
+            3
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2,
+          2
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            0,
+            1,
+            2,
+            3
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2,
+          2
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            1,
+            2,
+            3,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2,
+          2
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            2,
+            3,
+            1,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2,
+          2
+        ]
+      },
+      {
+        "layers": [
+          [],
+          [],
+          [
+            3,
+            2,
+            1,
+            0
+          ],
+          [],
+          []
+        ],
+        "registered": [
+          2,
+          2,
+          2,
+          2
+        ]
+      }
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            0,
+            0,
+            0
+          ],
+          "kind": "unit"
+        },
+        {
+          "delta": [
+            100,
+            0,
+            0
+          ],
+          "kind": "unit"
+        },
+        {
+          "delta": [
+            200,
+            0,
+            0
+          ],
+          "kind": "unit"
+        },
+        {
+          "delta": [
+            300,
+            0,
+            0
+          ],
+          "kind": "unit"
+        }
+      ],
+      "name": "one_adjacent_sort_pass_per_call",
+      "steps": [
+        {
+          "actor": 0,
+          "op": "submit"
+        },
+        {
+          "actor": 1,
+          "op": "submit"
+        },
+        {
+          "actor": 2,
+          "op": "submit"
+        },
+        {
+          "actor": 3,
+          "op": "submit"
+        },
+        {
+          "actor": 0,
+          "op": "coordinates",
+          "xyz": [
+            2988,
+            2688,
+            0
+          ]
+        },
+        {
+          "actor": 1,
+          "op": "coordinates",
+          "xyz": [
+            2888,
+            2688,
+            0
+          ]
+        },
+        {
+          "actor": 2,
+          "op": "coordinates",
+          "xyz": [
+            2788,
+            2688,
+            0
+          ]
+        },
+        {
+          "actor": 3,
+          "op": "coordinates",
+          "xyz": [
+            2688,
+            2688,
+            0
+          ]
+        },
+        {
+          "op": "sort"
+        },
+        {
+          "op": "sort"
+        },
+        {
+          "op": "sort"
+        }
+      ]
+    }
+  }
+]

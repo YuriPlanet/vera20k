@@ -1729,7 +1729,11 @@ impl Simulation {
                 0u8.hash(hasher);
             }
             hash_retained_track_classes(entity, schema, hasher);
-            entity.foot_speed.hash(hasher);
+            entity.foot_speed.applied_fraction.hash(hasher);
+            entity.foot_speed.cached_current_speed.hash(hasher);
+            if schema.includes(HashFeature::FootCrateSpeed) {
+                entity.foot_speed.crate_multiplier().hash(hasher);
+            }
             entity.foot_occupation_enabled.hash(hasher);
             entity.foot_locomotor_swap_active.hash(hasher);
 

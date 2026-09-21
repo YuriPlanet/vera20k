@@ -24,6 +24,7 @@
 
 mod pickup;
 mod runtime;
+mod speed;
 mod state;
 
 pub(crate) use runtime::tick_crate_regeneration;

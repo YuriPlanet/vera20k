@@ -200,7 +200,10 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 398787009
 // id. It is not a general reconstruction; a scenario finalized by the map
 // loader held Some(first TIB* id). The projection must still equal the previous
 // current pin, asserted below. Rust hash-composition ratchet, not a native golden.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 6311521725375046682;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 6311521725375046682;
+// v181 folds Foot+580, including default1.0. The pre-181 assertion below
+// reproduces the previous whole fixture hash; path and RNG pins are unchanged.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 6927658555461959538;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
@@ -781,6 +784,11 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(174)),
         BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174,
         "the pre-174 composition must reproduce the previous current pin"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(181)),
+        BRIDGE_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181,
+        "excluding only Foot+580 must preserve the pre-181 fixture"
     );
     assert_eq!(
         final_hash, BRIDGE_HARNESS_FINAL_HASH,

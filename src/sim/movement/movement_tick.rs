@@ -620,11 +620,10 @@ fn process_pending_drive_arrivals(
         // on the truncated per-frame type speed, before the locomotor's own
         // fraction — see `veterancy::veteran_speed_leptons_per_second`.
         let veteran_speed = rules.map_or(1.0, |r| r.general.veteran_speed);
-        let speed = (crate::sim::combat::veterancy::mover_speed_leptons_per_second(
-            obj.map_or(4, |o| o.speed),
-            Some(loco_kind),
-            crate::sim::combat::veterancy::rank_of(entity.veterancy_raw),
+        let speed = (crate::sim::combat::veterancy::entity_mover_speed_leptons_per_second(
+            entity,
             obj,
+            obj.map_or(4, |o| o.speed),
             veteran_speed,
         ) * speed_multiplier)
             .max(SimFixed::lit("25"));
@@ -1272,9 +1271,26 @@ fn advance_ordinary_mover(
             // `Move` before this loop clears the target on arrival.
             active_layer = entity.movement_layer_or_ground();
             let active_retained_track = super::track_head::active_track_family(entity).is_some();
+            // Hover514372/5144A3 asks the live Foot getter each visit. Its
+            // retained throttle must not retain an order-time crate factor.
+            let live_hover_speed = entity
+                .locomotor
+                .as_ref()
+                .filter(|loco| loco.kind == LocomotorKind::Hover)
+                .and_then(|_| rules.and_then(|r| r.object(interner.resolve(entity.type_ref()))))
+                .map(|object| {
+                    super::foot_speed::adjusted_speed(
+                        entity,
+                        Some(object),
+                        rules.map_or(1.0, |r| r.general.veteran_speed),
+                    )
+                });
             let Some(ref mut target) = entity.movement_target else {
                 return;
             };
+            if let Some(speed) = live_hover_speed {
+                target.speed = speed;
+            }
 
             let committed_walk = entity.locomotor.as_ref().is_some_and(|l| {
                 l.kind == crate::rules::locomotor_type::LocomotorKind::Walk

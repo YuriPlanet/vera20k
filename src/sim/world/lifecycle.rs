@@ -2167,7 +2167,8 @@ impl Simulation {
         #[cfg(test)]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealClearDrawnStateBoundary);
 
-        // ObjectConceal5F4E98 invokes Techno6F4A40 here, before +8E Limbo.
+        // ObjectConceal5F4E98 invokes Techno6F4A40 here, before +81 Limbo
+        // is set at5F4E9E (the same byte tested by the5F4D45 entry guard).
         // Human ownership preserves +41B; +41A/+41C are never cleared here.
         let owner_controlled_by_human = self
             .substrate

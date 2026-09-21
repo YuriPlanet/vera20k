@@ -1,6 +1,6 @@
 //! ProcessMovement publishes the class target; TrackProcess consumes it.
 //! This fixed-point scaffold still lacks native double precision, raw ramp
-//! speed/full-XYZ distance, and the Foot getter's house/crate/CTF inputs.
+//! speed/full-XYZ distance, and the Foot getter's house/CTF inputs.
 //! Exact numeric helpers remain in track_speed_native pending owner migration.
 
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -226,6 +226,36 @@ mod tests {
                     .target_speed_fraction
             }
             _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn retained_track_reads_new_crate_factor_without_a_new_move_order() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=MTNK\n[MTNK]\nSpeed=4\nStrength=100\n",
+        ))
+        .unwrap();
+        let object = rules.object("MTNK").unwrap();
+        for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
+            let mut mover = entity(kind, 0, SIM_ONE);
+            mover.drive_accelerates = false;
+            mover.movement_target = Some(crate::sim::components::MovementTarget {
+                speed: SimFixed::from_num(150),
+                ..Default::default()
+            });
+            assert_eq!(advance(&mut mover, Some(object), Some(&rules), None), 10);
+            assert!(mover.foot_speed.accept_speed_crate(
+                crate::util::native_x87::NativeF64Bits::from_bits(1.2_f64.to_bits())
+            ));
+            assert_eq!(advance(&mut mover, Some(object), Some(&rules), None), 11);
+            assert_eq!(
+                mover.movement_target.as_ref().unwrap().speed,
+                SimFixed::from_num(150)
+            );
+            assert_eq!(
+                mover.movement_target.as_ref().unwrap().current_speed,
+                SimFixed::from_num(165)
+            );
         }
     }
 

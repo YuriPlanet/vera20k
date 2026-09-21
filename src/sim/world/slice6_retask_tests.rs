@@ -440,7 +440,10 @@ const SLICE6_BASELINE_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 0x8C50_893A_CF
 // E1 with ec27dc26's final state reproduces old current90DA2A8E0C06D5E3 and
 // pre174221E77F911A4FB24 exactly; tanks and RNG match on all16 frames. See
 // docs/research/COMBAT_WALK_REPLAY_ATTRIBUTION.md. Rust pins, not native goldens.
-const SLICE6_BASELINE_HASH: u64 = 0x3D7F_B762_F752_444A;
+const SLICE6_BASELINE_HASH_PRE_CRATE_SPEED_V181: u64 = 0x3D7F_B762_F752_444A;
+// v181 folds Foot+580, including default1.0. The pre-181 assertion below
+// proves this fixture's shift comes only from the added hash field.
+const SLICE6_BASELINE_HASH: u64 = 0x720D_C262_694D_3821;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -684,6 +687,11 @@ fn replay_hash_stable_through_slice6() {
         sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(174)),
         SLICE6_BASELINE_HASH_PRE_RETIRED_TIBERIUM_STATE_V174,
         "pre-174 projection drifted from the documented paid Walk behavior"
+    );
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(181)),
+        SLICE6_BASELINE_HASH_PRE_CRATE_SPEED_V181,
+        "excluding only Foot+580 must preserve the pre-181 fixture"
     );
     assert_eq!(
         hash, SLICE6_BASELINE_HASH,

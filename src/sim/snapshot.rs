@@ -536,7 +536,9 @@ use crate::sim::world::Simulation;
 // state field, and `AirMovePhase::Hovering`, which only that mirror produced, is
 // gone, so the enum's encoding and a flying Jumpjet's stored value both differ
 // from what a 179 save holds.
-const SNAPSHOT_VERSION: u32 = 180;
+// 180 -> 181: Foot+580 crate speed multiplier is retained with the Foot owner,
+// including across locomotor replacement. It is serialized and hashed.
+const SNAPSHOT_VERSION: u32 = 181;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3430,7 +3432,8 @@ mod tests {
         // 170 -> 171: shared animation bounds and retained HasEngineer.
         // 173 -> 174: ProductionState drops the resource node map.
         // 174 -> 175: bridge collapse explosions join the AnimStore.
-        assert_eq!(super::SNAPSHOT_VERSION, 180);
+        // 180 -> 181: Foot+580 crate multiplier survives save/restore.
+        assert_eq!(super::SNAPSHOT_VERSION, 181);
     }
 
     #[test]

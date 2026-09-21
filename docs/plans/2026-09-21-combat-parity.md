@@ -229,92 +229,88 @@ probe; it is not a second implementation to publish.
 
 ## Current dependency: live Foot speed inputs and crate pickup
 
-Current task-owned branch: `feature/combat-foot-speed`, created from fetched
-`origin/main` at `a37e8118`. Walk work is integrated. Pickup selection/removal
-prerequisites are committed at `8c8e0f8e`; no PR or critic pass has been requested
-for this unfinished mechanism. The primary checkout remains untouched.
+Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`,
+branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
+Selection/removal prerequisites are committed at `8c8e0f8e`; live speed work
+follows `78375397`. No PR or critic pass yet: production pickup is unfinished.
+The primary checkout and `.local/` data remain untouched by publication.
 
-Native4DB1A0 applies type speed, House50C050's category factor and Foot+580,
-truncates, applies FASTER/VeteranSpeed with another truncation, then applies
-Foot+578 and truncates before the Unit+6CC conditional halving. Production
-`foot_speed` lacks the house/crate/flag inputs; `CountryRules` does not parse the
-speed multipliers, and `crates` explicitly leaves pickup effects unported.
+Acceptance remains movement pickup through native selection, eligibility,
+trigger, removal/replacement, selected effect and subsequent movement/combat,
+with matching RNG, returns and save/restore. Helper comparisons alone do not
+complete pickup. The whole-combat goal also remains open.
 
-Walk's accepted-head selection calls481A00 at75C56C, passing the Foot owner and
-the Cell returned by Map565730. This proves a production pickup route; the prior
-Ghidra name `CrateClass__PickupDispatch` assigned the wrong receiver class.
-Renamed to `CellClass__PickupCrate`, with the receiver/caller evidence saved and
-read back. Entry reads Cell+44 overlay and+11E selection. Its speed continuation
-48302E..48306C checks a strict distance, a currently-one+580 multiplier and object
-kind before storing the multiplied factor. The continuation lies beyond Ghidra's
-current function boundary; that boundary was not changed.
+`FootSpeedState` now owns the private binary64 +580 crate factor, initialized
+exactly1.0 (constructor4D3292/4D329B). The speed effect writes this owner; the
+shared entity speed resolver consumes it before FASTER, preserving separate
+native truncations. Existing movement readers use that resolver; retained Hover
+and Unit tube exit no longer retain an order-time factor. Drive/Ship and paid
+Walk regressions cover live changes without another move order, and the Walk
+attack case survives production save/restore. These tests apply the factor
+through its owner, not by walking through a crate. Snapshot181 persists it;
+hash projections excluding only this field distinguish schema from behavior.
+House/category speed factors and Unit flag-carrier halving remain unported.
+The existing SimFixed speed interface also limits large non-retail multipliers;
+stock1.2 comparisons do not prove arbitrary numeric-range closure.
 
-Before implementation, establish pickup selection, eligibility, effect iteration,
-RNG, removal and return behavior from original instructions, with executable
-witnesses. Acceptance requires production movement to reach the same pickup
-effects and subsequent Foot speed, including affected consumers and save/restore.
-Use the existing country, crate, Foot and lifecycle owners; adding a supplied
-factor to an isolated speed helper does not complete this dependency. Trace the
-Unit+6CC active-scenario reachability before adding a producer to normal play.
+Native comparisons: `crate_speed_effect` has23 original recipient loops and
+subsequent Foot queries; `crate_pickup` has28 entry-to-return/dispatch cases;
+`track_speed_native` has75 full getters and116 Drive/Ship prefixes. The six new
+stock getter cases prove VeteranSpeed1.2 maps native10/15/17 to11/17/20, or
+13/20/23 after crate1.2. The former Rust Rhino expectation18 was wrong.
+Every older corpus output was preserved. Exact pre-effect factor/multiplier
+bits now accompany the speed corpus: approximate JSON f64 decoding otherwise
+rounded the lower neighbor of1.0 up to1.0 and invalidated the refusal fixture.
+All three native `--check` commands pass. Final library validation passes:
+9,099 passed, zero failed,134 ignored. Library Clippy exits successfully with
+1,032 warnings, including the intentionally uncalled pickup effect. Logs:
+`.local/crate-speed-live-tests-final.log` and `crate-speed-live-clippy.log`.
+Global, bridge and retask fixtures reproduce their prior whole-state hashes
+when only the new+580 field is excluded; the corresponding current pins change
+only for its added fold. Existing path, RNG and record/replay assertions pass.
 
-Native evidence checkpoint: `crate_speed_effect --check` passes 23 original
-recipient loops followed by original Foot4DB1A0 queries on the resulting state.
-The fixture supplies selection/frame/vector state; it replaces no gameplay call.
-Infantry/Unit/Aircraft actual vtables return15/1/2, establishing that the kind2
-gate excludes aircraft. Distinct-house recipients both receive the factor; the
-loop has no house-equality filter. Existing factors, even the binary64 neighbors
-of1.0, refuse stacking. The native distance approximation truncates a767-lepton
-axial offset to766; radius768 still refuses distance768. Flat/elevated/slope,
-null-vector and control-byte contrasts are preserved. The applied stock1.2 factor
-then makes raw speed10 return11, not12, in original Foot speed math. The483054
-annotation is saved/read back. None of these cases executes weighted selection,
-removal or the UI suffix; pickup production code remains to be implemented.
+The speed effect scans **Ground display membership**, buffer8A0394/count8A03A0,
+not LogicVector. DisplaySubmit4A9720 removes Object+94's prior registration,
+queries virtual+78, then submits to base8A0360 + layer*24. Ground2 uses sorted
+insertion551A90; other layers append. MainTick55DBC3/55DBC8 runs one adjacent
+Y-sort pass551A30, not a full sort. ObjectUnlimbo5F4FE2 submits display before
+its separate Logic eligibility gate; ObjectConceal removes display before Logic.
+Fly, Jumpjet, falling and attached animations also have explicit resubmissions.
+Current Rust lifecycle exposes display receipts, but app consumes no persistent
+layer membership and `tactical_registration_order()` returns Logic order.
+`crates::speed` therefore still takes a supplied ground vector. Its writes
+commute and do not mutate membership; that does not justify inventing membership.
+Use ObjectSubstrate/lifecycle ownership for the required registration state.
+`crate_ground_membership --check` now preserves six original Submit/Remove/sort
+sequences using real Unit/Infantry tables and constructed Drive/Walk. Equal-key
+reinsertion moves behind peers; removal compacts; a wrong cached layer invokes
+the fallback scan. Reversed four-member order becomes `[1,2,3,0]` after one pass,
+then `[2,3,1,0]`, then `[3,2,1,0]`. Full Unlimbo/Conceal, airborne transitions and
+non-Foot Y-sort keys are excluded and remain required owner integration work.
 
-`crate_pickup --check` now preserves 28 original entry-to-return/dispatch cases.
-Four guards stop before selection; 24 cases expose the prepared outcome, full
-Scenario RNG before/after, removal return, overlay fields and both first slots.
-Only screen rectangle/dirty sinks are supplied; gameplay callees execute original
-bytes. Free-MCV preemption, attached triggers, regeneration and non-speed effects
-remain outside this corpus. The unchanged speed-effect corpus still passes.
+Next: complete that membership dependency and the pickup host. Selection already
+ports stored/weighted choices and ordered solo image overrides; removal already
+ports first matching multiplayer slot versus solo Crate-flag overlays. Both
+remain uncalled from movement. The remaining host must preserve passive guards,
+synchronous Tag49/Scenario+34BE trigger, free-MCV preemption, multiplayer eligibility,
+water fallback, removal and replacement-before-effect order, and return behavior.
+Reuse `combat_weapon::is_armed` for original701120's Firepower predicate.
+`HouseState::owned_unit_count` includes all non-buildings and cannot stand in for
+native separate Unit+2E8/Infantry+2F4 counts; per-type counts also retain a known
+limbo-window mismatch. Trace those producers before using them. Other selected
+powerup arms and movement pickup callers still require production implementation.
 
-`crates::pickup::select_pickup_outcome` ports stored/weighted selection and solo
-overrides using existing rule/RNG owners. Silver, Wood and Water image matches
-run independently in that order: aliased images allow later mappings to win.
-Only stored selection zero installs SoloCrateMoney and those overrides. The
-multiplayer eligibility fallbacks still follow, so e.g. a drawn Firepower may
-become Money without refunding RNG. A one-weight table consumes no draw.
+Unit+6CC is a carried CTF flag index: constructor7353F2 initializes-1,
+740DF0 attaches and740E20 detaches, Limbo/destruction return it, and render73D395
+indexes Houses. House4FC060's observed creation caller688C02 is gated by
+Scenario[0]&0x10. Retail CaptureTheFlag=no/DESUPPORTED alone does not prove
+all-scenario unreachability; follow the scenario flag producer before declaring
+this getter arm irrelevant. CountryRules still lacks HouseType speed factors.
 
-`crates::runtime::remove_pickup_crate` ports Map56C020. Multiplayer clears the
-first occupied matching slot using the existing clear/timer owner; no matching
-slot leaves a visible crate intact. Solo accepts any Crate-flagged overlay,
-without the diamond precheck, and does not touch slots. The existing regeneration
-path retains its Rules-image identity gate; both paths share only final field
-erasure and its presentation receipt. Rust corpus tests compare 24 removal
-transitions and 24 prepared selections/full RNG states. These owners are not yet
-called from movement: do not describe this as production pickup parity or merge
-it as a finished pickup mechanism. The final expanded crate suite passes:
-63 passed, zero failed. Log: `.local/crate-pickup-tests.log`. Both native corpus
-checks, Python compilation/help and `git diff --check` pass. No Cargo operation
-remains pending. Full-library/Clippy and one fresh critic remain pre-PR work once
-the production mechanism is integrated.
-
-Native identities/comments corrected in source and saved/read back in Ghidra:
-Cell receiver at481A00 (not CrateClass), removal56C020, solo ordering481B58,
-and Foot speed's final truncation4DB213 (third when FASTER runs, second otherwise).
-Unit+6CC identity now has writer/lifecycle evidence: constructor7353F2 seeds-1;
-740DF0 attaches the flag index and re-Marks;740E20 detaches;7440BD and735884
-return/clear it on Limbo/destruction. Render73D395 indexes Houses with it.
-The sole observed House4FC060 creation caller688C02 is gated by Scenario[0]&0x10
-at688BF8. Retail `[MultiplayerDefaults] CaptureTheFlag=no` is explicitly marked
-DESUPPORTED, but this does not prove all-scenario unreachability. The4DB226 note
-preserves that distinction; normal-play flag creation is not implemented.
-
-Next safe action: finish the pickup eligibility/effect host, including free-MCV
-selection, the synchronous trigger, replacement-before-effect order and return
-behavior; integrate movement callers and live Foot inputs/save-restore. Reuse
-`combat_weapon::is_armed` for the Firepower vt+2AC predicate (original701120),
-not a new primary-weapon check. `HouseState::owned_unit_count` counts all
-non-buildings, so do not substitute it for native House+2E8 Unit/House+2F4 Infantry counts
-without tracing their lifecycle. EntityStore's per-type count also documents a
-limbo-window difference. Preserve effect vector order and exact predicates.
-The full speed dependency and whole-combat goal remain open.
+Ghidra annotations saved/read back: corrected Cell481A00 receiver, removal56C020,
+solo override481B58, getter4DB213/4DB226, crate constructor4D329B, Ground registration
+4A9752/482F6E, and FASTER4DB200. Source's stale Conceal InLimbo offset was corrected
+to+81 from original5F4D45/5F4E9E. No binary patches or structural analysis repair.
+Preserve this validated progress, but do not merge it as completed pickup.
+Full library/Clippy and the one fresh pre-PR critic apply when
+the production mechanism is coherent. Broader combat residuals above remain required.

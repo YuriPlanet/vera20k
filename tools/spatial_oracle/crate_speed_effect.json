@@ -4,10 +4,12 @@
     "distances": [],
     "factors": [],
     "foot_speeds": [],
+    "initial_factors": [],
     "input": {
       "actors": [],
       "name": "empty"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [],
     "visits": []
   },
@@ -22,6 +24,9 @@
     "foot_speeds": [
       11
     ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -34,6 +39,7 @@
       ],
       "name": "center"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [
       15
     ],
@@ -51,6 +57,9 @@
     ],
     "foot_speeds": [
       11
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
     ],
     "input": {
       "actors": [
@@ -64,6 +73,7 @@
       ],
       "name": "inside"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [
       15
     ],
@@ -82,6 +92,9 @@
     "foot_speeds": [
       10
     ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -94,6 +107,7 @@
       ],
       "name": "at_radius"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [],
     "visits": [
       0
@@ -110,6 +124,9 @@
     "foot_speeds": [
       10
     ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -122,6 +139,7 @@
       ],
       "name": "outside"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [],
     "visits": [
       0
@@ -138,6 +156,9 @@
     "foot_speeds": [
       11
     ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -150,6 +171,7 @@
       ],
       "name": "diagonal_inside"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [
       15
     ],
@@ -168,6 +190,9 @@
     "foot_speeds": [
       10
     ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -180,6 +205,7 @@
       ],
       "name": "diagonal_outside"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [],
     "visits": [
       0
@@ -196,6 +222,9 @@
     "foot_speeds": [
       11
     ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -208,6 +237,7 @@
       ],
       "name": "vertical_inside"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [
       15
     ],
@@ -226,6 +256,9 @@
     "foot_speeds": [
       10
     ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -238,6 +271,7 @@
       ],
       "name": "vertical_at_radius"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [],
     "visits": [
       0
@@ -254,6 +288,9 @@
     "foot_speeds": [
       11
     ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -262,6 +299,7 @@
       ],
       "name": "infantry"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [
       15
     ],
@@ -280,6 +318,9 @@
     "foot_speeds": [
       11
     ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -288,6 +329,7 @@
       ],
       "name": "unit"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [
       1
     ],
@@ -306,6 +348,9 @@
     "foot_speeds": [
       10
     ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -314,6 +359,7 @@
       ],
       "name": "aircraft"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [
       2
     ],
@@ -332,6 +378,9 @@
     "foot_speeds": [
       0
     ],
+    "initial_factors": [
+      "0000000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -340,6 +389,7 @@
       ],
       "name": "existing_0.0"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [],
     "visits": [
       0
@@ -356,6 +406,9 @@
     "foot_speeds": [
       11
     ],
+    "initial_factors": [
+      "3ff3333333333333"
+    ],
     "input": {
       "actors": [
         {
@@ -364,6 +417,7 @@
       ],
       "name": "existing_1.2"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [],
     "visits": [
       0
@@ -380,6 +434,9 @@
     "foot_speeds": [
       9
     ],
+    "initial_factors": [
+      "3fefffffffffffff"
+    ],
     "input": {
       "actors": [
         {
@@ -388,6 +445,7 @@
       ],
       "name": "existing_0.9999999999999999"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [],
     "visits": [
       0
@@ -404,6 +462,9 @@
     "foot_speeds": [
       10
     ],
+    "initial_factors": [
+      "3ff0000000000001"
+    ],
     "input": {
       "actors": [
         {
@@ -412,6 +473,7 @@
       ],
       "name": "existing_1.0000000000000002"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [],
     "visits": [
       0
@@ -426,6 +488,9 @@
     "foot_speeds": [
       10
     ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -434,6 +499,7 @@
       ],
       "name": "non_foot_mask"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [],
     "visits": [
       0
@@ -455,6 +521,11 @@
       null,
       11
     ],
+    "initial_factors": [
+      "3ff0000000000000",
+      null,
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -467,6 +538,7 @@
       ],
       "name": "distinct_owners_and_null"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [
       15,
       15
@@ -488,6 +560,9 @@
     "foot_speeds": [
       11
     ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -496,6 +571,7 @@
       ],
       "name": "controlled_announcement"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [
       15
     ],
@@ -514,6 +590,9 @@
     "foot_speeds": [
       10
     ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -527,6 +606,7 @@
       ],
       "name": "controlled_outside"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [],
     "visits": [
       0
@@ -543,6 +623,9 @@
     "foot_speeds": [
       11
     ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -556,6 +639,7 @@
       "level": 2,
       "name": "elevated_center"
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [
       15
     ],
@@ -574,6 +658,9 @@
     "foot_speeds": [
       11
     ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {
@@ -588,6 +675,7 @@
       "name": "slope_center",
       "slope": 1
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [
       15
     ],
@@ -606,6 +694,9 @@
     "foot_speeds": [
       10
     ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
     "input": {
       "actors": [
         {}
@@ -613,6 +704,7 @@
       "name": "zero_radius",
       "radius": 0
     },
+    "multiplier_bits": "3ff3333333333333",
     "object_kinds": [],
     "visits": [
       0

@@ -471,9 +471,14 @@ fn finalize_tube_object(
                 entity.position.exact_z_leptons = None;
             }
         } else {
-            let owner_current_speed = entity.movement_target.as_ref().map_or(0, |target| {
-                super::foot_speed::owner_current_speed_from_fraction(target.speed, SIM_ONE)
-            });
+            let object = rules.and_then(|r| r.object(interner.resolve(entity.type_ref())));
+            let speed = super::foot_speed::adjusted_speed(
+                entity,
+                object,
+                rules.map_or(1.0, |r| r.general.veteran_speed),
+            );
+            let owner_current_speed =
+                super::foot_speed::owner_current_speed_from_fraction(speed, SIM_ONE);
             entity.position.rx = tube.exit.0;
             entity.position.ry = tube.exit.1;
             entity.position.sub_x = CELL_CENTER_LEPTON;

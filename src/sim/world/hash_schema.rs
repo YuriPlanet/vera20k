@@ -76,6 +76,7 @@ pub(super) enum HashFeature {
     /// `Some(first TIB* id)`, so this projection reproduces those fixtures' old
     /// hashes, not an arbitrary pre-174 stream.
     RetiredTiberiumNodeState = 174,
+    FootCrateSpeed = 181,
 }
 
 impl HashSchema {
@@ -88,6 +89,7 @@ impl HashSchema {
                 HashFeature::AircraftDockState
                     | HashFeature::AnimationAuthority
                     | HashFeature::RetiredTiberiumNodeState
+                    | HashFeature::FootCrateSpeed
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

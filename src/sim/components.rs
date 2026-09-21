@@ -452,13 +452,49 @@ impl FootPathQueue {
 /// not own or reset it. Keep this outside both class payloads so a synchronous
 /// callback can replace a locomotor without replacing the owner's speed.
 /// Original executable witnesses: tools/spatial_oracle/foot_speed_owner.json.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct FootSpeedState {
     pub applied_fraction: SimFixed,
     /// Existing Rust adapter cache of GetCurrentSpeed, not a native field.
     /// Its producers use the movement request's adjusted type speed. The full
     /// Process host must query live owner/type modifiers at native call sites.
     pub cached_current_speed: i32,
+    /// Foot+580, initialized to exactly 1.0 at4D3292/4D329B. Retain the
+    /// native bits: pickup refuses even the immediate neighbors of 1.0.
+    crate_multiplier: crate::util::native_x87::NativeF64Bits,
+}
+
+impl Default for FootSpeedState {
+    fn default() -> Self {
+        Self {
+            applied_fraction: crate::util::fixed_math::SIM_ZERO,
+            cached_current_speed: 0,
+            crate_multiplier: crate::util::native_x87::NativeF64Bits::ONE,
+        }
+    }
+}
+
+impl FootSpeedState {
+    pub(crate) fn crate_multiplier(&self) -> crate::util::native_x87::NativeF64Bits {
+        self.crate_multiplier
+    }
+
+    /// Cell48303A..483072: an already-modified Foot never stacks this effect.
+    /// Class/radius eligibility belongs to the pickup effect caller.
+    pub(crate) fn accept_speed_crate(
+        &mut self,
+        multiplier: crate::util::native_x87::NativeF64Bits,
+    ) -> bool {
+        use crate::util::native_x87::{MaskedX87Chop53 as X, NativeF64Bits};
+        if self.crate_multiplier != NativeF64Bits::ONE {
+            return false;
+        }
+        self.crate_multiplier = X::store_f64_masked_chop(X::mul(
+            X::load_f64(self.crate_multiplier),
+            X::load_f64(multiplier),
+        ));
+        true
+    }
 }
 
 /// ShipLocomotion-owned destination, committed head, and target speed state.

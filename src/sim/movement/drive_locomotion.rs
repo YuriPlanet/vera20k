@@ -293,10 +293,9 @@ mod tests {
         use crate::util::fixed_math::ra2_speed_to_leptons_per_second;
 
         let speed = ra2_speed_to_leptons_per_second(8);
-        let mut owner_speed = FootSpeedState {
-            applied_fraction: SIM_HALF,
-            cached_current_speed: 10,
-        };
+        let mut owner_speed = FootSpeedState::default();
+        owner_speed.applied_fraction = SIM_HALF;
+        owner_speed.cached_current_speed = 10;
         let ship = ShipLocomotionRuntime {
             destination: None,
             head_to: Some(DriveCoord::cell(4, 3, 0)),
@@ -615,10 +614,8 @@ mod tests {
         // `TechnoClass::SetSpeedFraction` @ 0x004D3710, and every arm of
         // `Process_Drive_Track` that writes the owner's fraction goes through
         // it, so that fraction never exceeds 1.
-        let mut owner_speed = FootSpeedState {
-            applied_fraction: SIM_ZERO,
-            ..Default::default()
-        };
+        let mut owner_speed = FootSpeedState::default();
+        owner_speed.applied_fraction = SIM_ZERO;
         let mut drive = DriveLocomotionRuntime::default();
 
         drive.target_speed_fraction = SimFixed::lit("1.2");
@@ -640,10 +637,8 @@ mod tests {
 
     #[test]
     fn accelerates_false_assigns_current_fraction_directly() {
-        let mut owner_speed = FootSpeedState {
-            applied_fraction: SIM_ZERO,
-            ..Default::default()
-        };
+        let mut owner_speed = FootSpeedState::default();
+        owner_speed.applied_fraction = SIM_ZERO;
         let mut drive = DriveLocomotionRuntime::default();
 
         drive.target_speed_fraction = SIM_HALF;
@@ -665,10 +660,8 @@ mod tests {
 
     #[test]
     fn accelerates_true_ramps_current_fraction_upward() {
-        let mut owner_speed = FootSpeedState {
-            applied_fraction: SIM_ZERO,
-            ..Default::default()
-        };
+        let mut owner_speed = FootSpeedState::default();
+        owner_speed.applied_fraction = SIM_ZERO;
         let mut drive = DriveLocomotionRuntime::default();
 
         drive.target_speed_fraction = SIM_ONE;
@@ -690,10 +683,8 @@ mod tests {
 
     #[test]
     fn accelerates_true_brakes_by_raw_speed_scaled_decel_with_floor() {
-        let mut owner_speed = FootSpeedState {
-            applied_fraction: SIM_HALF,
-            ..Default::default()
-        };
+        let mut owner_speed = FootSpeedState::default();
+        owner_speed.applied_fraction = SIM_HALF;
         let mut drive = DriveLocomotionRuntime::default();
 
         drive.target_speed_fraction = SIM_ONE;
@@ -717,10 +708,8 @@ mod tests {
 
     #[test]
     fn accelerates_true_braking_uses_strict_slowdown_distance() {
-        let mut owner_speed = FootSpeedState {
-            applied_fraction: SIM_HALF,
-            ..Default::default()
-        };
+        let mut owner_speed = FootSpeedState::default();
+        owner_speed.applied_fraction = SIM_HALF;
         let mut drive = DriveLocomotionRuntime::default();
 
         drive.target_speed_fraction = SIM_ONE;
