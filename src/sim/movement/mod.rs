@@ -76,11 +76,13 @@ pub(crate) mod ready_producer;
 pub(crate) mod slope_transition;
 pub(crate) mod track_head;
 mod track_entry;
+#[cfg(test)]
 mod track_fresh_dispatch;
 mod track_host;
 pub(crate) mod track_process;
 mod track_speed;
 pub(crate) mod track_turn;
+#[cfg(test)]
 pub(crate) mod track_speed_native;
 pub(crate) mod walk_head;
 mod walk_host;
@@ -459,15 +461,6 @@ impl MovementTickStats {
             .saturating_add(other.selection_admission_refusals);
         self.elapsed_us = self.elapsed_us.saturating_add(other.elapsed_us);
     }
-}
-
-/// Command to move an entity to a target cell (queued for next tick).
-#[derive(Debug, Clone)]
-pub struct MoveCommand {
-    pub entity_id: u64,
-    pub target_rx: u16,
-    pub target_ry: u16,
-    pub queue: bool,
 }
 
 // ---------------------------------------------------------------------------

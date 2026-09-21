@@ -30,6 +30,7 @@ impl FreshMapMaterialization {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FreshScenarioFamily {
     StockOffline,

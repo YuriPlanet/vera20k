@@ -48,6 +48,13 @@ const KEY_SCROLL_SHIFT_MULTIPLIER: f32 = 2.5;
 /// catches it and the view lands on the map border in a single frame.
 const KEY_SCROLL_CTRL_CELL_SHIFT: u32 = 8;
 
+/// Minimum zoom level — zoomed out enough to see a large portion of the map.
+const MIN_ZOOM: f32 = 0.25;
+/// Maximum zoom level — zoomed in close to pixel-level detail.
+const MAX_ZOOM: f32 = 4.0;
+/// Multiplicative zoom step per mouse wheel notch (smooth exponential zoom).
+const ZOOM_STEP: f32 = 1.15;
+
 // ---------------------------------------------------------------------------
 // Edge auto-scroll — gamemd's CoastLevel ramp.
 // ---------------------------------------------------------------------------
@@ -795,6 +802,35 @@ pub(crate) fn update_camera(state: &mut AppState) {
 const ZOOM_EASE: f32 = 0.35;
 /// Snap threshold — when zoom_level is this close to zoom_target, jump to it.
 const ZOOM_SNAP: f32 = 0.002;
+
+/// Set zoom target, anchored on the cursor position.
+///
+/// Records the world point under the cursor so `animate_zoom` can keep it
+/// pinned at that screen position during the smooth ease.
+///
+/// **Currently unbound.** Stock YR has no world zoom at all, and the wheel — the
+/// only input that used to reach this — is the sidebar strip scroll in gamemd.
+/// The zoom machinery is kept intact (`animate_zoom` still runs, and every
+/// camera path still divides by `zoom_level`) so a future non-wheel binding or a
+/// spectator/debug view can drive it, but nothing calls this today.
+#[allow(dead_code)]
+pub(crate) fn apply_zoom(state: &mut AppState, delta_lines: f32) {
+    let old_target = state.match_state.input.zoom_target;
+    let factor = ZOOM_STEP.powf(delta_lines);
+    let new_target = (old_target * factor).clamp(MIN_ZOOM, MAX_ZOOM);
+    if (new_target - old_target).abs() < 1e-6 {
+        return;
+    }
+
+    // Record the world point under the cursor — animate_zoom keeps it stable.
+    let z = state.match_state.input.zoom_level;
+    state.match_state.input.zoom_anchor_world = [
+        state.match_state.input.cursor_x / z + state.match_state.input.camera_x,
+        state.match_state.input.cursor_y / z + state.match_state.input.camera_y,
+    ];
+    state.match_state.input.zoom_anchor_screen = [state.match_state.input.cursor_x, state.match_state.input.cursor_y];
+    state.match_state.input.zoom_target = new_target;
+}
 
 /// Animate zoom_level toward zoom_target each frame, adjusting the camera so
 /// the anchor world point stays at the anchor screen position.

@@ -69,11 +69,13 @@ fn one_player_battle_launch(
 }
 
 /// Terrain plus the exact setup RNG owner advanced while that terrain loaded.
+#[cfg(test)]
 struct HeadlessTerrainBootstrap {
     resolved: ResolvedTerrainGrid,
     bootstrap_rng: ScenarioBootstrapRng,
 }
 
+#[cfg(test)]
 impl HeadlessTerrainBootstrap {
     #[cfg(test)]
     #[allow(clippy::too_many_arguments)]

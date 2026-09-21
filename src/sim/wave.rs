@@ -233,6 +233,21 @@ impl Wave {
         dx * dx + dy * dy >= CONSTRUCTOR_MIN_XY_DISTANCE * CONSTRUCTOR_MIN_XY_DISTANCE
     }
 
+    /// No reader yet; kept because the wave-type mapping is recorded nowhere else.
+    pub const fn color_mode(&self) -> WaveColorMode {
+        match self.wave_type {
+            0 => WaveColorMode::FramebufferSonicDistortion,
+            1 | 2 => WaveColorMode::FixedLaserChannelAdd,
+            3 => WaveColorMode::FramebufferMagnetronDistortion,
+            _ => WaveColorMode::None,
+        }
+    }
+
+    /// No reader yet; see `color_mode`.
+    pub const fn registration_bucket(&self) -> u8 {
+        WAVE_DISPLAY_REGISTRATION_BUCKET
+    }
+
     /// Constructor tail: lifecycle/geometry runs once, but DamageArea does not.
     pub fn initialize(
         &mut self,
@@ -619,7 +634,7 @@ const TAN_PI_OVER_EIGHT_F64: NativeF64Bits = NativeF64Bits::from_bits(0x3fda_827
 const INV_TAN_PI_OVER_EIGHT_F64: NativeF64Bits = NativeF64Bits::from_bits(0x4003_504f_2e96_fc59);
 
 #[derive(Debug, Clone, Copy)]
- // machine-fixture diagnostics retained beside the behavior fields
+#[allow(dead_code)] // machine-fixture diagnostics retained beside the behavior fields
 struct Type0NonmagneticGeometry {
     source: ProjectileCoord,
     target: ProjectileCoord,

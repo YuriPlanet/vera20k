@@ -17,6 +17,7 @@ pub mod rng;
 pub mod saved_seeds;
 pub mod scratch;
 pub mod settings;
+#[cfg(test)]
 pub mod sqrt_table;
 pub mod tech_catalog;
 pub mod theater_blocks;

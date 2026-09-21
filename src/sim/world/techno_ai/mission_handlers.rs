@@ -106,8 +106,7 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
             // table at `0x008255C8`, bounded by
             // `InfantryTypeClass::ReadSequenceData @ 0x00523D00`. `0x1F`
             // (Undeploy) is OUTSIDE the set, which is why this is not
-            // `GameEntity::is_deployed()` or `infantry::is_deploy_locked()`:
-            // both of those admit the undeploying phase.
+            // `GameEntity::is_deployed()`, which admits the undeploying phase.
             //
             // The native gate also requires the owner to pass
             // `HouseClass::IsControlledByHuman @ 0x0050B730`. Every house in

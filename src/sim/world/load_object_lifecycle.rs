@@ -57,6 +57,7 @@ struct LoadOverlayObject {
     terminal_path: LoadOverlayTerminalPath,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct LoadOverlayObjectSnapshot {
     pub(crate) stable_id: u64,

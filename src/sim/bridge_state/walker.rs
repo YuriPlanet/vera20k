@@ -21,6 +21,7 @@ use crate::sim::rng::SimRng;
 #[cfg(test)]
 const REPAIR_VARIANT_LIMIT_INCLUSIVE: u8 = 3;
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RepairFamily {
     LowNs,
@@ -29,6 +30,7 @@ enum RepairFamily {
     HighEw,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RepairTransition {
     NoChange,

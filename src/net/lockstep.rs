@@ -344,6 +344,7 @@ pub struct DispatchSummary {
     pub retired: usize,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy)]
 enum DispatchMode<'a> {
     Offline,

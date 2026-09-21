@@ -13,11 +13,9 @@
 //! the flag into the rules mult or 1.0, so each stage multiplies unconditionally
 //! (ftol(d * 1.0) == d, so this is exact).
 
-#[cfg(test)]
 use super::CombatMods;
 
-// Verified Fire_At reference math is staged but not authoritative yet.
-#[cfg(test)]
+#[allow(dead_code)] // Verified Fire_At reference math is staged but not authoritative yet.
 #[inline]
 fn ftol(v: f64) -> i32 {
     v as i32
@@ -26,8 +24,7 @@ fn ftol(v: f64) -> i32 {
 /// gamemd Fire_At damage build. `disabled` (weapon Wave/+0x130 OR the +0x129
 /// flag — either zeroes the whole chain) forces the result to 0. Each mult stage
 /// is ftol-truncated; FirePower folds country x per-unit x base in ONE stage.
-// Retained for the pending authoritative Fire_At handoff.
-#[cfg(test)]
+#[allow(dead_code)] // Retained for the pending authoritative Fire_At handoff.
 pub(crate) fn fire_damage(weapon_damage: i32, mods: &CombatMods, disabled: bool) -> i32 {
     if disabled {
         return 0;

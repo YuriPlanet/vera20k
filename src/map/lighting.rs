@@ -36,9 +36,6 @@ pub const LIGHT_CLAMP_MAX: i32 = 2000;
 /// Identity 16.16 scale used by the LightConvert normalization path.
 pub const LIGHT_SCALE16_IDENTITY: i32 = 0x10000;
 
-/// Binary light unit scale for Ambient/Red/Green/Blue INI values parsed as Rust ratios.
-pub const AMBIENT_RGB_UNIT_SCALE: i32 = LIGHT_UNIT;
-
 /// Scenario Ground/Level: original 0068A92E/0068A968 multiply by double
 /// [007E4658] = 1000.0, then add 0.01 and truncate. See the Ground/Level
 /// correction in LIGHTCONVERT_ROW_RGB565_ORACLE_2026_09_09.md.

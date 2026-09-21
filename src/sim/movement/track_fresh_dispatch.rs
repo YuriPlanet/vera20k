@@ -75,7 +75,6 @@ pub(super) enum FreshDispatch {
 /// The second producer overwrites its saved packed cell at4B410B/6A3736, so
 /// overlay_index must refer to the actual queried candidate at either stage.
 /// Only the native predicate's0..7 domain is admitted by this interface.
-#[cfg(test)]
 pub(super) const fn coerce_entry_code(
     code: u8,
     is_train: bool,
@@ -95,7 +94,6 @@ pub(super) const fn coerce_entry_code(
 /// Select the required caller body from the already saved/coerced query code.
 /// owner_alive is sampled after second-query coercions4B4179/6A37A5; there is
 /// no corresponding first-query test here. This is not TrackHost::track_survives.
-#[cfg(test)]
 pub(super) const fn dispatch_entry(
     stage: FreshStage,
     effective_code: u8,
@@ -145,7 +143,6 @@ pub(super) const fn dispatch_entry(
 ///4B3F7D..3F93 /6A35CC..35E2, before the later overlay/CrusherAll checks.
 /// Native queue words are signed; retain the signed domain and do not truncate
 /// a supplied word before these comparisons. The caller validates direction1.
-#[cfg(test)]
 pub(super) const fn normalize_second_direction(
     first: i32,
     second: i32,

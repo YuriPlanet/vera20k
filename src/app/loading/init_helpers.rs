@@ -23,9 +23,9 @@ use crate::render::tile_atlas::{self, TileAtlas};
 use crate::render::unit_atlas::{self, UnitAtlas};
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::native_processing::{
-    NativeTypeConstructionTrace, ProcessedRulesLayers, RulesLayerStack,
-};
+#[cfg(test)]
+use crate::rules::native_processing::NativeTypeConstructionTrace;
+use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerStack};
 use crate::rules::process_owner::NativeRulesProcessOwner;
 use crate::rules::ruleset::RuleSet;
 
@@ -247,6 +247,7 @@ pub(crate) fn theater_ext_for(theater_name: &str) -> &'static str {
 ///
 /// This transient pair keeps match-load consumers on one rules source without
 /// making the INI a second persistent rules authority.
+#[cfg(test)]
 pub(crate) struct LoadedRules {
     rules: RuleSet,
     processed_ini: IniFile,
@@ -254,6 +255,7 @@ pub(crate) struct LoadedRules {
     fixed_art_ini: IniFile,
 }
 
+#[cfg(test)]
 impl LoadedRules {
     #[cfg(test)]
     fn from_processed(

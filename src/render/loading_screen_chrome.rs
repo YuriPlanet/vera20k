@@ -53,11 +53,6 @@ pub struct MmpbRegionRect {
     pub height: i32,
 }
 
-/// Per-axis screen nudge applied to a projected marker before the region origin
-/// is added (verified marker projection: X gets `-3`, Y gets `-2`).
-pub const MMPB_MARKER_NUDGE_X: i32 = -3;
-pub const MMPB_MARKER_NUDGE_Y: i32 = -2;
-
 /// Select the marker projection region rect for the current screen width.
 ///
 /// Native uses equality for its dedicated 800 and 1024 branches. Every other

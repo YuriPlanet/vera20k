@@ -104,6 +104,7 @@ pub(crate) fn decay_anger_scores(
 }
 
 /// Ordered callbacks requested by the direct state-four block.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EmergencyAction {
     FireSale,

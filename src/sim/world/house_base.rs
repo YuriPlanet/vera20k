@@ -180,7 +180,6 @@ impl HouseBaseState {
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
     fn append_membership(&mut self, id: u64) {
         //441545/44154E precede441594. These vectors have independent lives.
         if self

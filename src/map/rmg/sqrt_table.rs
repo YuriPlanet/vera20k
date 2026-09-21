@@ -18,10 +18,8 @@
 //! is `#[ignore]`d and skips loudly when the install is absent.
 
 /// Where the table sits in the loaded image.
-#[cfg(test)]
 const TABLE_VA: u32 = 0x0086_50BC;
 /// Entries, one `u32` each — the top 14 bits of a significand.
-#[cfg(test)]
 const TABLE_LEN: usize = 16384;
 
 #[cfg(test)]

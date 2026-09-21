@@ -30,7 +30,7 @@
 //! - Part of sim/ — depends only on standard library.
 //! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
 
-// Staged GetFireError vocabulary for the gattling/fire-gate handoff.
+#[allow(dead_code)] // Staged GetFireError vocabulary for the gattling/fire-gate handoff.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FireDecision {
     Fire,
@@ -43,7 +43,7 @@ pub enum FireDecision {
     Generic,
 }
 
-// The staged decision consumers are not runtime-wired yet.
+#[allow(dead_code)] // The staged decision consumers are not runtime-wired yet.
 impl FireDecision {
     /// Whether this decision drives gattling-weapon spin-up (gamemd codes
     /// {0, 2, 3, 4} per research doc §4.8). Code 4 is unmapped in our enum;

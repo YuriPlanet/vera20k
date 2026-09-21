@@ -454,10 +454,10 @@ impl InstanceBufferPool {
 /// Instanced sprite batch renderer.
 ///
 /// Draws many textured quads in a single draw call using GPU instancing.
-/// Call `update_camera()` and `prepare_instances()` each frame before drawing.
+/// Call `update_camera()` each frame before drawing.
 ///
 /// Pipelines:
-/// - `pipeline` / `zdepth_pipeline` (terrain): depth write ON — terrain writes Z-data.
+/// - `zdepth_pipeline` (terrain): depth write ON — terrain writes Z-data.
 /// - `overlay_pipeline` (UI/debug): depth write ON, LessEqual — for passes that
 ///   intentionally update the shared depth buffer.
 pub struct BatchRenderer {
@@ -492,6 +492,9 @@ pub struct BatchRenderer {
     /// Depth-only pipeline: colour target fully masked, depth write ON, Less
     /// compare. Stamps a sprite's opaque silhouette so a later depth-testing
     /// pass can be clipped by it, without disturbing colour compositing order.
+    /// Production no longer stamps (sprite bodies write Z themselves); only the
+    /// GPU test of `depth_test_pipeline` lays depth down with it.
+    #[cfg(test)]
     depth_stamp_pipeline: wgpu::RenderPipeline,
     /// Depth-testing pipeline: colour ON, depth write OFF, Less compare. The
     /// read-only counterpart of `depth_stamp_pipeline`.
@@ -856,6 +859,7 @@ impl BatchRenderer {
         // Colour is masked off entirely, so this pass cannot perturb the
         // painter's-order compositing the Ground band depends on — only the
         // depth attachment changes.
+        #[cfg(test)]
         let depth_stamp_pipeline: wgpu::RenderPipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("Batch Pipeline (Depth Stamp)"),
@@ -1254,6 +1258,7 @@ impl BatchRenderer {
             overlay_passthrough_pipeline,
             spotlight_zero_blend_pipeline,
             spotlight_type16_masks,
+            #[cfg(test)]
             depth_stamp_pipeline,
             depth_test_pipeline,
             texture_bind_group_layout,
@@ -1356,7 +1361,7 @@ impl BatchRenderer {
     /// Upload RGBA pixel data to the GPU as a batch-renderable texture.
     ///
     /// Uses nearest-neighbor sampling (pixel art). The returned BatchTexture
-    /// can be shared across multiple draw_batch() calls.
+    /// can be shared across multiple draw calls.
     pub fn create_texture(
         &self,
         gpu: &GpuContext,
@@ -1449,7 +1454,7 @@ impl BatchRenderer {
 
     /// Update the camera uniform with current viewport size and scroll position.
     ///
-    /// Call once per frame before draw_batch(). screen_width/height are in pixels.
+    /// Call once per frame before drawing. screen_width/height are in pixels.
     /// camera_x/y define the top-left corner of the visible area in world coordinates.
     pub fn update_camera(
         &self,
@@ -1565,7 +1570,7 @@ impl BatchRenderer {
 
     /// Draw a sub-range of voxel sprite instances using the voxel sprite pipeline.
     /// Used by the multi-way Y-sort merge passes that interleave voxel and SHP
-    /// draw calls. Same semantics as `draw_voxel_sprites` but with a start index.
+    /// draw calls, from a start index.
     pub fn draw_voxel_sprites_range<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,

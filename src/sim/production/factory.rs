@@ -782,8 +782,7 @@ impl FactoryRegistry {
     /// active slot (C7 StartNextQueued), seeding it from `next_cost`.
     /// EventClass-tail cancellation and delivery both pass `0`; the pre-step
     /// revalidation sweep passes `1`.
-    /// Returns the popped type, or `None` if the queue was empty (the factory is left idle
-    /// for `prune_idle`).
+    /// Returns the popped type, or `None` if the queue was empty (the factory is left idle).
     pub(super) fn clear_active_and_advance(
         &mut self,
         owner: InternedId,

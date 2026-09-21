@@ -23,10 +23,6 @@ use crate::asset_tools::verb_render::RenderOptions;
 use crate::asset_tools::verb_scan::{self, ScanOptions};
 use crate::asset_tools::verb_sound::SoundOptions;
 
-/// Where rendered PNGs land by default. Under `target/` because that is
-/// gitignored, so nothing this tool writes can be committed by accident.
-pub const DEFAULT_OUT_DIR: &str = "target/asset";
-
 pub enum Verb {
     Find { name: String },
     Ls { archive: String },

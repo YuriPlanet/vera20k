@@ -3228,8 +3228,8 @@ pub(crate) fn capture_kill_credit(
 
 /// Squared distance in leptons from raw coordinates.
 ///
-/// Same as `lepton_distance_sq` but takes individual fields instead of
-/// `&Position`, for use with snapshots where positions are destructured.
+/// Takes individual fields rather than a `&Position`, for use with snapshots
+/// where positions are destructured.
 pub(crate) fn lepton_distance_sq_raw(
     ax_cell: u16,
     ay_cell: u16,
@@ -3252,7 +3252,7 @@ pub(crate) fn lepton_distance_sq_raw(
 /// Check if a squared lepton distance is within weapon range.
 ///
 /// Converts weapon range from cells to leptons (×256) before squaring.
-/// Uses i64 to match `lepton_distance_sq()` output.
+/// Uses i64 to match `lepton_distance_sq_raw()` output.
 ///
 /// The scale runs on the fixed-point bits, not through `to_num`, because
 /// `CCINIClass::ReadRange` 0x00474620 multiplies BEFORE truncating: a
