@@ -87,6 +87,12 @@ Trace their use before changes. Untangle affected ownership, consolidate duplica
 finish required migrations and remove obsolete code/state. Preserve intentional
 differences, validate affected paths and keep cleanup within task scope.
 
+State and shared decisions have one owner. Before writing simulation state or
+adding a decision helper, find the existing writers and name the owner in the PR.
+Never add a second writer, a mirror field or a local variant of a shared helper;
+extend or fix the owner, in a prior PR when large. Keep consolidated state private
+to its owner so a second writer fails to compile.
+
 Use relevant rows in the [dependency map](docs/module-map.md); verify against source.
 Refresh with `python tools/module_map.py` after dependency, layout, visibility or
 build configuration changes.
