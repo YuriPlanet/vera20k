@@ -2258,8 +2258,8 @@ fn advance_ordinary_mover(
 /// one source per cell-marked, non-dying, non-passenger object
 /// (`bump_crush::blocker_plane_source`). The first part changes only with
 /// `ResolvedTerrainGrid::mutation_epoch` (terrain-object occupation has one
-/// writer, through `cell_mut`) and `OverlayGrid::mutation_epoch` (the wall
-/// plane is written only by its mutators), so it is rebuilt under that key.
+/// writer, through `cell_mut`) and `OverlayGrid::blocker_plane_epoch` (the
+/// retained wall plane's own epoch), so it is rebuilt under that key.
 /// The sources follow the entities: the store logs every entity it hands out
 /// mutably, the block index drains that log and forwards it, and the plane
 /// takes out each touched entity's old source and adds its new one. The counts
@@ -2290,7 +2290,7 @@ struct BlockerPlaneEntry {
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct BlockerPlaneKey {
     terrain_epoch: Option<u64>,
-    overlay_epoch: Option<u64>,
+    overlay_epoch: Option<(bool, u64)>,
     width: u16,
     height: u16,
     /// A building's foundation size comes from its type. By address, never
@@ -2355,7 +2355,7 @@ impl MovementPassCache {
     ) -> &'a crate::sim::pathfinding::BlockerNeighborCounts {
         let key = BlockerPlaneKey {
             terrain_epoch: resolved_terrain.map(ResolvedTerrainGrid::mutation_epoch),
-            overlay_epoch: overlay_grid.map(|grid| grid.mutation_epoch()),
+            overlay_epoch: overlay_grid.map(|grid| grid.blocker_plane_epoch()),
             width: grid.width(),
             height: grid.height(),
             rules: rules.map(|rules| std::ptr::from_ref(rules) as usize),
@@ -2997,11 +2997,11 @@ impl PendingMovementPass {
 
 /// Whether any object of this pass can reach a path build.
 ///
-/// The blocker-neighbour plane is a whole-map scan plus every marked object,
-/// and its only consumers are path builds: ordinary movers repathing, pending
+/// The blocker-neighbour plane's only consumers are path builds: ordinary movers repathing, pending
 /// Drive arrivals, and objects that Tube or forced-track processing may hand
 /// back to ordinary movement this pass. An object turn with none of those never
-/// reads it, so the pass does not pay for it there. When built, the value is
+/// reads it, so the pass does not bring it current there (the touched
+/// entities wait in the forwarded backlog). When brought current, the value is
 /// the same as an unconditional build; only idle turns skip the work. The
 /// `debug_assert!`s beside each in-pass `find_move_path` call keep this
 /// contract checked: a new in-pass writer of `movement_target` or
@@ -3685,6 +3685,47 @@ mod pass_cache_tests {
             1,
             "only the first use read the whole world"
         );
+    }
+
+    /// A grid that retains its wall plane, as every production grid does, is
+    /// read for that plane only: an ore write moves the grid's general epoch
+    /// and must not rebuild the blocker plane; a wall-plane write must.
+    #[test]
+    fn ore_writes_do_not_rebuild_the_kept_blocker_plane() {
+        let grid = PathGrid::new(5, 5);
+        let mut entities = EntityStore::new();
+        let interner = test_interner();
+        let mut overlays =
+            crate::sim::overlay_grid::OverlayGrid::new_with_retained_wall_plane(5, 5);
+        let mut cache = MovementPassCache::default();
+        let mut plane = |cache: &mut MovementPassCache,
+                         overlays: &crate::sim::overlay_grid::OverlayGrid| {
+            cache
+                .blocker_plane(
+                    &mut entities,
+                    &grid,
+                    None,
+                    Some(overlays),
+                    None,
+                    &interner,
+                    None,
+                )
+                .clone()
+        };
+        let before = plane(&mut cache, &overlays);
+        let epoch = overlays.mutation_epoch();
+        overlays.place_overlay(2, 2, 102, 5);
+        assert_ne!(
+            overlays.mutation_epoch(),
+            epoch,
+            "the ore write is a mutation"
+        );
+        assert_eq!(plane(&mut cache, &overlays), before);
+        assert_eq!(cache.blocker_plane_world_rebuilds(), 1);
+
+        overlays.retain_zero_wall_plane_for_tests();
+        let _ = plane(&mut cache, &overlays);
+        assert_eq!(cache.blocker_plane_world_rebuilds(), 2);
     }
 
     /// Random edits through the store, the plane brought current after each
