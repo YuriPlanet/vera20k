@@ -1,12 +1,12 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `c80821f3dafa7b6a9886c79a3b6f1ae001964055` (2026-09-21), cargo-modules 0.26.0.
+Generated snapshot: `8c8e0f8ee1d57c2d6ac9a5ab858b5f449edf68bd` (2026-09-21), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
 External crates and the sysroot are excluded from the dependency graph.
-Contains **838 modules plus the crate root**, and **5288 distinct
+Contains **839 modules plus the crate root**, and **5291 distinct
 cross-module dependency edges**. Check this source commit against your checkout.
 <!-- module-map:provenance:end -->
 
@@ -524,6 +524,7 @@ sim::command -> sim::intern; sim::production::production_types
 sim::components -> map::entities; sim::anim_class; sim::intern; sim::movement::locomotor; sim::movement::track_process; sim::timer; util::fixed_math; util::native_x87::masked
 sim::conversion_health -> rules::object_type; sim::game_entity; util::native_x87
 sim::crates -> map::bridge_facts; map::lighting; map::resolved_terrain; rules::crate_rules; rules::locomotor_type; rules::overlay_types; rules::ruleset; rules::terrain_rules; sim::cell_rect; sim::crates::runtime; sim::crates::state; sim::find_nearby_cell; sim::pathfinding::core; sim::rng; sim::world; util::fixed_math
+sim::crates::pickup -> rules::overlay_types; rules::ruleset; sim::rng
 sim::crates::runtime -> map::lighting; rules::crate_rules; rules::overlay_types; rules::ruleset; sim::crates; sim::crates::state; sim::pathfinding::core; sim::world
 sim::crates::state -> util::native_x87
 sim::crates::state::crate_slot_array_serde -> sim::crates::state

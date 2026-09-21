@@ -231,7 +231,7 @@ probe; it is not a second implementation to publish.
 
 Current task-owned branch: `feature/combat-foot-speed`, created from fetched
 `origin/main` at `a37e8118`. Walk work is integrated. Pickup selection/removal
-prerequisites are implemented locally; no PR or critic pass has been requested
+prerequisites are committed at `8c8e0f8e`; no PR or critic pass has been requested
 for this unfinished mechanism. The primary checkout remains untouched.
 
 Native4DB1A0 applies type speed, House50C050's category factor and Foot+580,
