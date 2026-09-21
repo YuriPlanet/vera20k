@@ -3,10 +3,12 @@
 //! Every Jumpjet runs `Process @ 0x0054AEC0` here: the Update gate
 //! (`Is_Moving 0x0054AE50` or `Is_Moving_Now 0x0054D0D0`) and then the state at
 //! `+0x50` — ground `0x0054B980`, ascend `0x0054BA30`, hold `0x0054BD30`,
-//! translate `0x0054BFF0`, descend `0x0054C550`. `AirMovePhase` and the
-//! locomotor altitude are *derived* from that state rather than owned
-//! separately, so VERA's air adapter no longer drives a Jumpjet at all — which
-//! is what stops an idle one cycling takeoff and landing forever.
+//! translate `0x0054BFF0`, descend `0x0054C550`. That state field is the only
+//! Jumpjet phase: readers take `JumpjetRuntime::phase`, and `AirMovePhase`
+//! (Fly's phase) is neither written nor read for a Jumpjet. The locomotor
+//! altitude is derived from the kernel's height. VERA's air adapter does not
+//! drive a Jumpjet at all, which is what stops an idle one cycling takeoff and
+//! landing forever.
 //!
 //! The cell `AltObject` air slot (`CellClass+0xE0`; `0x004135A0` queries it and
 //! `0x00487D70` sets or clears it) lives in `ObjectSubstrate::air_slots`.
@@ -41,7 +43,7 @@ use crate::sim::movement::jumpjet_flight::{
     self, FlightOwnerKind, JumpjetFlightHost, STATE_DESCEND, STATE_HOLD, STATE_TRANSLATE,
 };
 use crate::sim::movement::jumpjet_movement::JumpjetRuntime;
-use crate::sim::movement::locomotor::{AirMovePhase, MovementLayer};
+use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::{AirSlotGrid, OccupancyGrid, RawCellKey, RawCellOccupationGrid};
 use crate::sim::rng::SimRng;
 use crate::util::fixed_math::SimFixed;
@@ -430,18 +432,6 @@ fn jumpjet_locomotor(entity: &crate::sim::game_entity::GameEntity) -> bool {
     })
 }
 
-/// The air phase the renderer and the rest of VERA read, derived from the
-/// native state byte instead of being owned separately.
-fn air_phase_for(state: i32) -> AirMovePhase {
-    match state {
-        jumpjet_flight::STATE_GROUND => AirMovePhase::Landed,
-        jumpjet_flight::STATE_ASCEND => AirMovePhase::Ascending,
-        jumpjet_flight::STATE_HOLD => AirMovePhase::Hovering,
-        STATE_DESCEND => AirMovePhase::Descending,
-        _ => AirMovePhase::Cruising,
-    }
-}
-
 /// What the kernel asked the world to do, collected while the substrate was
 /// still borrowed immutably.
 struct HostEffects {
@@ -670,7 +660,6 @@ impl Simulation {
 
         let locomotor = entity.locomotor.as_mut()?;
         locomotor.altitude = SimFixed::from_num(effects.height.max(0));
-        locomotor.air_phase = air_phase_for(state);
         if let Some(runtime) = locomotor.jumpjet_runtime_mut() {
             runtime.flight = flight;
             runtime.phase = state;
@@ -777,7 +766,6 @@ mod tests {
             runtime.flight.facing.snap(u16::from(body_facing) << 8, 0);
             runtime.flight.target_height = 500;
         }
-        locomotor.air_phase = AirMovePhase::Hovering;
         locomotor.altitude = SimFixed::from_num(500);
         locomotor.target_altitude = SimFixed::from_num(500);
         entity.locomotor = Some(locomotor);
@@ -801,7 +789,6 @@ mod tests {
             entity.movement_target = None;
             let locomotor = entity.locomotor.as_mut().expect("locomotor");
             locomotor.balloon_hover = balloon_hover;
-            locomotor.air_phase = air_phase_for(state);
             locomotor.altitude = SimFixed::from_num(if state == jumpjet_flight::STATE_GROUND {
                 0
             } else {
@@ -829,7 +816,6 @@ mod tests {
         let sim = idle_for(jumpjet_flight::STATE_GROUND, false, 400);
         let entity = sim.substrate.entities.get(1).expect("jumpjet");
         let locomotor = entity.locomotor.as_ref().expect("locomotor");
-        assert_eq!(locomotor.air_phase, AirMovePhase::Landed);
         assert_eq!(locomotor.altitude, SimFixed::from_num(0));
         assert_eq!(
             locomotor.jumpjet_runtime().map(|runtime| runtime.phase),
@@ -865,7 +851,6 @@ mod tests {
                 .get_mut(1)
                 .and_then(|entity| entity.locomotor.as_mut())
                 .expect("locomotor");
-            locomotor.air_phase = AirMovePhase::Hovering;
             let runtime = locomotor.jumpjet_runtime_mut().expect("runtime");
             runtime.phase = STATE_HOLD;
             runtime.moving = true;
@@ -897,7 +882,6 @@ mod tests {
         let sim = idle_for(STATE_HOLD, true, 400);
         let entity = sim.substrate.entities.get(1).expect("jumpjet");
         let locomotor = entity.locomotor.as_ref().expect("locomotor");
-        assert_eq!(locomotor.air_phase, AirMovePhase::Hovering);
         assert_eq!(
             locomotor.jumpjet_runtime().map(|runtime| runtime.phase),
             Some(STATE_HOLD)
@@ -938,7 +922,6 @@ mod tests {
         let entity = sim.substrate.entities.get(1).expect("jumpjet");
         assert!(entity.movement_target.is_none());
         let locomotor = entity.locomotor.as_ref().expect("locomotor");
-        assert_eq!(locomotor.air_phase, AirMovePhase::Descending);
         assert_eq!(
             locomotor.jumpjet_runtime().map(|runtime| runtime.phase),
             Some(STATE_DESCEND)

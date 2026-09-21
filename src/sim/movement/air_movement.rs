@@ -165,11 +165,14 @@ pub fn issue_air_move_command(
     timing.accept(entity);
     entity.movement_target = Some(movement);
 
-    // Trigger takeoff if on the ground.
-    if let Some(ref mut loco) = entity.locomotor {
-        if loco.air_phase == AirMovePhase::Landed {
-            loco.air_phase = AirMovePhase::Ascending;
-        }
+    // Trigger takeoff if on the ground. A vehicle Jumpjet's order comes through
+    // here too (`jumpjet_movement`), but its phase is its own state field and
+    // `AirMovePhase` is not its to write.
+    if let Some(ref mut loco) = entity.locomotor
+        && loco.kind != LocomotorKind::Jumpjet
+        && loco.air_phase == AirMovePhase::Landed
+    {
+        loco.air_phase = AirMovePhase::Ascending;
     }
     true
 }
@@ -469,15 +472,7 @@ fn tick_altitude(loco: &mut LocomotorState, dt: SimFixed) {
             loco.altitude = loco.altitude.saturating_add(loco.climb_rate * dt);
             if loco.altitude >= loco.target_altitude {
                 loco.altitude = loco.target_altitude;
-                // Transition to appropriate cruising/hovering phase.
-                match loco.kind {
-                    crate::rules::locomotor_type::LocomotorKind::Jumpjet => {
-                        loco.air_phase = AirMovePhase::Hovering;
-                    }
-                    _ => {
-                        loco.air_phase = AirMovePhase::Cruising;
-                    }
-                }
+                loco.air_phase = AirMovePhase::Cruising;
             }
         }
         AirMovePhase::Descending => {
@@ -496,7 +491,7 @@ fn tick_altitude(loco: &mut LocomotorState, dt: SimFixed) {
                 loco.air_phase = AirMovePhase::Landed;
             }
         }
-        AirMovePhase::Cruising | AirMovePhase::Hovering => {
+        AirMovePhase::Cruising => {
             // If target altitude changed (dive bombing or recovery), adjust.
             let tolerance = SimFixed::from_num(10);
             if loco.altitude > loco.target_altitude + tolerance {
@@ -561,20 +556,6 @@ mod tests {
     }
 
     #[test]
-    fn test_jumpjet_ascends_to_hovering() {
-        let mut loco = make_jumpjet_loco();
-        loco.air_phase = AirMovePhase::Ascending;
-        loco.altitude = SimFixed::from_num(400);
-        loco.target_altitude = SimFixed::from_num(500);
-        loco.climb_rate = SimFixed::from_num(150);
-
-        // 1 second at 150/s should overshoot 500, clamped.
-        tick_altitude(&mut loco, SIM_ONE);
-        assert_eq!(loco.altitude, SimFixed::from_num(500));
-        assert_eq!(loco.air_phase, AirMovePhase::Hovering);
-    }
-
-    #[test]
     fn test_issue_air_move_command() {
         let mut entities = EntityStore::new();
         let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
@@ -601,6 +582,31 @@ mod tests {
         // Should trigger ascending.
         let loco = e.locomotor.as_ref().expect("has loco");
         assert_eq!(loco.air_phase, AirMovePhase::Ascending);
+    }
+
+    /// A vehicle Jumpjet's order is accepted through this function too, but
+    /// its phase is its own state field: `AirMovePhase` stays untouched.
+    #[test]
+    fn a_jumpjet_order_does_not_write_the_fly_phase() {
+        let mut entities = EntityStore::new();
+        let mut entity = GameEntity::test_default(1, "SHAD", "Americans", 10, 10);
+        entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Jumpjet));
+        entities.insert(entity);
+
+        assert!(issue_air_move_command(
+            &mut entities,
+            1,
+            (20, 15),
+            SimFixed::from_num(10),
+            crate::sim::movement::DestinationTiming::new(0, 60),
+        ));
+
+        let e = entities.get(1).expect("has entity");
+        assert!(e.movement_target.is_some(), "the order itself is accepted");
+        assert_eq!(
+            e.locomotor.as_ref().unwrap().air_phase,
+            AirMovePhase::Landed
+        );
     }
 
     #[test]
@@ -715,45 +721,6 @@ mod tests {
             jumpjet_turn_rate: 4,
             balloon_hover: false,
             hover_attack: false,
-            speed_type: crate::rules::locomotor_type::SpeedType::Track,
-            movement_zone: crate::rules::locomotor_type::MovementZone::Normal,
-            rot: 0,
-            air_progress: SIM_ZERO,
-            infantry_wobble_phase: 0.0,
-            subcell_dest: None,
-            hover_throttle: crate::util::fixed_math::SIM_ZERO,
-            hover_speed_request: crate::util::fixed_math::SIM_ZERO,
-            hover_bob_offset: crate::util::fixed_math::SIM_ZERO,
-        }
-    }
-
-    fn make_jumpjet_loco() -> LocomotorState {
-        LocomotorState {
-            kind: crate::rules::locomotor_type::LocomotorKind::Jumpjet,
-            slot: LocomotorSlot::from_kind(LocomotorKind::Jumpjet),
-            powered: true,
-            piggyback: None,
-            runtime_payload: crate::sim::movement::locomotion::LocomotorRuntimePayload::for_kind(
-                LocomotorKind::Jumpjet,
-                0,
-            ),
-            layer: MovementLayer::Air,
-            phase: crate::sim::movement::locomotor::GroundMovePhase::Idle,
-            air_phase: AirMovePhase::Landed,
-            speed_multiplier: SIM_ONE,
-            speed_fraction: SIM_ONE,
-            fly_current_speed: SIM_ZERO,
-            altitude: SIM_ZERO,
-            target_altitude: SimFixed::from_num(500),
-            climb_rate: sim_from_f32(75.0),
-            jumpjet_speed: SimFixed::from_num(14),
-            jumpjet_accel: SimFixed::from_num(2),
-            jumpjet_current_speed: SIM_ZERO,
-            jumpjet_deviation: 40,
-            jumpjet_crash_speed: SimFixed::from_num(150), // (5+5)*15
-            jumpjet_turn_rate: 4,
-            balloon_hover: true,
-            hover_attack: true,
             speed_type: crate::rules::locomotor_type::SpeedType::Track,
             movement_zone: crate::rules::locomotor_type::MovementZone::Normal,
             rot: 0,

@@ -3222,8 +3222,12 @@ impl Simulation {
         let falling_or_crashing = entity.object_is_falling_down != 0
             || entity.parachute_state.is_some()
             || entity.locomotor.as_ref().is_some_and(|locomotor| {
-                locomotor.air_phase == crate::sim::movement::locomotor::AirMovePhase::Descending
-                    && locomotor.jumpjet_crash_speed > crate::util::fixed_math::SIM_ZERO
+                // A Jumpjet in its descent state (the only locomotor with a
+                // crash speed). Read from the locomotor's own state field.
+                locomotor.jumpjet_crash_speed > crate::util::fixed_math::SIM_ZERO
+                    && locomotor.jumpjet_runtime().is_some_and(|runtime| {
+                        runtime.phase == crate::sim::movement::jumpjet_flight::STATE_DESCEND
+                    })
             });
         let active = entity.move_sound_active;
         let countdown = entity.move_sound_countdown;

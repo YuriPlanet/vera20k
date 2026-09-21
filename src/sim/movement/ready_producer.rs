@@ -57,7 +57,7 @@ use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::game_entity::GameEntity;
 use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 
-use super::locomotor::{AirMovePhase, GroundMovePhase, LocomotorState};
+use super::locomotor::{GroundMovePhase, LocomotorState};
 use super::locomotor_ready::LocomotorReadyState;
 use super::teleport_movement::TeleportPhase;
 
@@ -74,7 +74,7 @@ pub(crate) fn ready_state_for(
         LocomotorKind::Drive => Some(drive_family(entity, binary_frame, DriveFamily::Drive)),
         LocomotorKind::Ship => Some(drive_family(entity, binary_frame, DriveFamily::Ship)),
         LocomotorKind::Teleport => Some(teleport(entity)),
-        LocomotorKind::Jumpjet => Some(jumpjet(entity, locomotor)),
+        LocomotorKind::Jumpjet => Some(jumpjet(locomotor)),
         LocomotorKind::Walk => Some(walk(entity, locomotor)),
         LocomotorKind::Hover => Some(hover(entity, locomotor)),
         // Catches six kinds: Fly, Rocket, Parachute, Tunnel, DropPod and Mech.
@@ -258,28 +258,17 @@ fn teleport(entity: &GameEntity) -> LocomotorReadyState {
 /// reasoning that it was the safe direction; that was a deviation from native,
 /// introduced before the enum was decoded, and is reverted here.
 ///
-/// Native 5 and 6 have no `AirMovePhase` equivalent. Both are brief and both are
-/// "moving", so the two states we would land in instead (4, then 0) differ only
-/// in the tick the unit becomes ready again. UNMODELLED, recorded.
-fn jumpjet(entity: &GameEntity, locomotor: &LocomotorState) -> LocomotorReadyState {
-    let state = match locomotor.air_phase {
-        AirMovePhase::Landed => 0,
-        AirMovePhase::Ascending => 1,
-        // Native separates "holding station" (2) from "translating" (3); our
-        // `AirMovePhase` collapses both into `Hovering`, so the presence of a
-        // movement target discriminates them. This is the one arm the gate's
-        // answer actually turns on, since 2 is excluded and 3 is not.
-        AirMovePhase::Hovering => {
-            if entity.movement_target.is_some() {
-                3
-            } else {
-                2
-            }
-        }
-        AirMovePhase::Cruising => 3,
-        AirMovePhase::Descending => 4,
-    };
-    LocomotorReadyState::Jumpjet { state }
+/// The input is `JumpjetRuntime::phase`, the locomotor's own state field
+/// (`+0x50`), which `world::jumpjet_cruise` advances through the native
+/// `Process` kernel. It used to be reconstructed from `AirMovePhase`, a lossy
+/// mirror that folded 2 and 3 together (told apart by whether a movement target
+/// existed) and had no 5 or 6.
+fn jumpjet(locomotor: &LocomotorState) -> LocomotorReadyState {
+    LocomotorReadyState::Jumpjet {
+        state: locomotor
+            .jumpjet_runtime()
+            .map_or(0, |runtime| runtime.phase),
+    }
 }
 
 /// Walk's readiness inputs.

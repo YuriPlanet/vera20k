@@ -132,38 +132,42 @@ fn teleport_relocate_reports_moving() {
     assert!(state.is_moving_now());
 }
 
-/// Native separates hovering-in-place from hovering-while-translating; our
-/// single `Hovering` phase is split by the presence of a movement target.
+/// The readiness input is the locomotor's own state field, all seven native
+/// values: `state != 0 && state != 2`. It used to be rebuilt from
+/// `AirMovePhase`, which had no 5 or 6 and told 2 from 3 by whether a movement
+/// target existed.
 #[test]
-fn jumpjet_hovering_split_by_movement_target() {
+fn jumpjet_readiness_reads_the_native_state_field() {
     let mut entity = entity_with(LocomotorKind::Jumpjet);
-    if let Some(locomotor) = entity.locomotor.as_mut() {
-        locomotor.air_phase = AirMovePhase::Hovering;
+    for (state, moving) in [
+        (0, false),
+        (1, true),
+        (2, false),
+        (3, true),
+        (4, true),
+        (5, true),
+        (6, true),
+    ] {
+        entity
+            .locomotor
+            .as_mut()
+            .and_then(|locomotor| locomotor.jumpjet_runtime_mut())
+            .expect("a Jumpjet locomotor carries its runtime")
+            .phase = state;
+        let ready = ready_state_for(&entity, 100).expect("Jumpjet has a producer");
+        assert_eq!(ready.is_moving_now(), moving, "native state {state}");
     }
 
-    let holding = ready_state_for(&entity, 100).expect("Jumpjet has a producer");
-    assert!(
-        !holding.is_moving_now(),
-        "holding station is native state 2 — not moving"
-    );
-
+    // A pending order does not make a holding Jumpjet "moving": state 2 is
+    // excluded whatever the Foot destination says.
+    entity
+        .locomotor
+        .as_mut()
+        .and_then(|locomotor| locomotor.jumpjet_runtime_mut())
+        .unwrap()
+        .phase = 2;
     entity.movement_target = Some(moving_target(20));
-    let translating = ready_state_for(&entity, 100).expect("Jumpjet has a producer");
-    assert!(
-        translating.is_moving_now(),
-        "translating is native state 3 — moving"
-    );
-}
-
-/// A grounded jumpjet is native state 0.
-#[test]
-fn jumpjet_landed_reports_not_moving() {
-    let mut entity = entity_with(LocomotorKind::Jumpjet);
-    if let Some(locomotor) = entity.locomotor.as_mut() {
-        locomotor.air_phase = AirMovePhase::Landed;
-    }
-    let state = ready_state_for(&entity, 100).expect("Jumpjet has a producer");
-    assert!(!state.is_moving_now());
+    assert!(!ready_state_for(&entity, 100).unwrap().is_moving_now());
 }
 
 /// A standing infantryman is not moving.

@@ -527,25 +527,6 @@ fn anim_instance_alpha_with_flags(
         .then(|| anim_translucency_source_alpha(result.flags))
 }
 
-/// SHP header frame count for an animation type, as the translucency resolver
-/// wants it.
-///
-/// `anim_frame_source_alpha` only consults this on the `Translucent=yes`
-/// progressive path, and only for a type that never went through asset binding
-/// (no `raw_shp_frame_count`, no explicit `End=`). This is presentation-only:
-/// simulation timing reads the immutable rules-side asset catalog. Zero when
-/// the atlas has no matching shape.
-fn anim_shp_frame_count(state: &AppState, type_name: &str) -> i32 {
-    state
-        .match_state
-        .match_presentation
-        .sprite_atlas
-        .as_ref()
-        .and_then(|atlas| presentation_anim_frame_count(&atlas.active_anim_frame_counts, type_name))
-        .map(i32::from)
-        .unwrap_or(0)
-}
-
 fn presentation_anim_frame_count(
     frame_counts: &HashMap<String, u16>,
     type_name: &str,

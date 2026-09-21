@@ -392,7 +392,15 @@ pub fn is_ok_to_end(state: &LocomotorState, context: EndGateContext) -> bool {
                 && !context.owner_teleporting
                 && !context.owner_deploying
         }
-        LocomotorKind::Fly | LocomotorKind::Jumpjet | LocomotorKind::Parachute => {
+        LocomotorKind::Jumpjet => {
+            // The Jumpjet's own state field; `AirMovePhase` is Fly's.
+            state
+                .jumpjet_runtime()
+                .is_none_or(|runtime| runtime.phase == super::super::jumpjet_flight::STATE_GROUND)
+                && !context.owner_teleporting
+                && !context.owner_deploying
+        }
+        LocomotorKind::Fly | LocomotorKind::Parachute => {
             state.air_phase == AirMovePhase::Landed
                 && !context.owner_teleporting
                 && !context.owner_deploying

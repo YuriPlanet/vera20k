@@ -3,7 +3,7 @@ use super::*;
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
-use crate::sim::movement::locomotor::{AirMovePhase, LocomotorState, MovementLayer};
+use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
 use crate::sim::{components::Health, game_entity::GameEntity, house_state::HouseState};
 
 fn fixture() -> (Simulation, RuleSet, InternedId, InternedId, InternedId) {
@@ -61,7 +61,10 @@ fn insert(sim: &mut Simulation, id: u64, owner: InternedId, name: &str, x: u16, 
         loco.layer = MovementLayer::Air;
         loco.altitude = crate::util::fixed_math::SimFixed::from_num(208);
         loco.target_altitude = loco.altitude;
-        loco.air_phase = AirMovePhase::Hovering;
+        // The kernel target height is left unset on purpose: the corpus outcome
+        // below holds only while the kernel is not holding the unit at 208.
+        loco.jumpjet_runtime_mut().expect("jumpjet runtime").phase =
+            crate::sim::movement::jumpjet_flight::STATE_HOLD;
         entity.locomotor = Some(loco);
     }
     sim.substrate.next_stable_object_id = sim.substrate.next_stable_object_id.max(id + 1);
@@ -227,7 +230,9 @@ pub(crate) fn gap_operational_power_loss_views() -> Vec<(
             .locomotor
             .as_mut()
             .unwrap()
-            .air_phase = AirMovePhase::Cruising;
+            .jumpjet_runtime_mut()
+            .unwrap()
+            .phase = crate::sim::movement::jumpjet_flight::STATE_TRANSLATE;
         live.set_logic_order_for_test(order);
         live.advance_live_object_pass(Some(&rules), None, None)
             .expect("fixture frame must complete");

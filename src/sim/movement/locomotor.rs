@@ -101,21 +101,19 @@ pub enum GroundMovePhase {
     Blocked,
 }
 
-/// Phase within an air mover's flight cycle.
+/// Phase within a Fly mover's flight cycle.
 ///
-/// Used by Fly and Jumpjet locomotors to track altitude state transitions.
-/// Fly units cycle through TakingOff → Cruising → Descending → Landed.
-/// Jumpjet units ascend to hover altitude and stay in Hovering.
+/// Fly units cycle through TakingOff → Cruising → Descending → Landed. A
+/// Jumpjet does not use it: its phase is the native state field,
+/// `JumpjetRuntime::phase`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AirMovePhase {
     /// On the ground, not yet airborne.
     Landed,
     /// Ascending from ground to cruise/hover altitude.
     Ascending,
-    /// At cruise altitude, moving toward destination (Fly locomotor).
+    /// At cruise altitude, moving toward destination.
     Cruising,
-    /// Hovering at fixed altitude (Jumpjet locomotor).
-    Hovering,
     /// Descending from cruise altitude back to ground.
     Descending,
 }
@@ -159,7 +157,7 @@ pub struct LocomotorState {
     pub layer: MovementLayer,
     /// Current movement phase (for ground movers).
     pub phase: GroundMovePhase,
-    /// Current air movement phase (for Fly/Jumpjet locomotors).
+    /// Current air movement phase (Fly locomotors; unused by a Jumpjet).
     pub air_phase: AirMovePhase,
     /// Speed multiplier applied on top of ObjectType.speed.
     /// 1.0 for most units, 0.65 for Hover, etc.
@@ -309,10 +307,9 @@ impl LocomotorState {
             (kind == LocomotorKind::Jumpjet).then_some(&obj.jumpjet_params);
         let jj_accel: SimFixed = jj.map_or(SIM_ZERO, |p| sim_from_f32(p.accel));
         let jj_deviation: i32 = jj.map_or(0, |p| p.deviation);
-        let jj_crash_speed: SimFixed =
-            jj.map_or(SIM_ZERO, |p| {
-                (sim_from_f32(p.climb) + sim_from_f32(p.crash)) * SimFixed::from_num(15)
-            });
+        let jj_crash_speed: SimFixed = jj.map_or(SIM_ZERO, |p| {
+            (sim_from_f32(p.climb) + sim_from_f32(p.crash)) * SimFixed::from_num(15)
+        });
         let jj_turn_rate: i32 = jj.map_or(4, |p| p.turn_rate);
 
         Self {
