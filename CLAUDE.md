@@ -1,11 +1,19 @@
 # VERA20k — Project contract
 
-A Rust replacement for Yuri's Revenge `gamemd.exe`: **gamemd-native semantics,
-Rust-native architecture**. The intentional scale exception is **20,000 units,
-30 players**; replace native storage limits while preserving deterministic behavior.
+VERA20k is a cross-platform Rust reimplementation of the Command & Conquer:
+Yuri's Revenge engine (`gamemd.exe`), using original retail rules and assets.
+The goal is to reproduce native gameplay behavior through a Rust-native architecture,
+while scaling to **20,000 units and 30 players**. VERA20k must build and run on Linux,
+macOS and Windows; keep architecture and dependencies compatible.
 
-VERA20k must build and run on Linux, macOS and Windows; keep architecture and
-dependencies compatible.
+All simulation-affecting math must produce identical results across supported
+platforms and CPU architectures for identical state, inputs and RNG. Prefer
+`SimFixed` for simulation calculations; document and validate any differences
+from native precision and rounding.
+
+Development follows complete gameplay mechanisms and their required dependencies,
+with clear ownership of state and shared logic. Native executable behavior and
+retail data establish what the implementation must reproduce.
 
 This contract governs Codex and Claude. Use engineering judgment; skills are optional
 specialized help. Specific user instructions override workflow defaults.
