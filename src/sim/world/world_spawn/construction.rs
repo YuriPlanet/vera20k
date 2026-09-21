@@ -106,8 +106,10 @@ impl Simulation {
         ge.sight_is_zero = obj.is_some_and(|object| object.sight == 0);
         if let Some(obj) = obj.filter(|obj| obj.has_turret) {
             let initial = crate::sim::movement::turret::body_facing_to_turret(facing);
-            let rot_byte = obj.turret_rot.clamp(0, 0xFF) as u8;
-            ge.barrel_facing = Some(crate::sim::movement::FacingClass::new(initial, rot_byte));
+            ge.barrel_facing = Some(crate::sim::movement::FacingClass::new(
+                initial,
+                obj.turret_rot,
+            ));
         }
         if uses_voxel {
             ge.voxel_animation = Some(VoxelAnimation::new(1, 1));

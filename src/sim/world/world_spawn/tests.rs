@@ -54,6 +54,96 @@ fn install_american_house(sim: &mut Simulation) {
 }
 
 #[test]
+fn signed_rot_reaches_spawn_combat_turn_and_snapshot_restore() {
+    use crate::sim::combat::UnitFacingUpdate;
+    use crate::sim::snapshot::GameSnapshot;
+
+    let rows: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/spatial_oracle/facing_class.json"
+    ))
+    .unwrap();
+    for row in rows.as_array().unwrap().iter().filter(|row| {
+        row["input"]["rate_constructor"] == false
+            && row["input"]["start"] == 100
+            && row["input"]["operations"].as_array().unwrap().len() == 9
+    }) {
+        let rot = row["input"]["rot"].as_i64().unwrap() as i32;
+        let expected = &row["observations"][0];
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=6\nTurret=yes\nROT={rot}\n"
+        )))
+        .unwrap();
+        let mut sim = Simulation::with_seed(0);
+        install_constructor_test_playfield(&mut sim);
+        install_constructor_flat_terrain(&mut sim);
+        install_american_house(&mut sim);
+        let id = sim
+            .spawn_object_at_height("MTNK", "Americans", 6, 5, 64, 0, &rules)
+            .unwrap();
+        let barrel = sim
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .barrel_facing
+            .unwrap();
+        assert_eq!(
+            serde_json::json!(barrel.rot_per_frame()),
+            expected["rate"],
+            "ROT={rot}"
+        );
+
+        crate::sim::world::unit_post::apply_unit_facing(
+            &mut sim.substrate.entities,
+            &[UnitFacingUpdate {
+                entity_id: id,
+                turret_destination: Some(0xC000),
+                hull_destination: Some(0xC000),
+                turret_destination_is_idle_return: false,
+            }],
+            &rules,
+            &sim.interner,
+            100,
+        );
+        let entity = sim.substrate.entities.get(id).unwrap();
+        for facing in [entity.body_facing.unwrap(), entity.barrel_facing.unwrap()] {
+            assert_eq!(
+                serde_json::json!(facing.rot_per_frame()),
+                expected["rate"],
+                "ROT={rot}"
+            );
+            assert_eq!(
+                serde_json::json!(facing.current(100)),
+                expected["animated"],
+                "ROT={rot}"
+            );
+            assert_eq!(
+                serde_json::json!(facing.is_rotating(100)),
+                expected["rotating"],
+                "ROT={rot}"
+            );
+        }
+        assert_eq!(
+            serde_json::json!(entity.turret_rotation_latch),
+            expected["rotating"]
+        );
+        // Match the load-time RNG initialization before comparing whole state.
+        sim.scenario_rng = SimRng::new(0);
+        let hash = sim.state_hash();
+        let saved = GameSnapshot::save(&sim, 0, 0, "signed facing ROT", 0);
+        let mut restored = GameSnapshot::load(&saved).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        assert_eq!(restored.state_hash(), hash, "ROT={rot}");
+        let heights = BTreeMap::new();
+        for _ in 0..3 {
+            sim.advance_tick(&[], Some(&rules), &heights, None, None, 67);
+            restored.advance_tick(&[], Some(&rules), &heights, None, None, 67);
+            assert_eq!(sim.state_hash(), restored.state_hash(), "ROT={rot}");
+        }
+    }
+}
+
+#[test]
 fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
     use crate::sim::snapshot::GameSnapshot;
     let native: serde_json::Value = serde_json::from_str(include_str!(

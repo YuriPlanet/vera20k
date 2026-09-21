@@ -2549,14 +2549,11 @@ pub(super) fn resolve_attacker_fire(
         // Cannon at `ROT=1` fires on the tick it comes within one step instead
         // of waiting a further frame.
         if !aligned && is_voxel_turret_building {
-            // VERA-internal, gamemd equivalent UNCHECKED: native builds the step
-            // as `abs((i16)(ROT << 8))`, which wraps for `ROT >= 0x80`; this
-            // clamps instead. Trigger: a building type authoring `ROT=` at or
-            // above 128. Player effect: none observed — the highest stock
-            // building `ROT=` is `[GTGCAN] ROT=1` — so frequency is zero in
-            // stock. Downstream risk: none; the clamp only bounds the retry
-            // window of a refusal that is re-evaluated next tick anyway.
-            let rot_step: i32 = i32::from(obj.turret_rot.clamp(0, 0x7F) as u8) << 8;
+            // 44B068..44B0A4 uses abs(low-byte ROT << 8 interpreted as
+            // signed16), WITHOUT FacingClass SetROT's upper clamp. Keep this
+            // native difference: ROT128 allows a half-turn retry; ROT256 only
+            // an exact match. Original decisions: building_fire_turn.json.
+            let rot_step = i32::from(((obj.turret_rot as u8 as u16) << 8) as i16).abs();
             if obj.turret_rot == 0 || delta.abs() <= rot_step {
                 if let Some(barrel) = world
                     .substrate
@@ -2657,10 +2654,9 @@ pub(super) fn resolve_attacker_fire(
             return;
         };
         let body = entity.body_facing.get_or_insert_with(|| {
-            crate::sim::movement::FacingClass::new(
-                u16::from(entity.facing) << 8,
-                obj.turret_rot.clamp(0, 0xFF) as u8,
-            )
+            // Infantry ctor517BBD..517BC5 seeds PrimaryFacing with127,
+            // independently of Type ROT (Unit/Aircraft use the type value).
+            crate::sim::movement::FacingClass::new(u16::from(entity.facing) << 8, 127)
         });
         body.snap(desired, binary_frame);
         entity.facing = (body.current(binary_frame) >> 8) as u8;

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "61 histories: nineteen signed ROT inputs, both constructors, active-timer rate changes, retarget/snap/equality, direction wrap, frame wrap and timer epoch -1. Does not establish any complete locomotor or combat mission.",
+  "assumptions": [
+    "Original constructors followed by original snap to the supplied initial heading.",
+    "Original 24-byte object retained between calls; supplied global frame counter, including signed and unsigned wrap boundaries.",
+    "Only direction words, rate word, timer epoch/duration and public query/setter returns are compared; padding and the unused timer word are excluded."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "constructor": "0x004C91C0",
+    "rate_constructor": "0x004C91E0",
+    "set_rot": "0x004C9680",
+    "set": "0x004C9220",
+    "snap": "0x004C9300",
+    "current": "0x004C93D0",
+    "is_rotating": "0x004C9480"
+  },
+  "payload_sha256": "9f8c51d67aa38077933369c6633d39be29eaa8db19a8512e9476e64270d06ec9"
+}

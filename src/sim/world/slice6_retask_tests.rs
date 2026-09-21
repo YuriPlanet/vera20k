@@ -446,7 +446,10 @@ const SLICE6_BASELINE_HASH_PRE_CRATE_SPEED_V181: u64 = 0x3D7F_B762_F752_444A;
 const SLICE6_BASELINE_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0x720D_C262_694D_3821;
 // Snapshot182 adds ordered display vectors. The pre-182 projection below
 // must reproduce the previous whole-fixture hash, including all RNG/state.
-const SLICE6_BASELINE_HASH: u64 = 209154586170202422;
+const SLICE6_BEFORE_INFANTRY_ROT_HASH: u64 = 209154586170202422;
+// Infantry ctor517BBD supplies PrimaryFacing ROT127. The comparison below
+// changes only that retained rate back to0 and reproduces every previous pin.
+const SLICE6_BASELINE_HASH: u64 = 0x3AB4_0B61_DE3B_5224;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -686,6 +689,21 @@ fn replay_hash_stable_through_slice6() {
             entity.foot_speed,
         );
     }
+    let infantry_facing = sim.substrate.entities.get(3).unwrap().body_facing.unwrap();
+    assert_eq!(infantry_facing.rot_per_frame(), 0x7F00);
+    sim.substrate
+        .entities
+        .get_mut(3)
+        .unwrap()
+        .body_facing
+        .as_mut()
+        .unwrap()
+        .set_rot(0);
+    assert_eq!(
+        sim.state_hash(),
+        SLICE6_BEFORE_INFANTRY_ROT_HASH,
+        "only the corrected Infantry constructor rate may differ from the preceding baseline"
+    );
     assert_eq!(
         sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(174)),
         SLICE6_BASELINE_HASH_PRE_RETIRED_TIBERIUM_STATE_V174,
@@ -700,6 +718,12 @@ fn replay_hash_stable_through_slice6() {
         sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(182)),
         SLICE6_BASELINE_HASH_PRE_DISPLAY_LAYERS_V182,
         "excluding only display vectors must preserve the pre-182 fixture"
+    );
+    sim.substrate.entities.get_mut(3).unwrap().body_facing = Some(infantry_facing);
+    assert_eq!(
+        sim.state_hash(),
+        hash,
+        "restore the unmodified live facing state"
     );
     assert_eq!(
         hash, SLICE6_BASELINE_HASH,

@@ -10,7 +10,7 @@
   "scope": "Original first ready-path Walk Process through actual fresh-head return, plus completed-head path terminator propagation block. This complements accepted setter/first FindPath request timing; pathfinder core and CanEnter admission remain supplied seams.",
   "assumptions": [
     "Supplied ready Foot path2,3,4,5 and reference9,8, current cell9,10, nextcell10,10, signed level2/slope1, literal currentZ260, destination Cell center, ordinary alive Infantry mission1 (mission0 contrast), no slave/crate/gate/transport.",
-    "Native frame100 and zero-initialized FacingClass/current rate0 are supplied; final facing words and logical timer fields are observed. Actual Walk constructor executes. Owner virtual+1BC uses original5F6960 (Infantry slot7EB214); +48 uses5F65A0; +544 uses4D3710. Actual locomotor facing callback from the constructed table and Foot speed callback execute before return75BCBD. No paid numeric motion executes in this first-head arm.",
+    "Native frame100; five legacy rows supply zero-initialized FacingClass/rate0, and five matching rows execute the original facing constructor plus Infantry constructor517BBD..517BCA rate127 block. Final facing words and logical timer fields are observed. Actual Walk constructor executes. Owner virtual+1BC uses original5F6960 (Infantry slot7EB214); +48 uses5F65A0; +544 uses4D3710. Actual locomotor facing callback from the constructed table and Foot speed callback execute before return75BCBD. No paid numeric motion executes in this first-head arm.",
     "Octant lepton vector table89F6D8 and imported subcell offsets, heights104/416, FPCW0E7F are supplied runtime data. Initial current raw bits are produced by original5217C0; they are not inferred from a chosen slot.",
     "Full1012-byte ScenarioRandom state is recorded before/after Process; center rows exercise actual draws and noncenter row skips them. CurrentXYZ/head/raw/queue/reference/speed are observed separately.",
     "Completed-queue rows enter original75BD83 after the caller Mark removal, stop before SetCoords75BDBB, and supply24 raw path words. They prove the -1 propagation before shift only, not the whole completed-head transaction."
@@ -29,7 +29,9 @@
     "new_head_return": "0x0075BCBD",
     "queue_propagation": "0x0075BD83",
     "foot_speed": "0x004D3710",
-    "owner_cell": "0x005F6960"
+    "owner_cell": "0x005F6960",
+    "facing_constructor": "0x004C91C0",
+    "infantry_facing_rate": "0x00517BBD"
   },
-  "payload_sha256": "168f2c1aafd7fa7fe276f589c35c0850c168e778f9a532f5180aa87ee6607595"
+  "payload_sha256": "ae1aa56d879e2e192f98e4fbf75e3f2da96bb83545b7b32fe1bf578c5d3256be"
 }

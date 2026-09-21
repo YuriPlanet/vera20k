@@ -73,10 +73,10 @@ fn dock_pivot_accepts(dir: u16) -> bool {
     ((((dir as u32) >> 7) + 1) & 0x1FE) == 0x80
 }
 
-fn dock_pivot_rot_byte(sim: &Simulation, rules: &RuleSet, snap: &MinerSnapshot) -> u8 {
+fn dock_pivot_rot(sim: &Simulation, rules: &RuleSet, snap: &MinerSnapshot) -> i32 {
     rules
         .object_case_insensitive(sim.interner.resolve(snap.type_id))
-        .map(|obj| obj.turret_rot.clamp(0, 0xFF) as u8)
+        .map(|obj| obj.turret_rot)
         .unwrap_or(10)
 }
 
@@ -1079,7 +1079,7 @@ fn phase_mission_queued(snap: &mut MinerSnapshot) {
 }
 
 fn sync_dock_facing(sim: &mut Simulation, rules: &RuleSet, snap: &mut MinerSnapshot) -> bool {
-    let rot = dock_pivot_rot_byte(sim, rules, snap);
+    let rot = dock_pivot_rot(sim, rules, snap);
     let binary_frame = sim.session.binary_frame;
     let Some(entity) = sim.substrate.entities.get(snap.entity_id) else {
         return false;

@@ -66,11 +66,7 @@ pub(crate) fn current_direction(entity: &GameEntity, frame: u32) -> u8 {
 pub(crate) fn start_turn(entity: &mut GameEntity, target: u8, frame: u32) {
     // DriveLocomotion::Do_Turn 0x004B0EF0 delegates to FacingClass::Set
     // 0x004C9220; setting an existing destination must not restart its timer.
-    let rot = entity
-        .locomotor
-        .as_ref()
-        .map_or(0, |loco| loco.rot)
-        .clamp(0, 127) as u8;
+    let rot = entity.locomotor.as_ref().map_or(0, |loco| loco.rot);
     let body = entity
         .body_facing
         .get_or_insert_with(|| FacingClass::new(u16::from(entity.facing) << 8, rot));

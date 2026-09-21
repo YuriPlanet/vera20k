@@ -3,7 +3,7 @@ Path success and CanEnter=0 are supplied; numeric paid movement is not executed.
 """
 from pathlib import Path
 import struct
-from unicorn.x86_const import UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_ESP, UC_X86_REG_FPCW
+from unicorn.x86_const import UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_ESI, UC_X86_REG_ESP, UC_X86_REG_FPCW
 from tools.spatial_oracle import walk_head_occupation as h
 from tools.spatial_oracle.map_queries import dwords, packed
 from tools.native_oracle import STACK_BASE, STACK_SIZE, SCRATCH, RET_MAGIC, run_checked, finish_vectors, provenance
@@ -30,6 +30,12 @@ class Original(h.Original):
  def process(self):
   row=self.row;u=self.uc
   u.mem_write(0xA8ED84,dwords(100))
+  if row.get('infantry_constructor_facing',False):
+   self.call(0x4C91C0,h.OWNER+0x388,[])
+   sp=STACK_BASE+STACK_SIZE-0x1000
+   u.reg_write(UC_X86_REG_ESP,sp);u.reg_write(UC_X86_REG_ESI,h.OWNER)
+   run_checked(u,0x517BBD,0x517BCA,count=100,required_addresses=[0x4C9680])
+   assert u.reg_read(UC_X86_REG_ESP)==sp
   self.call(0x75AA90,h.LOCO,[]);u.mem_write(h.LOCO+0xC,dwords(h.OWNER))
   sx,sy=row['sub'];current=[9*256+sx,10*256+sy,260]
   self.setup(dict(input=[10*256+sx,10*256+sy,260],ground=0,deck=0,level=2,slope=1))
@@ -65,17 +71,18 @@ class Original(h.Original):
   return dict(invalidated=invalidated,before=before,after=list(struct.unpack('<24i',u.mem_read(h.OWNER+0x5E0,96))))
 
 def generate():
- return dict(ready_path=[Original(row).process() for row in [
+ rows=[
   {'sub':[192,64]}, {'sub':[128,128]}, {'sub':[64,64]},
-  {'sub':[128,128],'seed':0}, {'sub':[128,128],'mission':0,'nav':False,'target':False}]],
+  {'sub':[128,128],'seed':0}, {'sub':[128,128],'mission':0,'nav':False,'target':False}]
+ return dict(ready_path=[Original(row).process() for row in rows+[dict(row,infantry_constructor_facing=True) for row in rows]],
   completed_queue=[Original({}).completed_queue(value) for value in [False,True]])
 
 if __name__=='__main__':
  finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=lambda:provenance(
   scope='Original first ready-path Walk Process through actual fresh-head return, plus completed-head path terminator propagation block. This complements accepted setter/first FindPath request timing; pathfinder core and CanEnter admission remain supplied seams.',
-  entry_points={'walk_constructor':0x75AA90,'walk_process':0x75AEC0,'prospective_coords':0x75B59C,'can_enter_dispatch':0x75B690,'head':0x75C240,'placement':0x481180,'new_head_return':0x75BCBD,'queue_propagation':0x75BD83,'foot_speed':0x4D3710,'owner_cell':0x5F6960},
+  entry_points={'walk_constructor':0x75AA90,'walk_process':0x75AEC0,'prospective_coords':0x75B59C,'can_enter_dispatch':0x75B690,'head':0x75C240,'placement':0x481180,'new_head_return':0x75BCBD,'queue_propagation':0x75BD83,'foot_speed':0x4D3710,'owner_cell':0x5F6960,'facing_constructor':0x4C91C0,'infantry_facing_rate':0x517BBD},
   assumptions=['Supplied ready Foot path2,3,4,5 and reference9,8, current cell9,10, nextcell10,10, signed level2/slope1, literal currentZ260, destination Cell center, ordinary alive Infantry mission1 (mission0 contrast), no slave/crate/gate/transport.',
-   'Native frame100 and zero-initialized FacingClass/current rate0 are supplied; final facing words and logical timer fields are observed. Actual Walk constructor executes. Owner virtual+1BC uses original5F6960 (Infantry slot7EB214); +48 uses5F65A0; +544 uses4D3710. Actual locomotor facing callback from the constructed table and Foot speed callback execute before return75BCBD. No paid numeric motion executes in this first-head arm.',
+   'Native frame100; five legacy rows supply zero-initialized FacingClass/rate0, and five matching rows execute the original facing constructor plus Infantry constructor517BBD..517BCA rate127 block. Final facing words and logical timer fields are observed. Actual Walk constructor executes. Owner virtual+1BC uses original5F6960 (Infantry slot7EB214); +48 uses5F65A0; +544 uses4D3710. Actual locomotor facing callback from the constructed table and Foot speed callback execute before return75BCBD. No paid numeric motion executes in this first-head arm.',
    'Octant lepton vector table89F6D8 and imported subcell offsets, heights104/416, FPCW0E7F are supplied runtime data. Initial current raw bits are produced by original5217C0; they are not inferred from a chosen slot.',
    'Full1012-byte ScenarioRandom state is recorded before/after Process; center rows exercise actual draws and noncenter row skips them. CurrentXYZ/head/raw/queue/reference/speed are observed separately.',
    'Completed-queue rows enter original75BD83 after the caller Mark removal, stop before SetCoords75BDBB, and supply24 raw path words. They prove the -1 propagation before shift only, not the whole completed-head transaction.'],

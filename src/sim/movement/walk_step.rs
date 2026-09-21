@@ -40,9 +40,15 @@ pub(super) fn advance(
     );
     // Walk75AE00 snaps the body, but SI still supplies the desired direction to
     // the displacement even if snap's equality branch retains an old target.
+    // Class constructor owns ROT, independently of the selected locomotor.
+    let rot = if entity.category == crate::map::entities::EntityCategory::Infantry {
+        127 // Infantry ctor517BBD; Unit ctor735570 uses Type ROT.
+    } else {
+        entity.locomotor.as_ref().map_or(0, |loco| loco.rot)
+    };
     let body = entity
         .body_facing
-        .get_or_insert_with(|| super::FacingClass::new(u16::from(entity.facing) << 8, 0));
+        .get_or_insert_with(|| super::FacingClass::new(u16::from(entity.facing) << 8, rot));
     body.snap(desired, native_frame);
     entity.facing = (body.current(native_frame) >> 8) as u8;
     entity.facing_target = None;

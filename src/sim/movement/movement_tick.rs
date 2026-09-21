@@ -438,7 +438,9 @@ fn handle_path_exhaustion(
                         // selection. finish_fresh_head owns that ordered call.
                         // Drive4B3408/Ship6A2A57 owns the fresh turn after
                         // repath too. An eager byte snap bypasses its return.
-                    } else if category == EntityCategory::Infantry || snap.rot <= 0 {
+                    } else if category == EntityCategory::Infantry
+                        || super::FacingClass::rate_from_rot(snap.rot) <= 0
+                    {
                         *facing = new_face;
                     } else {
                         *facing_target = Some(new_face);
