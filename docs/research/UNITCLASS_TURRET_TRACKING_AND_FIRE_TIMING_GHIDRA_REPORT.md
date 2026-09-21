@@ -222,7 +222,7 @@ Despite its name, this function is a setter that **does not initialize a duratio
 
 It's used by callers that want "set this facing now, no smoothing" — the locomotion classes (`FlyLocomotionClass::Begin_Takeoff`, `WalkLocomotionClass::Set_Facing`, etc.), constructors, and the deploy path. Note the constructor list (25 callers) is dominated by initialization paths.
 
-By contrast, `FacingClass::Set` at `0x4C9220` is the **smoothed setter** — used by combat code (`UnitClass::Fire_At_Target`, `InfantryClass::Fire_At_Target`, `BuildingClass::Mission_Attack`).
+By contrast, `FacingClass::Set` at `0x4C9220` is the **smoothed setter** used by vehicle/building combat turns. Infantry fire-start uses the snap setter: `InfantryClass::Fire_At_Target` calls `0x4C9300` at `0x00520925` after `DoAction`, not `Set`. Rechecked 2026-09-21 against instructions and the bounded original-code corpus in `tools/spatial_oracle/infantry_fire_start.py`.
 
 **Bug-trap:** the `0x4C9300` function name is `FacingClass__UpdateFacing` in Ghidra, while `0x4C9220` is labeled `RateTimer__Set`. These names are misleading. The "real" UpdateFacing semantically is `0x4C9220`. Don't trust the labels.
 

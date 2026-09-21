@@ -2352,6 +2352,32 @@ pub(super) fn resolve_attacker_fire(
         return;
     }
 
+    // InfantryClass::GetFireError 0051C9B8..0051C9C9: after common legality,
+    // Foot+578 > binary64 0.1 returns error 7, before starting or emitting fire.
+    // Read the existing Foot owner: an attack order retains its paid Walk step
+    // even after clearing NavCom. A movement-target test is not this predicate.
+    // 0.1 lies between SimFixed raw 6553 and 6554; integer division selects the
+    // largest admissible representable fraction. Original boundary witnesses:
+    // tools/spatial_oracle/infantry_fire_speed.json.
+    if snap.category == EntityCategory::Infantry
+        && world
+            .substrate
+            .entities
+            .get(snap.stable_id)
+            .is_some_and(|entity| {
+                entity.foot_speed.applied_fraction > SimFixed::ONE / SimFixed::from_num(10)
+            })
+    {
+        if pending_at_fire_frame {
+            out.pending_infantry_updates.push((snap.stable_id, None));
+            out.animation_switches.push((
+                snap.stable_id,
+                infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
+            ));
+        }
+        return;
+    }
+
     // TechnoClass::GetFireError @ 0x006FC0B0 returns 9 after the ordinary
     // busy/rearm/ammo gates when DecloakToFire= is set and the current cloak
     // state requires surfacing. UnitClass::Fire_At_Target @ 0x00736DF0 then
@@ -2459,7 +2485,7 @@ pub(super) fn resolve_attacker_fire(
     // not-rotating term.
     //
     // Infantry are NOT angle-gated: `InfantryClass::Fire_At_Target @
-    // 0x005206B0` snaps `+0x388` with `UpdateFacing` at `0x0052091F` the moment
+    // 0x005206B0` snaps `+0x388` with `UpdateFacing` at `0x00520925` the moment
     // firing becomes possible and applies no test. A turretless STRUCTURE gets
     // no gate either (`0x00447FE3` requires `HasTurret`, vtable `+0x3FC`).
     //
@@ -2609,6 +2635,42 @@ pub(super) fn resolve_attacker_fire(
             }
         }
     }
+
+    // InfantryClass::Fire_At_Target 00520904..00520925: after admission and
+    // starting the fire action, snap body +388 through DirectionToTarget.
+    // Pending actions skip this writer, even if the target moves before FireUp.
+    // Publish both the retained owner and the emission snapshot: FireUp=0 must
+    // use the new heading for this very shot's FLH and presentation event.
+    let mut firing_snapshot;
+    let snap = if snap.category == EntityCategory::Infantry && !pending_at_fire_frame {
+        let desired = crate::sim::movement::turret::facing_toward_lepton(
+            snap.pos_rx,
+            snap.pos_ry,
+            snap.sub_x,
+            snap.sub_y,
+            target_rx,
+            target_ry,
+            target_sub_x,
+            target_sub_y,
+        );
+        let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) else {
+            return;
+        };
+        let body = entity.body_facing.get_or_insert_with(|| {
+            crate::sim::movement::FacingClass::new(
+                u16::from(entity.facing) << 8,
+                obj.turret_rot.clamp(0, 0xFF) as u8,
+            )
+        });
+        body.snap(desired, binary_frame);
+        entity.facing = (body.current(binary_frame) >> 8) as u8;
+        firing_snapshot = snap.clone();
+        firing_snapshot.facing = entity.facing;
+        firing_snapshot.hull_facing = entity.body_facing;
+        &firing_snapshot
+    } else {
+        snap
+    };
 
     if infantry_fire_sync && !pending_at_fire_frame {
         let sequence =

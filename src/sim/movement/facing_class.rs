@@ -144,18 +144,23 @@ impl FacingClass {
         true
     }
 
-    /// Snap setter — writes target to both current and prev, resets the
-    /// timer. Mirrors `FacingClass::UpdateFacing` @ `0x004C9300`.
+    /// Snap setter — writes target to both current and prev when it differs
+    /// from the animated heading, and always resets the timer. Mirrors
+    /// `FacingClass::UpdateFacing` @ `0x004C9300`.
     ///
     /// Its primary consumers are not spawn paths: `DriveLocomotionClass::
     /// Process_Drive_Track` @ `0x004B1AC1` and its Ship twin @ `0x006A10FD`
     /// snap the **body facing to each consumed track point's facing byte**,
     /// so a Drive unit's hull facing is snapped rather than interpolated for
     /// the whole duration of a curve. Spawn, takeoff and deploy use it too.
-    /// Returns true if the destination changed.
+    /// At 004C937B..004C93A9 native compares only the animated heading. If it
+    /// already equals the request during a turn, native retains the previous
+    /// destination but cancels the timer, making that destination visible.
+    /// The infantry_fire_start native corpus includes this equality branch.
+    /// Returns true when native writes the requested direction.
     pub fn snap(&mut self, new_target: u16, binary_frame: u32) -> bool {
         let animated = self.current(binary_frame);
-        if animated == new_target && self.current == new_target {
+        if animated == new_target {
             self.start_frame = Some(binary_frame);
             self.duration_frames = 0;
             return false;

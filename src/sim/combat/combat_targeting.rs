@@ -96,9 +96,9 @@ pub(crate) struct AttackerSnapshot {
     pub pending_infantry_fire: Option<super::PendingInfantryFire>,
     pub pending_building_fire: Option<crate::sim::game_entity::PendingBuildingFire>,
     pub barrel_facing: Option<crate::sim::movement::FacingClass>,
-    /// Hull interpolator (`+0x388`), live only while the body is turning. The
-    /// facing gate reads it for `Turret=no` firers so the comparison uses the
-    /// full 16-bit animated value rather than the 8-bit mirrored heading.
+    /// Retained body FacingClass (`+0x388`), including infantry fire-start
+    /// snaps and vehicle turns. Facing gates and emission read its full
+    /// 16-bit value rather than the byte mirrored for presentation.
     pub hull_facing: Option<crate::sim::movement::FacingClass>,
     /// Turret rotation latch (`UnitClass+0x6AF`) as it stood BEFORE this tick's
     /// `Facing_Update`, which is the value `UnitClass::GetFireError @
@@ -579,14 +579,19 @@ pub fn tick_retaliation(
                 None => continue,
             };
             if let Some(entity) = entities.get_mut(entity_id) {
-                if entity.barrel_facing.is_none() && entity.category != EntityCategory::Unit {
+                if entity.barrel_facing.is_none()
+                    && !matches!(
+                        entity.category,
+                        EntityCategory::Unit | EntityCategory::Infantry
+                    )
+                {
                     // Body-only retaliator — instantly face the attacker.
                     // Turreted retaliators get their turret driven by
                     // `Facing_Update`, and a TURRETLESS VEHICLE turns its hull
                     // through `UnitClass::Fire_At_Target @ 0x00736DF0` case 2
                     // once the fire gate refuses it for facing — assignment
-                    // itself writes no facing in gamemd. Infantry keep the snap;
-                    // see the residual on `combat::issue_attack_command`.
+                    // itself writes no facing in gamemd. Infantry snap when
+                    // their fire action starts in resolve_attacker_fire.
                     let dx: i32 = attacker_pos.0 as i32 - entity.position.rx as i32;
                     let dy: i32 = attacker_pos.1 as i32 - entity.position.ry as i32;
                     entity.facing = crate::sim::movement::facing_from_delta(dx, dy);

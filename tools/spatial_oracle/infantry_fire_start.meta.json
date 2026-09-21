@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "59 prefix cases: five action families, ten XY deltas, four refusals, pending/absent target, active-turn equality and building/cell targets; no emission or full AI.",
+  "assumptions": [
+    "Supplied Infantry type/action state and coordinates; no paradrop or NavCom==TarCom.",
+    "Frame 100; stationary facing plus one active-turn equality case; pending sequence skips the update.",
+    "One 2x3 building target and one flat level-zero cell target exercise their original coordinate getters."
+  ],
+  "substitutions": [
+    "External virtual weapon-slot and fire-error results; DoAction records its argument."
+  ],
+  "entry_points": {
+    "infantry_fire_at_target": "0x005206B0",
+    "prefix_end": "0x0052094C",
+    "direction_to_target": "0x005F3DB0",
+    "get_coords": "0x005F65A0",
+    "building_get_coords": "0x00447AC0",
+    "cell_get_coords": "0x00486840",
+    "update_facing": "0x004C9300"
+  },
+  "payload_sha256": "737edc91feeb0b4347a9c447392b605c8a489250e6c54424bbb5c9d771034a44"
+}
