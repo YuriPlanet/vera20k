@@ -73,6 +73,8 @@ membership and rebuilds map-derived caches. Existing global replay pins pass
 without rebaselining. Output: `%TEMP%/vera20k-combat-lib-tests.log`.
 `cargo clippy -p vera20k --lib` passes (1,031 warnings), recorded in
 `%TEMP%/vera20k-combat-clippy.log`. The single critic and PR remain pending.
+Source checkpoint: `3621bac4`. The module map was regenerated for that commit;
+its production dependency edges are unchanged. The single critic pass is running.
 
 Ghidra: `ObjectClass__DirectionToTarget @ 005F3DB0` named and its plate, plus the
 `InfantryClass__Fire_At_Target` plate, saved and read back. Original Infantry
@@ -97,6 +99,5 @@ WalkHost header and generic integrator. These are leads, not a complete inventor
 FacingClass::snap's live-angle equality discrepancy is now corrected
 against original-code execution: cancel the timer while retaining the old target.
 
-Next: commit, refresh the module map and obtain the single pre-PR review.
-Then publish/merge the validated
+Next: resolve the single pre-PR review, then publish/merge the validated
 increment and continue the required combat chains. The whole-combat goal is open.

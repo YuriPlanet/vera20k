@@ -1,7 +1,7 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `ab69e36a72809c01fee43beeef9bb64e55feff6b` (2026-09-21), cargo-modules 0.26.0.
+Generated snapshot: `3621bac4d6148bb95d8a60acd5a1732a81ddf592` (2026-09-21), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
