@@ -93,63 +93,6 @@ fn accept_shared_track(
     }
 }
 
-pub(super) fn movement_frame_budget_from_current_speed(current_speed_per_second: SimFixed) -> i32 {
-    (current_speed_per_second / SimFixed::from_num(15u8)).to_num::<i32>()
-}
-
-fn scaled_frame_delta(
-    direction_component: SimFixed,
-    direction_length: SimFixed,
-    frame_budget: i32,
-) -> SimFixed {
-    if direction_component == SIM_ZERO || direction_length <= SIM_ZERO || frame_budget == 0 {
-        return SIM_ZERO;
-    }
-
-    const FRACTION_SCALE: i64 = 1 << 16;
-    let numerator =
-        i64::from(direction_component.to_bits()) * i64::from(frame_budget) * FRACTION_SCALE;
-    let delta_bits = numerator / i64::from(direction_length.to_bits());
-    SimFixed::from_bits(
-        i32::try_from(delta_bits).expect("movement component exceeds SimFixed range"),
-    )
-}
-
-fn whole_lepton_subcell_after_delta(cell: u16, subcell: SimFixed, delta: SimFixed) -> SimFixed {
-    const FRACTION_SCALE: i64 = 1 << 16;
-    const LEPTONS_PER_CELL: i64 = crate::util::lepton::LEPTONS_PER_CELL_I32 as i64;
-    let cell_origin = i64::from(cell) * LEPTONS_PER_CELL;
-    let absolute_bits =
-        cell_origin * FRACTION_SCALE + i64::from(subcell.to_bits()) + i64::from(delta.to_bits());
-    let absolute_leptons = absolute_bits / FRACTION_SCALE;
-    let subcell_leptons = absolute_leptons - cell_origin;
-    SimFixed::from_num(
-        i32::try_from(subcell_leptons).expect("sub-cell movement exceeds SimFixed range"),
-    )
-}
-
-fn advance_by_frame_budget(target: &MovementTarget, position: &mut Position, frame_budget: i32) {
-    let delta_x = scaled_frame_delta(target.move_dir_x, target.move_dir_len, frame_budget);
-    let delta_y = scaled_frame_delta(target.move_dir_y, target.move_dir_len, frame_budget);
-    position.sub_x = whole_lepton_subcell_after_delta(position.rx, position.sub_x, delta_x);
-    position.sub_y = whole_lepton_subcell_after_delta(position.ry, position.sub_y, delta_y);
-}
-
-fn advance_straight_position(
-    target: &MovementTarget,
-    position: &mut Position,
-    frame_budget: i32,
-    fraction: SimFixed,
-    whole_lepton_result: bool,
-) {
-    if whole_lepton_result {
-        advance_by_frame_budget(target, position, frame_budget);
-    } else {
-        position.sub_x += target.move_dir_x * fraction;
-        position.sub_y += target.move_dir_y * fraction;
-    }
-}
-
 pub(super) fn apply_cell_transition_remainder(
     path_runtime: &mut crate::sim::components::FootPathRuntime,
     position: &mut Position,
@@ -989,118 +932,57 @@ pub(super) fn advance_lepton_position(
     locomotor: &mut Option<LocomotorState>,
     category: EntityCategory,
     effective_speed: SimFixed,
-    frame_budget: i32,
     dt: SimFixed,
     entity_id: u64,
-    current_occupation_layer: MovementLayer,
-    path_grid: Option<&PathGrid>,
-    terrain: Option<&ResolvedTerrainGrid>,
 ) -> AdvanceResult {
-    let walk_xy_before = locomotor
-        .as_ref()
-        .filter(|loco| loco.kind == LocomotorKind::Walk)
-        .map(|_| super::ground_pose::position_world_xy(position));
-    if walk_xy_before.is_some()
-        && let Some(head) = locomotor.as_ref().and_then(LocomotorState::step_head)
-    {
-        let [x, y] = super::ground_pose::position_world_xy(position);
-        let dx = SimFixed::from_num(head.x.wrapping_sub(x));
-        let dy = SimFixed::from_num(head.y.wrapping_sub(y));
-        let distance = fixed_distance(dx, dy);
-        // Completion is dispatched by the caller before this paid-step adapter.
-        // It must run the world Mark/PerCell/setter transaction exactly once.
-        debug_assert!(distance >= SimFixed::from_num(17));
-        target.move_dir_x = dx;
-        target.move_dir_y = dy;
-        target.move_dir_len = distance;
-    }
-    // Drive/Ship coordinates are executed exclusively by the world TrackHost.
-    // Neither an exhausted Foot queue nor an absent selector enables this fallback.
+    // Track and Walk coordinate execution have their own production owners.
     if shared_track_kind(locomotor).is_some() {
         return AdvanceResult::DriveTrackActive;
     }
-    // Live Walk still enters this generic nontrack adapter. Its normalized
-    // vector is not the native paid polar step (75BFA9..75C0CB); WalkHost
-    // currently owns only the boundary/completion transactions. Replace this
-    // Walk arm when the numeric chain is integrated. Drive/Ship never enter.
-    let whole_lepton_result = locomotor
-        .as_ref()
-        .is_some_and(|locomotor| locomotor.kind == LocomotorKind::Walk);
-    let lepton_step = if whole_lepton_result {
-        SimFixed::from_num(frame_budget)
-    } else {
-        effective_speed * dt
-    };
+    assert!(
+        !locomotor
+            .as_ref()
+            .is_some_and(|l| l.kind == LocomotorKind::Walk),
+        "Walk must execute its admitted paid step"
+    );
     if target.move_dir_len > SIM_ZERO {
-        let frac: SimFixed = lepton_step / target.move_dir_len;
-        // When walking to subcell_dest (path exhausted), clamp so we
-        // don't overshoot. Without this, frac > 1.0 makes the infantry
-        // walk past the destination and off the cell.
-        if frac >= SIM_ONE {
-            if let Some(loco) = locomotor {
-                if let Some((dest_x, dest_y)) = loco.subcell_dest {
-                    if target.next_index >= target.path.len() {
-                        // Snap to destination — we'd overshoot this tick.
-                        position.sub_x = dest_x;
-                        position.sub_y = dest_y;
-                        // Fall through below.
-                        // The post-loop check will detect arrival and finish.
-                    }
-                }
-            }
-            // For cell-to-cell movement, frac > 1.0 is normal — it means
-            // the entity crossed a cell boundary, handled by the crossing loop.
-            if target.next_index < target.path.len()
-                || locomotor.as_ref().and_then(|l| l.subcell_dest).is_none()
-            {
-                advance_straight_position(
-                    target,
-                    position,
-                    frame_budget,
-                    frac,
-                    whole_lepton_result,
-                );
-            }
+        let frac = effective_speed * dt / target.move_dir_len;
+        let final_subcell = locomotor
+            .as_ref()
+            .and_then(|l| l.subcell_dest)
+            .filter(|_| target.next_index >= target.path.len());
+        if frac >= SIM_ONE
+            && let Some((x, y)) = final_subcell
+        {
+            position.sub_x = x;
+            position.sub_y = y;
         } else {
-            advance_straight_position(target, position, frame_budget, frac, whole_lepton_result);
+            position.sub_x += target.move_dir_x * frac;
+            position.sub_y += target.move_dir_y * frac;
         }
     }
-
-    // Advance infantry wobble phase while walking.
-    // Original engine: WalkLocomotionClass accumulates wobble each tick
-    // via `wobble += 3.0 / (wobbleRate / turnRate)`.
-    if category == EntityCategory::Infantry {
-        if let Some(loco) = locomotor {
-            // Seed phase from entity ID on first tick so group members
-            // don't bob in sync — each starts at a different phase.
-            if loco.infantry_wobble_phase == 0.0 {
-                loco.infantry_wobble_phase = (entity_id.wrapping_mul(2654435761) & 0xFFFF) as f32
-                    / 0xFFFF as f32
-                    * std::f32::consts::TAU;
-            }
-            let dt_f32: f32 = dt.to_num::<f32>();
-            loco.infantry_wobble_phase += super::INFANTRY_WOBBLE_RATE * dt_f32;
-        }
-    }
-
-    // Walk same-cell SetCoords -> SetHeight(0) @ 0x75C20F/0x75C21C.
-    // Out-of-cell coordinates are provisional until admission succeeds;
-    // process_cell_crossings owns their height write before Mark(PUT).
-    if let Some(before) = walk_xy_before
-        && super::ground_pose::position_world_xy(position) != before
-        && position.sub_x >= SIM_ZERO
-        && position.sub_x < SimFixed::from_num(256)
-        && position.sub_y >= SIM_ZERO
-        && position.sub_y < SimFixed::from_num(256)
-    {
-        super::ground_pose::commit_ground_height(
-            position,
-            current_occupation_layer == MovementLayer::Bridge,
-            terrain,
-            path_grid,
-        );
-    }
+    advance_infantry_wobble(locomotor, category, entity_id, dt);
     AdvanceResult::ReadyForCrossings
+}
+
+/// Preserve the existing presentation phase without coupling it to a numeric
+/// movement adapter. Walk and non-Walk infantry publish it once per paid step.
+pub(super) fn advance_infantry_wobble(
+    locomotor: &mut Option<LocomotorState>,
+    category: EntityCategory,
+    entity_id: u64,
+    dt: SimFixed,
+) {
+    if category == EntityCategory::Infantry
+        && let Some(loco) = locomotor
+    {
+        if loco.infantry_wobble_phase == 0.0 {
+            loco.infantry_wobble_phase = (entity_id.wrapping_mul(2654435761) & 0xFFFF) as f32
+                / 0xFFFF as f32
+                * std::f32::consts::TAU;
+        }
+        loco.infantry_wobble_phase += super::INFANTRY_WOBBLE_RATE * dt.to_num::<f32>();
+    }
 }
 
 /// Output from the cell boundary crossing loop.

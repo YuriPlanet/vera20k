@@ -426,16 +426,21 @@ const SLICE6_PRE_SUSTAINED_SIGHT_V142_HASH: u64 = 0x3378_724A_9514_52B4;
 // Schema171: live type acceleration preserves retasked track progression;
 // fresh turning defers admission. Old receipts above remain historical only.
 // See docs/research/TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md, PR415 attribution.
-const SLICE6_BASELINE_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 2458534358217456420;
+const SLICE6_BASELINE_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 0x8C50_893A_CFC7_59D6;
 // Schema174 removes folds instead of adding them: OreGrowthState's node-era
 // scanner cursor, candidate lists and sample counters, and ProductionState's
 // fallback ore overlay id. The pre-174 projection folds the values those fields
 // held IN THIS FIXTURE (zero, empty, None): its node-era scan never advanced,
 // and it never calls the spawner seeding, the one path that set the fallback
 // id. It is not a general reconstruction; a scenario finalized by the map
-// loader held Some(first TIB* id). The projection must still equal the previous
-// current pin, asserted below. Rust hash-composition ratchet, not a native golden.
-const SLICE6_BASELINE_HASH: u64 = 10437701875960042979;
+// loader held Some(first TIB* id).
+// Paid Walk (2026-09-21) changes both projections through E1 alone: native
+// polar coordinates, FacingClass timer refresh and the Foot speed cache. The
+// generic direction cache is no longer its movement authority. Replacing only
+// E1 with ec27dc26's final state reproduces old current90DA2A8E0C06D5E3 and
+// pre174221E77F911A4FB24 exactly; tanks and RNG match on all16 frames. See
+// docs/research/COMBAT_WALK_REPLAY_ATTRIBUTION.md. Rust pins, not native goldens.
+const SLICE6_BASELINE_HASH: u64 = 0x3D7F_B762_F752_444A;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -510,6 +515,20 @@ fn replay_hash_stable_through_slice6() {
         rules_hash: rules.simulation_config_hash(),
     });
     let mut stopped_head = None;
+    let walk_vectors: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/walk_paid_step.json"
+    ))
+    .unwrap();
+    let paid_steps: Vec<_> = walk_vectors
+        .iter()
+        .filter(|row| {
+            row["input"]["name"]
+                .as_str()
+                .unwrap()
+                .starts_with("slice6_paid_step_")
+        })
+        .collect();
+    assert_eq!(paid_steps.len(), 5);
     for tick in 0..16u64 {
         let due: Vec<CommandEnvelope> = script
             .iter()
@@ -524,6 +543,27 @@ fn replay_hash_stable_through_slice6() {
             "scripted envelope at {tick} must be consumed"
         );
         log.record_tick(tick, due, result.state_hash);
+        if tick >= 11 {
+            let row = paid_steps[(tick - 11) as usize];
+            let infantry = sim.substrate.entities.get(3).unwrap();
+            let coord = crate::sim::movement::ground_pose::position_world_coord(&infantry.position);
+            assert_eq!(
+                [coord.x, coord.y, coord.z],
+                std::array::from_fn::<_, 3, _>(|i| row["proposed"][i].as_i64().unwrap() as i32),
+                "native paid Walk frame {}",
+                tick + 1
+            );
+            assert_eq!(
+                u64::from(
+                    infantry
+                        .body_facing
+                        .unwrap()
+                        .current(sim.session.binary_frame)
+                ),
+                row["facing"].as_u64().unwrap()
+            );
+            assert_eq!(infantry.foot_speed.cached_current_speed, 10);
+        }
 
         if tick >= 10 {
             let tank = sim.substrate.entities.get(1).expect("retasked tank lives");
@@ -643,7 +683,7 @@ fn replay_hash_stable_through_slice6() {
     assert_eq!(
         sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(174)),
         SLICE6_BASELINE_HASH_PRE_RETIRED_TIBERIUM_STATE_V174,
-        "the pre-174 composition must reproduce the previous current pin"
+        "pre-174 projection drifted from the documented paid Walk behavior"
     );
     assert_eq!(
         hash, SLICE6_BASELINE_HASH,

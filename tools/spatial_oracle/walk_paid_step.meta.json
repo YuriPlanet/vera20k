@@ -7,7 +7,7 @@
     1,
     33621247
   ],
-  "scope": "35 paid-step vectors covering ten directions at three integer speeds, three boundary/near-head cases, zero speed and active-turn equality. No complete Process, admission, completion or Rust parity claim.",
+  "scope": "40 paid-step vectors covering ten directions at three integer speeds, three boundary/near-head cases, zero speed, active-turn equality and five chained steps from the Slice6 production head. No complete Process, admission, completion or speed-getter claim.",
   "assumptions": [
     "Supplied post-admission paid-head frame, owner XYZ and heading; original Walk constructor executes.",
     "Flat/same-Z cases; endpoints precede physical coordinate, height and occupation transactions.",
@@ -28,5 +28,5 @@
     "sin_table": "0x004CACB0",
     "cos_table": "0x004CAD00"
   },
-  "payload_sha256": "b866252858a09f05ac94abc8e81bfe8d1c0352017689b2626068e39cdcaec8f5"
+  "payload_sha256": "c08d850a49023af1b8db58195c390087f808b85e999abc7ce2c3d85ff76ae301"
 }

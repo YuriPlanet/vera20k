@@ -106,6 +106,16 @@ def generate():
                              head=[2496, 2368, 104], speed=6,
                              initial_facing=0x3FFF, initial_previous=0,
                              initial_start=FRAME, initial_duration=1, rot=32)))
+    # Accepted production head from replay_hash_stable_through_slice6, before
+    # frame12. Carry native outputs forward for its five paid steps. Only the
+    # speed integer is supplied, just as in the other comparisons.
+    current, facing = [1408, 1408, 0], 8315
+    for step in range(1, 6):
+        row = execute(dict(base, name=f'slice6_paid_step_{step}',
+                           current=current, head=[1728, 1088, 0], speed=10,
+                           initial_facing=facing, initial_previous=facing, rot=0))
+        rows.append(row)
+        current, facing = row['proposed'], row['facing']
     return rows
 
 
@@ -120,5 +130,5 @@ if __name__ == '__main__':
                      'Flat/same-Z cases; endpoints precede physical coordinate, height and occupation transactions.',
                      'Original facing setter executes, including a live-angle equality contrast.'],
         substitutions=['External Infantry movement-speed receiver returns the supplied integer; its original body and Foot getter are excluded.'],
-        scope='35 paid-step vectors covering ten directions at three integer speeds, three boundary/near-head cases, zero speed and active-turn equality. No complete Process, admission, completion or Rust parity claim.',
+        scope='40 paid-step vectors covering ten directions at three integer speeds, three boundary/near-head cases, zero speed, active-turn equality and five chained steps from the Slice6 production head. No complete Process, admission, completion or speed-getter claim.',
     ))

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "All 65536 heading words: SHA256 of little-endian u16 sin/cos index pairs and u32 table-value pairs in ascending input order; exact raw source table.",
+  "assumptions": [
+    "Supplied SI for each u16 heading; post-getter frame at original numeric block.",
+    "Original 53-bit/chop control; the corpus observes indexes/table bits, not movement admission or placement."
+  ],
+  "substitutions": [
+    "No code patches or supplied results within the executed block; a boundary hook supplies each next independent SI/stack frame."
+  ],
+  "entry_points": {
+    "walk_angle_to_displacement": "0x0075C067",
+    "before_cell_comparison": "0x0075C0F3",
+    "sin_read": "0x004CACEA",
+    "cos_read": "0x004CAD41"
+  },
+  "payload_sha256": "f4668f2987f8297480651c13a1785bf42274b944f54135e6cd9ad0e84cd50038"
+}

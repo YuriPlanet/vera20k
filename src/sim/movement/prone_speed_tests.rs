@@ -117,25 +117,22 @@ fn advance_prone_mover(crawls: bool) -> SimFixed {
     );
 
     assert!(lifecycle_requests.is_empty());
+    // Foot speed comes from live E1 Speed=4 (10 leptons/frame), not the stale
+    // 165-leptons/second request cache. The Infantry override is local; it does
+    // not replace the Foot owner's unadjusted current-speed cache.
+    assert_eq!(entities.get(1).unwrap().foot_speed.cached_current_speed, 10);
 
     entities.get(1).expect("entity exists").position.sub_x
 }
 
-fn expected_sub_x_after_one_frame(frame_budget: i32) -> SimFixed {
-    SimFixed::from_num(128 + frame_budget)
-}
-
 #[test]
 fn crawls_yes_prone_movement_uses_ceiling_two_thirds_speed() {
-    // ceil(11 * 2/3) = 8 leptons for this frame.
-    assert_eq!(advance_prone_mover(true), expected_sub_x_after_one_frame(8));
+    // Infantry521D80: 10 - trunc(10/3) = 7, then the eastward paid Walk step.
+    assert_eq!(advance_prone_mover(true), SimFixed::from_num(135));
 }
 
 #[test]
 fn crawls_no_prone_movement_uses_speed_plus_half() {
-    // 11 + floor(11/2) = 16 leptons for this frame.
-    assert_eq!(
-        advance_prone_mover(false),
-        expected_sub_x_after_one_frame(16)
-    );
+    // Infantry521DBC: 10 + trunc(10/2) = 15.
+    assert_eq!(advance_prone_mover(false), SimFixed::from_num(143));
 }

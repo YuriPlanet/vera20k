@@ -53,7 +53,8 @@ fn stock_cloak_tick_facts(
     // Native has no such term here — the target test lives in `CanAutoCloak`
     // step 4 below, as `Target(+0x2B4) != 0 && CanFireAtTarget(vt+0x3AC)`.
     // vt+0x37C is `IsUnderEMP` (Techno `0x0070EFD0` reads `+0x504 > 0`; the
-    // Unit override `0x00746C90` ORs in `DeployTarget(+0x6CC) != -1`), and
+    // Unit override `0x00746C90` ORs in `i32(+0x6D8) != -1`; that field's
+    // identity still needs evidence), and
     // vt+0x1D4/+0x1D8 are the chrono warp-in/warp-out flags.
     //
     // RESIDUAL — **EMP decloak is NOT IMPLEMENTED, and this requirement is
@@ -62,13 +63,14 @@ fn stock_cloak_tick_facts(
     // term is hardcoded false at both of its uses in this file. Closing it is
     // not a cloak change — it lands with an EMP weapon/warhead system, and this
     // gate is one of that system's consumers.
-    // - Trigger: any EMP warhead landing on a cloaked object (stock sources:
-    //   the EMPulse Cannon superweapon and the Boomer/Robot EMP warheads).
-    // - Player effect: in gamemd an EMP'd Typhoon or Mirage surfaces for the
-    //   duration; in VERA it stays cloaked. It is also the ONLY live
-    //   `ShouldUncloak` trigger in stock data, so with it missing a fully
-    //   cloaked unit's `ShouldUncloak` arm is effectively dead here.
-    // - Frequency: rare — needs an EMP weapon fired at a cloakable unit.
+    // - Reachability remains unproven. The former stock-source claim was false:
+    //   RULESMD's BoomerTorpedo uses APSplash2 and Robogun uses AP; EMPuls is
+    //   annotated "disabled in code" and EMPulseSpecial is commented out.
+    //   Original EMPulse::Apply4C54E0 writes Techno+504, but its only observed
+    //   caller is constructor4C52B0, which has no incoming Ghidra references.
+    //   That reference search alone does not establish unreachability. Trace
+    //   the actual creation/load path before implementing or closing this arm.
+    // - Player effect/frequency: not established for active-retail gameplay.
     // - Downstream risk: none structurally; the predicate is one boolean and
     //   drops into `emp_active` below the day an EMP timer lands.
     // vt+0x380 (`FootClass 0x004DE770`) reads the `+0x6A0/+0x6A8` timer, whose

@@ -89,26 +89,11 @@ pub(super) fn advance(
     if !matches!(kind, LocomotorKind::Drive | LocomotorKind::Ship) {
         return 0;
     }
-    let speed = object
-        .map(|object| {
-            crate::sim::combat::veterancy::entity_mover_speed_leptons_per_second(
-                entity,
-                Some(object),
-                object.speed,
-                rules.map_or(1.0, |r| r.general.veteran_speed),
-            )
-        })
-        .or_else(|| entity.movement_target.as_ref().map(|target| target.speed))
-        .unwrap_or(SIM_ZERO);
-    // Group Move retains a formation cap on its execution target. The common
-    // post-pass synchronizer still owns that cap; live type/veterancy remains
-    // the speed authority, including when the cap exceeds that live speed.
-    // Ungrouped target.speed is only a path cache and must not override rules.
-    let speed = entity
-        .movement_target
-        .as_ref()
-        .filter(|target| target.group_id.is_some())
-        .map_or(speed, |target| speed.min(target.speed));
+    let speed = super::foot_speed::adjusted_speed(
+        entity,
+        object,
+        rules.map_or(1.0, |r| r.general.veteran_speed),
+    );
     let target = entity.movement_target.as_ref();
     let class_goal = if kind == LocomotorKind::Drive {
         entity
@@ -184,11 +169,10 @@ pub(super) fn advance(
         }
         _ => unreachable!(),
     }
-    entity.foot_speed.cached_current_speed =
-        super::drive_locomotion::owner_current_speed_from_fraction(
-            speed,
-            entity.foot_speed.applied_fraction,
-        );
+    entity.foot_speed.cached_current_speed = super::foot_speed::owner_current_speed_from_fraction(
+        speed,
+        entity.foot_speed.applied_fraction,
+    );
     if let Some(target) = entity.movement_target.as_mut() {
         target.current_speed = speed * entity.foot_speed.applied_fraction;
     }

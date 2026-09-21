@@ -1468,5 +1468,215 @@
     ],
     "speed_fraction": 1.0,
     "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 8315,
+    "input": {
+      "current": [
+        1408,
+        1408,
+        0
+      ],
+      "head": [
+        1728,
+        1088,
+        0
+      ],
+      "initial_duration": 0,
+      "initial_facing": 8315,
+      "initial_previous": 8315,
+      "initial_start": 4294967295,
+      "name": "slice6_paid_step_1",
+      "rot": 0,
+      "speed": 10
+    },
+    "previous": 8315,
+    "proposed": [
+      1415,
+      1401,
+      0
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 8315,
+    "input": {
+      "current": [
+        1415,
+        1401,
+        0
+      ],
+      "head": [
+        1728,
+        1088,
+        0
+      ],
+      "initial_duration": 0,
+      "initial_facing": 8315,
+      "initial_previous": 8315,
+      "initial_start": 4294967295,
+      "name": "slice6_paid_step_2",
+      "rot": 0,
+      "speed": 10
+    },
+    "previous": 8315,
+    "proposed": [
+      1422,
+      1394,
+      0
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 8315,
+    "input": {
+      "current": [
+        1422,
+        1394,
+        0
+      ],
+      "head": [
+        1728,
+        1088,
+        0
+      ],
+      "initial_duration": 0,
+      "initial_facing": 8315,
+      "initial_previous": 8315,
+      "initial_start": 4294967295,
+      "name": "slice6_paid_step_3",
+      "rot": 0,
+      "speed": 10
+    },
+    "previous": 8315,
+    "proposed": [
+      1429,
+      1387,
+      0
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 8315,
+    "input": {
+      "current": [
+        1429,
+        1387,
+        0
+      ],
+      "head": [
+        1728,
+        1088,
+        0
+      ],
+      "initial_duration": 0,
+      "initial_facing": 8315,
+      "initial_previous": 8315,
+      "initial_start": 4294967295,
+      "name": "slice6_paid_step_4",
+      "rot": 0,
+      "speed": 10
+    },
+    "previous": 8315,
+    "proposed": [
+      1436,
+      1380,
+      0
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
+  },
+  {
+    "blocked": 0,
+    "calls": [
+      "set_speed_fraction",
+      "supplied_movement_speed",
+      "get_coords",
+      "walk_do_turn",
+      "snap_facing",
+      "get_cell_coords",
+      "sin_table",
+      "cos_table"
+    ],
+    "crosses_cell": false,
+    "facing": 8315,
+    "input": {
+      "current": [
+        1436,
+        1380,
+        0
+      ],
+      "head": [
+        1728,
+        1088,
+        0
+      ],
+      "initial_duration": 0,
+      "initial_facing": 8315,
+      "initial_previous": 8315,
+      "initial_start": 4294967295,
+      "name": "slice6_paid_step_5",
+      "rot": 0,
+      "speed": 10
+    },
+    "previous": 8315,
+    "proposed": [
+      1443,
+      1373,
+      0
+    ],
+    "speed_fraction": 1.0,
+    "turn_duration": 0
   }
 ]
