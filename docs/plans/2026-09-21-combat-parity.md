@@ -156,8 +156,8 @@ Acceptance before implementation:
 ## Current Walk checkpoint
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
-Branch `feature/combat-walk-step`, HEAD `ec27dc26`, with the runtime port and
-validation changes currently uncommitted. Fetched main remains `d47a9247`.
+Branch `feature/combat-walk-step`, source HEAD `c80821f3`, including the runtime
+port `fe7df21a` and the validated critic correction. Fetched main remains `d47a9247`.
 The primary checkout's local instruction edits are untouched.
 
 Production Walk now uses `walk_step::advance`: set Foot fraction, resolve live
@@ -188,10 +188,20 @@ only E1 changes from frame 12, tanks/RNG match on all 16 frames, and replacing o
 E1 restores both prior hashes exactly. See
 [the receipt](../research/COMBAT_WALK_REPLAY_ATTRIBUTION.md). Its pins are updated
 with native per-frame assertions; the global replay pin required no change.
-The final full library run passes: 9,092 passed, zero failed, 134 ignored,
-recorded in `%TEMP%/vera20k-walk-lib-tests.log`. Library Clippy passes with
-1,027 warnings (`%TEMP%/vera20k-walk-clippy.log`). The single fresh read-only
-critic is reviewing this candidate; no PR has been opened yet.
+After the single fresh read-only critic pass and owner correction, the final
+full library run passes: 9,093 passed, zero failed, 134 ignored. Library Clippy
+passes with 1,027 warnings. Final logs are preserved in the owned worktree's
+`.local/walk-validation/lib-tests-final.log` and `clippy-final.log`.
+
+The critic found a competing completion-facing writer: the generic next-cell
+configuration changed the displayed byte toward the next cell while leaving the
+body FacingClass unchanged. Walk completion now advances only the execution path
+cursor. Original75BD70..75BF82 contains no movement turn; fresh acceptance75BC97
+and the paid step75C035 own it. The new regression runs world completion through
+Mark/PerCell, then a refused and accepted next-head selection at a corner, checking
+both heading representations. Native completion (42 rows), paid step (40 rows)
+and exhaustive direction selection were rerun successfully. The75BD97 annotation
+is saved and read back. No second critic pass is needed or requested.
 
 Ghidra comments at 75BFA9/75C067 preserve the paid-step comparisons; the exhaustive
 lookup note is saved/read back. The movement-refusal prerequisite also exposed a
@@ -212,8 +222,32 @@ prone adjustment, which uses the existing `infantry::apply_prone_speed` owner.
 NavCom/action legality, launch inputs, special warhead effects and the final
 whole-combat audit also remain required; this increment does not close the goal.
 
-Next safe action: finish the single critic pass. Fix and validate confirmed
-findings, publish/merge
-the accepted increment and continue the required combat dependencies. The local
+Next safe action: publish/merge the validated Walk increment, then continue the
+required combat dependencies. The local
 comparison checkout `.local/walk-baseline-ec27` retains only a temporary test
 probe; it is not a second implementation to publish.
+
+## Next dependency: live Foot speed inputs and crate pickup
+
+Native4DB1A0 applies type speed, House50C050's category factor and Foot+580,
+truncates, applies FASTER/VeteranSpeed with another truncation, then applies
+Foot+578 and truncates before the Unit+6CC conditional halving. Production
+`foot_speed` lacks the house/crate/flag inputs; `CountryRules` does not parse the
+speed multipliers, and `crates` explicitly leaves pickup effects unported.
+
+Walk's accepted-head selection calls481A00 at75C56C, passing the Foot owner and
+the Cell returned by Map565730. This proves a production pickup route; the prior
+Ghidra name `CrateClass__PickupDispatch` assigned the wrong receiver class.
+Renamed to `CellClass__PickupCrate`, with the receiver/caller evidence saved and
+read back. Entry reads Cell+44 overlay and+11E selection. Its speed continuation
+48302E..48306C checks a strict distance, a currently-one+580 multiplier and object
+kind before storing the multiplied factor. The continuation lies beyond Ghidra's
+current function boundary; that boundary was not changed.
+
+Before implementation, establish pickup selection, eligibility, effect iteration,
+RNG, removal and return behavior from original instructions, with executable
+witnesses. Acceptance requires production movement to reach the same pickup
+effects and subsequent Foot speed, including affected consumers and save/restore.
+Use the existing country, crate, Foot and lifecycle owners; adding a supplied
+factor to an isolated speed helper does not complete this dependency. Trace the
+Unit+6CC writer/cleanup before treating its current flag-carrier label as proven.

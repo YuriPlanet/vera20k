@@ -1,12 +1,12 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `3621bac4d6148bb95d8a60acd5a1732a81ddf592` (2026-09-21), cargo-modules 0.26.0.
+Generated snapshot: `c80821f3dafa7b6a9886c79a3b6f1ae001964055` (2026-09-21), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
 External crates and the sysroot are excluded from the dependency graph.
-Contains **836 modules plus the crate root**, and **5281 distinct
+Contains **838 modules plus the crate root**, and **5288 distinct
 cross-module dependency edges**. Check this source commit against your checkout.
 <!-- module-map:provenance:end -->
 
@@ -583,6 +583,7 @@ sim::movement::drop_pod_movement -> sim::movement::rocket_movement; util::fixed_
 sim::movement::facing_class -> -
 sim::movement::foot_coordinate -> map::resolved_terrain; rules::locomotor_type; sim::components; sim::game_entity; sim::world
 sim::movement::foot_mark -> map::entities; rules::overlay_types; rules::ruleset; sim::movement::ground_pose; sim::movement::locomotor; sim::occupancy; sim::pathfinding::core; sim::world
+sim::movement::foot_speed -> rules::object_type; sim::game_entity; util::fixed_math
 sim::movement::ground_pose -> map::resolved_terrain; rules::object_type; sim::components; sim::game_entity; sim::pathfinding::core; util::lepton
 sim::movement::group_destination -> util::direction_tables::lepton; util::native_x87
 sim::movement::homing_movement -> sim::entity_store; util::fixed_math
@@ -624,6 +625,7 @@ sim::movement::turret -> rules::ruleset; sim::combat; sim::entity_store; sim::ga
 sim::movement::walk_head -> map::resolved_terrain; sim::components; sim::entity_store; sim::game_entity; sim::intern; sim::occupancy; sim::pathfinding::core; sim::rng; util::fixed_math
 sim::movement::walk_host -> rules::overlay_types; rules::ruleset; sim::components; sim::movement::ground_pose; sim::movement::locomotor; sim::pathfinding::core; sim::world
 sim::movement::walk_path -> map::playfield; map::resolved_terrain; rules::locomotor_type; rules::mission_data; rules::overlay_types; rules::ruleset; sim::cell_kernel; sim::components; sim::find_nearby_cell; sim::mission::authority; sim::mission::concrete_effects; sim::mission::state; sim::movement::ground_pose; sim::movement::infantry_entry; sim::movement::movement_tick; sim::pathfinding::core; sim::pathfinding::zone_map; sim::pathfinding::zone_search; sim::world
+sim::movement::walk_step -> map::resolved_terrain; sim::game_entity; sim::pathfinding::core; util::fixed_math
 sim::multiplayer_checksum -> sim::intern; sim::world
 sim::native_identity -> map::tubes; rules::ini_parser; sim::world
 sim::naval_base_placement -> map::entities; map::playfield; map::resolved_terrain; rules::locomotor_type; rules::object_type; rules::ruleset; sim::find_nearby_cell; sim::house_state; sim::intern; sim::pathfinding::core; sim::world
