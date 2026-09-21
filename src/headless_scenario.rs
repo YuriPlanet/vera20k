@@ -6,7 +6,8 @@
 //! `ui`, `sidebar`, `audio` or `net`.
 //!
 //! **Scope.** Construction goes through the same GPU-free funnel the app uses
-//! (`sim::runtime::construct_scenario`): map-roster houses are created before objects,
+//! (`sim::runtime::finalize_and_populate_staged_authored_scenario`, on a `Simulation`
+//! staged before terrain Fill): map-roster houses are created before objects,
 //! terrain objects before map entities, and map-placed units/structures spawn with
 //! terrain-attached animations. What a headless scenario still lacks versus an app
 //! launch is the launch *session* — skirmish player houses, start-position placement,
@@ -15,8 +16,6 @@
 //! The seed contract mirrors the original engine: one 32-bit word seeds the scenario and
 //! main streams identically, fixed before any setup-phase draw.
 
-#[cfg(test)]
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::assets::asset_manager::AssetManager;
@@ -26,8 +25,6 @@ use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::theater;
 use crate::map::tile_variant_selector::TileVariantSelectorCache;
 use crate::map::waypoints;
-#[cfg(test)]
-use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::scenario_bootstrap::ScenarioBootstrapRng;
 use crate::sim::scenario_session::ScenarioDescriptor;
 use crate::sim::world::Simulation;
@@ -66,106 +63,6 @@ fn one_player_battle_launch(
         options: SkirmishLaunchOptions::default(),
     })
     .map_err(|error| format!("resolve one-player Battle launch: {error}"))
-}
-
-/// Terrain plus the exact setup RNG owner advanced while that terrain loaded.
-#[cfg(test)]
-struct HeadlessTerrainBootstrap {
-    resolved: ResolvedTerrainGrid,
-    bootstrap_rng: ScenarioBootstrapRng,
-}
-
-#[cfg(test)]
-impl HeadlessTerrainBootstrap {
-    #[cfg(test)]
-    #[allow(clippy::too_many_arguments)]
-    fn construct_scenario<F>(
-        self,
-        map: &MapFile,
-        theater_name: &str,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
-        height_map: &BTreeMap<(u16, u16), u8>,
-        overlay_registry: Option<&OverlayTypeRegistry>,
-        overlay_grid: Option<&OverlayGrid>,
-        bridge_destroyability_mode: crate::map::basic::BridgeDestroyabilityMode,
-        descriptor: &ScenarioDescriptor,
-        initialize_houses_before_objects: F,
-    ) -> Simulation
-    where
-        F: FnOnce(&mut Simulation),
-    {
-        crate::sim::runtime::construct_scenario(
-            map,
-            &self.resolved,
-            theater_name,
-            rules,
-            height_map,
-            overlay_registry,
-            overlay_grid,
-            bridge_destroyability_mode,
-            descriptor,
-            self.bootstrap_rng,
-            initialize_houses_before_objects,
-        )
-    }
-}
-
-/// Build the ordinary-load CellClass population and retain the RNG cursors it
-/// advanced for the subsequent sim handoff.
-///
-/// Active YR `MapClass::Clear @ 0x00565B00` clears the fixed cell table, then
-/// `MapClass::Resize @ 0x00565C10` allocates the complete Size diamond before
-/// IsoMapPack records overwrite it (allocation loop `0x0056639E..0x00566451`).
-#[cfg(test)]
-#[allow(clippy::too_many_arguments)]
-fn build_headless_terrain_bootstrap(
-    map: &MapFile,
-    theater_data: Option<&crate::map::theater::TheaterData>,
-    asset_manager: Option<&AssetManager>,
-    terrain_rules: Option<&crate::rules::terrain_rules::TerrainRules>,
-    overlay_registry: Option<&OverlayTypeRegistry>,
-    cliff_back_impassability: u8,
-    seed: u32,
-    pixel_conversion_bounds: crate::util::pixel_conversion::PixelConversionBounds,
-) -> HeadlessTerrainBootstrap {
-    let mut bootstrap_rng = ScenarioBootstrapRng::new(seed);
-    let (mut scenario_fill_rng, mut variant_main_rng) = bootstrap_rng.terrain_draws();
-    let mut scenario_fill_ranged =
-        |low, high| scenario_fill_rng.next_range_u32_inclusive(low, high);
-    let mut variant_draw = || variant_main_rng.next_u32();
-    let mut variant_selector_cache = TileVariantSelectorCache::default();
-    let mut variant_selector = variant_selector_cache.begin_load(&mut variant_draw);
-    // Each headless parity run owns one process-shaped MapClass identity. The
-    // Resize constructor runs before OverlayPack bridge marking, so missing
-    // bridge neighbors must already target this handle during resolution.
-    let shared_cell_dummy = crate::map::resolved_terrain::SharedCellDummy::fresh();
-    shared_cell_dummy.reconstruct_for_map_resize();
-    let resolved = ResolvedTerrainGrid::build_with_variant_selector_and_shared_dummy(
-        map,
-        theater_data,
-        asset_manager,
-        terrain_rules,
-        overlay_registry,
-        // Headless terrain-object metadata and LAT remain explicit residuals.
-        None,
-        false,
-        cliff_back_impassability,
-        &mut scenario_fill_ranged,
-        &mut variant_selector,
-        shared_cell_dummy,
-        crate::map::resolved_terrain::OverlayLoadSource::Authored,
-        pixel_conversion_bounds,
-    );
-    drop(variant_selector);
-    drop(variant_draw);
-    drop(scenario_fill_ranged);
-    drop(variant_main_rng);
-    drop(scenario_fill_rng);
-
-    HeadlessTerrainBootstrap {
-        resolved,
-        bootstrap_rng,
-    }
 }
 
 /// A loaded scenario plus the per-tick inputs `advance_tick` needs.
@@ -506,6 +403,86 @@ mod retail_construction_tests {
     use super::*;
     use crate::sim::rng::SimRng;
 
+    /// A synthetic map through the load in production order, with production
+    /// functions only: stage the one `Simulation`, let terrain Fill draw from
+    /// it, then populate it. No theater, assets or rules are needed, which the
+    /// retail funnel (`load`) cannot do without.
+    ///
+    /// Active YR `MapClass::Clear @ 0x00565B00` clears the fixed cell table, then
+    /// `MapClass::Resize @ 0x00565C10` allocates the complete Size diamond before
+    /// IsoMapPack records overwrite it (allocation loop `0x0056639E..0x00566451`).
+    fn stage_fill_populate<F>(
+        map: &MapFile,
+        theater_name: &str,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+        bridge_destroyability_mode: crate::map::basic::BridgeDestroyabilityMode,
+        descriptor: ScenarioDescriptor,
+        initialize_houses_before_objects: F,
+    ) -> (Simulation, ResolvedTerrainGrid)
+    where
+        F: FnOnce(&mut Simulation),
+    {
+        // Native Resize constructs a square cell-array extent of SizeW+SizeH;
+        // the descriptor carries it before Fill exists, as the app load does.
+        let bounds =
+            crate::sim::scenario_bootstrap::NativeStartBounds::from_map_header(&map.header)
+                .expect("map Size produces a fresh cell array");
+        let extent = bounds.min_rx + bounds.width;
+        let descriptor = ScenarioDescriptor {
+            map_width: extent,
+            map_height: extent,
+            ..descriptor
+        };
+        let mut sim = ScenarioBootstrapRng::new(descriptor.seed).into_simulation(&descriptor);
+        let resolved = {
+            let (mut scenario_fill_rng, mut variant_main_rng) = sim.terrain_load_draws();
+            let mut scenario_fill_ranged =
+                |low, high| scenario_fill_rng.next_range_u32_inclusive(low, high);
+            let mut variant_draw = || variant_main_rng.next_u32();
+            let mut variant_selector_cache = TileVariantSelectorCache::default();
+            let mut variant_selector = variant_selector_cache.begin_load(&mut variant_draw);
+            let shared_cell_dummy = crate::map::resolved_terrain::SharedCellDummy::fresh();
+            shared_cell_dummy.reconstruct_for_map_resize();
+            ResolvedTerrainGrid::build_with_variant_selector_and_shared_dummy(
+                map,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+                2,
+                &mut scenario_fill_ranged,
+                &mut variant_selector,
+                shared_cell_dummy,
+                crate::map::resolved_terrain::OverlayLoadSource::Authored,
+                descriptor.pixel_conversion_bounds,
+            )
+        };
+        assert_eq!(
+            (resolved.width(), resolved.height()),
+            (extent, extent),
+            "Fill allocates the extent the descriptor announced"
+        );
+        let height_map = resolved.build_height_map();
+        crate::sim::runtime::populate_staged_scenario_with_generated_inits(
+            &mut sim,
+            map,
+            &resolved,
+            theater_name,
+            rules,
+            &height_map,
+            None,
+            None,
+            bridge_destroyability_mode,
+            &descriptor,
+            None,
+            initialize_houses_before_objects,
+        )
+        .expect("fixed-map Techno constructor projection cannot fail");
+        (sim, resolved)
+    }
+
     /// One valid LZO chunk whose decompressed bytes are the `(0, 0)`
     /// IsoMapPack terminator, so the parsed map has no explicit cell records.
     const EMPTY_ISO_MAP_PACK: &str = "CAAEABUAAAAAEQAA";
@@ -537,38 +514,21 @@ mod retail_construction_tests {
                 &recording,
                 NativeReplayHeader::default(),
                 |loaded| {
-                    let pixel_conversion_bounds = Default::default();
-                    let bootstrap = build_headless_terrain_bootstrap(
-                        &map,
-                        None,
-                        None,
-                        None,
-                        None,
-                        2,
-                        loaded.seed,
-                        pixel_conversion_bounds,
-                    );
-                    let heights = bootstrap.resolved.build_height_map();
                     let descriptor = ScenarioDescriptor {
-                        pixel_conversion_bounds,
                         free_radar: map.basic.free_radar.unwrap_or(false),
-                        map_width: bootstrap.resolved.width(),
-                        map_height: bootstrap.resolved.height(),
                         ..ScenarioDescriptor::from_native_replay_header(loaded)
                     };
-                    Ok::<_, ()>(bootstrap.construct_scenario(
+                    let (sim, _terrain) = stage_fill_populate(
                         &map,
                         "TEMPERATE",
                         Some(&rules),
-                        &heights,
-                        None,
-                        None,
                         crate::map::basic::BridgeDestroyabilityMode::CampaignOrEditor,
-                        &descriptor,
+                        descriptor,
                         |sim| {
                             sim.interner.intern("Americans");
                         },
-                    ))
+                    );
+                    Ok::<_, ()>(sim)
                 },
             )
             .unwrap();
@@ -594,7 +554,7 @@ mod retail_construction_tests {
     }
 
     #[test]
-    fn gsi_04_01_headless_sparse_water_load_materializes_and_transfers_rng() {
+    fn gsi_04_01_headless_sparse_water_load_materializes_and_draws_on_the_staged_owner() {
         let seed = 0x0401_5EED;
         let map_bytes = format!(
             "[Map]\n\
@@ -611,58 +571,32 @@ mod retail_construction_tests {
             "fixture has no explicit terrain cells"
         );
 
-        let pixel_conversion_bounds = Default::default();
-        let terrain_bootstrap = build_headless_terrain_bootstrap(
-            &map,
-            None,
-            None,
-            None,
-            None,
-            2,
-            seed,
-            pixel_conversion_bounds,
-        );
-        assert_eq!(
-            (
-                terrain_bootstrap.resolved.width(),
-                terrain_bootstrap.resolved.height(),
-            ),
-            (3, 3),
-            "the canonical cell array spans the Size diamond's highest coordinate"
-        );
-        let mut allocated: Vec<_> = terrain_bootstrap
-            .resolved
-            .iter()
-            .map(|cell| (cell.rx, cell.ry))
-            .collect();
-        allocated.sort_unstable();
-        assert_eq!(allocated, vec![(1, 2), (2, 1), (2, 2)]);
-
-        let height_map = terrain_bootstrap.resolved.build_height_map();
         let descriptor = ScenarioDescriptor {
-            pixel_conversion_bounds,
             seed,
-            map_width: terrain_bootstrap.resolved.width(),
-            map_height: terrain_bootstrap.resolved.height(),
             local_left: map.header.local_left as u16,
             local_top: map.header.local_top as u16,
             local_width: map.header.local_width as u16,
             local_height: map.header.local_height as u16,
             ..ScenarioDescriptor::default()
         };
-        let sim = terrain_bootstrap.construct_scenario(
+        let (sim, resolved) = stage_fill_populate(
             &map,
             &map.header.theater,
-            None,
-            &height_map,
-            None,
             None,
             crate::map::basic::BridgeDestroyabilityMode::SkirmishOrMultiplayer {
                 bridge_destruction: true,
             },
-            &descriptor,
+            descriptor,
             |_| {},
         );
+        assert_eq!(
+            (resolved.width(), resolved.height()),
+            (3, 3),
+            "the canonical cell array spans the Size diamond's highest coordinate"
+        );
+        let mut allocated: Vec<_> = resolved.iter().map(|cell| (cell.rx, cell.ry)).collect();
+        allocated.sort_unstable();
+        assert_eq!(allocated, vec![(1, 2), (2, 1), (2, 2)]);
 
         let mut expected_scenario = SimRng::new(u64::from(seed));
         for _ in 0..3 {
