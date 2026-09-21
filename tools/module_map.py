@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Format cargo-modules dependencies into docs/module-map.md."""
+"""Print an optional module dependency report, or save it with --output PATH.
+
+Requires cargo-modules 0.26.0 and committed source/build inputs.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +15,6 @@ import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCUMENT = ROOT / "docs/module-map.md"
 TARGET = "x86_64-pc-windows-msvc"
 COMMON = ["--lib", "-p", "vera20k", "--target", TARGET]
 NODE = re.compile(r'^    "([^"\\]+)" \[.*// "([^"\\]+)" node$', re.MULTILINE)
@@ -56,26 +58,16 @@ def dependencies(dot: str) -> dict[str, set[str]]:
     return result
 
 
-def replace_section(document: str, section: str, value: str) -> str:
-    begin = f"<!-- module-map:{section}:begin -->"
-    end = f"<!-- module-map:{section}:end -->"
-    if document.count(begin) != 1 or document.count(end) != 1:
-        raise ValueError(f"Missing or repeated section markers: {section}")
-    before, rest = document.split(begin)
-    _, after = rest.split(end)
-    return f"{before}{begin}\n{value.rstrip()}\n{end}{after}"
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="Regenerate and compare without editing the document")
+    parser.add_argument("--output", type=Path, help="Save the report to this path instead of stdout")
     args = parser.parse_args()
 
     # A source commit must describe the inputs actually analyzed. Documentation
     # and tooling edits are allowed; source/build-input edits must be committed.
     inputs = ["src", "Cargo.toml", "Cargo.lock", ".cargo", "rust-toolchain", "rust-toolchain.toml"]
     if capture(["git", "status", "--porcelain", "--untracked-files=all", "--", *inputs]).strip():
-        raise SystemExit("Commit source/build-input changes before refreshing the map")
+        raise SystemExit("Commit source/build-input changes before generating the report")
     revision = capture(["git", "rev-parse", "HEAD"]).strip()
     version = capture(["cargo", "modules", "--version"]).strip()
     if not re.search(r"\b0\.26\.0\b", version):
@@ -86,19 +78,21 @@ def main() -> None:
     if capture(["git", "rev-parse", "HEAD"]).strip() != revision or capture(
         ["git", "status", "--porcelain", "--untracked-files=all", "--", *inputs]
     ).strip():
-        raise SystemExit("Source/build inputs changed during generation; document was not updated")
+        raise SystemExit("Source/build inputs changed during generation; report was not generated")
 
-    document = DOCUMENT.read_text(encoding="utf-8")
-    updated = replace_section(document, "dependencies", dependency_text(graph))
-    if args.check:
-        # Documentation-only commits need not change the snapshot's provenance.
-        if updated != document:
-            raise SystemExit("Module map differs from the current generated dependencies")
-        print("Module dependencies match the current checkout")
-        return
-    updated = replace_section(updated, "provenance", provenance(revision, graph))
-    DOCUMENT.write_text(updated, encoding="utf-8", newline="\n")
-    print(f"Updated {DOCUMENT.relative_to(ROOT)}: {len(graph)-1} modules, {sum(map(len, graph.values()))} dependency edges")
+    report = (
+        "# Module dependencies\n\n"
+        + provenance(revision, graph)
+        + "\n\n`A -> B; C` lists direct module dependencies, not runtime calls.\n"
+        "Verify affected callers and ownership against source.\n\n"
+        + dependency_text(graph)
+        + "\n"
+    )
+    if args.output is None:
+        print(report, end="")
+    else:
+        args.output.write_text(report, encoding="utf-8", newline="\n")
+        print(f"Wrote {args.output}: {len(graph)-1} modules, {sum(map(len, graph.values()))} dependency edges")
 
 
 def dependency_text(graph: dict[str, set[str]]) -> str:
