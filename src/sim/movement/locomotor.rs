@@ -112,10 +112,8 @@ pub enum AirMovePhase {
     Landed,
     /// Ascending from ground to cruise/hover altitude.
     Ascending,
-    /// At cruise altitude, moving toward destination (Fly locomotor).
+    /// At cruise altitude, moving toward destination.
     Cruising,
-    /// Hovering at fixed altitude (Jumpjet locomotor).
-    Hovering,
     /// Descending from cruise altitude back to ground.
     Descending,
 }

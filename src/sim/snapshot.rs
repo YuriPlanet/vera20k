@@ -533,8 +533,9 @@ use crate::sim::world::Simulation;
 // attached to it. The layout is unchanged, but a 178 save taken during a
 // paradrop resumes without canopies and with different ids.
 // 179 -> 180: a Jumpjet's `air_phase` is no longer written as a mirror of its
-// state field. The layout is unchanged, but the stored and hashed value for a
-// Jumpjet in flight differs from what a 179 save holds.
+// state field, and `AirMovePhase::Hovering`, which only that mirror produced, is
+// gone, so the enum's encoding and a flying Jumpjet's stored value both differ
+// from what a 179 save holds.
 const SNAPSHOT_VERSION: u32 = 180;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
