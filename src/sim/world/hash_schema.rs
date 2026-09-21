@@ -14,6 +14,8 @@
 //! Pre-186 projections omit the pending-ammo byte and assume the removed
 //! AircraftReleaseTail was absent and old Attack booleans were both false.
 //! Those bounded fixtures are recoverable; arbitrary former aircraft state is not.
+//! Pre-187 projections omit the retained burst index and restore a zero remaining-
+//! shot byte on AttackTarget. Only the established zero-count fixtures support it.
 
 #[derive(Clone, Copy)]
 pub(super) enum HashSchema {
@@ -83,6 +85,7 @@ pub(super) enum HashFeature {
     DisplayLayers = 182,
     AnimationDisplay = 184,
     AircraftReleaseAuthority = 186,
+    WeaponBurstAuthority = 187,
 }
 
 impl HashSchema {
@@ -99,6 +102,7 @@ impl HashSchema {
                     | HashFeature::DisplayLayers
                     | HashFeature::AnimationDisplay
                     | HashFeature::AircraftReleaseAuthority
+                    | HashFeature::WeaponBurstAuthority
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

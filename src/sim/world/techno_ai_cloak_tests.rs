@@ -461,7 +461,7 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
         let entity = sim.substrate.entities.get_mut(targeter).unwrap();
         let mut attack = AttackTarget::new(cloaker);
         attack.cooldown_ticks = 17;
-        attack.burst_remaining = 3;
+        entity.weapon_burst.complete_shot(4);
         attack.burst_delay_ticks = 4;
         entity.pending_building_fire = Some(PendingBuildingFire {
             remaining_ticks: 7,
@@ -500,7 +500,7 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
     let attack = entity.attack_target.as_ref().unwrap();
     assert_eq!(attack.target, TargetKind::Entity(cloaker));
     assert_eq!(attack.cooldown_ticks, 17);
-    assert_eq!(attack.burst_remaining, 3);
+    assert_eq!(entity.weapon_burst.index(), 1);
     assert_eq!(attack.burst_delay_ticks, 4);
     assert_eq!(
         entity.pending_building_fire,

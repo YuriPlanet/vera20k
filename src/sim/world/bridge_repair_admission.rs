@@ -624,7 +624,6 @@ mod tests {
             Some(crate::sim::combat::AttackTarget {
                 target: crate::sim::combat::TargetKind::Entity(71),
                 cooldown_ticks: 0,
-                burst_remaining: 0,
                 burst_delay_ticks: 0,
                 pending_infantry_fire: None,
             });
@@ -759,7 +758,6 @@ mod tests {
             .attack_target = Some(crate::sim::combat::AttackTarget {
             target: crate::sim::combat::TargetKind::Entity(hut),
             cooldown_ticks: 0,
-            burst_remaining: 0,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });

@@ -18,6 +18,7 @@
 //! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
 
 pub(crate) mod base_defense_response;
+pub mod burst;
 pub(crate) mod cell_spread;
 pub(crate) mod combat_aoe;
 pub(crate) mod combat_fire_gate;
@@ -755,8 +756,6 @@ pub struct AttackTarget {
     pub target: TargetKind,
     /// Simulation ticks remaining before the next shot (ROF cooldown).
     pub cooldown_ticks: u16,
-    /// Shots remaining in the current burst. When this reaches 0, ROF cooldown starts.
-    pub burst_remaining: u8,
     /// Ticks between individual burst shots (short inter-shot delay).
     pub burst_delay_ticks: u8,
     /// Infantry-only delayed shot latch. `None` for vehicles/buildings/aircraft.
@@ -824,7 +823,6 @@ impl AttackTarget {
         Self {
             target: TargetKind::Entity(target_stable_id),
             cooldown_ticks: 0,
-            burst_remaining: 0,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         }
@@ -835,7 +833,6 @@ impl AttackTarget {
         Self {
             target: TargetKind::Cell(rx, ry),
             cooldown_ticks: 0,
-            burst_remaining: 0,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         }
@@ -1229,7 +1226,7 @@ pub fn issue_attack_command(
 /// Swing an existing attack onto a different entity WITHOUT restarting the
 /// weapon.
 ///
-/// The rearm countdown, the burst counter and the inter-shot delay all live on
+/// The rearm countdown and inter-shot delay still live on
 /// [`AttackTarget`] here, so replacing the whole record — which is what building
 /// a fresh `AttackTarget` does — zeroes them and hands the attacker a free shot
 /// on the spot. The original keeps its rearm timer on the OBJECT and its target
@@ -2682,8 +2679,8 @@ pub(crate) struct CombatEmit {
     pub(crate) retarget_events: Vec<(u64, u64)>,
     pub(crate) fire_events: Vec<SimFireEvent>,
     pub(crate) reveal_events: Vec<RevealEvent>,
-    /// (id, burst_rem, burst_delay, rof_cd)
-    pub(crate) burst_updates: Vec<(u64, u8, u8, u16)>,
+    /// (id, burst_delay, rof_cd)
+    pub(crate) burst_updates: Vec<(u64, u8, u16)>,
     /// aircraft that fired this tick
     pub(crate) ammo_deduct: Vec<u64>,
     /// building IDs to advance fire index
@@ -3007,7 +3004,6 @@ pub(crate) fn build_attacker_snapshot(
     entity: &GameEntity,
     target: TargetKind,
     cooldown_ticks: u16,
-    burst_remaining: u8,
     burst_delay_ticks: u8,
     pending_infantry_fire: Option<PendingInfantryFire>,
     pending_building_fire: Option<PendingBuildingFire>,
@@ -3041,7 +3037,6 @@ pub(crate) fn build_attacker_snapshot(
         barrel_facing: entity.barrel_facing,
         hull_facing: entity.body_facing,
         turret_rotation_latch: entity.turret_rotation_latch,
-        burst_remaining,
         burst_delay_ticks,
         weapon_override: entity.weapon_override,
         garrison,

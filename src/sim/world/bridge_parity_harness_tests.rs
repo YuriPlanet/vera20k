@@ -208,7 +208,8 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 69276585554619595
 // must reproduce the previous whole-fixture hash, including all RNG/state.
 // Schema186 removes the always-None release-tail byte. No aircraft participate;
 // pre186 below must reproduce the preceding full hash, with route/RNG unchanged.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 4657864725764756298;
+// Schema187: the pre187 projection below preserves the preceding full pin.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 17815022180346188402;
 const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 121431099463487950;
 
 fn bridge_ini() -> IniFile {
@@ -805,6 +806,11 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(186)),
         BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186,
         "restoring only the absent release-tail fold must reproduce the prior fixture"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(187)),
+        4657864725764756298,
+        "schema187 only replaces zero remaining-shot fields with the retained index in this fixture"
     );
     assert_eq!(
         final_hash, BRIDGE_HARNESS_FINAL_HASH,

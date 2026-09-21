@@ -208,6 +208,9 @@ pub(crate) fn represented_assign_target(
         }
     }
 
+    if requested.is_none() {
+        entity.weapon_burst.clear_target();
+    }
     entity.attack_target = requested.map(|target| match target {
         TargetKind::Entity(id) => crate::sim::combat::AttackTarget::new(id),
         TargetKind::Cell(rx, ry) => crate::sim::combat::AttackTarget::for_cell(rx, ry),

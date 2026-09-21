@@ -453,7 +453,8 @@ const SLICE6_BEFORE_INFANTRY_ROT_HASH: u64 = 209154586170202422;
 // pre186 assertion retains this fixture's preceding current hash, independently
 // of the existing constructor-rate projection and native paid-Walk witnesses.
 const SLICE6_BASELINE_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 0x3AB4_0B61_DE3B_5224;
-const SLICE6_BASELINE_HASH: u64 = 0xE1C1_EE70_4C71_ABA5;
+// Schema187: the pre187 projection below preserves the preceding full pin.
+const SLICE6_BASELINE_HASH: u64 = 0x8A7D_7855_6AAF_1E46;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -733,6 +734,11 @@ fn replay_hash_stable_through_slice6() {
         sim.state_hash(),
         hash,
         "restore the unmodified live facing state"
+    );
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(187)),
+        0xE1C1_EE70_4C71_ABA5,
+        "schema187 only replaces zero remaining-shot fields with the retained index in this fixture"
     );
     assert_eq!(
         hash, SLICE6_BASELINE_HASH,

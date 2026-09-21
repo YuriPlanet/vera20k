@@ -667,6 +667,9 @@ pub struct GameEntity {
     /// hash does fold.
     #[serde(default = "default_last_fire_frame")]
     pub last_fire_frame: i64,
+    /// Techno+3B8 survives target replacement and mission changes.
+    #[serde(default)]
+    pub weapon_burst: crate::sim::combat::burst::WeaponBurst,
     /// Building construction animation progress.
     pub building_up: Option<BuildingUp>,
     /// Reverse build-up animation — building is undeploying into a mobile unit.
@@ -1316,6 +1319,7 @@ impl GameEntity {
             barrel_facing: None,
             turret_rotation_latch: false,
             last_fire_frame: NATIVE_LAST_FIRE_FRAME_INIT,
+            weapon_burst: Default::default(),
             building_up: None,
             building_down: None,
             building_damage_state_active: false,
@@ -1915,7 +1919,6 @@ mod mission_shadow_tests {
         e.attack_target = Some(AttackTarget {
             target: TargetKind::Entity(2),
             cooldown_ticks: 0,
-            burst_remaining: 0,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });

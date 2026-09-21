@@ -2895,7 +2895,6 @@ fn pointer_expiry_clears_live_refs_and_preserves_retaliation_attacker() {
     listener.attack_target = Some(AttackTarget {
         target: TargetKind::Entity(2),
         cooldown_ticks: 0,
-        burst_remaining: 0,
         burst_delay_ticks: 0,
         pending_infantry_fire: None,
     });
@@ -3059,7 +3058,6 @@ fn infantry_target_expiry_clears_firing_action_before_target() {
     listener.attack_target = Some(AttackTarget {
         target: TargetKind::Entity(2),
         cooldown_ticks: 9,
-        burst_remaining: 3,
         burst_delay_ticks: 2,
         pending_infantry_fire: Some(PendingInfantryFire {
             sequence: SequenceKind::Attack,
@@ -5124,6 +5122,7 @@ fn gsi_05_04_intact_bridge_cell_target_reaches_shrapnel_consumer() {
         100,
         &[],
         &std::collections::BTreeSet::new(),
+        &std::collections::BTreeSet::new(),
         &[detonation],
         &[],
     );
@@ -5196,6 +5195,7 @@ fn gsi_05_04_combat_fatal_expiry_keeps_authoritative_cell_target() {
         None,
         100,
         &logic_order,
+        &std::collections::BTreeSet::new(),
         &std::collections::BTreeSet::new(),
         &[detonation],
         &[],
@@ -5318,6 +5318,7 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
         None,
         100,
         &logic_order,
+        &std::collections::BTreeSet::new(),
         &std::collections::BTreeSet::new(),
         &[detonation],
         &[],
@@ -5983,7 +5984,6 @@ fn gsi_01_05_terminal_wave_damages_once_before_single_current_removal() {
         .attack_target = Some(AttackTarget {
         target: TargetKind::Entity(victim_id),
         cooldown_ticks: 0,
-        burst_remaining: 0,
         burst_delay_ticks: 0,
         pending_infantry_fire: None,
     });
@@ -6070,7 +6070,6 @@ fn terminal_type_zero_wave_with_empty_recorded_vector_has_no_damage_area_tail() 
         firer.attack_target = Some(AttackTarget {
             target: TargetKind::Cell(4, 5),
             cooldown_ticks: 0,
-            burst_remaining: 0,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });
@@ -6154,7 +6153,6 @@ fn wave_elite_ambient_damage_carries_within_cell_and_resets_on_next_cell() {
         firer.attack_target = Some(AttackTarget {
             target: TargetKind::Entity(next_id),
             cooldown_ticks: 0,
-            burst_remaining: 0,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });
@@ -6288,7 +6286,6 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
             firer.attack_target = Some(AttackTarget {
                 target: TargetKind::Entity(building_id),
                 cooldown_ticks: 0,
-                burst_remaining: 0,
                 burst_delay_ticks: 0,
                 pending_infantry_fire: None,
             });
@@ -6377,7 +6374,6 @@ fn wave_tail_consumes_wall_roll_before_mandatory_cliff_chance_roll() {
         firer.attack_target = Some(AttackTarget {
             target: TargetKind::Cell(4, 1),
             cooldown_ticks: 0,
-            burst_remaining: 0,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });
@@ -6592,7 +6588,6 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         firer.attack_target = Some(AttackTarget {
             target: TargetKind::Cell(4, 1),
             cooldown_ticks: 0,
-            burst_remaining: 0,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });
@@ -6906,7 +6901,6 @@ fn gsi_01_05_wave_reselects_live_cell_list_after_fatal_receiver_unmark() {
         .attack_target = Some(AttackTarget {
         target: TargetKind::Entity(building_id),
         cooldown_ticks: 0,
-        burst_remaining: 0,
         burst_delay_ticks: 0,
         pending_infantry_fire: None,
     });

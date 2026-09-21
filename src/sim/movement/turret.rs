@@ -339,18 +339,17 @@ pub(crate) fn current_weapon_is_omni_fire(
 ///   census over `BuildingClass::Update`, `Mission_Guard` and every idle path
 ///   finds no other `Set`/`UpdateFacing` of `+0x388`, so **a building turret
 ///   keeps its last aim** — it never swings back.
-/// - **Aircraft / Infantry** — legacy target-else-body rule (see below).
+/// - **Aircraft** — its mission/locomotor owns its secondary-facing writes.
+/// - **Infantry** — legacy target-else-body rule.
 ///
-/// RESIDUAL (GSI-08.14) — the aircraft turret destination is VERA's own
-/// "target, else body" rule. Native Aircraft initializes BOTH facings even
+/// Aircraft initializes BOTH facings even
 /// without Turret=yes (413FD2..414015). Its self-writers belong to Mission_Attack
 /// and Fly steering/takeoff (4181BB..4185DF, 4CE680, 4CF285/4CF3C5).
 /// AI41514C instead READS its secondary facing and copies it into a Carryall
 /// passenger; FireAt416041 samples it for launch math. Neither writes its own
-/// facing. Currently this sweep reaches aircraft given a barrel by Turret=yes.
-/// Before enabling native secondary facing for stock aircraft, migrate these
-/// writers, retained Fly destinations and heading consumers; this generic
-/// sweep would otherwise overwrite the ported aircraft controller each tick.
+/// facing. State4's two setters now run at the firing boundary. This generic
+/// sweep must not overwrite them. Other Mission_Attack and Fly secondary
+/// setters remain required residuals of those mechanisms.
 pub(crate) fn desired_turret_facing(
     entity: &GameEntity,
     entities: &EntityStore,
@@ -375,6 +374,7 @@ pub(crate) fn desired_turret_facing(
                 // takes no facing action at all. Hold.
                 None
             }),
+        crate::map::entities::EntityCategory::Aircraft => None,
         _ => Some(
             entity
                 .attack_target
@@ -388,7 +388,7 @@ pub(crate) fn desired_turret_facing(
 }
 
 /// Per-binary-frame turret rotation for the classes this sweep still owns —
-/// Aircraft and Buildings. Unit turrets are driven per-object by the combat
+/// Buildings and legacy Infantry. Unit turrets are driven per-object by the combat
 /// Phase-2 read window plus `unit_post::apply_unit_facing` while
 /// `L2_UNIT_POST_AUTHORITATIVE` holds.
 ///

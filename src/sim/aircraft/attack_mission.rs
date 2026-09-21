@@ -7,7 +7,7 @@
 //! ## State overview
 //! - 0: Init — clear the action latch, validate target
 //! - 3: InRangeCheck — check weapon range, close in if needed
-//! - 4: FireWeapon — request emission after the legacy arc check
+//! - 4: FireWeapon — request shared admission and synchronous burst emission
 //! - 10: ReturnToBase — consume pending ammo before the return decision
 //!
 //! ## Dependency rules
@@ -23,11 +23,6 @@ use crate::sim::intern::StringInterner;
 #[cfg(test)]
 #[path = "approach_range_tests.rs"]
 mod approach_range_tests;
-
-/// ±11.25° firing arc in 16-bit facing units.
-/// 0x800 = 2048 out of 65536 = 11.25°.
-/// Aircraft can only fire when target bearing is within this arc of their heading.
-const FIRING_ARC_TOLERANCE: u16 = 0x800;
 
 /// Resolved status of an aircraft's current attack target — abstracts over
 /// Entity vs Cell so the state machine doesn't care which kind it is.
@@ -106,9 +101,6 @@ pub fn tick_attack_state(
     // to None if the target has been removed.
     let target_status = aircraft_target_status(entity.attack_target.as_ref(), entities);
     let ammo_current = entity.aircraft_ammo.as_ref().map_or(-1, |a| a.current);
-    let entity_rx = entity.position.rx;
-    let entity_ry = entity.position.ry;
-    let entity_facing = entity.facing;
     let entity_veterancy = entity.veterancy;
     let type_ref = entity.type_ref();
 
@@ -179,8 +171,8 @@ pub fn tick_attack_state(
 
         // ---------------------------------------------------------------
         // State 4: FIRE_WEAPON
-        // Legacy firing arc (±11.25°); emission must decide actual success.
-        // Aircraft GetFireError41A9E0 and the release suffix remain to be wired.
+        // The combat handoff owns the native secondary-facing check and
+        // successful-release suffix; a request alone changes neither state nor ammo.
         // ---------------------------------------------------------------
         4 => {
             let Some(status) = target_status else {
@@ -190,26 +182,8 @@ pub fn tick_attack_state(
                 return AttackTickResult::transition(AircraftMission::Attack { sub_state: 10 });
             }
 
-            // Firing arc check: ±11.25° (0x800 in 16-bit facing).
-            let target_dx = status.rx as i32 - entity_rx as i32;
-            let target_dy = status.ry as i32 - entity_ry as i32;
-            let target_facing_u8 = crate::sim::movement::facing_from_delta(target_dx, target_dy);
-            // Convert both to 16-bit for arc comparison.
-            let entity_facing_16: u16 = (entity_facing as u16) << 8;
-            let target_facing_16: u16 = (target_facing_u8 as u16) << 8;
-            let facing_diff = (entity_facing_16 as i16)
-                .wrapping_sub(target_facing_16 as i16)
-                .unsigned_abs();
-
-            if facing_diff > FIRING_ARC_TOLERANCE {
-                // Not aligned — continue approach (don't fire).
-                return AttackTickResult::approach(
-                    AircraftMission::Attack { sub_state: 4 },
-                    (status.rx, status.ry),
-                );
-            }
-
-            // Firing arc aligned — signal fire permission.
+            // GetFireError and the native secondary-facing check run at the
+            // shared admission boundary, after the state4 facing writers.
             AttackTickResult::fire(
                 AircraftMission::Attack {
                     // The emission caller owns the successful-release suffix.

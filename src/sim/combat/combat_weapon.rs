@@ -890,22 +890,42 @@ fn resolve_index<'a>(
     index: i32,
     target: &TargetFacts,
 ) -> Option<SelectedWeapon<'a>> {
+    let selected = resolve_index_for_emission(rules, obj, veterancy, index, Some(target))?;
+    (!targeting_fire_error_blocks(rules, obj, selected.weapon, selected.warhead, target))
+        .then_some(selected)
+}
+
+/// GetWeapon/warhead resolution without repeating GetFireError. Mission_Attack
+/// 418432..418476 selects on each burst iteration after one admission only.
+pub(crate) fn select_weapon_for_emission<'a>(
+    rules: &'a RuleSet,
+    obj: &'a ObjectType,
+    attacker: &AttackerFacts,
+    target: Option<&TargetFacts>,
+) -> Option<SelectedWeapon<'a>> {
+    let index = what_weapon_should_i_use(rules, obj, attacker, target);
+    resolve_index_for_emission(rules, obj, attacker.veterancy, index, target)
+}
+
+fn resolve_index_for_emission<'a>(
+    rules: &'a RuleSet,
+    obj: &'a ObjectType,
+    veterancy: u16,
+    index: i32,
+    target: Option<&TargetFacts>,
+) -> Option<SelectedWeapon<'a>> {
     let (weapon_id, slot) = weapon_for_index(obj, veterancy, index)?;
-    // GetFireError: a null `GetWeapon(idx)` is CANNOT (6).
     let weapon = rules.weapon(weapon_id)?;
     let warhead = warhead_of(rules, weapon)?;
-    if targeting_fire_error_blocks(rules, obj, weapon, warhead, target) {
-        return None;
-    }
     let verses_pct = match target {
-        TargetFacts::Techno {
+        Some(TargetFacts::Techno {
             obj: target_obj, ..
-        } => warhead
+        }) => warhead
             .verses
             .get(armor_index(&target_obj.armor))
             .copied()
             .unwrap_or(100),
-        TargetFacts::Cell { .. } | TargetFacts::Terrain => 100,
+        _ => 100,
     };
     Some(SelectedWeapon {
         weapon_id,

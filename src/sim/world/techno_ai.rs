@@ -2450,7 +2450,7 @@ mod tests {
         let mut e = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
         let mut target = AttackTarget::new(2);
         target.cooldown_ticks = 33;
-        target.burst_remaining = 2;
+        e.weapon_burst.complete_shot(3);
         e.attack_target = Some(target);
         e.passively_acquired_target = true;
 
@@ -2459,7 +2459,7 @@ mod tests {
         let attack = e.attack_target.as_ref().expect("target retained");
         assert_eq!(attack.target, TargetKind::Entity(7));
         assert_eq!(attack.cooldown_ticks, 33, "rearm must survive the swing");
-        assert_eq!(attack.burst_remaining, 2, "burst must survive the swing");
+        assert_eq!(e.weapon_burst.index(), 1, "burst must survive the swing");
         assert!(
             e.passively_acquired_target,
             "an auto-retarget is not a new order — the target stays scanner-owned"
@@ -6111,7 +6111,6 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
         e.attack_target = Some(AttackTarget {
             target: TargetKind::Entity(99),
             cooldown_ticks: 0,
-            burst_remaining: 1,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });

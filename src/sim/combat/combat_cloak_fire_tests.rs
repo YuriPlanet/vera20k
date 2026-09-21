@@ -59,7 +59,6 @@ fn resolve_once(
         attacker,
         attack.target,
         attack.cooldown_ticks,
-        attack.burst_remaining,
         attack.burst_delay_ticks,
         attack.pending_infantry_fire,
         None,

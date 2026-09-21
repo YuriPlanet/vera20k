@@ -1571,7 +1571,6 @@ fn combat_fires_during_deployed_attack() {
     sim.substrate.entities.get_mut(gi).unwrap().attack_target = Some(AttackTarget {
         target: crate::sim::combat::TargetKind::Entity(9999),
         cooldown_ticks: 10,
-        burst_remaining: 0,
         burst_delay_ticks: 0,
         pending_infantry_fire: Some(crate::sim::combat::PendingInfantryFire {
             sequence: SequenceKind::DeployedFire,

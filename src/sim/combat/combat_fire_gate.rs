@@ -62,13 +62,10 @@ pub fn collect_fire_blocked_entities(
             }
         }
 
-        // Open migration: the aircraft mission currently issues only a legacy
-        // request, not a FireAt call. Keep its exclusion explicit until the
-        // admitted burst caller and pending-ammo writer are connected together;
-        // removing this gate alone would run generic burst/ammo bookkeeping.
-        // Docked-idle aircraft are parked on helipad — don't fire.
+        // Attack dispatch is admitted by a call-local mission receipt in the
+        // combat host. Docked aircraft cannot fire.
         if let Some(ref mission) = entity.aircraft_mission {
-            if mission.is_attacking() || mission.is_docked_idle() {
+            if mission.is_docked_idle() {
                 blocked.insert(entity.stable_id());
                 continue;
             }

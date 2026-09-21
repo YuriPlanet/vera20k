@@ -1801,6 +1801,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
             100,
             &[10, 20],
             &BTreeSet::new(),
+            &BTreeSet::new(),
             &[detonation],
             &[],
         );
@@ -1991,6 +1992,7 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
         100,
         &[],
         &BTreeSet::new(),
+        &BTreeSet::new(),
         &[detonation],
         &[],
     );
@@ -2077,6 +2079,7 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
         Some(&registry),
         100,
         &[],
+        &BTreeSet::new(),
         &BTreeSet::new(),
         &[],
         &[],

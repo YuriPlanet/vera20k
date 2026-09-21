@@ -25,7 +25,6 @@ use serde::{Deserialize, Serialize};
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::AttackTarget;
 use crate::sim::mission::MissionTimer;
 use crate::sim::movement::locomotor::AirMovePhase;
 use crate::sim::production::foundation_dimensions;
@@ -144,7 +143,7 @@ pub fn tick_aircraft_missions(
     sim: &mut Simulation,
     rules: &RuleSet,
     path_grid: Option<&crate::sim::pathfinding::PathGrid>,
-) {
+) -> std::collections::BTreeSet<u64> {
     // Phase 1: Snapshot all aircraft with missions.
     struct MissionSnap {
         id: u64,
@@ -162,6 +161,9 @@ pub fn tick_aircraft_missions(
                 return None;
             }
             let mission = e.aircraft_mission.as_ref()?;
+            if mission.is_attacking() && !e.mission.dispatch_timer().due(sim.session.binary_frame) {
+                return None;
+            }
             let loco = e.locomotor.as_ref()?;
             if loco.kind != LocomotorKind::Fly {
                 return None;
@@ -174,7 +176,7 @@ pub fn tick_aircraft_missions(
         .collect();
 
     if snapshots.is_empty() {
-        return;
+        return Default::default();
     }
 
     // Phase 2: Process each aircraft through its mission handler.
@@ -714,22 +716,13 @@ pub fn tick_aircraft_missions(
         sim.issue_air_cell_destination(id, (rx, ry), speed, Some(rules));
     }
 
-    // Legacy request adapter, still blocked by combat_fire_gate for Attack.
-    // This does not admit a release, set pending ammo, or advance the mission.
-    // Replace it with the call-local mission/emission handoff; rebuilding an
-    // AttackTarget here also loses its existing cooldown/burst bookkeeping.
-    let fire_commands: Vec<(u64, crate::sim::combat::TargetKind)> = mutations
+    // Call-local dispatch receipt. Preserve the live Target and its existing
+    // timing; combat will admit once, emit the burst and commit the suffix.
+    let fire_requests = mutations
         .iter()
-        .filter_map(|m| m.fire_at.map(|tk| (m.id, tk)))
+        .filter(|m| m.fire_at.is_some())
+        .map(|m| m.id)
         .collect();
-    for (attacker_id, target_kind) in fire_commands {
-        if let Some(entity) = sim.substrate.entities.get_mut(attacker_id) {
-            entity.attack_target = Some(match target_kind {
-                crate::sim::combat::TargetKind::Entity(id) => AttackTarget::new(id),
-                crate::sim::combat::TargetKind::Cell(rx, ry) => AttackTarget::for_cell(rx, ry),
-            });
-        }
-    }
 
     // Phase 5: Paradrop apply phase.
     // Standard Mission_Open is silent at the threshold; this compatibility path
@@ -808,6 +801,7 @@ pub fn tick_aircraft_missions(
             }
         }
     }
+    fire_requests
 }
 
 /// Find nearest airfield for a given aircraft.

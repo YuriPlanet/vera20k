@@ -1690,6 +1690,7 @@ impl Simulation {
         tick_ms: u32,
         logic_order: &[u64],
         fire_suppressed: &BTreeSet<u64>,
+        aircraft_fire_requests: &BTreeSet<u64>,
         projectile_detonations: &[crate::sim::projectile::ProjectileDetonation],
         wave_damage_events: &[crate::sim::wave::WaveDamageEvent],
     ) -> crate::sim::combat::CombatTickResult {
@@ -1702,6 +1703,7 @@ impl Simulation {
             tick_ms,
             logic_order,
             fire_suppressed,
+            aircraft_fire_requests,
             projectile_detonations,
             wave_damage_events,
         );
@@ -6124,9 +6126,11 @@ impl Simulation {
 
         // Aircraft mission state machines — between movement and combat.
         // Reads updated positions, controls firing and RTB decisions.
-        if let Some(rules) = rules {
-            crate::sim::aircraft::tick_aircraft_missions(self, rules, active_path_grid);
-        }
+        let aircraft_fire_requests = rules
+            .map(|rules| {
+                crate::sim::aircraft::tick_aircraft_missions(self, rules, active_path_grid)
+            })
+            .unwrap_or_default();
 
         // Wake anims under moving units on water (native gate and cadence in
         // `spawn_wakes_for_frame`).
@@ -6270,6 +6274,7 @@ impl Simulation {
                 tick_ms,
                 &logic_order,
                 &fire_suppressed,
+                &aircraft_fire_requests,
                 &projectile_detonations,
                 &[],
             );

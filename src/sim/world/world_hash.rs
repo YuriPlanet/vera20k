@@ -1896,11 +1896,18 @@ impl Simulation {
                 1u8.hash(hasher);
                 attack.cooldown_ticks.hash(hasher);
                 attack.target.hash(hasher);
-                attack.burst_remaining.hash(hasher);
+                if !schema.includes(HashFeature::WeaponBurstAuthority) {
+                    // Bounded historical replay fixtures had no remaining
+                    // burst shots. Arbitrary old AttackTarget state is unrecoverable.
+                    0u8.hash(hasher);
+                }
                 attack.burst_delay_ticks.hash(hasher);
                 attack.pending_infantry_fire.hash(hasher);
             } else {
                 0u8.hash(hasher);
+            }
+            if schema.includes(HashFeature::WeaponBurstAuthority) {
+                entity.weapon_burst.hash(hasher);
             }
             entity.pending_building_fire.hash(hasher);
             entity.current_weapon_index.hash(hasher);

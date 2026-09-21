@@ -106,7 +106,6 @@ pub(crate) struct AttackerSnapshot {
     /// before `Facing_Update @ 0x007365E8`, and VERA commits the new latch in
     /// `apply_unit_facing` after Phase 5.
     pub turret_rotation_latch: bool,
-    pub burst_remaining: u8,
     pub burst_delay_ticks: u8,
     /// Weapon-selection override (Gunner-IFV slot OR open-topped passenger weapon).
     pub weapon_override: Option<super::combat_weapon::WeaponOverride>,
@@ -206,7 +205,6 @@ pub(crate) fn acquire_best_target_for_entity(
         barrel_facing: entity.barrel_facing,
         hull_facing: entity.body_facing,
         turret_rotation_latch: entity.turret_rotation_latch,
-        burst_remaining: 0,
         burst_delay_ticks: 0,
         weapon_override: entity.weapon_override,
         garrison: None,

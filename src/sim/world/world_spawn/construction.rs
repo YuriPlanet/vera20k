@@ -104,7 +104,8 @@ impl Simulation {
 
         stamp_scoring_flags(ge, obj);
         ge.sight_is_zero = obj.is_some_and(|object| object.sight == 0);
-        if let Some(obj) = obj.filter(|obj| obj.has_turret) {
+        if let Some(obj) = obj.filter(|obj| obj.has_turret || category == EntityCategory::Aircraft)
+        {
             let initial = crate::sim::movement::turret::body_facing_to_turret(facing);
             ge.barrel_facing = Some(crate::sim::movement::FacingClass::new(
                 initial,

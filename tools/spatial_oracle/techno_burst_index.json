@@ -1,0 +1,434 @@
+[
+  {
+    "burst": -2,
+    "get_rof_indices": [
+      -2147483647
+    ],
+    "index": -2147483648,
+    "next_index": -1
+  },
+  {
+    "burst": 1,
+    "get_rof_indices": [
+      -2147483647
+    ],
+    "index": -2147483648,
+    "next_index": 0
+  },
+  {
+    "burst": 2,
+    "get_rof_indices": [
+      -2147483647
+    ],
+    "index": -2147483648,
+    "next_index": -1
+  },
+  {
+    "burst": 5,
+    "get_rof_indices": [
+      -2147483647
+    ],
+    "index": -2147483648,
+    "next_index": -2
+  },
+  {
+    "burst": 256,
+    "get_rof_indices": [
+      -2147483647
+    ],
+    "index": -2147483648,
+    "next_index": -255
+  },
+  {
+    "burst": 257,
+    "get_rof_indices": [
+      -2147483647
+    ],
+    "index": -2147483648,
+    "next_index": -128
+  },
+  {
+    "burst": -2,
+    "get_rof_indices": [
+      -1
+    ],
+    "index": -2,
+    "next_index": -1
+  },
+  {
+    "burst": 1,
+    "get_rof_indices": [
+      -1
+    ],
+    "index": -2,
+    "next_index": 0
+  },
+  {
+    "burst": 2,
+    "get_rof_indices": [
+      -1
+    ],
+    "index": -2,
+    "next_index": -1
+  },
+  {
+    "burst": 5,
+    "get_rof_indices": [
+      -1
+    ],
+    "index": -2,
+    "next_index": -1
+  },
+  {
+    "burst": 256,
+    "get_rof_indices": [
+      -1
+    ],
+    "index": -2,
+    "next_index": -1
+  },
+  {
+    "burst": 257,
+    "get_rof_indices": [
+      -1
+    ],
+    "index": -2,
+    "next_index": -1
+  },
+  {
+    "burst": -2,
+    "get_rof_indices": [
+      0
+    ],
+    "index": -1,
+    "next_index": 0
+  },
+  {
+    "burst": 1,
+    "get_rof_indices": [
+      0
+    ],
+    "index": -1,
+    "next_index": 0
+  },
+  {
+    "burst": 2,
+    "get_rof_indices": [
+      0
+    ],
+    "index": -1,
+    "next_index": 0
+  },
+  {
+    "burst": 5,
+    "get_rof_indices": [
+      0
+    ],
+    "index": -1,
+    "next_index": 0
+  },
+  {
+    "burst": 256,
+    "get_rof_indices": [
+      0
+    ],
+    "index": -1,
+    "next_index": 0
+  },
+  {
+    "burst": 257,
+    "get_rof_indices": [
+      0
+    ],
+    "index": -1,
+    "next_index": 0
+  },
+  {
+    "burst": -2,
+    "get_rof_indices": [
+      1
+    ],
+    "index": 0,
+    "next_index": 1
+  },
+  {
+    "burst": 1,
+    "get_rof_indices": [
+      1
+    ],
+    "index": 0,
+    "next_index": 0
+  },
+  {
+    "burst": 2,
+    "get_rof_indices": [
+      1
+    ],
+    "index": 0,
+    "next_index": 1
+  },
+  {
+    "burst": 5,
+    "get_rof_indices": [
+      1
+    ],
+    "index": 0,
+    "next_index": 1
+  },
+  {
+    "burst": 256,
+    "get_rof_indices": [
+      1
+    ],
+    "index": 0,
+    "next_index": 1
+  },
+  {
+    "burst": 257,
+    "get_rof_indices": [
+      1
+    ],
+    "index": 0,
+    "next_index": 1
+  },
+  {
+    "burst": -2,
+    "get_rof_indices": [
+      2
+    ],
+    "index": 1,
+    "next_index": 0
+  },
+  {
+    "burst": 1,
+    "get_rof_indices": [
+      2
+    ],
+    "index": 1,
+    "next_index": 0
+  },
+  {
+    "burst": 2,
+    "get_rof_indices": [
+      2
+    ],
+    "index": 1,
+    "next_index": 0
+  },
+  {
+    "burst": 5,
+    "get_rof_indices": [
+      2
+    ],
+    "index": 1,
+    "next_index": 2
+  },
+  {
+    "burst": 256,
+    "get_rof_indices": [
+      2
+    ],
+    "index": 1,
+    "next_index": 2
+  },
+  {
+    "burst": 257,
+    "get_rof_indices": [
+      2
+    ],
+    "index": 1,
+    "next_index": 2
+  },
+  {
+    "burst": -2,
+    "get_rof_indices": [
+      5
+    ],
+    "index": 4,
+    "next_index": 1
+  },
+  {
+    "burst": 1,
+    "get_rof_indices": [
+      5
+    ],
+    "index": 4,
+    "next_index": 0
+  },
+  {
+    "burst": 2,
+    "get_rof_indices": [
+      5
+    ],
+    "index": 4,
+    "next_index": 1
+  },
+  {
+    "burst": 5,
+    "get_rof_indices": [
+      5
+    ],
+    "index": 4,
+    "next_index": 0
+  },
+  {
+    "burst": 256,
+    "get_rof_indices": [
+      5
+    ],
+    "index": 4,
+    "next_index": 5
+  },
+  {
+    "burst": 257,
+    "get_rof_indices": [
+      5
+    ],
+    "index": 4,
+    "next_index": 5
+  },
+  {
+    "burst": -2,
+    "get_rof_indices": [
+      256
+    ],
+    "index": 255,
+    "next_index": 0
+  },
+  {
+    "burst": 1,
+    "get_rof_indices": [
+      256
+    ],
+    "index": 255,
+    "next_index": 0
+  },
+  {
+    "burst": 2,
+    "get_rof_indices": [
+      256
+    ],
+    "index": 255,
+    "next_index": 0
+  },
+  {
+    "burst": 5,
+    "get_rof_indices": [
+      256
+    ],
+    "index": 255,
+    "next_index": 1
+  },
+  {
+    "burst": 256,
+    "get_rof_indices": [
+      256
+    ],
+    "index": 255,
+    "next_index": 0
+  },
+  {
+    "burst": 257,
+    "get_rof_indices": [
+      256
+    ],
+    "index": 255,
+    "next_index": 256
+  },
+  {
+    "burst": -2,
+    "get_rof_indices": [
+      257
+    ],
+    "index": 256,
+    "next_index": 1
+  },
+  {
+    "burst": 1,
+    "get_rof_indices": [
+      257
+    ],
+    "index": 256,
+    "next_index": 0
+  },
+  {
+    "burst": 2,
+    "get_rof_indices": [
+      257
+    ],
+    "index": 256,
+    "next_index": 1
+  },
+  {
+    "burst": 5,
+    "get_rof_indices": [
+      257
+    ],
+    "index": 256,
+    "next_index": 2
+  },
+  {
+    "burst": 256,
+    "get_rof_indices": [
+      257
+    ],
+    "index": 256,
+    "next_index": 1
+  },
+  {
+    "burst": 257,
+    "get_rof_indices": [
+      257
+    ],
+    "index": 256,
+    "next_index": 0
+  },
+  {
+    "burst": -2,
+    "get_rof_indices": [
+      -2147483648
+    ],
+    "index": 2147483647,
+    "next_index": 0
+  },
+  {
+    "burst": 1,
+    "get_rof_indices": [
+      -2147483648
+    ],
+    "index": 2147483647,
+    "next_index": 0
+  },
+  {
+    "burst": 2,
+    "get_rof_indices": [
+      -2147483648
+    ],
+    "index": 2147483647,
+    "next_index": 0
+  },
+  {
+    "burst": 5,
+    "get_rof_indices": [
+      -2147483648
+    ],
+    "index": 2147483647,
+    "next_index": -3
+  },
+  {
+    "burst": 256,
+    "get_rof_indices": [
+      -2147483648
+    ],
+    "index": 2147483647,
+    "next_index": 0
+  },
+  {
+    "burst": 257,
+    "get_rof_indices": [
+      -2147483648
+    ],
+    "index": 2147483647,
+    "next_index": -129
+  }
+]
