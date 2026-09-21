@@ -11,5 +11,7 @@ A scoped pass certifies no wider system. Owners fix confirmed mechanism/prerequi
 defects; adjacent findings become follow-ups, not automatic expansion. Review grants
 no mutation/publication authority.
 
-Recheck fixes and affected conclusions. Use a fresh critic for significant revisions
-or when requested; trivial edits need no review ritual.
+Follow ENGINE.md's cadence: one critic pass after implementation and validation,
+before opening a PR for substantial/risky changes. The owner rechecks fixes and
+affected conclusions. Do not request follow-up or replacement critics after fixes
+or revisions unless the user explicitly asks; trivial edits need no critic.

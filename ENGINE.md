@@ -121,10 +121,12 @@ coherent and reviewable. Record adjacent findings without absorbing their backlo
 Residuals name trigger, effect, frequency and downstream risk; deferring required loop or
 determinism/authority/lifecycle work cannot close that loop.
 
-Delegate independent work with clear ownership. Substantial/risky changes need a fresh
-read-only [critic](.agents/skills/_shared/review.md) free to inspect original evidence
-and challenge scope/design. Resolve confirmed findings, reject false positives with
-evidence.
+Delegate independent work with clear ownership. For substantial/risky changes, run
+one fresh read-only [critic](.agents/skills/_shared/review.md) after implementation
+and validation, before opening the PR. The critic is free to inspect original evidence
+and challenge scope/design. The owner resolves confirmed findings, rejects false
+positives with evidence and validates fixes. Do not run critics per implementation
+increment or repeat reviews after fixes or revisions unless the user explicitly asks.
 Keep a concise [checkpoint](.agents/skills/_shared/handoff.md) for sustained work.
 
 ## Git and validation
