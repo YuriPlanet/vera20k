@@ -84,12 +84,12 @@ wall arm, `all_to_hunt_score_override`,
 checksum: verified native work with golden or oracle tests. Deleting them
 discards evidence-backed work; wiring each is a port. Their functions are
 `#[cfg(test)]` since the second sweep (only tests reach them; a port removes the
-gate); the types they use still show as the non-test build's remaining
-dead-code warnings. Untested staged ports kept as they were: the House
+gate), and so are the types only they use. Untested staged ports kept as they were: the House
 base-centre helpers (`world/house_base.rs`, AI-deferred) and the gas and smoke
 wind movers (need `WindDirection=`) behind their `allow(dead_code)`, and four
-`pub` cloak helpers and `suppresses_ordinary_damage`, which nothing references
-yet. The six unused `state_hash_without_*`
+`pub` cloak helpers, `suppresses_ordinary_damage` and the wave
+`color_mode`/`registration_bucket` pair (the only record of the native
+wave-type mapping), which nothing references yet. The six unused `state_hash_without_*`
 probes in `world_hash.rs` are replay-pin provenance.
 
 ## Open
@@ -136,9 +136,10 @@ release: a chrono warp, a superweapon invoke, a bridge collapse.
   test in `apply_anim_raw_occupation`, so it marks the ground occupation bits.
   The old 128 scale passed that test by accident. Rare; the producer's level
   byte is the coarse input.
-- `tests/refinery_live_rules.rs` does not compile (it reads the private
-  `GameEntity::owner` and `type_ref`); the other 31 integration targets and the
-  binaries do. Integration tests are outside the `--lib` gate, so nothing runs it.
+- `tests/refinery_live_rules.rs` read the private `GameEntity::owner` and
+  `type_ref` and did not compile; it uses the accessors since the second sweep,
+  so all 32 integration targets and the binaries build. Integration tests are
+  outside the `--lib` gate, so nothing runs it; it was compiled, not run.
 - Combat death debris never binds a sprite (GSI-05.14); theaters other than
   TEMPERATE were not checked for unbound building animations.
 
