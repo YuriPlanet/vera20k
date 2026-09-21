@@ -231,11 +231,14 @@ probe; it is not a second implementation to publish.
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
 Branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Current validated source: `be8e2d62ce1fcdfc6d968954204878670f6ebd38`;
-signed FacingClass rates/timers, class-specific Infantry defaults and voxel
-building fire retry math now reach existing production consumers. Evidence HEAD
-`ae5b3042e66091c584b1bc2335272fca6f360cbc` also records80 native Fly takeoff
-callbacks. No tracked implementation WIP remains. Previous checkpoint: `a36155c9`.
+Current validated source: `d7c155501e7f260024dc965b415b2c3aa8431979`:
+aircraft approach distance, strict raw-lepton range and shared target coordinates,
+including native0x0 foundations. No tracked implementation WIP remains after this
+checkpoint commit. Previous checkpoint: `d4ab9da0`. Facing source
+`be8e2d62ce1fcdfc6d968954204878670f6ebd38` and evidence
+`ae5b3042e66091c584b1bc2335272fca6f360cbc` remain intact, including80 original
+Fly takeoff callbacks. Aircraft attack-state, emission and Fly prerequisites below
+remain open; the range comparison is not whole-aircraft parity.
 Carryall move decision source: `450c408bd78490e5a2f42b0b392144ceb91271b1`;
 Display fixture correction: `f4347849`;
 integer Fly height source: `fa615a67a48be364e890b2801e52cdaf28283cdc`.
@@ -596,7 +599,91 @@ Foot+55C at4D72B9. The existing overlay neighbor-count authority must cover
 all Foot lifecycle producers, not just Fly touchdown. Trace Limbo/destruction
 before generalizing it; do not add a parallel count plane.
 
+### Aircraft approach range and conflicting attack-state evidence
+
+The current range increment replaces the state3 cell-Chebyshev/`<=` test with
+Object5F6440's planar GetCoords distance and strict signed comparison against
+the selected slot0 weapon's raw Range leptons (4180F4..418117). Building targets
+use their foundation centre, then subtract `(width+height)*64`, clamping at0;
+Bib is excluded. Existing `native_x87::distance_3d_leptons` with both Z=0 owns
+the deterministic native sqrt ties; no new math emulator or retained state.
+Combat's existing target-coordinate projection now also serves `in_range.rs`;
+the duplicate implementation is deleted. Missing weapons no longer invent a
+five-cell range. The original comparison also exposed the shared coordinate
+projection's saturating subtraction for the native `0x0` foundation; GetCoords
+must shift its anchor by(-128,-128), not(0,0). That owner is corrected, including
+ordinary fire-range consumers. Snapshot schema and state hash layout are unchanged.
+
+Acceptance is bounded to the selected range branch: match original distances,
+weapon tier/fallback and strict decisions, reach production mission/move writes,
+and preserve those decisions across save/restore. The original range arm is
+conditional on auxiliary+18; the legacy handler's other state3 branches are not
+ported by correcting this distance. Do not claim full aircraft attack parity.
+`aircraft_approach_range.{py,json,meta.json}` preserves235 original full distance
+calls followed by bounded caller branches with real virtual receivers and no
+substitutions. Ghidra41810F,418037 and41B849 comments saved/read back.
+
+Final validation for d7c15550: `cargo test -p vera20k --lib` passed **9,123 tests,
+0 failed,135 ignored** in18.52s (`.local/aircraft-range-validated-tests.log`).
+`cargo clippy -p vera20k --lib` passed with1,026 warnings in23.22s
+(`.local/aircraft-range-clippy.log`). `aircraft_approach_range --check` passed.
+The native rows reach production `tick_aircraft_missions` and move dispatch;
+11 representative pending decisions also round-trip through full GameSnapshot.
+An initial fixture misspelled the Fly GUID; after correcting it, the full native
+comparison exposed the real0x0 offset defect above. Native expected values were
+retained. No replay pins changed. All owned Cargo processes are terminal.
+No release retail load or PR/critic was run for this increment. The earlier
+FlightLevel/IsDropship/Carryall rules changes still require a fresh release retail
+load before merge. The dependency map remains retired and was not refreshed.
+
+Tracing Fly's required mode+5C input uncovered a separate required migration:
+
+- Aircraft auxiliary+20 at41B860 reads the actual owner+6D2 byte. The current
+  `AircraftReleaseTail.completion_latch` is NOT this authority:418037 clears
+  +6D2 at state1 entry while the Rust completion latch persists. The five-field
+  tail duplicates Ammo+2FC and pending+6C8, hardcodes every release as final and
+  forces1->10->target-clear without consulting current ammo. Its originating
+  commit7e181246 cites a three-entry capture, not a general state machine.
+- State1 clears+6D2, consumes pending+6C8 with wrapping DEC Ammo, then checks
+  target and Ammo!=0; if present it calls4197C0 FindFireLocation, assigns NavCom
+  via+480 and selects3 or10 from the resulting NavCom. State3 also consumes
+  pending. State10 clears+6D2 and pending but decrements only positive Ammo;
+  nonzero Ammo and a retained target return to1 at418CD1..418CE2, not Rust's0.
+  Its zero-ammo target-clear is conditional at418C21..418C3D and continues
+  through return-location/RNG/NavCom/mission work. Do not replace it with a
+  blanket target clear or a new competing latch.
+- Auxiliary+18 at41B7F0 resolves slot0 weapon and tests Projectile+2DC<=1 and
+  +29E==0; resolve both field identities before naming the classifier. Auxiliary
+  +1C at41B840 is **Fighter**, AircraftType+E0E, proven by reader41CC84 literal
+  818034 and store41CC95. It is not `FlyBy`. Existing Rules already has Fighter.
+- FindFireLocation4197C0 returns the supplied target directly for auxiliary+18;
+  otherwise it scans16 angles on a ring around the TARGET, using its NavCom as
+  ranking reference when the target is Foot. The retained alternate is the
+  previous record minimum, not an independently maintained second-best. The
+  current cfg(test)-only `runtime_contract::find_fire_location` gets these facts
+  wrong and is not a production prerequisite. Port playfield/shroud/admission
+  419B00 and RNG order through their owners before connecting state1.
+- `tick_aircraft_missions` currently signals fire by resetting AttackTarget,
+  while the generic fire gate blocks every active Attack mission. Trace and
+  migrate that actual emission route with its pending-ammo owner; the separate
+  generic fire receiver currently deducts ammo on burst completion as well.
+  This remains an uncompleted production chain, not a passing combat claim.
+
+Native name array816CAC, dispatcher5B34E8 and Aircraft vtable7E22A4 were read
+together to correct five Ghidra labels (saved/read back):25 Patrol417300,
+26 ParadropApproach4158E0,27 ParadropOverfly415960,30 SpyplaneApproach4155F0,
+31 SpyplaneOverfly4157C0. The old labels respectively said SpyPlane, Open,
+Rescue, ParaDropApproach and ParaDropOverfly. Current Rust paradrop comments
+still call26/27 Open/Rescue; that is stale identity, not a distinct native chain.
+Mission24 Open dispatches to base5B2F50; Mission15 Hunt reaches414A80, so do not
+rename415A50 to Hunt from an incorrectly counted vtable entry.
+
 ### Next safe implementation
+
+First resolve the Aircraft pending-ammo/+6D2 and emission chain above. Fly MoveTo
+reads that retained byte; it cannot borrow the legacy completion latch. Preserve
+the validated range correction while replacing the false final-release path and
+porting its required FindFireLocation/NavCom/state1/state10 effects.
 
 Migrate retained Fly destination state and both Aircraft facing writers/readers,
 then port native phase callbacks with their Mark/Display transaction. The legacy
