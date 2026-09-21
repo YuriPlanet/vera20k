@@ -1,6 +1,6 @@
 //! World placement corridors of Walk75AEC0: boundary75C117 and completion75BD7D.
-//! The paid approach itself remains the existing Walk numeric adapter. This
-//! owner supplies the synchronous Mark/PerCell boundary before the pass tail.
+//! walk_step owns the paid numeric approach; this owner supplies synchronous
+//! Mark/PerCell placement before the pass tail.
 use super::{ground_pose, locomotor::MovementLayer};
 use crate::map::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -321,15 +321,11 @@ impl Simulation {
         e.navigation.path_replay.reference_cell =
             Some((e.position.rx as i16, e.position.ry as i16));
         if let Some(target) = e.movement_target.as_mut() {
-            super::movement_step::configure_motion_after_transition(
-                target,
-                &e.locomotor,
-                &mut e.facing,
-                &mut e.facing_target,
-                e.category,
-                0,
-                &e.position,
-            );
+            //75BD97 consumes the completed path entry without turning toward
+            //its successor. Walk turns only when that head is accepted
+            //(75BC97) or paid (75C035), through the body FacingClass owner.
+            //The generic mover's heading/direction caches do not own Walk.
+            target.next_index += 1;
         }
         //Infantry+1CC=5F5FA0; marked is already false, so the SetHeight0
         //receiver samples current ground+OnBridge without nested Mark calls.

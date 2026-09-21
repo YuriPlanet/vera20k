@@ -15,6 +15,112 @@ use crate::sim::world::Simulation;
 use crate::util::fixed_math::SimFixed;
 use serde_json::Value;
 
+#[test]
+fn completed_corner_keeps_heading_until_next_head_is_accepted() {
+    use crate::map::resolved_terrain::ResolvedTerrainGrid;
+    use crate::sim::components::MovementTarget;
+    use crate::sim::movement::{FacingClass, ground_pose, locomotor::MovementLayer, walk_head};
+    use std::collections::BTreeMap;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n[E1]\nStrength=125\nSpeed=4\n\
+         Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::new();
+    sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(
+        16,
+        16,
+        (0..16)
+            .flat_map(|y| {
+                (0..16)
+                    .map(move |x| crate::sim::world::common_raw_test_terrain_cell(x, y, 0, false))
+            })
+            .collect(),
+    ));
+    let id = sim
+        .spawn_object("E1", "Americans", 6, 5, 0, &rules, &BTreeMap::new())
+        .unwrap();
+    let head = DriveCoord {
+        x: 6 * 256 + 192,
+        y: 5 * 256 + 64,
+        z: 0,
+    };
+    let body = FacingClass::new(0x3FFF, 0);
+    let actor = sim.substrate.entities.get_mut(id).unwrap();
+    actor.position.sub_x = SimFixed::from_num(184);
+    actor.position.sub_y = SimFixed::from_num(64);
+    actor.body_facing = Some(body);
+    actor.facing = 0x3F;
+    actor.navigation.nav_com = Some(NavTargetRef::cell(6, 6));
+    actor.navigation.path_replay = FootPathQueue {
+        directions: vec![2, 4],
+        cursor: 0,
+        reference_cell: Some((5, 5)),
+    };
+    actor.movement_target = Some(MovementTarget {
+        path: vec![(5, 5), (6, 5), (6, 6)],
+        path_layers: vec![MovementLayer::Ground; 3],
+        next_index: 1,
+        final_goal: Some((6, 6)),
+        ..Default::default()
+    });
+    let loco = actor.locomotor.as_mut().unwrap();
+    loco.set_walk_destination(Some(DriveCoord::cell(6, 6, 0)));
+    loco.set_step_head(Some(head));
+
+    // Exercise real world completion, including Mark/PerCell and navigation.
+    // Original75BD70..75BF82 has no movement-turn call;75BC97 owns the next one.
+    sim.run_completed_walk_step(id, head, Some(&rules), None, None)
+        .unwrap();
+    let actor = sim.substrate.entities.get(id).unwrap();
+    assert_eq!(ground_pose::position_world_coord(&actor.position), head);
+    assert_eq!(actor.movement_target.as_ref().unwrap().next_index, 2);
+    assert_eq!(actor.navigation.path_replay.remaining_directions(), &[4]);
+    assert_eq!(actor.locomotor.as_ref().unwrap().step_head(), None);
+    assert_eq!(actor.body_facing, Some(body));
+    assert_eq!(
+        actor.facing, 0x3F,
+        "completion must not anticipate the corner"
+    );
+
+    // A refused head can keep the actor waiting; it must keep both headings.
+    for blocked in [true, false] {
+        if blocked {
+            sim.substrate.raw_cell_occupation.mark_ground(6, 6, 0x20);
+        } else {
+            sim.substrate.raw_cell_occupation.clear_ground(6, 6, 0x20);
+        }
+        let accepted = walk_head::prepare_step_head(
+            &mut sim.substrate.entities,
+            id,
+            &sim.substrate.occupancy,
+            &mut sim.substrate.raw_cell_occupation,
+            sim.resolved_terrain.as_ref(),
+            None,
+            Some(&rules),
+            &sim.interner,
+            None,
+            &mut sim.scenario_rng,
+        );
+        assert_eq!(accepted, !blocked);
+        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        assert_eq!(actor.body_facing, Some(body));
+        assert_eq!(actor.facing, 0x3F);
+        if accepted {
+            let next = actor.locomotor.as_ref().unwrap().step_head().unwrap();
+            let desired = crate::util::direction_tables::facing16_from_delta(
+                next.x - head.x,
+                next.y - head.y,
+            );
+            assert!(walk_head::finish_fresh_head(actor, 101));
+            assert_ne!(desired, body.current(101));
+            assert_eq!(actor.body_facing.unwrap().current(101), desired);
+            assert_eq!(actor.facing, (desired >> 8) as u8);
+        }
+    }
+}
+
 fn i32_value(value: &Value) -> i32 {
     i32::try_from(value.as_i64().unwrap()).unwrap()
 }
