@@ -692,18 +692,8 @@ impl SimSoundEvent {
     }
 }
 
-/// A fire event produced during combat — carries firing-tick facts for
-/// render-side muzzle flash positioning and future projectile origin computation.
-///
-/// The sim emits this whenever a weapon fires. Non-garrison fields snapshot
-/// the selected weapon, attacker type/facing/veterancy, and optional report
-/// sound id at the authoritative fire tick. Garrison fields remain
-/// fire-port/occupant-specific so the app layer can keep the existing
-/// `OccupantAnim` path separate.
-/// Source position facts captured at the authoritative fire tick.
-///
-/// The app layer combines this deterministic snapshot with art/rules metadata
-/// to resolve the visible muzzle, projectile, and report-sound origin.
+/// The firer's own position at the authoritative fire tick (the electric
+/// spark admission reads it; the muzzle is `SimFireEvent::fire_coord`).
 #[derive(Debug, Clone)]
 pub struct FireOriginSnapshot {
     pub rx: u16,
@@ -714,6 +704,9 @@ pub struct FireOriginSnapshot {
     pub facing: u8,
 }
 
+/// One shot, as combat resolved it at the authoritative fire tick. The world
+/// constructs the shot's muzzle animation from it and the app positions the
+/// weapon report sound at `fire_coord`.
 #[derive(Debug, Clone)]
 pub struct SimFireEvent {
     /// Stable ID of the entity that fired.

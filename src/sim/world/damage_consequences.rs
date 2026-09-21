@@ -549,6 +549,27 @@ mod muzzle_anim_tests {
         );
     }
 
+    /// The same, through `commit`: the flash is constructed before the
+    /// teardown loop. Constructed after it, the attach would still succeed (the
+    /// torn-down firer stays stored until the frame's tail) and leave an owner
+    /// id that no later notification clears.
+    #[test]
+    fn commit_builds_the_flash_before_it_tears_the_firer_down() {
+        let (mut sim, rules, tank) = fixture(EntityCategory::Unit);
+        sim.reveal(tank);
+        let event = shot(&mut sim, tank, EntityCategory::Unit);
+        let effects = DeathEffects {
+            immediate_uninit_ids: vec![tank],
+            ..DeathEffects::default()
+        };
+        DamageConsequences::ordinary(effects, Vec::new(), Vec::new(), Vec::new(), vec![event])
+            .commit(&mut sim, &rules, None, None);
+
+        let (_, anim) = sim.substrate.anims.iter().next().expect("muzzle anim");
+        assert_eq!(anim.owner_entity, None);
+        assert!(anim.runtime.inactive);
+    }
+
     #[test]
     fn a_shot_without_a_bound_muzzle_type_constructs_nothing() {
         let (mut sim, rules, tank) = fixture(EntityCategory::Unit);
