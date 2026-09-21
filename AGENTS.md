@@ -137,9 +137,12 @@ determinism/authority/lifecycle work cannot close that loop.
 Delegate independent work with clear ownership. For substantial/risky changes, run
 one fresh read-only [critic](.agents/skills/_shared/review.md) after implementation
 and validation, before opening the PR. The critic is free to inspect original evidence
-and challenge scope/design. The owner resolves confirmed findings, rejects false
-positives with evidence and validates fixes. Do not run critics per implementation
-increment or repeat reviews after fixes or revisions unless the user explicitly asks.
+and challenge scope/design. It identifies implementation defects and useful refactoring
+opportunities, explaining their impact and risks. The owner fixes confirmed defects,
+rejects false positives with evidence and may implement worthwhile in-scope refactors,
+validating all changes. Unrelated opportunities become follow-ups. Do not run critics
+per implementation increment or repeat reviews after fixes or revisions unless the user
+explicitly asks.
 Keep a concise [checkpoint](.agents/skills/_shared/handoff.md) for sustained work.
 
 ## Git and validation
