@@ -39,6 +39,7 @@ use crate::util::fixed_math::{
     native_movement_frame_fraction,
 };
 
+use super::block_index::{LentOwnerBlockSet, OwnerBlockIndex};
 use super::bump_crush;
 use super::drive_locomotion;
 use super::locomotor::{GroundMovePhase, MovementLayer};
@@ -163,28 +164,25 @@ fn nav_target_object_cell(entities: &EntityStore, nav: &NavTargetRef) -> Option<
     }
 }
 
-/// Rebuild one owner's pathfinding entity-block snapshot iff occupancy has
-/// mutated since that snapshot was last built. Returns whether a rebuild ran.
+/// Bring one owner's pathfinding entity-block snapshot to the entities'
+/// current state iff occupancy has mutated since it was last brought current.
+/// Returns whether that ran.
 ///
-/// The movement tick builds these snapshots once before the mover loop, but
-/// gamemd processes movers in live object order — a mover that repaths after an
+/// The movement tick takes these snapshots once before the mover loop, but
+/// gamemd processes movers in live object order: a mover that repaths after an
 /// earlier mover committed a move this tick must see the new position. Gating on
 /// the occupancy generation refreshes the snapshot to the live state at repath
 /// time (bit-equivalent to per-neighbor live classification for a synchronous A*
-/// search) while skipping the no-op case where nothing moved.
+/// search) while skipping the no-op case where nothing moved. The index
+/// re-derives only the entities touched since.
 #[allow(clippy::too_many_arguments)]
 fn refresh_owner_block_set_if_stale(
-    entity_block_sets: &mut BTreeMap<
-        crate::sim::intern::InternedId,
-        (
-            BTreeSet<(u16, u16)>,
-            crate::sim::pathfinding::LayeredEntityBlockMap,
-        ),
-    >,
+    entity_block_sets: &mut BTreeMap<crate::sim::intern::InternedId, LentOwnerBlockSet>,
     built_at_gen: &mut BTreeMap<crate::sim::intern::InternedId, u64>,
+    block_index: &mut OwnerBlockIndex,
     owner: crate::sim::intern::InternedId,
     current_gen: u64,
-    entities: &EntityStore,
+    entities: &mut EntityStore,
     alliances: &HouseAllianceMap,
     interner: &crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
@@ -192,9 +190,13 @@ fn refresh_owner_block_set_if_stale(
     if built_at_gen.get(&owner).copied() == Some(current_gen) {
         return false;
     }
-    let owner_str = interner.resolve(owner);
-    let pair = bump_crush::build_entity_block_set(entities, owner_str, alliances, interner, rules);
-    entity_block_sets.insert(owner, pair);
+    match entity_block_sets.get_mut(&owner) {
+        Some(lent) => block_index.refresh_lent(owner, lent, entities, alliances, interner, rules),
+        None => {
+            let lent = block_index.lend_current(owner, entities, alliances, interner, rules);
+            entity_block_sets.insert(owner, lent);
+        }
+    }
     built_at_gen.insert(owner, current_gen);
     true
 }
@@ -504,13 +506,7 @@ fn process_pending_drive_arrivals(
     entity_order: &[u64],
     ctx: PathfindingContext<'_>,
     terrain_costs: &BTreeMap<SpeedType, TerrainCostGrid>,
-    entity_block_sets: &BTreeMap<
-        crate::sim::intern::InternedId,
-        (
-            BTreeSet<(u16, u16)>,
-            crate::sim::pathfinding::LayeredEntityBlockMap,
-        ),
-    >,
+    entity_block_sets: &BTreeMap<crate::sim::intern::InternedId, LentOwnerBlockSet>,
     interner: &crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     cell_occupation: &mut CellOccupationGrid,
@@ -571,7 +567,7 @@ fn process_pending_drive_arrivals(
         let terrain_cost = terrain_costs.get(&loco.speed_type);
         let (entity_blocks, entity_block_map) = entity_block_sets
             .get(&entity.owner())
-            .map(|(b, m)| (Some(b), Some(m)))
+            .map(|lent| (Some(&lent.sets.0), Some(&lent.sets.1)))
             .unwrap_or((None, None));
         let mut occupied_blocks = entity_blocks.cloned().unwrap_or_default();
         occupied_blocks
@@ -1045,6 +1041,7 @@ fn advance_ordinary_mover(
     type_handles: Option<&TypeHandleTable>,
     prepared: &mut PreparedMovementPass,
     effects: &mut MovementPassEffects,
+    block_index: &mut OwnerBlockIndex,
     slave_bindings: Option<&BTreeMap<u64, Vec<u64>>>,
     resume: Option<OrdinaryMoverVisit>,
 ) {
@@ -1191,6 +1188,7 @@ fn advance_ordinary_mover(
     refresh_owner_block_set_if_stale(
         entity_block_sets,
         block_set_built_at_gen,
+        block_index,
         snap.owner,
         occupancy.generation(),
         entities,
@@ -1204,7 +1202,7 @@ fn advance_ordinary_mover(
         Option<&crate::sim::pathfinding::LayeredEntityBlockMap>,
     ) = entity_block_sets
         .get(&snap.owner)
-        .map(|(b, m)| (Some(b), Some(m)))
+        .map(|lent| (Some(&lent.sets.0), Some(&lent.sets.1)))
         .unwrap_or((None, None));
     // The mover's side of the building-entry exceptions as its turn begins; the
     // buildings are read live from each queried cell's object list.
@@ -2269,6 +2267,9 @@ fn advance_ordinary_mover(
 #[derive(Default)]
 pub(crate) struct MovementPassCache {
     blocker: Option<BlockerPlaneEntry>,
+    /// Each owner's pathfinding block sets, kept current from the entity
+    /// store's touch log instead of rebuilt from every entity per turn.
+    block_index: OwnerBlockIndex,
 }
 
 struct BlockerPlaneEntry {
@@ -2287,6 +2288,14 @@ struct BlockerPlaneKey {
 }
 
 impl MovementPassCache {
+    /// How often the block index had to read every entity: once at the start,
+    /// and again only when something hands out the whole store mutably.
+    #[cfg(test)]
+    pub(crate) fn block_index_world_rebuilds(&self) -> usize {
+        self.block_index.world_rebuilds
+    }
+
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     fn blocker_plane(
         &mut self,
@@ -2299,6 +2308,33 @@ impl MovementPassCache {
         interner: &crate::sim::intern::StringInterner,
         rules: Option<&crate::rules::ruleset::RuleSet>,
     ) -> &crate::sim::pathfinding::BlockerNeighborCounts {
+        Self::blocker_plane_in(
+            &mut self.blocker,
+            entities,
+            grid,
+            occupancy,
+            resolved_terrain,
+            overlay_grid,
+            overlay_registry,
+            interner,
+            rules,
+        )
+    }
+
+    /// On the blocker field alone, so a pass can hold the plane while it
+    /// updates the block index beside it.
+    #[allow(clippy::too_many_arguments)]
+    fn blocker_plane_in<'a>(
+        blocker: &'a mut Option<BlockerPlaneEntry>,
+        entities: &EntityStore,
+        grid: &PathGrid,
+        occupancy: &OccupancyGrid,
+        resolved_terrain: Option<&ResolvedTerrainGrid>,
+        overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
+        overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+        interner: &crate::sim::intern::StringInterner,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+    ) -> &'a crate::sim::pathfinding::BlockerNeighborCounts {
         let key = BlockerPlaneKey {
             occupancy_generation: occupancy.generation(),
             dying_epoch: entities.dying_epoch(),
@@ -2319,7 +2355,7 @@ impl MovementPassCache {
                 rules,
             )
         };
-        match self.blocker.as_ref() {
+        match blocker.as_ref() {
             Some(entry) if entry.key == key => {
                 debug_assert!(
                     !super::movement_occupancy::live_read_check_enabled() || entry.plane == build(),
@@ -2328,10 +2364,10 @@ impl MovementPassCache {
             }
             _ => {
                 let plane = build();
-                self.blocker = Some(BlockerPlaneEntry { key, plane });
+                *blocker = Some(BlockerPlaneEntry { key, plane });
             }
         }
-        &self.blocker.as_ref().expect("plane was just ensured").plane
+        &blocker.as_ref().expect("plane was just ensured").plane
     }
 }
 
@@ -2345,13 +2381,7 @@ impl MovementPassCache {
 struct PreparedMovementPass {
     movers: Vec<u64>,
     tube_processed: BTreeSet<u64>,
-    entity_block_sets: BTreeMap<
-        crate::sim::intern::InternedId,
-        (
-            BTreeSet<(u16, u16)>,
-            crate::sim::pathfinding::LayeredEntityBlockMap,
-        ),
-    >,
+    entity_block_sets: BTreeMap<crate::sim::intern::InternedId, LentOwnerBlockSet>,
     block_set_built_at_gen: BTreeMap<crate::sim::intern::InternedId, u64>,
 }
 
@@ -2396,6 +2426,7 @@ fn prepare_movement_pass(
     interner: &mut crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     stats: &mut MovementTickStats,
+    block_index: &mut OwnerBlockIndex,
 ) -> Result<PreparedMovementPass, String> {
     let path_grid = ctx.path_grid;
     let resolved_terrain = ctx.resolved_terrain;
@@ -2483,24 +2514,18 @@ fn prepare_movement_pass(
             }
         }
     }
-    // Pre-build entity block sets per owner for friendly-passable pathfinding during repath.
+    // Each mover owner's entity block sets for friendly-passable pathfinding
+    // during repath, as a build from the entities would give them now.
     // RA2 optimization: moving friendly units are passable (code-2 dynamic cost);
     // only stationary/enemy units hard-block. InternedId is Copy, so keys are cheap.
-    let entity_block_sets: BTreeMap<
-        crate::sim::intern::InternedId,
-        (
-            BTreeSet<(u16, u16)>,
-            crate::sim::pathfinding::LayeredEntityBlockMap,
-        ),
-    > = mover_owners
-        .iter()
-        .map(|&owner_id| {
-            let owner_str = interner.resolve(owner_id);
-            let pair =
-                bump_crush::build_entity_block_set(entities, owner_str, alliances, interner, rules);
-            (owner_id, pair)
-        })
-        .collect();
+    let entity_block_sets: BTreeMap<crate::sim::intern::InternedId, LentOwnerBlockSet> =
+        mover_owners
+            .iter()
+            .map(|&owner_id| {
+                let lent = block_index.lend_current(owner_id, entities, alliances, interner, rules);
+                (owner_id, lent)
+            })
+            .collect();
     // Occupancy generation these snapshots reflect. Captured before
     // process_pending_drive_arrivals so any move it makes advances the generation
     // and forces the first consuming mover to rebuild. Each owner's snapshot is
@@ -2793,7 +2818,9 @@ impl PendingMovementPass {
         rules: Option<&crate::rules::ruleset::RuleSet>,
         type_handles: Option<&TypeHandleTable>,
         slave_bindings: Option<&BTreeMap<u64, Vec<u64>>>,
+        caches: &mut MovementPassCache,
     ) {
+        let block_index = &mut caches.block_index;
         let blocker_neighbor_counts = path_grid.map(|grid| {
             bump_crush::build_blocker_neighbor_counts_with_overlays(
                 entities,
@@ -2852,6 +2879,7 @@ impl PendingMovementPass {
             type_handles,
             &mut self.prepared,
             &mut self.effects,
+            block_index,
             slave_bindings,
             Some(request.visit),
         );
@@ -2969,11 +2997,16 @@ pub(crate) fn begin_movement_with_grids_scoped(
             &fallback_order
         }
     };
+    let MovementPassCache {
+        blocker: blocker_cache,
+        block_index,
+    } = caches;
     let blocker_neighbor_counts: Option<&crate::sim::pathfinding::BlockerNeighborCounts> =
         path_grid
             .filter(|_| pass_may_build_paths(entities, entity_order))
             .map(|grid| {
-                caches.blocker_plane(
+                MovementPassCache::blocker_plane_in(
+                    blocker_cache,
                     entities,
                     grid,
                     occupancy,
@@ -3025,6 +3058,7 @@ pub(crate) fn begin_movement_with_grids_scoped(
         interner,
         rules,
         &mut stats,
+        block_index,
     )?;
 
     let mut effects = MovementPassEffects {
@@ -3053,6 +3087,7 @@ pub(crate) fn begin_movement_with_grids_scoped(
             type_handles,
             &mut prepared,
             &mut effects,
+            block_index,
             slave_bindings,
             None,
         );
@@ -3078,12 +3113,16 @@ pub(crate) fn finish_movement_pass(
     rules: Option<&crate::rules::ruleset::RuleSet>,
     sound_events: &mut Vec<crate::sim::world::SimSoundEvent>,
     lifecycle_requests: &mut Vec<LifecycleRequest>,
+    caches: &mut MovementPassCache,
 ) -> MovementTickStats {
     let PendingMovementPass {
         effects,
-        prepared,
+        mut prepared,
         entity_order,
     } = pending;
+    for (owner, lent) in std::mem::take(&mut prepared.entity_block_sets) {
+        caches.block_index.give_back(owner, lent);
+    }
     let MovementPassEffects {
         mut stats,
         finished_entities,
@@ -3259,6 +3298,7 @@ pub(crate) fn finish_movement_pass(
 /// together instead of faster units pulling ahead.
 pub(crate) fn sync_formation_speeds_after_live_pass(entities: &mut EntityStore) {
     let mut group_min_speed: BTreeMap<u32, SimFixed> = BTreeMap::new();
+    let mut grouped: Vec<(u64, u32, SimFixed)> = Vec::new();
     for entity in entities.values() {
         // A Dying corpse keeps its movement_target but won't move; it must not
         // drag a living formation's speed down to its (possibly slower) value.
@@ -3271,23 +3311,20 @@ pub(crate) fn sync_formation_speeds_after_live_pass(entities: &mut EntityStore) 
                 if mt.speed < *entry {
                     *entry = mt.speed;
                 }
+                grouped.push((entity.stable_id(), gid, mt.speed));
             }
         }
     }
-    if !group_min_speed.is_empty() {
-        for entity in entities.values_mut() {
-            if entity.dying {
-                continue;
-            }
-            if let Some(ref mut mt) = entity.movement_target {
-                if let Some(gid) = mt.group_id {
-                    if let Some(&min_spd) = group_min_speed.get(&gid) {
-                        if mt.speed > min_spd {
-                            mt.speed = min_spd;
-                        }
-                    }
-                }
-            }
+    // Only the members that are actually capped are taken mutably: an
+    // all-entity mutable walk would mark the whole store touched every frame.
+    for (id, gid, speed) in grouped {
+        let min_spd = group_min_speed[&gid];
+        if speed > min_spd
+            && let Some(mt) = entities
+                .get_mut(id)
+                .and_then(|entity| entity.movement_target.as_mut())
+        {
+            mt.speed = min_spd;
         }
     }
 }

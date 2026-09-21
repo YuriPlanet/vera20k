@@ -25,8 +25,9 @@ Replace this file on each update; do not append a diary.
 | Move phases | the Jumpjet's `AirMovePhase` mirror: readers take the locomotor's own state field (`JumpjetRuntime::phase`, all seven native values) and the mirror is no longer written; the legacy VERA-only jumpjet physics with no caller left. Snapshot 180 | #427 |
 | Dead code | items dead in both builds; superseded test-only duplicates (map-list funnels, `radiation_light_epoch`); test probes gated; the effect asset catalog trimmed to particle images, which changes the rules hash, so snapshot 176 | #421 |
 | Dead code | second sweep, for what the compiler cannot see: `pub` items of the library and items behind `allow(dead_code)`. 90 suppressions removed and 30 put back where the reason is real (native enum values, GPU resource ownership, staged native ports, RNG stream-routing audit anchors); about 40 functions nothing references deleted, with the dead `movement/scatter.rs` module, a terrain render pipeline and instance buffer nothing drew with, the depth-stamp pipeline only a GPU test draws with (now built only there), and stale constants and imports; about 460 functions and constants that only tests call are `#[cfg(test)]`, so the production build no longer carries them. This is a one-time sweep, not a guard: the `dead_code` lint still cannot see an unreferenced `pub` item of the library, so a new one will not be reported. Unreferenced `pub` items kept on purpose: native-value vocabularies with a gap a deletion would hide (`FX_EMP`/`FX_MIRROR`, `REPLAY_FLAG_*`, the rocking constants `SNAP_BACK_RATE` and `APPLY_AREA_FORCE_FLOOR`, `TRACKBAR_WM_HSCROLL_MESSAGE`, the fixed-math `SIM_EPSILON`) and native-derived staged ports (cloak/disguise helpers, house base helpers, gas and smoke particle movers). Three modules only tests reach (`movement/track_speed_native`, `movement/track_fresh_dispatch`, `map/rmg/sqrt_table`) carry the gate on their `mod` line. Non-test warnings 100 to 18; the 17 that remain are fields only tests read and native enum values nothing constructs yet, left visible rather than suppressed | #428 |
-| Per-mover world scans | the whole-world marker-peer snapshot and building entry-skip map every mover rebuilt every tick (and `track_entry.rs` per entry). The mover is lifted out of the store for its turn (`EntityStore::take_turn`), so the other entities are read live: peers by id from the cell lists `UpdateBridgePassability` walks, skips from the buildings on the queried cell's list. The mover's own facts are captured once as its turn begins. Debug builds still build both whole-world forms and compare every live read against them. Two of the three scans; the owner block sets are under Open | this PR |
-| Loader funnels | `load_rules_with_merged_ini` composed the rules layers cold, a second path beside the match load's `NativeRulesProcessOwner::load_noncampaign_scenario`; it now runs startup selection and that rebuild, and `LoadedRules` is gone. `sprite_atlas.rs` kept a `cfg(test)` copy of the effect-name list that had drifted (no `Wake=`, no projectile images); production and tests call the one `collect_effect_names` | this PR |
+| Per-mover world scans | the whole-world marker-peer snapshot and building entry-skip map every mover rebuilt every tick (and `track_entry.rs` per entry). The mover is lifted out of the store for its turn (`EntityStore::take_turn`), so the other entities are read live: peers by id from the cell lists `UpdateBridgePassability` walks, skips from the buildings on the queried cell's list. The mover's own facts are captured once as its turn begins. Debug builds still build both whole-world forms and compare every live read against them. Two of the three scans | #429 |
+| Loader funnels | `load_rules_with_merged_ini` composed the rules layers cold, a second path beside the match load's `NativeRulesProcessOwner::load_noncampaign_scenario`; it now runs startup selection and that rebuild, and `LoadedRules` is gone. `sprite_atlas.rs` kept a `cfg(test)` copy of the effect-name list that had drifted (no `Wake=`, no projectile images); production and tests call the one `collect_effect_names` | #429 |
+| Per-mover world scans | the third scan, the owner block sets every moving object's turn rebuilt from every entity. `EntityStore` logs each entity it hands out mutably (every route to a `&mut GameEntity` goes through it), and `movement/block_index.rs` keeps one shared record of where each entity sits plus each owner's sets, re-deriving only the logged entities and rewriting only the cells they touch, at the same two points the sets used to be rebuilt (pass preparation; a turn's start when occupancy moved), so a pass sees what a build of the whole world would give it. One rule (`contribution`) and one insert (`insert_unit`) serve the index and the whole-world build, which path searches outside a pass, tests and the debug-build comparison still use | this PR |
 
 Three per-mover world scans went with those: the per-frame dock sweep, the
 whole-entity scan in `interrupt_refinery_docked_miners`, and the per-frame
@@ -96,15 +97,6 @@ probes in `world_hash.rs` are replay-pin provenance.
 
 ## Open
 
-**Owner block sets, the third per-mover world scan.**
-`bump_crush::build_entity_block_sets` still walks every entity for each moving
-object's turn (`prepare_movement_pass`, `refresh_owner_block_set_if_stale`, and
-once more per Walk path search). A* and the blocked-tick handlers take the
-result as whole sets through some fifty signatures, and the Drive selection
-gate asks it at every cell crossing, so it cannot become a per-cell lookup the
-way the other two did without changing what A* sees. Same lead, not done;
-movement ledger row I2c carries the measurements.
-
 **Scenario construction only tests call.** `runtime::construct_scenario`,
 `construct_scenario_with_generated_inits`, `init_helpers::construct_app_scenario`
 and `HeadlessTerrainBootstrap::construct_scenario` only sequence production
@@ -133,6 +125,8 @@ Release build (`cargo build --release`), zero-interaction fixture maps through
   `AnimStore` rows at both ends; cargo 20 to 0; 0 ERROR lines. The log has no
   line per constructed animation, so the run shows the warp path executing
   without error, not the pixels.
+- 2026-09-21, with the owner block index, both maps again: the miner docks
+  and deposits, the chrono miner warps to the pad twice; 0 ERROR lines.
 
 Not exercised in a release build: a superweapon invoke, a Lightning Storm, a
 bridge collapse, a weapon muzzle flash, a paradrop. Each needs player input or

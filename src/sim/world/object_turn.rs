@@ -223,6 +223,7 @@ impl Simulation {
                     rules,
                     Some(&sim.type_handles),
                     Some(&sim.production.slave_bindings),
+                    &mut sim.movement_pass_cache,
                 );
             }
         }
@@ -272,6 +273,7 @@ impl Simulation {
                 rules,
                 &mut sim.sound_events,
                 &mut sim.pending_lifecycle_requests,
+                &mut sim.movement_pass_cache,
             ));
         Ok(outcome)
     }

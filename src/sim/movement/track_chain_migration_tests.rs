@@ -46,15 +46,26 @@ fn owner_block_set_refreshes_when_occupancy_generation_advances() {
     let owner = test_intern("Americans");
 
     // Initial snapshot at gen 0: friendly stationary unit -> soft-block at (5,5).
+    let mut index = crate::sim::movement::block_index::OwnerBlockIndex::default();
     let mut sets = BTreeMap::new();
     sets.insert(
         owner,
-        bump_crush::build_entity_block_set(&entities, "Americans", &alliances, &interner, None),
+        index.lend_current(owner, &mut entities, &alliances, &interner, None),
     );
     let mut built_at: BTreeMap<crate::sim::intern::InternedId, u64> = BTreeMap::new();
     built_at.insert(owner, 0);
-    assert!(sets[&owner].1.contains_key(MovementLayer::Ground, &(5, 5)));
-    assert!(!sets[&owner].1.contains_key(MovementLayer::Ground, &(6, 6)));
+    assert!(
+        sets[&owner]
+            .sets
+            .1
+            .contains_key(MovementLayer::Ground, &(5, 5))
+    );
+    assert!(
+        !sets[&owner]
+            .sets
+            .1
+            .contains_key(MovementLayer::Ground, &(6, 6))
+    );
 
     // Same-tick move of the blocker to (6,6); occupancy generation advances.
     {
@@ -65,9 +76,10 @@ fn owner_block_set_refreshes_when_occupancy_generation_advances() {
     let rebuilt = refresh_owner_block_set_if_stale(
         &mut sets,
         &mut built_at,
+        &mut index,
         owner,
         7,
-        &entities,
+        &mut entities,
         &alliances,
         &interner,
         None,
@@ -77,11 +89,17 @@ fn owner_block_set_refreshes_when_occupancy_generation_advances() {
         "stale snapshot must rebuild when generation advances"
     );
     assert!(
-        !sets[&owner].1.contains_key(MovementLayer::Ground, &(5, 5)),
+        !sets[&owner]
+            .sets
+            .1
+            .contains_key(MovementLayer::Ground, &(5, 5)),
         "old cell freed"
     );
     assert!(
-        sets[&owner].1.contains_key(MovementLayer::Ground, &(6, 6)),
+        sets[&owner]
+            .sets
+            .1
+            .contains_key(MovementLayer::Ground, &(6, 6)),
         "new cell blocked"
     );
 }
@@ -98,10 +116,11 @@ fn owner_block_set_not_rebuilt_when_generation_unchanged() {
     let interner = test_interner();
     let owner = test_intern("Americans");
 
+    let mut index = crate::sim::movement::block_index::OwnerBlockIndex::default();
     let mut sets = BTreeMap::new();
     sets.insert(
         owner,
-        bump_crush::build_entity_block_set(&entities, "Americans", &alliances, &interner, None),
+        index.lend_current(owner, &mut entities, &alliances, &interner, None),
     );
     let mut built_at: BTreeMap<crate::sim::intern::InternedId, u64> = BTreeMap::new();
     built_at.insert(owner, 4);
@@ -112,16 +131,20 @@ fn owner_block_set_not_rebuilt_when_generation_unchanged() {
     let rebuilt = refresh_owner_block_set_if_stale(
         &mut sets,
         &mut built_at,
+        &mut index,
         owner,
         4,
-        &entities,
+        &mut entities,
         &alliances,
         &interner,
         None,
     );
     assert!(!rebuilt, "no rebuild when generation is unchanged");
     assert!(
-        sets[&owner].1.contains_key(MovementLayer::Ground, &(5, 5)),
+        sets[&owner]
+            .sets
+            .1
+            .contains_key(MovementLayer::Ground, &(5, 5)),
         "snapshot left untouched"
     );
 }

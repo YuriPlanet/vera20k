@@ -82,7 +82,7 @@ impl<'a> OtherEntities<'a> {
 /// `remove`, and `change_owner` keep it in sync, so `ids_for_owner()` is always
 /// current with no rebuild needed. `rebuild_owner_index()` exists only for the
 /// deserialize finalizer (the primary map is bulk-loaded, bypassing `insert`).
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct EntityStore {
     /// Primary storage: stable_id -> GameEntity. Boxed: an entity is about 3 KB,
     /// and map nodes that hold pointers keep insert, remove and `take_turn` from
@@ -117,9 +117,96 @@ pub struct EntityStore {
         ),
         u32,
     >,
+    /// Which entities may have changed since the last [`Self::take_touched`].
+    /// Transient: never saved, never hashed, and no simulation result reads it.
+    touched: TouchLog,
+}
+
+/// Ids handed out mutably since the log was last taken.
+///
+/// Every route to a `&mut GameEntity` goes through the store, so an entity that
+/// is not in the log has not changed. That lets a derived product (the movement
+/// pass's owner block sets) re-derive only what may have moved instead of
+/// walking the world. The log records the hand-out, not a change, so it
+/// over-reports, which is harmless.
+#[derive(Debug, Clone)]
+struct TouchLog {
+    ids: Vec<u64>,
+    /// Set when ids are not enough: a fresh, cloned or restored store, an
+    /// all-entity mutable walk, or an overflowed log.
+    all: bool,
+}
+
+/// What [`EntityStore::take_touched`] hands its one consumer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum TouchedEntities {
+    /// Anything may have changed: rebuild from the entities.
+    All,
+    /// Only these ids (unsorted, repeats possible).
+    Ids(Vec<u64>),
+}
+
+impl TouchLog {
+    fn everything() -> Self {
+        Self {
+            ids: Vec::new(),
+            all: true,
+        }
+    }
+
+    fn note(&mut self, id: u64, stored: usize) {
+        if self.all || self.ids.last() == Some(&id) {
+            return;
+        }
+        // Nobody is taking the log (no moving object for a long stretch): stop
+        // growing and ask the next reader to rebuild instead.
+        if self.ids.len() > stored.saturating_mul(4) + 4096 {
+            self.ids = Vec::new();
+            self.all = true;
+            return;
+        }
+        self.ids.push(id);
+    }
+
+    fn note_all(&mut self) {
+        self.ids = Vec::new();
+        self.all = true;
+    }
+}
+
+impl Clone for EntityStore {
+    /// A clone starts with an everything-touched log: whatever was derived
+    /// from the original says nothing certain about the copy's future.
+    fn clone(&self) -> Self {
+        Self {
+            entities: self.entities.clone(),
+            infantry_registry: self.infantry_registry.clone(),
+            by_owner: self.by_owner.clone(),
+            dying_epoch: self.dying_epoch,
+            by_owner_type: self.by_owner_type.clone(),
+            touched: TouchLog::everything(),
+        }
+    }
 }
 
 impl EntityStore {
+    /// Take the touch log, leaving it empty. One consumer only (the movement
+    /// pass's block index): a second reader would see what the first left.
+    pub(crate) fn take_touched(&mut self) -> TouchedEntities {
+        let log = std::mem::replace(
+            &mut self.touched,
+            TouchLog {
+                ids: Vec::new(),
+                all: false,
+            },
+        );
+        if log.all {
+            TouchedEntities::All
+        } else {
+            TouchedEntities::Ids(log.ids)
+        }
+    }
+
     /// Create an empty store.
     pub fn new() -> Self {
         Self {
@@ -128,6 +215,7 @@ impl EntityStore {
             by_owner: BTreeMap::new(),
             by_owner_type: BTreeMap::new(),
             dying_epoch: 0,
+            touched: TouchLog::everything(),
         }
     }
 
@@ -146,6 +234,7 @@ impl EntityStore {
     /// monotonic), its old owner entry is removed first.
     pub fn insert(&mut self, entity: GameEntity) -> u64 {
         let id = entity.stable_id();
+        self.touched.note(id, self.entities.len());
         let owner = entity.owner();
         let type_ref = entity.type_ref();
         let infantry = entity.category == crate::map::entities::EntityCategory::Infantry;
@@ -169,6 +258,9 @@ impl EntityStore {
     /// Maintains the `by_owner` index.
     pub fn remove(&mut self, stable_id: u64) -> Option<GameEntity> {
         let removed = self.entities.remove(&stable_id).map(|entity| *entity);
+        if removed.is_some() {
+            self.touched.note(stable_id, self.entities.len());
+        }
         if let Some(ref e) = removed {
             self.index_remove(e.owner(), stable_id);
             self.type_count_remove(e.owner(), e.type_ref());
@@ -204,7 +296,14 @@ impl EntityStore {
     ///
     /// Idempotent. Safe if `stable_id` is absent.
     pub fn clear_radio_contacts_for(&mut self, stable_id: u64) {
+        let stored = self.entities.len();
+        self.touched.note(stable_id, stored);
         for entity in self.entities.values_mut() {
+            if entity.has_live_contact_with(stable_id)
+                || entity.dock_entered_with == Some(stable_id)
+            {
+                self.touched.note(entity.stable_id(), stored);
+            }
             entity.clear_live_contact_with(stable_id);
             // Drop a dangling dock-entered link pointing at the departing entity
             // (the BREAK cascade a limbo'd dock partner would otherwise miss).
@@ -228,7 +327,10 @@ impl EntityStore {
     /// Replacing a stored entity wholesale is unsupported: remove/insert through
     /// the owning lifecycle instead so its indexes and registrations are updated.
     pub fn get_mut(&mut self, stable_id: u64) -> Option<&mut GameEntity> {
-        self.entities.get_mut(&stable_id).map(Box::as_mut)
+        let stored = self.entities.len();
+        let entity = self.entities.get_mut(&stable_id)?;
+        self.touched.note(stable_id, stored);
+        Some(entity.as_mut())
     }
 
     /// Lift one entity out of the store for its own turn, so it can be mutated
@@ -238,6 +340,7 @@ impl EntityStore {
     /// payload access cannot change it, exactly as with `get_mut`.
     pub(crate) fn take_turn(&mut self, stable_id: u64) -> Option<EntityTurn<'_>> {
         let entity = self.entities.remove(&stable_id)?;
+        self.touched.note(stable_id, self.entities.len());
         Some(EntityTurn {
             store: self,
             entity: Some(entity),
@@ -304,6 +407,7 @@ impl EntityStore {
     /// Iterate all entities mutably in stable_id order.
     /// With BTreeMap, this is always deterministic.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut GameEntity> {
+        self.touched.note_all();
         self.entities.values_mut().map(Box::as_mut)
     }
 
@@ -319,6 +423,7 @@ impl EntityStore {
     /// (callers own that, because count semantics differ by transfer kind).
     /// No-op if the entity is absent or already owned by `new_owner`.
     pub fn change_owner(&mut self, stable_id: u64, new_owner: crate::sim::intern::InternedId) {
+        self.touched.note(stable_id, self.entities.len());
         let (old_owner, type_ref) = match self.entities.get_mut(&stable_id) {
             Some(e) if e.owner() != new_owner => {
                 let old = e.owner();
@@ -411,6 +516,7 @@ impl<'de> serde::Deserialize<'de> for EntityStore {
             by_owner: BTreeMap::new(),
             by_owner_type: BTreeMap::new(),
             dying_epoch: 0,
+            touched: TouchLog::everything(),
         };
         store.rebuild_owner_index();
         Ok(store)

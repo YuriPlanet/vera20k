@@ -90,6 +90,7 @@ mod walk_path;
 
 // --- Movement-related modules (public API) ---
 pub mod air_movement;
+pub(crate) mod block_index;
 pub mod bump_crush;
 pub mod drive_track;
 pub mod drop_pod_movement;

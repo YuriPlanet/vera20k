@@ -137,7 +137,7 @@ const SEARCH_MARKER_COST_MULTIPLIER: i32 = 4;
 /// Entry in the entity soft-block map for A* cost computation.
 /// Carries the blocker's next cell (for code-2 chain walk) and the
 /// Can_Enter_Cell return code (2/5/6) that selects the cost multiplier.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EntityBlockEntry {
     /// For code-2 (moving friendly): the blocker's next cell in its path.
     /// For codes 5/6: None (no chain walk — flat cost multiplier).
@@ -161,7 +161,7 @@ pub struct EntityBlockEntry {
 /// gamemd.exe scans either `FirstObject` (ground) or `AltObject` (bridge)
 /// for soft blocker costs. Keeping those maps separate preserves stacked
 /// same-cell ground/bridge occupants instead of collapsing them by coordinate.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LayeredEntityBlockMap {
     /// `BTreeMap` (not `HashMap`) for deterministic iteration if any future
     /// caller ever iterates these — sim convention since all pathing state
@@ -219,6 +219,18 @@ impl LayeredEntityBlockMap {
             MovementLayer::Ground => self.ground.insert(cell, entry),
             MovementLayer::Air | MovementLayer::Underground => None,
         }
+    }
+
+    pub(crate) fn remove(&mut self, layer: MovementLayer, cell: &(u16, u16)) {
+        match layer {
+            MovementLayer::Bridge => self.bridge.remove(cell),
+            MovementLayer::Ground => self.ground.remove(cell),
+            MovementLayer::Air | MovementLayer::Underground => None,
+        };
+    }
+
+    pub(crate) fn remove_moving_ally(&mut self, layer: MovementLayer, cell: &(u16, u16)) {
+        self.moving_allies.remove(&(layer, *cell));
     }
 
     pub fn get(&self, layer: MovementLayer, cell: &(u16, u16)) -> Option<&EntityBlockEntry> {
