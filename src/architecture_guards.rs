@@ -15,7 +15,7 @@ use std::fs;
 use std::path::Path;
 
 /// Directory under `src/` -> reference roots its production code must not
-/// name. The simulation direction contract is in ENGINE.md; the remaining
+/// name. The simulation direction contract is in AGENTS.md; the remaining
 /// rules preserve the established lower-layer boundaries.
 const LAYER_RULES: &[(&str, &[&str])] = &[
     ("assets", &["sim", "rules", "map", "render", "sidebar", "ui", "app"]),
@@ -46,7 +46,7 @@ fn production_dependency_edges_match_frozen_ledger_inventory() {
     assert!(
         unexpected.is_empty(),
         "new forbidden production dependency edge(s): {unexpected:?}\n\
-         The layer contract (ENGINE.md, architecture boundaries) forbids these \
+         The layer contract (AGENTS.md, architecture boundaries) forbids these \
          directions. Move the type/function to its owning layer instead of \
          importing upward; FROZEN_EXCEPTIONS only ever shrinks."
     );
@@ -57,7 +57,7 @@ fn production_dependency_edges_match_frozen_ledger_inventory() {
          the ratchet tightens."
     );
 
-    // The #1 invariant (ENGINE.md): sim never depends on presentation, audio,
+    // The #1 invariant (AGENTS.md): sim never depends on presentation, audio,
     // or net in production. Zero exceptions, frozen or otherwise.
     assert!(
         !FROZEN_EXCEPTIONS.iter().any(|(f, _)| f.starts_with("sim/")),

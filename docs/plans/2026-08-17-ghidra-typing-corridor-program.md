@@ -7,7 +7,7 @@
 > decompile render it?), never recorded here. A disposition ledger exists only inside
 > each tier's own goal (see protocol), scoped to that tier's rows.
 >
-> **What this document is not.** Not a completion tracker (ENGINE.md forbids those),
+> **What this document is not.** Not a completion tracker (AGENTS.md forbids those),
 > not a parity claim, not standing authorization. Every tier requires its own goal
 > prompt from the user carrying explicit per-task authorization for its scoped edits.
 >
@@ -30,11 +30,11 @@ The proven skeleton is the MissionClass lifecycle tier prompt (2026-08-17). Each
 prompt = this protocol + a finite scope block. Non-negotiable clauses:
 
 1. **Authorization.** The tier prompt states: "This prompt is the explicit per-task
-   authorization ENGINE.md requires for prototype, receiver-type, and datatype edits —
+   authorization AGENTS.md requires for prototype, receiver-type, and datatype edits —
    for the scoped rows only," with explicit non-grants (no function creation, no edits
    outside the frozen ledger, no renames unless separately scoped).
 2. **Named authority.** Active `gamemd.exe`: exact bytes, RTTI, vtables,
-   callers/callees, x86 ABI — under AGENTS.md and ENGINE.md. Class reports, Rust
+   callers/callees, x86 ABI — under AGENTS.md. Class reports, Rust
    provenance comments, and YRpp-shaped names are leads, never evidence.
 3. **Snapshot or read-only.** Before any mutation: recoverable snapshot of `.gpr` +
    `.rep` with Ghidra safely closed. No snapshot → ledger/report only, zero mutations.
@@ -400,7 +400,7 @@ the team re-running its step forever:
   `+0x40 == 0 && +0x3C == 0` case never re-picks.
 - op 43, 14, 47 carry bounded freeze risks; op 6 and 49 advance unconditionally.
 
-**Frequency clauses** (the severity ENGINE.md requires, derived from stock INI):
+**Frequency clauses** (the severity AGENTS.md requires, derived from stock INI):
 - **opcode 2's permanent stall: 0 occurrences in stock data.** 458 steps across 88 `aimd.ini`
   scripts, 257 across 52 `ai.ini` scripts, no opcode 2 and none above 0x40. Latent — reachable
   only via custom or map-embedded scripts. Still worth guarding: the native failure mode is a

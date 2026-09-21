@@ -379,7 +379,7 @@ unverified or contradicted claims were rejected rather than promoted.
 ## Ghidra annotation candidates
 
 None. The scan discovered documentation corrections, not a new metadata label or
-signature that passes ENGINE.md's synchronization gate.
+signature that passes AGENTS.md's synchronization gate.
 
 ## Recommendations
 

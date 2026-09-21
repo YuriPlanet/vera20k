@@ -548,7 +548,7 @@ they need a reachability answer first.
 | `Visual_Character` (13) | **DORMANT-TS (live call, constant result)** | `FootClass::GetVisualState` `0x004DA4E8` gives the locomotor first refusal, but only Tunnel overrides `0x0055ABC0` | always falls through to the TechnoClass default in stock YR. **[R]** `render-query-slots.md` called it a MIXED boundary cut |
 | **Mech** locomotor (whole class) | **DORMANT-TS** | `{55D141B8-…}` appears in `rulesmd.ini` only inside `;` comments — Westwood's own conversion notes, e.g. `Locomotor={4A582741-…};<-drive   mech->{55D141B8-…}` | units were re-pointed at Drive for RA2 |
 | **DropPod** locomotor + its IPiggyback | **DORMANT-TS** | zero occurrences of `{4A582745-…}` in either INI, not even in a comment; its only installer `0x004DB8A0` has **no references of any kind** (`get_xrefs_to 0x004DB8A0`) | unreachable |
-| **Tunnel** locomotor (whole class) | **DORMANT-TS** | zero occurrences of `{4A582743-…}` in either INI; `grep -rn "4A582743" ini/` → no matches | subterranean is on ENGINE.md's known-dormant list |
+| **Tunnel** locomotor (whole class) | **DORMANT-TS** | zero occurrences of `{4A582743-…}` in either INI; `grep -rn "4A582743" ini/` → no matches | subterranean is on AGENTS.md's known-dormant list |
 | Carryall raw locomotor swap `AircraftClass::Carryall_Pickup` | **DORMANT in stock skirmish** | the mechanism is real (`disassemble_bytes 0x00416b40`), but the sole `Carryall=yes` unit is `[HIND]`, `TechLevel=-1`, absent from `[AircraftTypes]`. **[R]** `host-contract.md` called it "common in games with carryall play" | zero frequency in stock skirmish. **[R]** the earlier note "the raw-swap idiom still ships — via Magnetron" is wrong: the Magnetron piggybacks (§11 C15). **These two stores are now the only RAW swap left in the binary**, and `[HIND] TechLevel=-1` was not re-verified this pass (§9 item 16e) |
 | Tunnel branch of the war-factory exit (`CLSID_Tunnel` compare at `0x0044DEDD`) | **DORMANT-TS** | no `Locomotor=` names Tunnel; Tunnel does not implement IPiggyback, so the branch would fault if reached | dead comparison |
 | Locomotor-spawned dust anim gated on `RulesClass+0x94` | **UNCHECKED** | neither `RulesClass+0x94` nor `TypeClass+0xEC` was traced to a `ReadINI` site by any lane | a RulesClass boolean gating a visual is exactly a possibly-off default |
@@ -1403,7 +1403,7 @@ CHECKED, and it *justifies* the handle shape for a concrete reason: gamemd persi
 indirection paid at design time instead of at load time. But a **byte-level comparison
 against a gamemd save is impossible** — the stream carries raw process pointers and a
 swizzle table. S3's save/load acceptance can therefore assert only **semantic**
-correspondence: the set of persisted facts and the host-then-stash ordering. Per ENGINE.md
+correspondence: the set of persisted facts and the host-then-stash ordering. Per AGENTS.md
 that is not an executable gamemd-derived check, so **the save/load parity status stays
 UNVERIFIED**, and a Rust-vs-prior-Rust snapshot hash remains a ratchet. The OLE contract
 step itself (what `OleSaveToStream`/`OleLoadFromStream` do internally) is **[I]** — ole32
@@ -1735,7 +1735,7 @@ same number as `mod.rs:120 MIN_BRAKE_FRACTION`), `bump_crush.rs:61` (sub-cell ce
 ### What is already right — do not disturb
 
 `movement_tick.rs:486–546` (three `pending_arrival_clear` re-arms, each labelled
-VERA-internal with "the gamemd fallback is UNCHECKED" — the exact ENGINE.md form);
+VERA-internal with "the gamemd fallback is UNCHECKED" — the exact AGENTS.md form);
 `movement_step.rs:204–217` (`hover_steer` hold-position, disclosed as an approximation with
 the native behaviour stated, the residual bounded, and a plan doc named);
 `pathfinding/terrain_speed.rs:11–14` (records a *removed* invented crowd-jam factor and
@@ -1747,7 +1747,7 @@ and the absence of any unit-name string matching in `src/sim/movement/`.
 
 ## 8. Migration slices and acceptance tests
 
-Each slice is independently landable and independently revertible. Per ENGINE.md, **a
+Each slice is independently landable and independently revertible. Per AGENTS.md, **a
 shadow-mode slice flips to authoritative within two sessions or gets reverted** — the
 shadow windows below are stated in sessions, not "eventually".
 
@@ -1774,7 +1774,7 @@ a ratchet, it says so, and the parity claim stays `UNCHECKED`.
 > check.** Its `expected` array is a **verbatim duplicate** of the `INHERITS_BASE_DEFAULT`
 > constant under test, so it can only catch someone editing one copy and not the other. The
 > `PARITY:` comment claims the cells are byte-decoded from `read_memory`, but nothing in the
-> test verifies that; per ENGINE.md prose never upgrades a status. **The underlying data is
+> test verifies that; per AGENTS.md prose never upgrades a status. **The underlying data is
 > sound** — this review independently re-decoded three rows from live vtable reads and all
 > matched exactly, including the two most distinctive claims:
 > Drive (`read_memory 0x007E7EB0 len 160`) → `[f,t,f,f,f,t,f,f,f]`;
@@ -2193,7 +2193,7 @@ Plus a live-observe run: a Chrono Miner exits a war factory, drives out, and pop
 not change that.** oq6's `obj[+0x38]` and oq9's Chrono-Miner-inbound precondition are both
 closed (§5.3, §5.4 row 3b) — S4 can now be written against the *correct* predicate, which
 is real progress. But `end_order_matches_native` as specified is a **hand-transcribed
-golden with a prose citation**, precisely the category ENGINE.md records as having produced
+golden with a prose citation**, precisely the category AGENTS.md records as having produced
 wrong references here before. The evidence that the risk is live is inside this very wave:
 the lane whose entire brief was offset conversion, and which opens with a correct statement
 of the conversion rule, mis-converted one instruction and published a wrong field semantic
@@ -2328,7 +2328,7 @@ re-add the gate.
 > of those changes the hashed discriminant **will** shift the replay baseline, so it must
 > own a coordinated re-baseline. Note `docs/scans/PENDING_REBASELINES.md` already lists
 > this baseline as red from another session's in-flight deltas including an UNATTRIBUTED
-> entry, so per ENGINE.md no re-baseline may be taken until the tree is clean of those.
+> entry, so per AGENTS.md no re-baseline may be taken until the tree is clean of those.
 >
 > **Also corrected:** this slice claimed `world_hash` and snapshot "arms" for the two
 > states. There were none — `tunnel_state` and `droppod_state` were never hashed. Deleting
@@ -2370,7 +2370,7 @@ note that only `rulesmd.ini`/`rules.ini` were checked; campaign and map INIs are
 > `screen_x`/`screen_y` are cached `f32` fields on `Position` itself
 > (`src/sim/components.rs:43-48`, `#[serde(skip)]`), not on a locomotor type. Live
 > reference counts: **app ~183, sim 92, map 60, render 30, util 5 — roughly 370 sites
-> across every layer.** Extracting them is a cross-layer bulk refactor, which ENGINE.md
+> across every layer.** Extracting them is a cross-layer bulk refactor, which AGENTS.md
 > requires explicit approval for, and it delivers **no player-visible change**. It should
 > be planned as its own multi-slice piece of work, not carried as one bullet here.
 >
@@ -2634,7 +2634,7 @@ Stated plainly, so no one mistakes silence for a decision.
   a store-only function, and `emulate_function 0x005F6940` returns **registers only**. It
   confirmed `ECX = this + 0x9C` from a seeded `ECX = 0x01000000`, but two different
   memory-seeding formats both failed to land, so the three stores are unobservable and the
-  result cannot be witnessed. ENGINE.md's route to `VERIFIED` — a gamemd-derived executable
+  result cannot be witnessed. AGENTS.md's route to `VERIFIED` — a gamemd-derived executable
   check — **has no known instrument here**. Live capture or a debugger watchpoint on
   `+0x9C` would supply one; neither was attempted. Until then any Rust `set_position` test is
   a well-provenanced ratchet, and no pass should label it otherwise. **No recommendation on
@@ -2843,7 +2843,7 @@ piggyback. This is the best-sourced live example of raw replacement in stock YR.
 
 ### C13 — Ghidra label drift recorded (read-only passes; nothing was written back)
 
-Per ENGINE.md these should be written into Ghidra by whoever next holds the write lock,
+Per AGENTS.md these should be written into Ghidra by whoever next holds the write lock,
 with the evidence citation in the plate comment. Inferred items stay unlabelled.
 
 | Address | Current label | Reality | Evidence |
@@ -2972,7 +2972,7 @@ Complete Object Locator pointer at `0x007E7F78`, giving `(0x7E7F78 − 0x7E7EB0)
 class-specific virtuals appended after the interface, and two of them are the setters for
 the `Is_Ok_To_End` guard byte this document previously listed as UNKNOWN. §2.4's 40×11
 matrix is **correct for the interface**; the inventory framing "of the 40 slots" is what is
-incomplete. **Null impact on the Rust design** — ENGINE.md forbids porting the C++ dispatch
+incomplete. **Null impact on the Rust design** — AGENTS.md forbids porting the C++ dispatch
 architecture and `LocomotorSlot` has no slot table to size (§6.1). Recorded in §2.7.
 
 ### C21 — §5.6 / §9 OQ5: downgrading "`+0xF0`/`+0xF4` = occupancy mark/unmark" to [U] and floating a getter/setter reading was **WRONG**

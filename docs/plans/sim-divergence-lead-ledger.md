@@ -23,7 +23,7 @@ below say why, and they are load-bearing rather than decorative.
   reconstructions agreeing. Every "MATCH-UNCHECKED" row below means only "low-yield place to
   look next", never "correct".
 - **No fix, verdict, commit message, test name, or provenance comment ever cites the reference tree.**
-  Provenance names the verified native class, function, and Ghidra address, per `ENGINE.md`.
+  Provenance names the verified native class, function, and Ghidra address, per `AGENTS.md`.
   A lead that survives verification is written up from the *binary*, and the reference reading
   is discarded at that moment.
 - Where a lead's own text says "the reference tree does X", read it as "the TS ancestor did X" — never
@@ -259,7 +259,7 @@ HP. If gamemd de-duplicates, artillery/V3/Demo-Truck base-cracking is badly mis-
 de-duplicating add, then read which coordinate the per-object distance is taken against.
 Note VERA's inline comments already claim the per-cell keying is gamemd-derived — this entry
 exists because the magnitude is large and there is no test pin; treat the existing claim as
-unverified per `ENGINE.md`.
+unverified per `AGENTS.md`.
 
 #### T1-07 · Miner per-gate lift takes the whole remaining capacity, not one density level — `miner`
 **VERA** `handle_harvest` passes `empty = capacity_bales - cargo.len()` (up to 40) as the
@@ -1406,13 +1406,13 @@ goes straight to Ghidra; there is no lens to look through.
 
 **This ledger is frozen at 83 leads as of 2026-08-27.** It is the complete output of the
 twelve-lane sweep, and it is not a backlog, not a work queue, and not a parity tracker
-(`ENGINE.md` forbids hand-maintained parity ledgers; this document is explicitly a *lead
+(`AGENTS.md` forbids hand-maintained parity ledgers; this document is explicitly a *lead
 inventory* with no completion state and no status column that anyone is meant to tick).
 
 Rules for later work:
 
 1. **Do not add entries.** Anything discovered after the freeze is a **residual** — recorded
-   at its own site with trigger, player effect, and frequency, per `ENGINE.md` — unless
+   at its own site with trigger, player effect, and frequency, per `AGENTS.md` — unless
    correctness of an entry already in this ledger requires it, in which case it is folded into
    that entry's Ghidra question rather than given a new ID.
 2. **Do not re-rank on prose.** Ranking moves only when a Ghidra pass changes an entry's
