@@ -147,7 +147,8 @@ production functions are exercised in the test profile by tests that go through
 `relocate_spawns_departure_and_arrival_warpout_rows`, the Lightning Storm bolt
 tests and the bridge orchestrator's `BridgeExplosions=` tests. The known
 release-only hazard class, a side effect inside `debug_assert!`, is denied by
-clippy (`debug_assert_with_mut_call`), and clippy is clean on every merged PR.
+clippy (`debug_assert_with_mut_call = "deny"` in `Cargo.toml`), and the deny
+lints pass on every merged PR.
 
 ## Adjacent findings (not this goal's backlog)
 
