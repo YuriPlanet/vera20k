@@ -2,8 +2,9 @@
 //!
 //! Loads a real retail map with production rules, art, theater and terrain, then
 //! constructs a `Simulation` from an explicit seed — no GPU, no window, no atlases.
-//! Depends on `assets`/`rules`/`map`/`sim` only; nothing here may reach into `render`,
-//! `ui`, `sidebar`, `audio` or `net`.
+//! Depends on `assets`/`rules`/`map`/`sim` and on the GPU-free loading helpers of
+//! `app::loading::init_helpers` (rules, animation roots, staged-scenario metadata);
+//! nothing here may reach into `render`, `ui`, `sidebar`, `audio` or `net`.
 //!
 //! **Scope.** Construction goes through the same GPU-free funnel the app uses
 //! (`sim::runtime::finalize_and_populate_staged_authored_scenario`, on a `Simulation`

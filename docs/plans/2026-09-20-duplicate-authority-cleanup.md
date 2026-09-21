@@ -24,13 +24,14 @@ Replace this file on each update; do not append a diary.
 | Animation | the parachute canopy: an owner-attached `AnimClass` built by the drop (`ObjectClass::Paradrop @ 0x005F5940`, canopy at `0x005F5A9D`) and wound down at landing (`0x005F3F9D`). Deleted: the app's third stepper (`chute_anim.rs`, `ParachuteAnim`) and `ParachuteRenderConfig`, a second parse of the `PARACH` AnimType's art. The app keeps only the canopy's placement on the body's sort key. Snapshot 179 | #426 |
 | Move phases | the Jumpjet's `AirMovePhase` mirror: readers take the locomotor's own state field (`JumpjetRuntime::phase`, all seven native values) and the mirror is no longer written; the legacy VERA-only jumpjet physics with no caller left. Snapshot 180 | #427 |
 | Dead code | items dead in both builds; superseded test-only duplicates (map-list funnels, `radiation_light_epoch`); test probes gated; the effect asset catalog trimmed to particle images, which changes the rules hash, so snapshot 176 | #421 |
-| Dead code | second sweep, for what the compiler cannot see: `pub` items of the library and items behind `allow(dead_code)`. 90 suppressions removed and 30 put back where the reason is real (native enum values, GPU resource ownership, staged native ports, RNG stream-routing audit anchors); about 40 functions nothing references deleted, with the dead `movement/scatter.rs` module, a terrain render pipeline and instance buffer nothing drew with, the depth-stamp pipeline only a GPU test draws with (now built only there), and stale constants and imports; about 460 functions and constants that only tests call are `#[cfg(test)]`, so the production build no longer carries them. This is a one-time sweep, not a guard: the `dead_code` lint still cannot see an unreferenced `pub` item of the library, so a new one will not be reported. Unreferenced `pub` items kept on purpose: native-value vocabularies with a gap a deletion would hide (`FX_EMP`/`FX_MIRROR`, `REPLAY_FLAG_*`, the rocking constants `SNAP_BACK_RATE` and `APPLY_AREA_FORCE_FLOOR`, `TRACKBAR_WM_HSCROLL_MESSAGE`, the fixed-math `SIM_EPSILON`) and native-derived staged ports (cloak/disguise helpers, house base helpers, gas and smoke particle movers). Three modules only tests reach (`movement/track_speed_native`, `movement/track_fresh_dispatch`, `map/rmg/sqrt_table`) carry the gate on their `mod` line. Non-test warnings 100 to 18; the 17 that remain are fields only tests read and native enum values nothing constructs yet, left visible rather than suppressed | #428 |
+| Dead code | second sweep, for what the compiler cannot see: `pub` items of the library and items behind `allow(dead_code)`. 90 suppressions removed and 30 put back where the reason is real (native enum values, GPU resource ownership, staged native ports, RNG stream-routing audit anchors); about 40 functions nothing references deleted, with the dead `movement/scatter.rs` module, a terrain render pipeline and instance buffer nothing drew with, the depth-stamp pipeline only a GPU test draws with (now built only there), and stale constants and imports; about 460 functions and constants that only tests call are `#[cfg(test)]`, so the production build no longer carries them. This is a one-time sweep, not a guard: the `dead_code` lint still cannot see an unreferenced `pub` item of the library, so a new one will not be reported. Unreferenced `pub` items kept on purpose: native-value vocabularies with a gap a deletion would hide (`FX_EMP`/`FX_MIRROR`, `REPLAY_FLAG_*`, the rocking constants `SNAP_BACK_RATE` and `APPLY_AREA_FORCE_FLOOR`, `TRACKBAR_WM_HSCROLL_MESSAGE`, the fixed-math `SIM_EPSILON`) and native-derived staged ports (cloak/disguise helpers, house base helpers, gas and smoke particle movers). Three modules only tests reach (`movement/track_speed_native`, `movement/track_fresh_dispatch`, `map/rmg/sqrt_table`) carry the gate on their `mod` line. Non-test warnings 100 to 18: the crate summary line and the 17 that remain, which are fields only tests read and native enum values nothing constructs yet, left visible rather than suppressed | #428 |
 | Per-mover world scans | the whole-world marker-peer snapshot and building entry-skip map every mover rebuilt every tick (and `track_entry.rs` per entry). The mover is lifted out of the store for its turn (`EntityStore::take_turn`), so the other entities are read live: peers by id from the cell lists `UpdateBridgePassability` walks, skips from the buildings on the queried cell's list. The mover's own facts are captured once as its turn begins. Debug builds still build both whole-world forms and compare every live read against them. Two of the three scans | #429 |
 | Loader funnels | `load_rules_with_merged_ini` composed the rules layers cold, a second path beside the match load's `NativeRulesProcessOwner::load_noncampaign_scenario`; it now runs startup selection and that rebuild, and `LoadedRules` is gone. `sprite_atlas.rs` kept a `cfg(test)` copy of the effect-name list that had drifted (no `Wake=`, no projectile images); production and tests call the one `collect_effect_names` | #429 |
 | Per-mover world scans | the third scan, the owner block sets every moving object's turn rebuilt from every entity. `EntityStore` logs each entity it hands out mutably (every route to a `&mut GameEntity` goes through it), and `movement/block_index.rs` keeps one shared record of where each entity sits plus each owner's sets, re-deriving only the logged entities and rewriting only the cells they touch, at the same two points the sets used to be rebuilt (pass preparation; a turn's start when occupancy moved), so a pass sees what a build of the whole world would give it. One rule (`contribution`) and one insert (`insert_unit`) serve the index and the whole-world build, which path searches outside a pass, tests and the debug-build comparison still use | #430 |
-| Loader funnels | scenario construction only tests called, in an order production does not use: `runtime::construct_scenario`, `construct_scenario_with_generated_inits`, `init_helpers::construct_app_scenario`, `HeadlessTerrainBootstrap` with its own terrain Fill funnel, the bootstrap-side generated-construction replay wrapper, and the `ScenarioBootstrapRng::terrain_draws` and `replay_generated_construction_trace` probes with the unit tests that ran Fill and the replay on the bare bootstrap owner. Their users (two synthetic headless tests, the random-map launch snapshot behind `gsi_04_12`) now stage the one `Simulation` first, as the match load does (`into_stock_offline_staged_simulation` with the prefix bound to the native rules receipt, or `into_simulation` where there is no launch prefix), let Fill and the constructor replay draw from that owner, and populate it with the production functions; each asserts that Fill allocates the extent the descriptor announced. The random-map launch snapshot also gained the steps of the generated arm it had skipped (the `[Tubes]` and post-load particle-system native ids, the generator tail's tiberium queues and final germination) and no longer asks the post-map finalizer to rebuild the queues, which pinned the opposite of what a match load does. With that, the finalizer's rebuild branch (`tiberium_queues_preinitialized: false`, a near copy of `runtime::initialize_native_tiberium_queues`) had only unit tests left; the flag, the branch and the `tiberium_queues` output are deleted, and those tests build the queues with the production function before the post-map tail, as both load arms do | this PR |
+| Loader funnels | scenario construction only tests called, in an order production does not use: `runtime::construct_scenario`, `construct_scenario_with_generated_inits`, `init_helpers::construct_app_scenario`, `HeadlessTerrainBootstrap` with its own terrain Fill funnel, the bootstrap-side generated-construction replay wrapper, and the `ScenarioBootstrapRng::terrain_draws` and `replay_generated_construction_trace` probes with the unit tests that ran Fill and the replay on the bare bootstrap owner. Their users (two synthetic headless tests, the random-map launch snapshot behind `gsi_04_12`) now stage the one `Simulation` first, as the match load does (`into_stock_offline_staged_simulation` with the prefix bound to the native rules receipt, or `into_simulation` where there is no launch prefix), let Fill and the constructor replay draw from that owner, and populate it with the production functions; each asserts that Fill allocates the extent the descriptor announced. The random-map launch snapshot also gained the steps of the generated arm it had skipped (the `[Tubes]` and post-load particle-system native ids, the generator tail's tiberium queues and final germination) and no longer asks the post-map finalizer to rebuild the queues, which pinned the opposite of what a match load does. With that, the finalizer's rebuild branch (`tiberium_queues_preinitialized: false`, a near copy of `runtime::initialize_native_tiberium_queues`) had only unit tests left; the flag, the branch and the `tiberium_queues` output are deleted, and those tests build the queues with the production function before the post-map tail, as both load arms do | #431 |
+| Per-mover world scans | found by the final audit: the blocker-neighbour plane was cached under a key that included the occupancy generation, so in traffic each moving object's turn rebuilt it from the whole map and every entity, and the resumed Walk path request built it uncached. It is now a sum kept current: a part no entity contributes to (terrain objects, the retained wall plane, under their own epochs) plus one source per marked object, taken out and put back from the store's touch log (wrapping byte counts, so exact). `EntityStore::dying_epoch` went with the old key | #432 |
 
-Three per-mover world scans went with those: the per-frame dock sweep, the
+Three whole-entity sweeps went with those (per frame, not per mover): the per-frame dock sweep, the
 whole-entity scan in `interrupt_refinery_docked_miners`, and the per-frame
 building anim phase scan.
 
@@ -38,6 +39,11 @@ Ghidra: the MEGAMISSION comments at `0x004C72F8`, `0x004C733C`, `0x004C7342`
 now name the radio BREAK (`vt+0x274` = `RadioClass::Transmit_Radio_ToFirst`,
 read from the Unit vtable); the `AnimClass` Start/Middle labels were already
 correct in the database and the stale source notes saying otherwise are gone.
+Two identities this work got wrong were wrong in its own source notes, not in
+the database, and were corrected there: `0x005F5940` is labelled
+`ObjectClass__Paradrop` (`ObjectClass__Unlimbo` is `0x005F4EC0`), read back
+2026-09-21; `0x00ABDE88` is a Map-module scalar, not an animation global. No
+other label was changed.
 
 ## Independent audit, 2026-09-20
 
@@ -98,6 +104,15 @@ certified equal to a match load's. The two probes left on
 `install_before_terrain` production uses and read cursors; their users stage
 the `Simulation` next, and none runs Fill.
 
+**The headless loader (for the final audit to confirm).**
+`headless_scenario::load_with_launch` is a third sequencing of the load, for
+authored maps without a GPU. Unlike the random-map snapshot it shares the
+funnel: both it and the app call
+`runtime::finalize_and_populate_staged_authored_scenario` and
+`finalize_constructed_scenario`, and the steps before them are asset and rules
+loading. The generated arm has no such shared funnel, which is the snapshot's
+retention above.
+
 **Staged native ports with no production caller yet (for the final audit to
 confirm).**
 `track_fresh_dispatch.rs`, `track_speed_native.rs`, the `load_object_lifecycle`
@@ -110,7 +125,10 @@ discards evidence-backed work; wiring each is a port. Their functions are
 gate), and so are the types only they use. Untested staged ports kept as they were: the House
 base-centre helpers (`world/house_base.rs`, AI-deferred) and the gas and smoke
 wind movers (need `WindDirection=`) behind their `allow(dead_code)`, and four
-`pub` cloak helpers, `suppresses_ordinary_damage` and the wave
+`pub` cloak helpers, `suppresses_ordinary_damage`, the staged Fire_At damage
+math and fire-gate vocabulary (`combat/damage/attacker.rs` `fire_damage`,
+`fire_decision.rs` `FireDecision`, `base_defense_response.rs`
+`ResponderPeekFireError`) and the wave
 `color_mode`/`registration_bucket` pair (the only record of the native
 wave-type mapping), which nothing references yet. The six unused `state_hash_without_*`
 probes in `world_hash.rs` are replay-pin provenance.
@@ -139,14 +157,43 @@ Release build (`cargo build --release`), zero-interaction fixture maps through
   without error, not the pixels.
 - 2026-09-21, with the owner block index, both maps again: the miner docks
   and deposits, the chrono miner warps to the pad twice; 0 ERROR lines.
+- 2026-09-21, main at #431 (the post-map finalizer without its queue flag):
+  `minerloop.map` loads, builds the authored tiberium queues before the
+  Technos (198 growth, 316 spread), docks and deposits; 0 ERROR lines.
+- 2026-09-21, main at #432 plus the two quickplay switches below, release
+  build. `combatfixture.map` (the miner fixture plus Americans MTNK x2 and E1,
+  and a second house `Computer1` with HTNK x2, E2 and a power plant), run with
+  `RA2_QUICKPLAY_OPPONENTS=1` and `RA2_QUICKPLAY_SCREENSHOT_AT=<ticks>`: both
+  houses' objects spawn; the tanks turn their turrets and fire; the frames at
+  ticks 50 and 55 show the `AnimStore` muzzle-flash animation at each Grizzly's
+  barrel, and the GI's tracer; 21 frames, 0 ERROR lines. `combathunt.map` (the
+  same with the opposing tanks on Hunt from six cells farther): both houses'
+  units drive and path at once while the miner harvests, the Rhinos close to
+  point-blank and fight; 10 frames over 800 ticks, 0 ERROR lines. The frames
+  are game art, so they stay out of this public repository; the fixtures and
+  switches reproduce them.
 
-Not exercised in a release build: a superweapon invoke, a Lightning Storm, a
-bridge collapse, a weapon muzzle flash, a paradrop. Each needs player input or
-a second house, and the release binary has neither an input script nor a
-quickplay opponent (by design: an empty AI house is defeated at once and ends
-the session); desktop automation cannot reach a development executable. Their
-production functions are exercised in the test profile by tests that go through
-`Simulation`: `a_fired_shot_constructs_its_muzzle_anim_in_the_store`,
+`RA2_QUICKPLAY_OPPONENTS=<n>` adds opponent houses (`Computer1`...) to the
+quickplay sandbox so a fixture map can own objects by them (a house with no
+building is defeated at once under the short-game rule, so give it one);
+`RA2_QUICKPLAY_SCREENSHOT_AT=<tick,...>` takes the ordinary ScreenCapture
+screenshot at those simulation ticks. With them, a fixture with pre-placed
+hostile objects is a zero-interaction release scene, which the earlier text
+here wrongly said could not be had.
+
+Not exercised in a release build: a superweapon invoke and a Lightning Storm
+(a charged superweapon needs a click on the sidebar and a target), a paradrop
+(same), a bridge collapse (needs a force-fire order), a flying Jumpjet unit, a
+crusher order over a wall, the bridge marker peers on a real bridge crossing, a
+save and load at snapshot 180, the radar event ring, and the generated-map arm
+of the load (`RA2_QUICKPLAY=<name>.sed` stops at "generated launch has no
+accepted setup start staging", so a random map needs the skirmish shell). The
+fixtures above can be extended to several of these (a Rocketeer, a walled
+crusher path, units ordered across a bridge by a Hunt mission); the ones that
+need a click cannot be driven without an input script, and desktop automation
+cannot be granted for a development executable. Their production functions
+are exercised in the test profile by tests that go through `Simulation`:
+`a_fired_shot_constructs_its_muzzle_anim_in_the_store`,
 `commit_builds_the_flash_before_it_tears_the_firer_down`,
 `a_drop_attaches_a_canopy_that_winds_down_at_landing_and_plays_out`,
 `launch_constructs_the_invoke_anim_and_plays_its_report`,
@@ -182,6 +229,38 @@ lints pass on every merged PR.
   outside the `--lib` gate, so nothing runs it; it was compiled, not run.
 - Combat death debris never binds a sprite (GSI-05.14); theaters other than
   TEMPERATE were not checked for unbound building animations.
+
+### Rows of the 2026-09-20 discovery ledger this goal did not take
+
+The goal named its leads. `2026-09-20-engine-authority-audit.md` lists more
+duplicate state than that; the rows outside the named leads are recorded here
+with what they cost, not resolved:
+
+- **Economy purifier mirror.** `Simulation::refresh_economy_shadow` sweeps every
+  entity once a frame to write `Economy::purifier_count`, which is hashed and
+  saved and read by nothing; deposits count purifiers live
+  (`miner_system::effective_purifier_count`). Trigger: every frame. Effect:
+  none on play; one O(entities) sweep per frame and a dead hashed field.
+  Retiring it moves the hash composition (a schema feature, snapshot bump and
+  the three harness pins), which is why it is its own change.
+- **Two aircraft dock state machines.** `docking/aircraft_dock.rs`
+  (`tick_aircraft_docks`) handles aircraft with ammo and no `AircraftMission`;
+  `aircraft::tick_aircraft_missions` handles those with one. The gate
+  (`aircraft_mission.is_some()`) makes them disjoint, so no object has two
+  authorities, but runtime-built Fly aircraft always get a mission
+  (`world_spawn/construction.rs`), which leaves the legacy machine to
+  map-authored aircraft and non-Fly types with ammo. Folding it is a migration
+  of those cases onto the mission machine.
+- Shell pointer mirrors, sidebar scroll, audio initialization, Drive/Ship
+  track state, Object Z reconstruction, and movement without a locomotor
+  runtime: not rechecked by this goal.
+
+Smaller leftovers the final audit noted: `common.air_phase` is still hashed and
+captured by piggyback for Jumpjets, where it is now constant; per-order path
+searches build their own block sets and blocker plane instead of using the
+pass cache; `apply_zoom` in `app/input/camera.rs` is kept by its own note for a
+future binding; `HashSchema::Before(..)` branches in the production hasher are
+reached by tests only (they are the provenance of the re-baselined pins).
 
 ## Other checkouts
 
