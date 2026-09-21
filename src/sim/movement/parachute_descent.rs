@@ -77,8 +77,10 @@ const PARACHUTE_ANIM_DRAW_FLAGS: u32 = 0x600;
 impl crate::sim::world::Simulation {
     /// Construct the falling object's canopy.
     ///
-    /// gamemd-derived, the parachute arm of `ObjectClass::Unlimbo @ 0x005F5940`
-    /// (`0x005F5A9D..0x005F5B03`): for anything but a bullet it copies the
+    /// gamemd-derived, the virtual `ObjectClass::Paradrop @ 0x005F5940`. It
+    /// places the object itself (`Unlimbo` through `vtable+0xD8` at
+    /// `0x005F5A3D`, then the coordinate through `vtable+0x1B4`) and then, at
+    /// `0x005F5A9D..0x005F5B03`, for anything but a bullet it copies the
     /// object's coordinate, adds 75 leptons of Z, constructs
     /// `AnimClass(Rules+0xBBC, &coord, delay 0, loopCount 1, drawFlags 0x600,
     /// zAdjust 0, reverse 0)`, stores it at `Object+0x88` and makes the object
@@ -89,9 +91,13 @@ impl crate::sim::world::Simulation {
     /// attached anim of the parachute type.
     ///
     /// RESIDUAL: a bullet takes `Rules+0xBB8` (`BombParachute=`) at the
-    /// uncopied coordinate instead; VERA has no parachuted bullets. After the
-    /// attach native writes two anim fields from owner virtuals (`+0xD4`,
-    /// `+0xFC`); their identities are UNCHECKED and they are not modelled.
+    /// uncopied coordinate instead; VERA has no parachuted bullets.
+    ///
+    /// DRIFT: after the attach native copies the owner's drawer (`vtable+0x1E4`)
+    /// to the anim's `+0xD4` and the owner cell's ground Z adjust (`+0x10A`) to
+    /// `+0xFC`, the pair `set_cell_anim_draw_authority` models for cell anims.
+    /// They are not stored here; the presentation consequence is recorded at
+    /// `build_parachute_instances`.
     pub(crate) fn attach_parachute_anim(
         &mut self,
         rules: &crate::rules::ruleset::RuleSet,
@@ -132,9 +138,12 @@ impl crate::sim::world::Simulation {
     /// object's height reaches zero it clears the in-air byte and, if
     /// `Object+0x88` is set, zeroes the anim's remaining-loops byte
     /// (`MOV byte ptr [EAX+0x195], 0` at `0x005F3F9D`). The anim is not
-    /// removed: it plays out to its loop end and leaves through its ordinary
-    /// end-of-loop arm, so the canopy settles for a few frames after the
-    /// landing.
+    /// removed: with a count of zero `AnimClass::AI` tests the frame against
+    /// the type's end frame (`0x004246E4`) and completes there (`0x0042475A`),
+    /// so the canopy plays on from its loop into the rest of its frames and
+    /// leaves at the last one. Retail `PARACH.SHP` has 140 frames and loops
+    /// 20..39, so that is about a hundred frames of the canopy collapsing on
+    /// the landed object.
     pub(crate) fn wind_down_parachute_anim(
         &mut self,
         rules: &crate::rules::ruleset::RuleSet,

@@ -222,7 +222,7 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
             insert(name);
         }
     }
-    // `[General] Parachute=`: the canopy `ObjectClass::Unlimbo` attaches to a
+    // `[General] Parachute=`: the canopy `ObjectClass::Paradrop` attaches to a
     // dropped object (`sim::movement::parachute_descent`).
     if let Some(name) = rules.general.parachute_shp.as_deref() {
         insert(name);

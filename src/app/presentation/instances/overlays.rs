@@ -556,13 +556,28 @@ fn presentation_anim_frame_count(
     })
 }
 
-/// Screen position, cell, height level and the exact pixel lift of an anim.
-///
-/// The sprite sits at the anim's exact Z (a muzzle or an airburst is not on a
-/// level boundary). The lift is the same `AdjustForZ(z)` the projection
-/// subtracted, so depth can cancel exactly what was drawn, as
-/// `AnimClass::DrawIt @ 0x00422CA0` does.
-/// The falling object a canopy hangs on: an owner-attached anim of the
+/// Every object that owns a live canopy this frame: the falling ones, and the
+/// landed ones whose canopy is still playing out.
+pub(crate) fn parachute_canopy_owners(
+    state: &AppState,
+    sim: &crate::sim::world::Simulation,
+) -> std::collections::HashSet<u64> {
+    let Some(parachute_type) = state
+        .rules()
+        .and_then(|rules| rules.general.parachute_shp.as_deref())
+        .and_then(|name| sim.interner.get(name))
+    else {
+        return std::collections::HashSet::new();
+    };
+    sim.tactical_registration_order()
+        .iter()
+        .filter_map(|&id| sim.anim(id))
+        .filter(|anim| !anim.runtime.inactive)
+        .filter_map(|anim| parachute_canopy_owner(anim, parachute_type))
+        .collect()
+}
+
+/// The object a canopy hangs on: an owner-attached anim of the
 /// `[General] Parachute=` type.
 fn parachute_canopy_owner(
     anim: &crate::sim::anim_class::AnimObject,
@@ -573,6 +588,12 @@ fn parachute_canopy_owner(
         .flatten()
 }
 
+/// Screen position, cell, height level and the exact pixel lift of an anim.
+///
+/// The sprite sits at the anim's exact Z (a muzzle or an airburst is not on a
+/// level boundary). The lift is the same `AdjustForZ(z)` the projection
+/// subtracted, so depth can cancel exactly what was drawn, as
+/// `AnimClass::DrawIt @ 0x00422CA0` does.
 fn anim_world_render_coords(
     world: crate::sim::anim_class::AnimWorldCoord,
 ) -> (f32, f32, u16, u16, u8, i32) {
@@ -1151,9 +1172,17 @@ pub(crate) fn build_weapon_wave_instances(state: &AppState) -> Vec<SpriteInstanc
 /// canopy keyed off the drawn row would sort ~14 iso rows behind the man
 /// hanging on it and disappear behind any building in between.
 ///
-/// Palette: AltPalette=yes selects the unit/Convert palette in gamemd. This
-/// matches the default palette branch in `sprite_atlas` so long as the
-/// PARACH frames are NOT registered in `effect_type_ids` (see Task 8).
+/// Palette: `AltPalette=yes` selects the unit palette (`sprite_palette_choice`
+/// reads the art type's flag).
+///
+/// DRIFT: after the attach native copies two draw fields onto the canopy:
+/// `+0xD4`, the owner's drawer (`vtable+0x1E4`, its ConvertClass), and `+0xFC`,
+/// the owner cell's ground Z adjust (`+0x10A`), the same pair
+/// `Simulation::set_cell_anim_draw_authority` models for cell anims. This pass
+/// draws the canopy with house colour index 0 and no Z test instead. Trigger:
+/// every paradrop. Player effect: the canopy is not remapped to the dropping
+/// house and cannot be hidden behind terrain. Frequency: each paradrop.
+/// Downstream risk: presentation only.
 pub(crate) fn build_parachute_instances(
     state: &AppState,
     ground_objects: &mut [crate::app::presentation::render::draw_plan_lowering::PlannedGroundObjectInstance],
@@ -1190,7 +1219,7 @@ pub(crate) fn build_parachute_instances(
     );
     // The canopy is a simulation `AnimClass` attached to the falling object
     // (`Simulation::attach_parachute_anim`); this pass only places it on the
-    // body's sort key. The generic anim pass skips it (`is_parachute_canopy`).
+    // body's sort key. The generic anim pass skips it (`parachute_canopy_owner`).
     let Some(shp_name) = state
         .rules()
         .and_then(|r| r.general.parachute_shp.as_deref())

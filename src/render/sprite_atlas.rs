@@ -1043,8 +1043,9 @@ pub fn build_sprite_atlas(
     }
 
     // Step 1e: Pre-load the parachute SHP (`[General] Parachute=`).
-    // The parachute is reached through `[General] Parachute=` rather than the
-    // animation closure, so its frames need registering here. Its palette is not
+    // The canopy's frames are keyed on the unit-palette context the parachute
+    // pass draws with, so they are registered here as well as through the
+    // AnimClass closure `[General] Parachute=` now belongs to. Its palette is not
     // decided by this registration: `sprite_palette_choice` reads the art type's
     // `AltPalette=` flag, which PARACH sets, and that selects the unit palette.
     if let Some(r) = rules {

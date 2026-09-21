@@ -294,8 +294,8 @@ pub fn try_drop(
                 ));
             }
 
-            // `ObjectClass::Unlimbo`'s parachute arm builds the canopy once the
-            // object is placed and its coordinate set.
+            // `ObjectClass::Paradrop @ 0x005F5940` builds the canopy once it has
+            // placed the object and set its coordinate.
             sim.attach_parachute_anim(rules, passenger_id);
 
             // 7. ChuteSound at drop cell.
@@ -469,6 +469,68 @@ mod tests {
             "South-RIGHT should be -X (West), got {}",
             dx_right
         );
+    }
+
+    /// The production path end to end: the drop attaches the canopy, the
+    /// object turn winds it down on the landing edge, and the store plays it
+    /// out to its last frame and removes it (`ObjectClass::Paradrop
+    /// 0x005F5A9D`, `ObjectClass::AI 0x005F3F9D`, `AnimClass::AI 0x0042475A`).
+    #[test]
+    fn a_drop_attaches_a_canopy_that_winds_down_at_landing_and_plays_out() {
+        use crate::rules::art_data::ArtRegistry;
+        let mut sim = Simulation::new();
+        let mut rules = drop_test_rules();
+        rules.general.parachute_shp = Some("PARACH".to_string());
+        let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+            "[PARACH]\nRate=900\nLoopStart=2\nLoopEnd=5\nLoopCount=-1\n",
+        ));
+        art.bind_anim_frame_count_for_test("PARACH", 9);
+        rules.merge_art_data(&art);
+        rules.art_registry = art;
+        // The fixture places ids 1 and 2 by hand; keep the counter clear of them.
+        let (aircraft_id, passenger_id) = (sim.allocate_stable_id(), sim.allocate_stable_id());
+        insert_loaded_paradrop_pair(&mut sim, aircraft_id, passenger_id);
+
+        assert_eq!(
+            try_drop(&mut sim, &rules, aircraft_id, 4, None),
+            DropResult::Success
+        );
+        let parachute = sim.interner.get("PARACH").expect("type interned");
+        let canopy = |sim: &Simulation| {
+            sim.substrate
+                .anims
+                .iter()
+                .find(|(_, anim)| anim.type_id == parachute)
+                .map(|(id, anim)| (*id, anim.owner_entity, anim.runtime.loop_remaining))
+        };
+        let (canopy_id, owner, loops) = canopy(&sim).expect("the drop attached a canopy");
+        assert_eq!((owner, loops), (Some(passenger_id), u8::MAX));
+
+        let height_map = std::collections::BTreeMap::new();
+        let mut wound_down = false;
+        let mut played_out = false;
+        for _ in 0..60 {
+            sim.advance_tick(&[], Some(&rules), &height_map, None, None, 100);
+            let falling = sim
+                .substrate
+                .entities
+                .get(passenger_id)
+                .is_some_and(|passenger| passenger.parachute_state.is_some());
+            match canopy(&sim) {
+                Some((id, owner, loops)) => {
+                    assert_eq!((id, owner), (canopy_id, Some(passenger_id)));
+                    assert_eq!(loops == 0, !falling, "zeroed exactly at the landing");
+                    wound_down |= loops == 0;
+                }
+                None => {
+                    played_out = true;
+                    break;
+                }
+            }
+        }
+        assert!(wound_down, "the landing zeroed the remaining loops");
+        assert!(played_out, "the canopy left at its last frame");
+        assert!(sim.substrate.entities.get(passenger_id).is_some());
     }
 
     #[test]
