@@ -481,8 +481,6 @@ impl OverlayGrid {
         true
     }
 
-    /// Read the retained wall contribution plane. `Some(all-zero)` is
-    /// authoritative and must not fall back to a final-identity scan.
     /// The epoch under which the movement blocker plane's wall part is
     /// current: the wall plane's own when one is retained, else (legacy
     /// constructors, which scan wall identities instead) every mutation.
@@ -493,6 +491,8 @@ impl OverlayGrid {
         }
     }
 
+    /// Read the retained wall contribution plane. `Some(all-zero)` is
+    /// authoritative and must not fall back to a final-identity scan.
     pub(crate) fn retained_wall_neighbor_counts(&self) -> Option<&[u8]> {
         self.retained_wall_neighbor_counts.as_deref()
     }
