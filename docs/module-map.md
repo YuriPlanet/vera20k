@@ -1,12 +1,12 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `31db1ddd1192a2dd9386c3f9263a02a294a0c7fc` (2026-09-21), cargo-modules 0.26.0.
+Generated snapshot: `11b3b487b6f4ca1c5e2abf19c25584ea52d2a343` (2026-09-21), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
 External crates and the sysroot are excluded from the dependency graph.
-Contains **838 modules plus the crate root**, and **5270 distinct
+Contains **835 modules plus the crate root**, and **5270 distinct
 cross-module dependency edges**. Check this source commit against your checkout.
 <!-- module-map:provenance:end -->
 
@@ -314,7 +314,6 @@ map::rmg::rng -> map::rmg::x87; rng_continuation
 map::rmg::saved_seeds -> map::rmg::description; map::rmg::options; util::legacy_crt_rng; util::native_file_name
 map::rmg::scratch -> -
 map::rmg::settings -> assets::asset_manager; rules::ini_parser
-map::rmg::sqrt_table -> -
 map::rmg::tech_catalog -> map::rmg::phases::tech_buildings; rules::foundation; rules::ini_parser
 map::rmg::theater_blocks -> assets::tmp_file; map::rmg::phases::shore; map::theater
 map::rmg::tiles -> map::theater
@@ -505,7 +504,7 @@ sim::combat::combat_fire_gate -> map::entities; rules::ruleset; sim::entity_stor
 sim::combat::combat_targeting -> map::entities; map::houses; map::resolved_terrain; rules::object_type; rules::ruleset; sim::combat; sim::combat::combat_weapon; sim::combat::line_of_fire; sim::combat::threat_range; sim::entity_store; sim::game_entity; sim::house_state; sim::intern; sim::occupancy; sim::vision; util::fixed_math; util::native_x87::masked
 sim::combat::combat_weapon -> map::entities; map::houses; map::resolved_terrain; rules::animation_sequence; rules::locomotor_type; rules::mission_data; rules::object_type; rules::ruleset; rules::terrain_rules; rules::warhead_type; rules::weapon_type; sim::combat; sim::combat::combat_targeting; sim::deploy; sim::entity_store; sim::game_entity; sim::intern
 sim::combat::damage -> -
-sim::combat::damage::attacker -> -
+sim::combat::damage::attacker -> sim::combat::damage
 sim::combat::damage::gates -> sim::combat::damage
 sim::combat::damage::kernel -> sim::combat::damage; util::native_x87; util::native_x87::masked
 sim::combat::damage::receive -> sim::combat::damage; sim::combat::damage::gates; sim::combat::damage::kernel
@@ -613,12 +612,10 @@ sim::movement::rocket_movement -> sim::components; sim::debug_event_log; sim::en
 sim::movement::slope_transition -> map::entities; sim::game_entity
 sim::movement::teleport_movement -> rules::locomotor_type; rules::ruleset; sim::components; sim::debug_event_log; sim::entity_store; sim::intern; sim::movement::locomotion::piggyback; sim::occupancy; util::fixed_math
 sim::movement::track_entry -> rules::overlay_types; rules::ruleset; sim::components; sim::movement; sim::movement::locomotor; sim::movement::movement_occupancy; sim::movement::movement_tick; sim::pathfinding::cell_entry; sim::pathfinding::core; sim::world
-sim::movement::track_fresh_dispatch -> -
 sim::movement::track_head -> rules::locomotor_type; sim::components; sim::game_entity; sim::movement::drive_track
 sim::movement::track_host -> rules::mission_data; rules::overlay_types; rules::ruleset; sim::components; sim::game_entity; sim::lifecycle_request; sim::mission::state; sim::movement::ground_pose; sim::movement::locomotor; sim::movement::track_process; sim::pathfinding::cell_entry; sim::pathfinding::core; sim::world; util::fixed_math
 sim::movement::track_process -> sim::components; sim::movement::drive_track; util::native_x87
 sim::movement::track_speed -> map::resolved_terrain; rules::locomotor_type; rules::object_type; rules::ruleset; sim::game_entity; sim::pathfinding::core; sim::pathfinding::terrain_speed; util::fixed_math
-sim::movement::track_speed_native -> util::native_x87
 sim::movement::track_turn -> rules::locomotor_type; rules::mission_data; rules::ruleset; sim::components; sim::game_entity; sim::pathfinding::core; sim::world
 sim::movement::tube_movement -> map::entities; map::resolved_terrain; map::retail_trig; map::tube_facts; rules::ruleset; sim::components; sim::entity_store; sim::game_entity; sim::intern; sim::movement::bump_crush; sim::movement::locomotor; sim::movement::movement_commands; sim::occupancy; sim::pathfinding::core; sim::rng; sim::world::substrate; util::lepton; util::native_x87
 sim::movement::tunnel_movement -> sim::movement::locomotor; sim::movement::teleport_movement
