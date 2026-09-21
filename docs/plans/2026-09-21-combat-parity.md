@@ -231,8 +231,9 @@ probe; it is not a second implementation to publish.
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`,
 branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Selection/removal prerequisites are committed at `8c8e0f8e`; live speed work
-follows `78375397`. No PR or critic pass yet: production pickup is unfinished.
+Selection/removal prerequisites are committed at `8c8e0f8e`; live speed state
+and Ground-list evidence are committed at `d2a45ba4` (snapshot181).
+No PR or critic pass yet: production pickup is unfinished.
 The primary checkout and `.local/` data remain untouched by publication.
 
 Acceptance remains movement pickup through native selection, eligibility,

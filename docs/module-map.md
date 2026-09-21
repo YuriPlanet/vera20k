@@ -1,12 +1,12 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `8c8e0f8ee1d57c2d6ac9a5ab858b5f449edf68bd` (2026-09-21), cargo-modules 0.26.0.
+Generated snapshot: `d2a45ba4ff16e61d1700d51a7b86bc545c41def2` (2026-09-21), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
 External crates and the sysroot are excluded from the dependency graph.
-Contains **839 modules plus the crate root**, and **5291 distinct
+Contains **840 modules plus the crate root**, and **5297 distinct
 cross-module dependency edges**. Check this source commit against your checkout.
 <!-- module-map:provenance:end -->
 
@@ -521,11 +521,12 @@ sim::combat::threat_range -> rules::mission_data; rules::object_type; rules::rul
 sim::combat::veterancy -> rules::locomotor_type; rules::object_type; sim::game_entity; util::fixed_math; util::native_x87
 sim::combat::world_receiver -> map::entities; map::houses; map::resolved_terrain; rules::animation_sequence; rules::mission_data; rules::object_type; rules::overlay_types; rules::ruleset; rules::warhead_type; rules::weapon_type; sim::bridge_state; sim::combat; sim::combat::base_defense_response; sim::combat::cell_spread; sim::combat::combat_aoe; sim::combat::combat_fire_gate; sim::combat::combat_targeting; sim::combat::combat_weapon; sim::combat::damage; sim::combat::fire_coord; sim::combat::fire_decision; sim::combat::greatest_threat; sim::combat::in_range; sim::combat::inviso_scatter; sim::combat::line_of_fire; sim::combat::object_health; sim::combat::receiver_health; sim::combat::smudge_dispatch; sim::combat::threat_range; sim::combat::veterancy; sim::entity_store; sim::game_entity; sim::house_state; sim::house_strategy; sim::infantry; sim::intern; sim::mission::authority; sim::mission::concrete_effects; sim::mission::state; sim::occupancy; sim::overlay_grid; sim::production::production_tech; sim::projectile; sim::rng; sim::spawn_manager; sim::terrain_object; sim::vision; sim::wave; sim::world; util::fixed_math; util::lepton; util::native_x87
 sim::command -> sim::intern; sim::production::production_types
-sim::components -> map::entities; sim::anim_class; sim::intern; sim::movement::locomotor; sim::movement::track_process; sim::timer; util::fixed_math; util::native_x87::masked
+sim::components -> map::entities; sim::anim_class; sim::intern; sim::movement::locomotor; sim::movement::track_process; sim::timer; util::fixed_math; util::native_x87; util::native_x87::masked
 sim::conversion_health -> rules::object_type; sim::game_entity; util::native_x87
 sim::crates -> map::bridge_facts; map::lighting; map::resolved_terrain; rules::crate_rules; rules::locomotor_type; rules::overlay_types; rules::ruleset; rules::terrain_rules; sim::cell_rect; sim::crates::runtime; sim::crates::state; sim::find_nearby_cell; sim::pathfinding::core; sim::rng; sim::world; util::fixed_math
 sim::crates::pickup -> rules::overlay_types; rules::ruleset; sim::rng
 sim::crates::runtime -> map::lighting; rules::crate_rules; rules::overlay_types; rules::ruleset; sim::crates; sim::crates::state; sim::pathfinding::core; sim::world
+sim::crates::speed -> map::entities; sim::components; sim::movement::ground_pose; sim::world; util::native_x87
 sim::crates::state -> util::native_x87
 sim::crates::state::crate_slot_array_serde -> sim::crates::state
 sim::credit_income -> map::entities; rules::ruleset; sim::entity_store; sim::intern; sim::world
