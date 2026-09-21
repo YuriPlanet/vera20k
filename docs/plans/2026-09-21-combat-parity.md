@@ -231,11 +231,13 @@ probe; it is not a second implementation to publish.
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
 Branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Current validated source: `450c408bd78490e5a2f42b0b392144ceb91271b1`; this
-checkpoint accompanies it. The increment ports the live Carryall landing base
-into Fly move orders and preserves exact-height/query cadence. Display native
-fixture correction: `f4347849`. No tracked implementation WIP remains.
-Preceding checkpoint HEAD: `a000fe86c8802c63f3ffd05539819f12390795d5`;
+Current validated source: `be8e2d62ce1fcdfc6d968954204878670f6ebd38`;
+signed FacingClass rates/timers, class-specific Infantry defaults and voxel
+building fire retry math now reach existing production consumers. Evidence HEAD
+`ae5b3042e66091c584b1bc2335272fca6f360cbc` also records80 native Fly takeoff
+callbacks. No tracked implementation WIP remains. Previous checkpoint: `a36155c9`.
+Carryall move decision source: `450c408bd78490e5a2f42b0b392144ceb91271b1`;
+Display fixture correction: `f4347849`;
 integer Fly height source: `fa615a67a48be364e890b2801e52cdaf28283cdc`.
 Prior FlightLevel source: `bae495bff341bcccc905a3b97d8f13068adf0a9e`.
 `c3e4876f` migrated Ground rendering/picking to retained Display;
@@ -332,7 +334,7 @@ checks, not complete rendered gamemd parity.
 
 ### Evidence and validation
 
-Current source `bae495bf`: full `cargo test -p vera20k --lib` **9,113 passed,
+Previous FlightLevel source `bae495bf`: full `cargo test -p vera20k --lib` **9,113 passed,
 0 failed,135 ignored**,30.45s (`.local/flight-level-all-tests.log`). The three
 new regressions cover all30 native reader/getter cases, locomotor type selection,
 and production paradrop height/Foot coordinates/cargo across bincode restore.
@@ -539,8 +541,67 @@ versus repeated mutable-target division, and unconditional takeoff flag clears.
 Prior QueryInterface rename414290 and comments4142C1/4CDE64/712336 remain saved.
 No signature, function-boundary or binary edits.
 
-Next safe implementation: port native phase callbacks with their Mark/Display
-transaction, starting with the takeoff callback and existing FacingClass owners.
+### Facing prerequisite and takeoff evidence
+
+Source `be8e2d62` preserves signed SetROT4C9680/constructor4C91E0 semantics in
+the existing FacingClass owner: clamp only >=127, then shift the low byte;
+Current/Set/Snap/IsRotating interpret the word as signed. Thus -1 is instant,
+but -255 turns at256. Timer epochFFFFFFFF retains its full duration.
+Existing rules/locomotor consumers preserve the input: spawn, Unit combat,
+turret sweep, movement admission/steering, MCV, transport unload, miner pivot
+and Jumpjet linkage. No added facing state, snapshot field or version.
+Infantry lazy body owners use ctor517BBD's constant127; Unit/Aircraft use Type
+ROT. Full facing lifecycle migration and aircraft steering remain open.
+
+Voxel-building fire retry44B068 intentionally uses absolute signed16 of RAW
+ROT's low byte shifted8, without SetROT's upper clamp. The fire receiver now
+preserves that distinction. Native `facing_class --check` passes61 retained
+histories and `building_fire_turn --check` passes140 decisions; Rust consumes
+each. Nineteen signed rules values additionally pass production spawn, Unit
+facing/latch and full snapshot restore/continued advance_tick hash checks.
+
+`walk_first_step` retains its five supplied-rate0 rows unchanged, and adds five
+rows executing Facing ctor plus Infantry517BBD..517BCA. Only rate32512 differs;
+coordinates, RNG, occupancy, head, queue and speed match. Rust supplies rate0
+explicitly for old rows and exercises lazy native defaults for new rows.
+Slice6's new current hash is3AB40B61DE3B5224. Changing ONLY E1's retained
+rate back to0 reproduces the preceding current and pre174/181/182 pins;
+the test restores the untouched facing and asserts the new pin afterward.
+
+Final `cargo test -p vera20k --lib`: **9,121 passed,0 failed,135 ignored**,
+20.09s (`.local/facing-validated-tests.log`). Clippy passed with1,027 warnings,
+27.77s (`.local/facing-clippy.log`). The preceding full run failed only the
+supplied-rate0 fixture and Slice6 pin; both now retain causal checks. An earlier
+focused run passed150 tests before final voxel/Walk fixture changes. All owned
+native/Rust validation processes are terminal. No new release load or critic.
+
+Evidence commit `ae5b3042`: `fly_takeoff --check` passes80 original4CE680
+callbacks, using real Aircraft methods and original413FD2..41401A facing setup:
+19 no-setter,37 Primary.Set and24 Secondary.Set cases. All clear both flags,
+return1 and preserve coordinates. Coverage includes thresholds, Carryall base,
+bridge normalization, slopes, signed ROT, active turns and retained destination
+directions including zero. This does NOT demonstrate Rust takeoff parity or
+cover outer Process admission, BeginTakeoff, landing, or Mark/Display.
+
+Ghidra comments4C93DB/4C93EC,517BBD,44B08E,4CE756,41514C and416041 saved
+and read back. Corrected turret.rs's false writer claim: Aircraft AI41514C
+READS SecondaryFacing and copies it into Carryall passenger facings; FireAt
+416041 READS it for launch math. Self-writers belong to Mission_Attack4181BB..
+4185DF and Fly steering/takeoff. Fly rendering4CFB77/4CFBCE samples Secondary;
+movement4CDA62 and DropPayload415CB8/415CDB sample Primary. Migrate together.
+
+Landing prerequisite: FootUnlimbo4D7248..4D72A6 increments eight neighbor
+Cell+122 counters BEFORE the high-flying test; only the low branch writes
+Foot+55C at4D72B9. The existing overlay neighbor-count authority must cover
+all Foot lifecycle producers, not just Fly touchdown. Trace Limbo/destruction
+before generalizing it; do not add a parallel count plane.
+
+### Next safe implementation
+
+Migrate retained Fly destination state and both Aircraft facing writers/readers,
+then port native phase callbacks with their Mark/Display transaction. The legacy
+turret sweep would overwrite newly enabled stock-aircraft SecondaryFacing;
+adding its initialization alone cannot complete the prerequisite.
 Full MoveTo
 destination XYZ, mode+5C and null-stop
 behavior, EMP/Foot timer producers, continuous horizontal slowdown and target
@@ -580,10 +641,10 @@ selection, descent drift and crash relocation remain required too.
    414001, then Secondary.SetCurrent(Primary.Current)414006..414015. Reader
    714B14..714B2F uses literal81B164 ROT. No Turret=yes or TurretROT gate.
    Aircraft Unlimbo414403..414417 snaps SecondaryFacing to authored facing<<8.
-   FacingClass::set_rot currently takesu8, whereas native4C9680 acceptsi32,
-   clamps only >=127 and shifts the low byte; negative input is not clamped
-   tozero/127. Address this range while migrating aircraft ROT and consumers.
-   Comments413FDE/4C9680 saved and read back.
+   FacingClass now preserves signed ROT and timer semantics; both native
+   constructors and61 histories are compared. Aircraft still requires complete
+   primary/secondary initialization, retained-destination steering and migration
+   of its heading consumers. Comments413FDE/4C9680 saved and read back.
 
    Landing4CE840 has589 instructions and is not a flag-only counterpart. It
    includes AirportBound/radio or Aircraft4196B0 admission, refusal ->BeginTakeoff
