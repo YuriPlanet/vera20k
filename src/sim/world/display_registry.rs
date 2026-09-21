@@ -334,7 +334,15 @@ mod tests {
                 input["bridge"].as_bool().unwrap_or(false),
             );
             cell.slope_type = input["slope"].as_u64().unwrap_or(0) as u8;
-            let terrain = ResolvedTerrainGrid::from_cells(16, 16, vec![cell]);
+            // from_cells uses dense row-major slots, not the cell's coordinates
+            // to index a sparse vector. The native fixture asserts real10,10.
+            let mut cells = (0..16)
+                .flat_map(|y| {
+                    (0..16).map(move |x| super::super::common_raw_test_terrain_cell(x, y, 0, false))
+                })
+                .collect::<Vec<_>>();
+            cells[10 * 16 + 10] = cell;
+            let terrain = ResolvedTerrainGrid::from_cells(16, 16, cells);
             // Exercise the independent section reader, including no General.
             let ini = format!(
                 "[JumpjetControls]\nCruiseHeight={}\n",

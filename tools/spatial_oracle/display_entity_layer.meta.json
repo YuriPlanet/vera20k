@@ -10,6 +10,7 @@
   "scope": "88 entity layer queries across height thresholds, marking, bridge/falling, terrain slope and distinct linked/global cruise heights. Excludes non-entity layers, lifecycle submission and Rocket/Fly process behavior.",
   "assumptions": [
     "Real Unit and Building vtables; original Walk/Drive/Fly/Jumpjet constructors. Object location, lifecycle bytes and one map cell are supplied.",
+    "Map+13C table and Map+140 length are initialized. Read-only observers require ground and Jumpjet bridge queries to select the real cell; earlier fixtures without the length used Dummy and did not establish ramp/bridge behavior.",
     "Jumpjet linked height and global CruiseHeight are supplied; this does not execute the rules reader or Link_To_Object.",
     "No allocator or callbacks are replaced. Layer queries do not establish resubmission timing or full process parity."
   ],
@@ -22,5 +23,5 @@
     "get_height": "0x005F5F40",
     "high_flying": "0x005F6B90"
   },
-  "payload_sha256": "60884dec3be78040f42d5ea6492ea9ca79c57ace8c284c8973b11a8b86da23cb"
+  "payload_sha256": "27aa31fbf63b7fd69e0bfb24af076c499a4cb8993f0e74a17d1f9ba26c4afad2"
 }

@@ -10,6 +10,7 @@
   "scope": "Nine mixed display query/registration/removal/sort sequences: particles, stationary terrain, Flat/non-Flat bullets, voxel debris, waves, Unit peers and voxel-turret Building adjustment. Excludes animation owners, lifecycle marking, render output and full combat parity.",
   "assumptions": [
     "Real class vtables identified from original constructors. Coordinates, initial marked/layer bytes and relevant type fields are supplied; constructors/Unlimbo are not executed.",
+    "Map+13C table and Map+140 length are initialized; only cell10,10 is supplied and all terrain is flat at zero. Other coordinates select Dummy.",
     "Original display constructor prefix stops before atexit; supplied capacity16 buffers exclude allocation growth/failure.",
     "Only real Unit Drive locomotors are constructed; no calls or return values are substituted. Terrain remains at supplied cell center/Z=0."
   ],

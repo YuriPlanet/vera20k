@@ -29,7 +29,7 @@ def execute(case):
         return struct.unpack('<i', struct.pack('<I', u.reg_read(UC_X86_REG_EAX)))[0]
 
     u.mem_write(TABLE, EMPTY_TABLE)
-    u.mem_write(GLOBAL_TABLE, dwords(TABLE))
+    u.mem_write(GLOBAL_TABLE, dwords(TABLE, 0x40000))
     u.mem_write(TABLE + (10 * 512 + 10) * 4, dwords(CELL))
     u.mem_write(0xAC13C8, dwords(104))
     u.reg_write(UC_X86_REG_ESP, sp)
@@ -128,6 +128,7 @@ if __name__ == '__main__':
                       'voxel_layer': 0x74A960, 'wave_layer': 0x75F890,
                       'object_sort': 0x5F6BD0, 'building_sort': 0x449410},
         assumptions=['Real class vtables identified from original constructors. Coordinates, initial marked/layer bytes and relevant type fields are supplied; constructors/Unlimbo are not executed.',
+                     'Map+13C table and Map+140 length are initialized; only cell10,10 is supplied and all terrain is flat at zero. Other coordinates select Dummy.',
                      'Original display constructor prefix stops before atexit; supplied capacity16 buffers exclude allocation growth/failure.',
                      'Only real Unit Drive locomotors are constructed; no calls or return values are substituted. Terrain remains at supplied cell center/Z=0.'],
         substitutions=[],
