@@ -267,11 +267,7 @@ fn repeated_aircraft_attack_visits_do_not_divide_the_fly_target() {
     let (mut sim, rules) = fixture(&row);
     for sub_state in [3, 4, 3, 4] {
         sim.substrate.entities.get_mut(1).unwrap().aircraft_mission =
-            Some(AircraftMission::Attack {
-                sub_state,
-                has_fired: false,
-                is_strafe: false,
-            });
+            Some(AircraftMission::Attack { sub_state });
         tick_aircraft_missions(&mut sim, &rules, None);
         assert_eq!(
             sim.substrate

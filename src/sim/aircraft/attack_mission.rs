@@ -5,10 +5,10 @@
 //! are documented below; this legacy dispatcher is not complete Mission_Attack parity.
 //!
 //! ## State overview
-//! - 0: Init — clear flags, validate target
+//! - 0: Init — clear the action latch, validate target
 //! - 3: InRangeCheck — check weapon range, close in if needed
-//! - 4: FireWeapon — fire, set HasFired, handle result
-//! - 10: ReturnToBase — decrement ammo if HasFired, find helipad
+//! - 4: FireWeapon — request emission after the legacy arc check
+//! - 10: ReturnToBase — consume pending ammo before the return decision
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on sim/components, sim/combat, rules/.
@@ -72,6 +72,20 @@ pub(crate) fn aircraft_target_status(
     }
 }
 
+/// Native Mission_Attack entry prefixes418006/418031/4180A1/418BEC.
+/// The readiness latch+6D2 already belongs to MissionLeafState; Ammo+2FC and
+/// pending+6C8 have one owner independent of the current mission variant.
+pub(crate) fn enter_attack_state(entity: &mut crate::sim::game_entity::GameEntity, state: u8) {
+    if matches!(state, 0 | 1 | 3 | 10) && entity.mission_leaf.as_aircraft().is_some() {
+        entity.mission_leaf.set_aircraft_action_latch(false);
+    }
+    if matches!(state, 1 | 3 | 10) {
+        if let Some(ammo) = entity.aircraft_ammo.as_mut() {
+            ammo.consume_release(state == 10);
+        }
+    }
+}
+
 /// Advance the attack mission state machine for one aircraft entity.
 ///
 /// Returns the new mission state (may be the same, or transition to Guard/RTB).
@@ -82,8 +96,6 @@ pub fn tick_attack_state(
     interner: &StringInterner,
     entity_id: u64,
     sub_state: u8,
-    has_fired: bool,
-    _is_strafe: bool,
 ) -> AttackTickResult {
     let Some(entity) = entities.get(entity_id) else {
         return AttackTickResult::transition(AircraftMission::Idle);
@@ -113,25 +125,21 @@ pub fn tick_attack_state(
         .and_then(|name| rules.weapon(name))
         .map(|weapon| weapon.range_leptons);
 
+    if matches!(sub_state, 1 | 3 | 4) && ammo_current == 0 {
+        return AttackTickResult::transition(AircraftMission::Attack { sub_state: 10 });
+    }
+
     match sub_state {
         // ---------------------------------------------------------------
         // State 0: INIT
-        // Clear HasFired, IsStrafe. Validate target exists.
+        // Clear the shared action latch only. Validate target exists.
         // → State 3 (has target) or State 10 (no target, RTB)
         // ---------------------------------------------------------------
         0 => {
             if target_status.map_or(true, |s| !s.alive) {
-                return AttackTickResult::transition(AircraftMission::Attack {
-                    sub_state: 10,
-                    has_fired: false,
-                    is_strafe: false,
-                });
+                return AttackTickResult::transition(AircraftMission::Attack { sub_state: 10 });
             }
-            AttackTickResult::stay(AircraftMission::Attack {
-                sub_state: 3,
-                has_fired: false,
-                is_strafe: false,
-            })
+            AttackTickResult::stay(AircraftMission::Attack { sub_state: 3 })
         }
 
         // ---------------------------------------------------------------
@@ -141,18 +149,10 @@ pub fn tick_attack_state(
         // ---------------------------------------------------------------
         3 => {
             let Some(status) = target_status else {
-                return AttackTickResult::transition(AircraftMission::Attack {
-                    sub_state: 10,
-                    has_fired,
-                    is_strafe: false,
-                });
+                return AttackTickResult::transition(AircraftMission::Attack { sub_state: 10 });
             };
             if !status.alive {
-                return AttackTickResult::transition(AircraftMission::Attack {
-                    sub_state: 10,
-                    has_fired,
-                    is_strafe: false,
-                });
+                return AttackTickResult::transition(AircraftMission::Attack { sub_state: 10 });
             }
 
             let distance = crate::sim::combat::object_distance_to(
@@ -167,19 +167,11 @@ pub fn tick_attack_state(
                 .is_some_and(|(distance, range)| distance < range)
             {
                 // In range → fire.
-                AttackTickResult::stay(AircraftMission::Attack {
-                    sub_state: 4,
-                    has_fired,
-                    is_strafe: false,
-                })
+                AttackTickResult::stay(AircraftMission::Attack { sub_state: 4 })
             } else {
                 // Out of range — set movement toward target.
                 AttackTickResult::approach(
-                    AircraftMission::Attack {
-                        sub_state: 3,
-                        has_fired,
-                        is_strafe: false,
-                    },
+                    AircraftMission::Attack { sub_state: 3 },
                     (status.rx, status.ry),
                 )
             }
@@ -187,23 +179,15 @@ pub fn tick_attack_state(
 
         // ---------------------------------------------------------------
         // State 4: FIRE_WEAPON
-        // Check firing arc (±11.25°). If aligned: fire, set HasFired.
-        // → State 10 (RTB) or State 5 (strafe) based on FlyBy.
+        // Legacy firing arc (±11.25°); emission must decide actual success.
+        // Aircraft GetFireError41A9E0 and the release suffix remain to be wired.
         // ---------------------------------------------------------------
         4 => {
             let Some(status) = target_status else {
-                return AttackTickResult::transition(AircraftMission::Attack {
-                    sub_state: 10,
-                    has_fired,
-                    is_strafe: false,
-                });
+                return AttackTickResult::transition(AircraftMission::Attack { sub_state: 10 });
             };
             if !status.alive {
-                return AttackTickResult::transition(AircraftMission::Attack {
-                    sub_state: 10,
-                    has_fired,
-                    is_strafe: false,
-                });
+                return AttackTickResult::transition(AircraftMission::Attack { sub_state: 10 });
             }
 
             // Firing arc check: ±11.25° (0x800 in 16-bit facing).
@@ -220,11 +204,7 @@ pub fn tick_attack_state(
             if facing_diff > FIRING_ARC_TOLERANCE {
                 // Not aligned — continue approach (don't fire).
                 return AttackTickResult::approach(
-                    AircraftMission::Attack {
-                        sub_state: 4,
-                        has_fired,
-                        is_strafe: false,
-                    },
+                    AircraftMission::Attack { sub_state: 4 },
                     (status.rx, status.ry),
                 );
             }
@@ -232,63 +212,44 @@ pub fn tick_attack_state(
             // Firing arc aligned — signal fire permission.
             AttackTickResult::fire(
                 AircraftMission::Attack {
-                    // The final-release latches carry the evidenced state-1
-                    // -> state-10 tail in `tick_aircraft_missions`; no RA2
-                    // strafe cadence is inferred for states 5..9.
-                    sub_state: 1,
-                    has_fired: true,
-                    is_strafe: false,
+                    // The emission caller owns the successful-release suffix.
+                    // Requesting fire cannot advance state or charge ammo.
+                    sub_state: 4,
                 },
                 status.kind,
             )
         }
 
         // YR states 5..9 are deliberately residual pending the runtime cadence proof.
-        5..=9 => AttackTickResult::transition(AircraftMission::Attack {
-            sub_state: 10,
-            has_fired,
-            is_strafe: false,
-        }),
+        5..=9 => AttackTickResult::transition(AircraftMission::Attack { sub_state: 10 }),
 
         // ---------------------------------------------------------------
         // State 10: RETURN_TO_BASE
-        // Decrement ammo if HasFired. Clear flags.
-        // If ammo > 0 and target still valid: re-engage (→ State 0).
+        // Consume pending ammo (positive counts only) in the entry prefix.
+        // If ammo != 0 and target still valid: re-engage (→ State 1).
         // Else: transition to Guard (which handles RTB to airfield).
         // ---------------------------------------------------------------
         10 => {
-            let mut result_ammo_delta: i32 = 0;
-            if has_fired {
-                result_ammo_delta = -1;
-            }
-
-            // Re-engage check: still have ammo and target alive?
-            let can_reengage =
-                ammo_current + result_ammo_delta > 0 && target_status.is_some_and(|s| s.alive);
-
-            if can_reengage {
-                AttackTickResult {
-                    new_mission: AircraftMission::Attack {
-                        sub_state: 0,
-                        has_fired: false,
-                        is_strafe: false,
-                    },
-                    ammo_delta: result_ammo_delta,
-                    fire_at: None,
-                    move_to: None,
-                }
+            // Pending ammo was consumed by the entry prefix. Native418C15
+            // tests signed nonzero, not positive, before restarting at state1.
+            if ammo_current != 0 && target_status.is_some_and(|s| s.alive) {
+                AttackTickResult::transition(AircraftMission::Attack { sub_state: 1 })
             } else {
-                AttackTickResult {
-                    new_mission: AircraftMission::Guard,
-                    ammo_delta: result_ammo_delta,
-                    fire_at: None,
-                    move_to: None,
-                }
+                // Residual: native zero-ammo target-clear/return-location and
+                // EnterIdle/queued-Mission suffix418C29..418D1D.
+                AttackTickResult::transition(AircraftMission::Guard)
             }
         }
 
+        // State1's FindFireLocation/AssignDestination suffix4197C0 remains
+        // unmigrated. Keep the state instead of fabricating a final-release
+        // countdown or clearing the target on a guessed next frame.
+        1 => AttackTickResult::stay(AircraftMission::Attack {
+            sub_state: if target_status.is_some() { 1 } else { 10 },
+        }),
+
         // ---------------------------------------------------------------
-        // State 1, 2: Legacy/spawner states — not yet needed.
+        // Other unported states retain the legacy Guard fallback.
         // ---------------------------------------------------------------
         _ => AttackTickResult::transition(AircraftMission::Guard),
     }
@@ -298,8 +259,6 @@ pub fn tick_attack_state(
 pub struct AttackTickResult {
     /// New mission state to write back.
     pub new_mission: AircraftMission,
-    /// Ammo change to apply (-1 for decrement on HasFired, 0 otherwise).
-    pub ammo_delta: i32,
     /// If Some, the combat system should fire at this target this tick.
     /// Carries `TargetKind` so the projectile pipeline knows whether the
     /// destination is an entity or a ground cell (force-fire on terrain).
@@ -312,7 +271,6 @@ impl AttackTickResult {
     fn stay(mission: AircraftMission) -> Self {
         Self {
             new_mission: mission,
-            ammo_delta: 0,
             fire_at: None,
             move_to: None,
         }
@@ -321,7 +279,6 @@ impl AttackTickResult {
     fn transition(mission: AircraftMission) -> Self {
         Self {
             new_mission: mission,
-            ammo_delta: 0,
             fire_at: None,
             move_to: None,
         }
@@ -330,7 +287,6 @@ impl AttackTickResult {
     fn approach(mission: AircraftMission, target_cell: (u16, u16)) -> Self {
         Self {
             new_mission: mission,
-            ammo_delta: 0,
             fire_at: None,
             move_to: Some(target_cell),
         }
@@ -339,7 +295,6 @@ impl AttackTickResult {
     fn fire(mission: AircraftMission, target: TargetKind) -> Self {
         Self {
             new_mission: mission,
-            ammo_delta: 0,
             fire_at: Some(target),
             move_to: None,
         }
@@ -378,7 +333,7 @@ mod tests {
         let interner = test_interner();
         let rules = test_rules();
 
-        let result = tick_attack_state(&store, &rules, &interner, 1, 0, false, false);
+        let result = tick_attack_state(&store, &rules, &interner, 1, 0);
         match result.new_mission {
             AircraftMission::Attack { sub_state: 10, .. } => {}
             other => panic!("Expected state 10, got {:?}", other),
@@ -397,13 +352,9 @@ mod tests {
         let interner = test_interner();
         let rules = test_rules();
 
-        let result = tick_attack_state(&store, &rules, &interner, 1, 0, false, false);
+        let result = tick_attack_state(&store, &rules, &interner, 1, 0);
         match result.new_mission {
-            AircraftMission::Attack {
-                sub_state: 3,
-                has_fired: false,
-                ..
-            } => {}
+            AircraftMission::Attack { sub_state: 3, .. } => {}
             other => panic!("Expected state 3, got {:?}", other),
         }
     }
@@ -428,10 +379,9 @@ mod tests {
         let interner = test_interner();
         let rules = test_rules();
 
-        let result = tick_attack_state(&store, &rules, &interner, 1, 10, true, false);
-        // has_fired=true → ammo_delta=-1, ammo was 0 so 0-1=-1 → no re-engage → Guard.
+        let result = tick_attack_state(&store, &rules, &interner, 1, 10);
+        // Entry housekeeping never decrements zero ammo in state10.
         assert!(matches!(result.new_mission, AircraftMission::Guard));
-        assert_eq!(result.ammo_delta, -1);
     }
 
     #[test]
@@ -446,17 +396,12 @@ mod tests {
         let interner = test_interner();
         let rules = test_rules();
 
-        let result = tick_attack_state(&store, &rules, &interner, 1, 10, true, false);
-        // has_fired=true → ammo_delta=-1. ammo was 2, now 1 > 0 → re-engage.
+        let result = tick_attack_state(&store, &rules, &interner, 1, 10);
+        // Nonzero ammo re-engages through native state1.
         match result.new_mission {
-            AircraftMission::Attack {
-                sub_state: 0,
-                has_fired: false,
-                ..
-            } => {}
-            other => panic!("Expected re-engage (state 0), got {:?}", other),
+            AircraftMission::Attack { sub_state: 1, .. } => {}
+            other => panic!("Expected re-engage (state 1), got {:?}", other),
         }
-        assert_eq!(result.ammo_delta, -1);
     }
 
     #[test]
@@ -472,7 +417,7 @@ mod tests {
         let interner = test_interner();
         let rules = test_rules();
 
-        let result = tick_attack_state(&store, &rules, &interner, 1, 3, false, false);
+        let result = tick_attack_state(&store, &rules, &interner, 1, 3);
         match result.new_mission {
             AircraftMission::Attack { sub_state: 4, .. } => {}
             other => panic!("Expected state 4, got {:?}", other),
@@ -492,7 +437,7 @@ mod tests {
         let interner = test_interner();
         let rules = test_rules();
 
-        let result = tick_attack_state(&store, &rules, &interner, 1, 3, false, false);
+        let result = tick_attack_state(&store, &rules, &interner, 1, 3);
         // Should stay in state 3 and issue a move command.
         match result.new_mission {
             AircraftMission::Attack { sub_state: 3, .. } => {}
@@ -535,15 +480,7 @@ mod tests {
             attacker.aircraft_ammo = Some(AircraftAmmo::new(2));
             store.insert(attacker);
             store.insert(GameEntity::test_default(2, "RHINO", "Soviet", 18, 10));
-            tick_attack_state(
-                &store,
-                &elite_range_rules(),
-                &test_interner(),
-                1,
-                3,
-                false,
-                false,
-            )
+            tick_attack_state(&store, &elite_range_rules(), &test_interner(), 1, 3)
         }
 
         // Rookie: 8 > Maverick Range 6 → keep approaching.

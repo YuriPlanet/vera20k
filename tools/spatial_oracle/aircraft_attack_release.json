@@ -1,4 +1,1590 @@
 {
+  "ai_entries": [
+    {
+      "ammo": -2147483648,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": false,
+        "mission": -1,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -2147483648,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": true,
+        "mission": -1,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": false,
+        "mission": -1,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": true,
+        "mission": -1,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": false,
+        "mission": -1,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": true,
+        "mission": -1,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -2,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": false,
+        "mission": -1,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -2,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": true,
+        "mission": -1,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": false,
+        "mission": -1,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": true,
+        "mission": -1,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": false,
+        "mission": -1,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": true,
+        "mission": -1,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": false,
+        "mission": -1,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": true,
+        "mission": -1,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": false,
+        "mission": -1,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": true,
+        "mission": -1,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": false,
+        "mission": -1,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": true,
+        "mission": -1,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": false,
+        "mission": -1,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": true,
+        "mission": -1,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": false,
+        "mission": -1,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": true,
+        "mission": -1,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2147483646,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": false,
+        "mission": -1,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2147483646,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": true,
+        "mission": -1,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -2147483648,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": false,
+        "mission": 0,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -2147483648,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": true,
+        "mission": 0,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": false,
+        "mission": 0,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": true,
+        "mission": 0,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": false,
+        "mission": 0,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": true,
+        "mission": 0,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -2,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": false,
+        "mission": 0,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -2,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": true,
+        "mission": 0,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": false,
+        "mission": 0,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": true,
+        "mission": 0,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": false,
+        "mission": 0,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": true,
+        "mission": 0,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": false,
+        "mission": 0,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": true,
+        "mission": 0,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": false,
+        "mission": 0,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": true,
+        "mission": 0,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": false,
+        "mission": 0,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": true,
+        "mission": 0,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": false,
+        "mission": 0,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": true,
+        "mission": 0,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": false,
+        "mission": 0,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": true,
+        "mission": 0,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2147483646,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": false,
+        "mission": 0,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2147483646,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": true,
+        "mission": 0,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -2147483648,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": false,
+        "mission": 1,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -2147483648,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": true,
+        "mission": 1,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -2147483648,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": false,
+        "mission": 1,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": true
+    },
+    {
+      "ammo": -2147483648,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": true,
+        "mission": 1,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": true
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": false,
+        "mission": 1,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": true,
+        "mission": 1,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": false,
+        "mission": 1,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": true
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": true,
+        "mission": 1,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": true
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": false,
+        "mission": 1,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": true,
+        "mission": 1,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": false,
+        "mission": 1,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": true
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": true,
+        "mission": 1,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": true
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": false,
+        "mission": 1,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": true,
+        "mission": 1,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": false,
+        "mission": 1,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": true
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": true,
+        "mission": 1,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": true
+    },
+    {
+      "ammo": 2,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": false,
+        "mission": 1,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": true,
+        "mission": 1,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": false,
+        "mission": 1,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": true
+    },
+    {
+      "ammo": 2,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": true,
+        "mission": 1,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": true
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": false,
+        "mission": 1,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": true,
+        "mission": 1,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": false,
+        "mission": 1,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": true
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": true,
+        "mission": 1,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": true
+    },
+    {
+      "ammo": -2147483648,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": false,
+        "mission": 2,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -2147483648,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": true,
+        "mission": 2,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": false,
+        "mission": 2,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": true,
+        "mission": 2,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": false,
+        "mission": 2,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": true,
+        "mission": 2,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -2,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": false,
+        "mission": 2,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -2,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": true,
+        "mission": 2,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": false,
+        "mission": 2,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": true,
+        "mission": 2,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": false,
+        "mission": 2,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": true,
+        "mission": 2,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": false,
+        "mission": 2,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": true,
+        "mission": 2,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": false,
+        "mission": 2,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": true,
+        "mission": 2,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": false,
+        "mission": 2,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": true,
+        "mission": 2,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": false,
+        "mission": 2,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": true,
+        "mission": 2,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": false,
+        "mission": 2,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": true,
+        "mission": 2,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2147483646,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": false,
+        "mission": 2,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2147483646,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": true,
+        "mission": 2,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -2147483648,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": false,
+        "mission": 4,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -2147483648,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": true,
+        "mission": 4,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": false,
+        "mission": 4,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": true,
+        "mission": 4,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": false,
+        "mission": 4,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": true,
+        "mission": 4,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -2,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": false,
+        "mission": 4,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -2,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": true,
+        "mission": 4,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": false,
+        "mission": 4,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": true,
+        "mission": 4,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": false,
+        "mission": 4,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": true,
+        "mission": 4,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": false,
+        "mission": 4,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": true,
+        "mission": 4,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": false,
+        "mission": 4,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": true,
+        "mission": 4,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": false,
+        "mission": 4,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": true,
+        "mission": 4,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": false,
+        "mission": 4,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": true,
+        "mission": 4,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": false,
+        "mission": 4,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": true,
+        "mission": 4,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2147483646,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": false,
+        "mission": 4,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2147483646,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": true,
+        "mission": 4,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -2147483648,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": false,
+        "mission": 30,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -2147483648,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": true,
+        "mission": 30,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": false,
+        "mission": 30,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": -2147483648,
+        "latch_6d2": true,
+        "mission": 30,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": false,
+        "mission": 30,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": true,
+        "mission": 30,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -2,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": false,
+        "mission": 30,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -2,
+      "input": {
+        "ammo": -1,
+        "latch_6d2": true,
+        "mission": 30,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": false,
+        "mission": 30,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": true,
+        "mission": 30,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": false,
+        "mission": 30,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "ammo": 0,
+        "latch_6d2": true,
+        "mission": 30,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": false,
+        "mission": 30,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": true,
+        "mission": 30,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": false,
+        "mission": 30,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "ammo": 1,
+        "latch_6d2": true,
+        "mission": 30,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": false,
+        "mission": 30,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": true,
+        "mission": 30,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": false,
+        "mission": 30,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "ammo": 2,
+        "latch_6d2": true,
+        "mission": 30,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": false,
+        "mission": 30,
+        "pending": false
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": true,
+        "mission": 30,
+        "pending": false
+      },
+      "latch_6d2": true,
+      "pending": false
+    },
+    {
+      "ammo": 2147483646,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": false,
+        "mission": 30,
+        "pending": true
+      },
+      "latch_6d2": false,
+      "pending": false
+    },
+    {
+      "ammo": 2147483646,
+      "input": {
+        "ammo": 2147483647,
+        "latch_6d2": true,
+        "mission": 30,
+        "pending": true
+      },
+      "latch_6d2": true,
+      "pending": false
+    }
+  ],
   "entries": [
     {
       "ammo": -2147483648,
@@ -791,6 +2377,185 @@
       },
       "latch_6d2": false,
       "pending": false
+    }
+  ],
+  "fire_error_ammo": [
+    {
+      "ammo": -2147483648,
+      "blocked": false
+    },
+    {
+      "ammo": -2,
+      "blocked": false
+    },
+    {
+      "ammo": -1,
+      "blocked": false
+    },
+    {
+      "ammo": 0,
+      "blocked": true
+    },
+    {
+      "ammo": 1,
+      "blocked": false
+    },
+    {
+      "ammo": 2,
+      "blocked": false
+    },
+    {
+      "ammo": 2147483647,
+      "blocked": false
+    }
+  ],
+  "initialization": [
+    {
+      "ammo": -2147483648,
+      "input": {
+        "initial": -2147483648,
+        "maximum": -1
+      }
+    },
+    {
+      "ammo": -2147483648,
+      "input": {
+        "initial": -2147483648,
+        "maximum": 0
+      }
+    },
+    {
+      "ammo": -2147483648,
+      "input": {
+        "initial": -2147483648,
+        "maximum": 2
+      }
+    },
+    {
+      "ammo": -2,
+      "input": {
+        "initial": -2,
+        "maximum": -1
+      }
+    },
+    {
+      "ammo": -2,
+      "input": {
+        "initial": -2,
+        "maximum": 0
+      }
+    },
+    {
+      "ammo": -2,
+      "input": {
+        "initial": -2,
+        "maximum": 2
+      }
+    },
+    {
+      "ammo": -1,
+      "input": {
+        "initial": -1,
+        "maximum": -1
+      }
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "initial": -1,
+        "maximum": 0
+      }
+    },
+    {
+      "ammo": 2,
+      "input": {
+        "initial": -1,
+        "maximum": 2
+      }
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "initial": 0,
+        "maximum": -1
+      }
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "initial": 0,
+        "maximum": 0
+      }
+    },
+    {
+      "ammo": 0,
+      "input": {
+        "initial": 0,
+        "maximum": 2
+      }
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "initial": 1,
+        "maximum": -1
+      }
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "initial": 1,
+        "maximum": 0
+      }
+    },
+    {
+      "ammo": 1,
+      "input": {
+        "initial": 1,
+        "maximum": 2
+      }
+    },
+    {
+      "ammo": 5,
+      "input": {
+        "initial": 5,
+        "maximum": -1
+      }
+    },
+    {
+      "ammo": 5,
+      "input": {
+        "initial": 5,
+        "maximum": 0
+      }
+    },
+    {
+      "ammo": 5,
+      "input": {
+        "initial": 5,
+        "maximum": 2
+      }
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "initial": 2147483647,
+        "maximum": -1
+      }
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "initial": 2147483647,
+        "maximum": 0
+      }
+    },
+    {
+      "ammo": 2147483647,
+      "input": {
+        "initial": 2147483647,
+        "maximum": 2
+      }
     }
   ],
   "releases": [

@@ -161,7 +161,7 @@ pub(crate) fn acquire_best_target_for_entity(
     let entity = entities.get(attacker_id)?;
     // Aircraft with 0 ammo should not acquire new targets — need to reload.
     if let Some(ref ammo) = entity.aircraft_ammo {
-        if ammo.current <= 0 {
+        if ammo.current == 0 {
             return None;
         }
     }

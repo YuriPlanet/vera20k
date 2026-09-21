@@ -17,6 +17,9 @@ pub(crate) mod landing_base;
 pub mod paradrop_mission;
 pub mod runtime_contract;
 
+#[cfg(test)]
+mod release_tests;
+
 use serde::{Deserialize, Serialize};
 
 use crate::map::entities::EntityCategory;
@@ -49,13 +52,6 @@ pub enum AircraftMission {
     Attack {
         /// State within the attack state machine (0-10).
         sub_state: u8,
-        /// Set to true when weapon fires during this attack pass.
-        /// Ammo is decremented at the START of the next state transition,
-        /// not when Fire_At is called. This ensures exactly one ammo per pass.
-        has_fired: bool,
-        /// Set during strafing attack runs (states 6-9).
-        /// Controls whether the aircraft continues forward after firing.
-        is_strafe: bool,
     },
 
     /// Guard — idle in the air, scanning for targets, RTB when low ammo.
@@ -153,7 +149,6 @@ pub fn tick_aircraft_missions(
     struct MissionSnap {
         id: u64,
         mission: AircraftMission,
-        release_tail: Option<runtime_contract::AircraftReleaseTail>,
     }
 
     let snapshots: Vec<MissionSnap> = sim
@@ -174,7 +169,6 @@ pub fn tick_aircraft_missions(
             Some(MissionSnap {
                 id: e.stable_id(),
                 mission: mission.clone(),
-                release_tail: e.aircraft_release_tail,
             })
         })
         .collect();
@@ -199,8 +193,6 @@ pub fn tick_aircraft_missions(
         paradrop_try_drop: bool,
         paradrop_payload_count_pre: u8,
         paradrop_silent_despawn: bool,
-        release_tail: Option<runtime_contract::AircraftReleaseTail>,
-        clear_attack_target: bool,
     }
 
     let mut mutations: Vec<MissionMutation> = Vec::new();
@@ -221,8 +213,6 @@ pub fn tick_aircraft_missions(
             paradrop_try_drop: false,
             paradrop_payload_count_pre: 0,
             paradrop_silent_despawn: false,
-            release_tail: snap.release_tail,
-            clear_attack_target: false,
         };
 
         match &snap.mission {
@@ -277,57 +267,20 @@ pub fn tick_aircraft_missions(
                 }
             }
 
-            AircraftMission::Attack {
-                sub_state,
-                has_fired,
-                is_strafe,
-            } => {
-                if *sub_state == 1 && m.release_tail.is_some() {
-                    let mut tail = m.release_tail.expect("checked above");
-                    tail.consume_final_release();
-                    m.release_tail = Some(tail);
-                    // Native frames 369 -> 370: the last release enters
-                    // state 10 with the target still retained.
-                    m.new_mission = AircraftMission::Attack {
-                        sub_state: 10,
-                        has_fired: *has_fired,
-                        is_strafe: false,
-                    };
-                } else if *sub_state == 10
-                    && m.release_tail.is_some_and(|tail| tail.clear_target_next)
-                {
-                    let mut tail = m.release_tail.expect("checked above");
-                    tail.clear_target();
-                    m.release_tail = Some(tail);
-                    // Native frames 370 -> 371: state 10 persists while the
-                    // target clears; completion remains latched.
-                    m.clear_attack_target = true;
-                    m.new_mission = AircraftMission::Attack {
-                        sub_state: 10,
-                        has_fired: *has_fired,
-                        is_strafe: false,
-                    };
-                } else {
-                    let result = attack_mission::tick_attack_state(
-                        &sim.substrate.entities,
-                        rules,
-                        &sim.interner,
-                        snap.id,
-                        *sub_state,
-                        *has_fired,
-                        *is_strafe,
-                    );
-                    m.new_mission = result.new_mission;
-                    m.ammo_delta = result.ammo_delta;
-                    m.fire_at = result.fire_at;
-                    m.move_to = result.move_to;
-                    if result.fire_at.is_some()
-                        && matches!(&m.new_mission, AircraftMission::Attack { sub_state: 1, .. })
-                    {
-                        m.release_tail =
-                            Some(runtime_contract::AircraftReleaseTail::after_final_release());
-                    }
+            AircraftMission::Attack { sub_state } => {
+                if let Some(entity) = sim.substrate.entities.get_mut(snap.id) {
+                    attack_mission::enter_attack_state(entity, *sub_state);
                 }
+                let result = attack_mission::tick_attack_state(
+                    &sim.substrate.entities,
+                    rules,
+                    &sim.interner,
+                    snap.id,
+                    *sub_state,
+                );
+                m.new_mission = result.new_mission;
+                m.fire_at = result.fire_at;
+                m.move_to = result.move_to;
 
                 // Fly owns height targets. Native4CF3D4..4CF4CF selects
                 // destination-relative height, IsDropship approach height or
@@ -396,11 +349,7 @@ pub fn tick_aircraft_missions(
                 let spawn_child = entity.spawn_owner_id.is_some();
 
                 if has_target && ammo_current > 0 {
-                    m.new_mission = AircraftMission::Attack {
-                        sub_state: 0,
-                        has_fired: false,
-                        is_strafe: false,
-                    };
+                    m.new_mission = AircraftMission::Attack { sub_state: 0 };
                 } else if spawn_child {
                     // Hold station; the parent's manager issues the recall.
                 } else if out_of_ammo || spent_and_idle {
@@ -679,10 +628,6 @@ pub fn tick_aircraft_missions(
             }
         }
 
-        if !matches!(&m.new_mission, AircraftMission::Attack { .. }) {
-            m.release_tail = None;
-        }
-
         mutations.push(m);
     }
 
@@ -711,11 +656,6 @@ pub fn tick_aircraft_missions(
 
         if let Some(entity) = sim.substrate.entities.get_mut(m.id) {
             entity.aircraft_mission = Some(m.new_mission.clone());
-            entity.aircraft_release_tail = m.release_tail;
-
-            if m.clear_attack_target {
-                entity.attack_target = None;
-            }
 
             if m.ammo_delta != 0 {
                 if let Some(ref mut ammo) = entity.aircraft_ammo {
@@ -774,8 +714,10 @@ pub fn tick_aircraft_missions(
         sim.issue_air_cell_destination(id, (rx, ry), speed, Some(rules));
     }
 
-    // Fire commands: set attack_target so combat system fires this tick.
-    // Carries TargetKind so Cell-target force-fire fires at coords, not entity.
+    // Legacy request adapter, still blocked by combat_fire_gate for Attack.
+    // This does not admit a release, set pending ammo, or advance the mission.
+    // Replace it with the call-local mission/emission handoff; rebuilding an
+    // AttackTarget here also loses its existing cooldown/burst bookkeeping.
     let fire_commands: Vec<(u64, crate::sim::combat::TargetKind)> = mutations
         .iter()
         .filter_map(|m| m.fire_at.map(|tk| (m.id, tk)))

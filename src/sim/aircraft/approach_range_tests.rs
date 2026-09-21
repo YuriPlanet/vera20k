@@ -52,11 +52,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet) {
     source.category = EntityCategory::Aircraft;
     source.veterancy = (case["veterancy"].as_u64().unwrap_or(0) * 100) as u16;
     source.aircraft_ammo = Some(AircraftAmmo::new(2));
-    source.aircraft_mission = Some(AircraftMission::Attack {
-        sub_state: 3,
-        has_fired: false,
-        is_strafe: false,
-    });
+    source.aircraft_mission = Some(AircraftMission::Attack { sub_state: 3 });
     source.locomotor = Some(LocomotorState::from_object_type(
         rules.object("ORCA").unwrap(),
         0,
@@ -103,17 +99,12 @@ fn fixture(row: &Value) -> (Simulation, RuleSet) {
 fn assert_native_mission_result(sim: &Simulation, row: &Value) {
     let aircraft = sim.substrate.entities.get(1).unwrap();
     let in_range = row["in_range"].as_bool().unwrap();
-    let Some(AircraftMission::Attack {
-        sub_state,
-        has_fired,
-        ..
-    }) = aircraft.aircraft_mission
-    else {
+    let Some(AircraftMission::Attack { sub_state, .. }) = aircraft.aircraft_mission else {
         panic!("unexpected mission for {row}");
     };
     assert_eq!(sub_state, if in_range { 4 } else { 3 }, "{row}");
     assert!(
-        !has_fired,
+        !aircraft.aircraft_ammo.as_ref().unwrap().release_pending(),
         "the range branch only authorizes the next mission state"
     );
     assert_eq!(aircraft.aircraft_ammo.as_ref().unwrap().current, 2);

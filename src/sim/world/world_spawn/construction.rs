@@ -18,7 +18,7 @@ use crate::sim::vision::MAX_SIGHT_RANGE;
 use crate::sim::world::Simulation;
 
 /// Existing initialization differences are explicit here. In particular map
-/// import currently omits Ship state, finite aircraft ammo and Fly Idle setup.
+/// import currently omits Ship state and Fly Idle setup.
 /// This is a Rust compatibility policy, not a claim of native equivalence.
 #[derive(Clone, Copy)]
 pub(super) enum ComponentOrigin {
@@ -164,13 +164,11 @@ impl Simulation {
                 ge.ship_locomotion = Some(Default::default());
             }
         }
-        // Aircraft ammo: set up ammo tracking for aircraft with finite Ammo=.
-        if matches!(origin, ComponentOrigin::Runtime)
-            && obj.ammo >= 0
-            && category == EntityCategory::Aircraft
-        {
-            ge.aircraft_ammo = Some(crate::sim::docking::aircraft_dock::AircraftAmmo::new(
-                obj.ammo,
+        // Retain the signed native count even for Ammo=-1. Mission_Attack's
+        // pending-release consumer can decrement a negative count as well.
+        if category == EntityCategory::Aircraft {
+            ge.aircraft_ammo = Some(crate::sim::docking::aircraft_dock::AircraftAmmo::from_type(
+                obj,
             ));
         }
         // Initialize aircraft mission for Fly-locomotor aircraft.

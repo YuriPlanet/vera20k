@@ -8,48 +8,6 @@ use crate::sim::cell_rect::{
     IsClearToMoveResult, LiveCellPassabilityQuery, evaluate_live_cell_passability,
 };
 
-use serde::{Deserialize, Serialize};
-
-/// The exact final-release tail observed in `AircraftClass::Mission_Attack`.
-///
-/// Named fields retain the native facts at `+0x2fc`, `+0x6c8`, and `+0x6d2`;
-/// the completion latch remains set through the next target-clear entry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AircraftReleaseTail {
-    pub remaining_releases: u32,
-    pub release_pending: bool,
-    pub tail_latch: bool,
-    pub completion_latch: bool,
-    pub clear_target_next: bool,
-}
-
-impl AircraftReleaseTail {
-    pub const fn after_final_release() -> Self {
-        Self {
-            remaining_releases: 1,
-            release_pending: true,
-            tail_latch: true,
-            completion_latch: true,
-            clear_target_next: false,
-        }
-    }
-
-    /// Consume the final release at the next Mission_Attack host entry.
-    pub fn consume_final_release(&mut self) {
-        self.remaining_releases = self.remaining_releases.saturating_sub(1);
-        if self.remaining_releases == 0 {
-            self.release_pending = false;
-            self.tail_latch = false;
-            self.clear_target_next = true;
-        }
-    }
-
-    /// Apply the following state-10 target clear while retaining completion.
-    pub fn clear_target(&mut self) {
-        self.clear_target_next = false;
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FireLocationSearch {
     pub aircraft_leptons: (i32, i32),
@@ -184,17 +142,6 @@ pub fn paradrop_edge_facing_word(default_edge: i32, alternate_type_state: bool) 
     }
 }
 
-/// Only the proved counter transition is represented; YR volley cadence remains residual.
-#[cfg(test)]
-pub fn volley_next_state(fire_pending: bool, remaining_releases: u32) -> (u32, u8) {
-    let remaining = if fire_pending {
-        remaining_releases.saturating_sub(1)
-    } else {
-        remaining_releases
-    };
-    (remaining, if remaining > 0 { 1 } else { 10 })
-}
-
 /// AircraftClass's shared Cell leaf for landing probes.
 ///
 /// Winged returns before map, zone, occupation, wall, or land reads. The live
@@ -283,33 +230,6 @@ mod tests {
         assert_eq!(paradrop_edge_facing_word(2, false), 0x8000);
         assert_eq!(paradrop_edge_facing_word(3, false), 0xc000);
         assert_eq!(paradrop_edge_facing_word(1, true), 0xc000);
-    }
-
-    #[test]
-    fn volley_counter_only_decrements_when_pending() {
-        assert_eq!(volley_next_state(false, 2), (2, 1));
-        assert_eq!(volley_next_state(true, 2), (1, 1));
-        assert_eq!(volley_next_state(true, 1), (0, 10));
-    }
-
-    #[test]
-    fn final_release_tail_matches_the_three_observed_host_entries() {
-        let mut tail = AircraftReleaseTail::after_final_release();
-        assert_eq!(tail.remaining_releases, 1);
-        assert!(tail.release_pending);
-        assert!(tail.tail_latch);
-        assert!(tail.completion_latch);
-
-        tail.consume_final_release();
-        assert_eq!(tail.remaining_releases, 0);
-        assert!(!tail.release_pending);
-        assert!(!tail.tail_latch);
-        assert!(tail.completion_latch);
-        assert!(tail.clear_target_next);
-
-        tail.clear_target();
-        assert!(!tail.clear_target_next);
-        assert!(tail.completion_latch);
     }
 
     #[test]

@@ -97,20 +97,74 @@ def generate():
     entries=[dict(state=state,ammo=ammo,pending=pending,latch_6d2=latch)
              for state in (1,3,10) for ammo in (-2147483648,-1,0,1,2,2147483647)
              for pending in (False,True) for latch in (False,True)]
+    ai_entries=[dict(mission=mission,ammo=ammo,pending=pending,latch_6d2=latch)
+                for mission in (-1,0,1,2,4,30) for ammo in (-2147483648,-1,0,1,2,2147483647)
+                for pending in (False,True) for latch in (False,True)]
     return dict(releases=[execute(row) for row in rows],
-                entries=[entry_housekeeping(row) for row in entries])
+                entries=[entry_housekeeping(row) for row in entries],
+                ai_entries=[ai_housekeeping(row) for row in ai_entries],
+                fire_error_ammo=[fire_error_ammo(ammo) for ammo in (-2147483648,-2,-1,0,1,2,2147483647)],
+                initialization=[initialize_ammo(dict(initial=initial,maximum=maximum))
+                    for initial in (-2147483648,-2,-1,0,1,5,2147483647)
+                    for maximum in (-1,0,2)])
+
+
+def fire_error_ammo(ammo):
+    u, sp, actors, _ = fixture(dict(actors=[dict(kind='aircraft')]))
+    owner=actors[0]
+    u.mem_write(owner+0x2FC,dwords(ammo))
+    u.reg_write(UC_X86_REG_ESI,owner)
+    u.reg_write(UC_X86_REG_ESP,sp)
+    stop=run_checked(u,0x6FCA0D,(0x6FCA17,0x6FCA26),count=100)
+    assert u.reg_read(UC_X86_REG_ESP)==sp
+    return dict(ammo=ammo,blocked=stop==0x6FCA17)
+
+
+def initialize_ammo(case):
+    u, sp, actors, _ = fixture(dict(actors=[dict(kind='aircraft')]))
+    owner=actors[0]
+    object_type=owner+0x800
+    u.mem_write(object_type+0x680,dwords(case['initial'],case['maximum']))
+    u.reg_write(UC_X86_REG_ESI,owner)
+    u.reg_write(UC_X86_REG_EAX,object_type)
+    u.reg_write(UC_X86_REG_ESP,sp)
+    run_checked(u,0x41403A,0x414051,count=100)
+    assert u.reg_read(UC_X86_REG_ESP)==sp
+    return dict(input=case,ammo=struct.unpack('<i',u.mem_read(owner+0x2FC,4))[0])
+
+
+def ai_housekeeping(case):
+    u, sp, actors, _ = fixture(dict(actors=[dict(kind='aircraft')]))
+    owner=actors[0]
+    u.mem_write(owner+0xAC,dwords(case['mission']))
+    u.mem_write(owner+0x2FC,dwords(case['ammo']))
+    u.mem_write(owner+0x6C8,bytes([case['pending']]))
+    u.mem_write(owner+0x6D2,bytes([case['latch_6d2']]))
+    u.reg_write(UC_X86_REG_ESI,owner)
+    u.reg_write(UC_X86_REG_ESP,sp)
+    run_checked(u,0x41505E,0x415085,count=100)
+    assert u.reg_read(UC_X86_REG_ESP)==sp
+    return dict(input=case,ammo=struct.unpack('<i',u.mem_read(owner+0x2FC,4))[0],
+                pending=bool(u.mem_read(owner+0x6C8,1)[0]),
+                latch_6d2=bool(u.mem_read(owner+0x6D2,1)[0]))
 
 
 if __name__ == '__main__':
     finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=lambda:provenance(
         entry_points={'release_loop':0x418403,'loop_end':0x418478,'post_reveal':0x4184C2,
                       'get_weapon':0x70E140,'auxiliary_18':0x41B7F0,'fighter':0x41B840,
-                      'state1_entry':0x418031,'state3_entry':0x4180A1,'state10_entry':0x418BEC},
+                      'state1_entry':0x418031,'state3_entry':0x4180A1,'state10_entry':0x418BEC,
+                      'ai_after_commence':0x41505E,'ai_pending_end':0x415085,
+                      'common_fire_error_ammo':0x6FCA0D,
+                      'initialize_ammo':0x41403A,'initialize_ammo_end':0x414051},
         assumptions=['Entry after successful GetFireError; target, ammo, tier and weapon/type inputs supplied.',
                      'Original Aircraft vtable cloned to scratch; original auxiliary vtable and GetWeapon execute.',
                      'Map reveal418478..4184C2 omitted; original preserved ESI/EBX and balanced stack resumed.',
                      'Entry-housekeeping rows stop before target/ammo guards and navigation; signed Ammo and retained flags supplied.',
+                     'AI rows enter after Ready/Commence with the resulting current Mission supplied; no preceding promotion effects substituted or claimed.',
+                     'Initialization rows execute41403A..414051 with supplied InitialAmmo+680 and Ammo+684. Other constructor effects and INI parsing excluded.',
+                     'Fire-error rows isolate the signed Ammo zero check6FCA0D; all preceding and following legality checks excluded.',
                      'No FireAt effects, target mutation, damage, RNG, admission or next-entry scheduling claim.'],
         substitutions=['Scratch SelectWeapon returns slot0; scratch FireAt records arguments and returns null without effects.'],
-        scope='316 bounded original successful-release loops and next-state/delay decisions, plus72 original state1/3/10 pending-ammo housekeeping prefixes. Native loop counts, pending-before-FireAt, no mission-side immediate ammo decrement, tier fallback and auxiliary/Fighter branches. Not whole-burst combat parity.',
+        scope='316 bounded original successful-release loops and next-state/delay decisions, plus72 original state1/3/10 pending-ammo housekeeping prefixes,144 original post-Commence AI pending-ammo prefixes,21 ammo initialization prefixes and7 common fire-error Ammo checks. Native loop counts, pending-before-FireAt, no mission-side immediate ammo decrement, tier fallback and auxiliary/Fighter branches. Not whole-burst combat parity.',
     ))

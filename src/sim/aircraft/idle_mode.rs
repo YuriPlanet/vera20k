@@ -72,11 +72,7 @@ pub fn enter_idle_mode(input: &IdleModeInput) -> IdleModeResult {
 
     // In flight with ammo and a target → re-engage.
     if input.is_airborne && input.ammo_current > 0 && input.has_target {
-        return IdleModeResult::Mission(AircraftMission::Attack {
-            sub_state: 0,
-            has_fired: false,
-            is_strafe: false,
-        });
+        return IdleModeResult::Mission(AircraftMission::Attack { sub_state: 0 });
     }
 
     // AirportBound in flight with no target → RTB.

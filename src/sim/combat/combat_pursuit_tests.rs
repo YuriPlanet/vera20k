@@ -146,11 +146,7 @@ fn aircraft_attack_target_skipped_by_pursuit() {
     // touch its movement.
     let mut orca = make_unit(1, "ORCA", "Americans", 0, 0, 150);
     orca.attack_target = Some(AttackTarget::new(2));
-    orca.aircraft_mission = Some(AircraftMission::Attack {
-        sub_state: 3,
-        has_fired: false,
-        is_strafe: false,
-    });
+    orca.aircraft_mission = Some(AircraftMission::Attack { sub_state: 3 });
     orca.aircraft_ammo = Some(AircraftAmmo::new(2));
     let rhino = make_unit(2, "HTNK", "Soviet", 30, 0, 400);
     let (mut sim, grid) = make_sim(vec![orca, rhino]);

@@ -674,7 +674,11 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 17631878483843703671
 const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xBC5E_52DA_969F_F60C;
 // Snapshot182 adds ordered display vectors. The pre-182 projection below
 // must reproduce the previous whole-fixture hash, including all RNG/state.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 12759965280527249411;
+// Schema186 removes the always-None release-tail byte from each entity. This
+// fixture contains no aircraft; the pre186 projection below retains the old
+// full hash, and every position/replay/RNG assertion remains unchanged.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x1924_EA0D_29FA_97C5;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 12759965280527249411;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -1001,6 +1005,8 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     let (_, final_scen, final_main, final_mapgen) =
         *recorded_streams.last().expect("final checkpoint recorded");
     let final_hash = *replayed.last().expect("at least one tick recorded");
+    let before_release_hash =
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(186));
     // Schema 172 removed the refinery dock registry's hash folds. They were
     // unframed, so an empty registry contributed no bytes: the pin below holds
     // across that removal exactly when the refinery (id 2) holds no contact at
@@ -1169,6 +1175,10 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         "retained westbound destination must advance after intermediate retirement",
     );
 
+    assert_eq!(
+        before_release_hash, GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186,
+        "restoring only the absent release-tail fold must reproduce the prior fixture"
+    );
     assert_eq!(
         final_hash, GLOBAL_HARNESS_FINAL_HASH,
         "committed global-harness baseline drifted. Do not copy the observed value: \

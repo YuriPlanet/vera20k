@@ -722,6 +722,9 @@ pub struct ObjectType {
     /// Ammo count for aircraft. -1 = unlimited (default), 0+ = finite.
     /// Aircraft with finite ammo return to a helipad/airfield to reload after depleting.
     pub ammo: i32,
+    /// TechnoType+680, ReadINI71474C (InitialAmmo); -1 selects Ammo at
+    /// Aircraft InitFromType414033..41404B. Other signed values are retained.
+    pub initial_ammo: i32,
 
     // -- Spawn manager (Spawns= pool: V3, Dreadnought, Boomer, Carrier, Destroyer) --
     /// TechnoType this unit spawns as sub-units (`Spawns=`). Presence of a
@@ -1912,6 +1915,7 @@ impl ObjectType {
             base_reservation_spacing: None,
             unloading_class: section.get("UnloadingClass").map(|s| s.to_string()),
             ammo: section.get_i32("Ammo").unwrap_or(-1),
+            initial_ammo: section.get_i32("InitialAmmo").unwrap_or(-1),
 
             // Spawn manager pool
             spawns: section

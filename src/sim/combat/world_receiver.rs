@@ -4176,7 +4176,9 @@ pub(crate) fn tick_combat(
     for &attacker_id in &ammo_deduct {
         if let Some(entity) = world.substrate.entities.get_mut(attacker_id) {
             if let Some(ref mut ammo) = entity.aircraft_ammo {
-                ammo.current = (ammo.current - 1).max(0);
+                if ammo.current > 0 {
+                    ammo.current -= 1;
+                }
             }
         }
     }

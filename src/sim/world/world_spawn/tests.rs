@@ -1037,7 +1037,7 @@ fn techno_constructor_routes_preserve_components_and_authored_overrides() {
                             .aircraft_ammo
                             .as_ref()
                             .map(|ammo| (ammo.current, ammo.max)),
-                        (route != 0).then_some((5, 5))
+                        Some((5, 5))
                     );
                 }
                 "GATE" => {
@@ -1750,6 +1750,50 @@ fn signed_constructor_and_authored_health_consume_original_corpus() {
             row["output"]["actual"].as_i64().unwrap() as i32,
             "{row}"
         );
+    }
+}
+
+#[test]
+fn aircraft_ammo_initialization_matches_native_for_authored_and_runtime_objects() {
+    let corpus: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/spatial_oracle/aircraft_attack_release.json"
+    ))
+    .unwrap();
+    let rows = corpus["initialization"].as_array().unwrap();
+    assert_eq!(rows.len(), 21);
+    for row in rows {
+        let maximum = row["input"]["maximum"].as_i64().unwrap() as i32;
+        let initial = row["input"]["initial"].as_i64().unwrap() as i32;
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[AircraftTypes]\n0=AIR\n[AIR]\nStrength=150\nAmmo={maximum}\nInitialAmmo={initial}\n"
+        )))
+        .unwrap();
+        let mut sim = Simulation::with_seed(7);
+        let runtime = sim
+            .construct_runtime_techno(
+                "AIR",
+                "Americans",
+                6,
+                5,
+                0,
+                0,
+                &rules,
+                TechnoConstructorInit::FreshScenario,
+            )
+            .unwrap()
+            .unwrap();
+        let placement = map_entity("AIR", EntityCategory::Aircraft, (6, 5));
+        assert_eq!(
+            sim.spawn_from_map(&[placement], Some(&rules), &BTreeMap::new()),
+            1
+        );
+        let authored = sim.substrate.entities.values().next().unwrap();
+        for entity in [&runtime, authored] {
+            let ammo = entity.aircraft_ammo.as_ref().unwrap();
+            assert_eq!(ammo.current, row["ammo"].as_i64().unwrap() as i32, "{row}");
+            assert_eq!(ammo.max, maximum);
+            assert!(!ammo.release_pending());
+        }
     }
 }
 

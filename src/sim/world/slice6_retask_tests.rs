@@ -449,7 +449,11 @@ const SLICE6_BASELINE_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0x720D_C262_694D_3821;
 const SLICE6_BEFORE_INFANTRY_ROT_HASH: u64 = 209154586170202422;
 // Infantry ctor517BBD supplies PrimaryFacing ROT127. The comparison below
 // changes only that retained rate back to0 and reproduces every previous pin.
-const SLICE6_BASELINE_HASH: u64 = 0x3AB4_0B61_DE3B_5224;
+// Schema186 removes each entity's always-None aircraft release-tail fold. The
+// pre186 assertion retains this fixture's preceding current hash, independently
+// of the existing constructor-rate projection and native paid-Walk witnesses.
+const SLICE6_BASELINE_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 0x3AB4_0B61_DE3B_5224;
+const SLICE6_BASELINE_HASH: u64 = 0xE1C1_EE70_4C71_ABA5;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -700,7 +704,7 @@ fn replay_hash_stable_through_slice6() {
         .unwrap()
         .set_rot(0);
     assert_eq!(
-        sim.state_hash(),
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(186)),
         SLICE6_BEFORE_INFANTRY_ROT_HASH,
         "only the corrected Infantry constructor rate may differ from the preceding baseline"
     );
@@ -720,6 +724,11 @@ fn replay_hash_stable_through_slice6() {
         "excluding only display vectors must preserve the pre-182 fixture"
     );
     sim.substrate.entities.get_mut(3).unwrap().body_facing = Some(infantry_facing);
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(186)),
+        SLICE6_BASELINE_HASH_PRE_AIRCRAFT_RELEASE_V186,
+        "restoring only the absent release-tail fold must reproduce the prior fixture"
+    );
     assert_eq!(
         sim.state_hash(),
         hash,

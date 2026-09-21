@@ -546,7 +546,10 @@ use crate::sim::world::Simulation;
 // Object+74 marking. Prior snapshots cannot reconstruct attachment history.
 // 184 -> 185: Fly owns its integer height target and native takeoff/landing
 // flags; the shared synthetic air phase, target and climb-rate fields are gone.
-const SNAPSHOT_VERSION: u32 = 185;
+// 185 -> 186: aircraft retain signed Ammo and the pending-release byte outside
+// the Attack variant. Duplicate mission flags and the fabricated release tail
+// are removed; pending state cannot be recovered from the old representation.
+const SNAPSHOT_VERSION: u32 = 186;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3440,7 +3443,8 @@ mod tests {
         // 174 -> 175: bridge collapse explosions join the AnimStore.
         // 180 -> 181: Foot+580 crate multiplier survives save/restore.
         // 184 -> 185: Fly owns its integer height target and takeoff/landing flags.
-        assert_eq!(super::SNAPSHOT_VERSION, 185);
+        // 185 -> 186: Aircraft pending ammo survives independently of Attack.
+        assert_eq!(super::SNAPSHOT_VERSION, 186);
     }
 
     #[test]

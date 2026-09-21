@@ -55,14 +55,17 @@ pub fn collect_fire_blocked_entities(
 
         // Aircraft with 0 ammo cannot fire — must reload at an airfield first.
         if let Some(ref ammo) = entity.aircraft_ammo {
-            if ammo.current <= 0 {
+            // Techno::GetFireError6FCA0D rejects exactly zero, not negative Ammo.
+            if ammo.current == 0 {
                 blocked.insert(entity.stable_id());
                 continue;
             }
         }
 
-        // Aircraft with an active Attack mission fire through the mission system,
-        // not through generic combat. Block them here to prevent double-firing.
+        // Open migration: the aircraft mission currently issues only a legacy
+        // request, not a FireAt call. Keep its exclusion explicit until the
+        // admitted burst caller and pending-ammo writer are connected together;
+        // removing this gate alone would run generic burst/ammo bookkeeping.
         // Docked-idle aircraft are parked on helipad — don't fire.
         if let Some(ref mission) = entity.aircraft_mission {
             if mission.is_attacking() || mission.is_docked_idle() {
@@ -174,5 +177,31 @@ mod tests {
             !blocked.contains(&1),
             "Normal entity should be able to fire"
         );
+    }
+
+    #[test]
+    fn aircraft_signed_ammo_gate_matches_original_fire_error_prefix() {
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/aircraft_attack_release.json"
+        ))
+        .unwrap();
+        let rows = corpus["fire_error_ammo"].as_array().unwrap();
+        assert_eq!(rows.len(), 7);
+        for row in rows {
+            let mut store = EntityStore::new();
+            let mut entity = make_entity(1);
+            entity.category = EntityCategory::Aircraft;
+            let mut ammo = crate::sim::docking::aircraft_dock::AircraftAmmo::new(-1);
+            ammo.current = row["ammo"].as_i64().unwrap() as i32;
+            entity.aircraft_ammo = Some(ammo);
+            store.insert(entity);
+            let (power, rules) = no_power();
+            let blocked = collect_fire_blocked_entities(&store, &power, rules, &test_interner());
+            assert_eq!(
+                blocked.contains(&1),
+                row["blocked"].as_bool().unwrap(),
+                "{row}"
+            );
+        }
     }
 }

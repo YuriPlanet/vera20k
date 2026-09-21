@@ -35,7 +35,9 @@ pub(crate) struct InfantryMissionLeaf {
 /// Aircraft policy and readiness bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AircraftMissionLeaf {
+    /// Aircraft+6D2: shared by Mission_Attack, Fly and ReadyToCommence41B5E0.
     action_latch: u8,
+    /// Aircraft+6D4, independent of the pending-ammunition byte+6C8.
     transition_ready_latch: u8,
     airstrike_manager_present: bool,
 }
@@ -138,7 +140,11 @@ impl MissionLeafState {
 
     /// Aircraft Commence clears the action latch before the common base call.
     pub(crate) fn clear_aircraft_action_for_commence(&mut self) {
-        self.expect_aircraft_mut().action_latch = 0;
+        self.set_aircraft_action_latch(false);
+    }
+
+    pub(crate) fn set_aircraft_action_latch(&mut self, active: bool) {
+        self.expect_aircraft_mut().action_latch = u8::from(active);
     }
 
     #[cfg(test)]

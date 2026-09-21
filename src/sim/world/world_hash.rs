@@ -1508,11 +1508,29 @@ impl Simulation {
                 // actual saved state until their ownership migration retires one.
                 if let Some(ammo) = entity.aircraft_ammo.as_ref() {
                     b"aircraft-ammo-v170".hash(hasher);
+                    #[cfg(test)]
+                    if !schema.includes(HashFeature::AircraftReleaseAuthority) {
+                        ammo.hash_before_pending_release(hasher);
+                    } else {
+                        ammo.hash(hasher);
+                    }
+                    #[cfg(not(test))]
                     ammo.hash(hasher);
                 }
                 if let Some(mission) = entity.aircraft_mission.as_ref() {
                     b"aircraft-mission-v170".hash(hasher);
                     mission.hash(hasher);
+                    #[cfg(test)]
+                    if !schema.includes(HashFeature::AircraftReleaseAuthority)
+                        && matches!(
+                            mission,
+                            crate::sim::aircraft::AircraftMission::Attack { .. }
+                        )
+                    {
+                        // Only the false/false historical fixture is recoverable.
+                        false.hash(hasher);
+                        false.hash(hasher);
+                    }
                 }
             }
             if schema.includes(HashFeature::CreditIncome) {
@@ -2137,16 +2155,10 @@ impl Simulation {
             } else {
                 hash_mission_com_before_v29(&entity.mission, hasher);
             }
-            match entity.aircraft_release_tail {
-                Some(tail) => {
-                    1u8.hash(hasher);
-                    tail.remaining_releases.hash(hasher);
-                    tail.release_pending.hash(hasher);
-                    tail.tail_latch.hash(hasher);
-                    tail.completion_latch.hash(hasher);
-                    tail.clear_target_next.hash(hasher);
-                }
-                None => 0u8.hash(hasher),
+            if !schema.includes(HashFeature::AircraftReleaseAuthority) {
+                // Bounded historical fixtures had no fabricated release tail.
+                // An arbitrary old active tail cannot be reconstructed.
+                0u8.hash(hasher);
             }
             // S4b damage-Spark `+0x308`-equivalent live-system gate. Hashed because
             // it gates future scenario_rng draws (a divergence here desyncs the

@@ -7,12 +7,15 @@
     1,
     33621247
   ],
-  "scope": "316 bounded original successful-release loops and next-state/delay decisions, plus72 original state1/3/10 pending-ammo housekeeping prefixes. Native loop counts, pending-before-FireAt, no mission-side immediate ammo decrement, tier fallback and auxiliary/Fighter branches. Not whole-burst combat parity.",
+  "scope": "316 bounded original successful-release loops and next-state/delay decisions, plus72 original state1/3/10 pending-ammo housekeeping prefixes,144 original post-Commence AI pending-ammo prefixes,21 ammo initialization prefixes and7 common fire-error Ammo checks. Native loop counts, pending-before-FireAt, no mission-side immediate ammo decrement, tier fallback and auxiliary/Fighter branches. Not whole-burst combat parity.",
   "assumptions": [
     "Entry after successful GetFireError; target, ammo, tier and weapon/type inputs supplied.",
     "Original Aircraft vtable cloned to scratch; original auxiliary vtable and GetWeapon execute.",
     "Map reveal418478..4184C2 omitted; original preserved ESI/EBX and balanced stack resumed.",
     "Entry-housekeeping rows stop before target/ammo guards and navigation; signed Ammo and retained flags supplied.",
+    "AI rows enter after Ready/Commence with the resulting current Mission supplied; no preceding promotion effects substituted or claimed.",
+    "Initialization rows execute41403A..414051 with supplied InitialAmmo+680 and Ammo+684. Other constructor effects and INI parsing excluded.",
+    "Fire-error rows isolate the signed Ammo zero check6FCA0D; all preceding and following legality checks excluded.",
     "No FireAt effects, target mutation, damage, RNG, admission or next-entry scheduling claim."
   ],
   "substitutions": [
@@ -27,7 +30,12 @@
     "fighter": "0x0041B840",
     "state1_entry": "0x00418031",
     "state3_entry": "0x004180A1",
-    "state10_entry": "0x00418BEC"
+    "state10_entry": "0x00418BEC",
+    "ai_after_commence": "0x0041505E",
+    "ai_pending_end": "0x00415085",
+    "common_fire_error_ammo": "0x006FCA0D",
+    "initialize_ammo": "0x0041403A",
+    "initialize_ammo_end": "0x00414051"
   },
-  "payload_sha256": "a490284d632a9faa618c3862fc3cec3a31cb11444d739c1e9fd151c7f00ba45b"
+  "payload_sha256": "d07fe98c8ee7736204fb8710b76c2eb2705c5e9ba80a0916d6dac23b9cb41b07"
 }

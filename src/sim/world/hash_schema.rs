@@ -11,6 +11,9 @@
 //! projection: an obsolete cursor/geometry copy cannot be reconstructed from
 //! the current authority. Callers must establish the original fixture's state;
 //! this policy cannot detect an arbitrary stale copy in an old snapshot.
+//! Pre-186 projections omit the pending-ammo byte and assume the removed
+//! AircraftReleaseTail was absent and old Attack booleans were both false.
+//! Those bounded fixtures are recoverable; arbitrary former aircraft state is not.
 
 #[derive(Clone, Copy)]
 pub(super) enum HashSchema {
@@ -79,6 +82,7 @@ pub(super) enum HashFeature {
     FootCrateSpeed = 181,
     DisplayLayers = 182,
     AnimationDisplay = 184,
+    AircraftReleaseAuthority = 186,
 }
 
 impl HashSchema {
@@ -94,6 +98,7 @@ impl HashSchema {
                     | HashFeature::FootCrateSpeed
                     | HashFeature::DisplayLayers
                     | HashFeature::AnimationDisplay
+                    | HashFeature::AircraftReleaseAuthority
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

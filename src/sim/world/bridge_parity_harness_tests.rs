@@ -206,7 +206,10 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 6311521725375046682;
 const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 6927658555461959538;
 // Snapshot182 adds ordered display vectors. The pre-182 projection below
 // must reproduce the previous whole-fixture hash, including all RNG/state.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 121431099463487950;
+// Schema186 removes the always-None release-tail byte. No aircraft participate;
+// pre186 below must reproduce the preceding full hash, with route/RNG unchanged.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 4657864725764756298;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 121431099463487950;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
@@ -797,6 +800,11 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(182)),
         BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182,
         "excluding only display vectors must preserve the pre-182 fixture"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(186)),
+        BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186,
+        "restoring only the absent release-tail fold must reproduce the prior fixture"
     );
     assert_eq!(
         final_hash, BRIDGE_HARNESS_FINAL_HASH,

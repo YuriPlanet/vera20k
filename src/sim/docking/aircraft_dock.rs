@@ -1,7 +1,8 @@
 //! Aircraft ammo tracking and airfield docking system.
 //!
-//! Aircraft with finite `Ammo=` (from rules.ini) deplete ammo on each weapon
-//! fire. When ammo reaches 0, the aircraft auto-returns to the nearest
+//! Native Attack charges a pending release on a later mission/AI entry. The
+//! generic firing adapter still has legacy burst-completion deductions until
+//! its aircraft caller is migrated. With finite ammo depleted, docking seeks a
 //! helipad/airfield owned by the same player, descends onto its assigned
 //! pad cell, reloads, and re-launches.
 //!
@@ -40,14 +41,16 @@ use crate::sim::world::Simulation;
 
 /// Per-entity aircraft ammo and docking state.
 ///
-/// Present only on aircraft with `Ammo= >= 0` in rules.ini.
-/// Entities with `Ammo=-1` (unlimited, the default) have `None`.
+/// Present on every Aircraft, including negative native ammo counts. The
+/// pending release survives Mission changes; it is not an Attack sub-state.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub struct AircraftAmmo {
     /// Current ammo count. 0 = depleted, triggers auto-return.
     pub current: i32,
     /// Maximum ammo (from `Ammo=` in rules.ini).
     pub max: i32,
+    /// Aircraft+6C8, initialized by413D40 and set before the release loop41840E.
+    pending_release: bool,
     /// Current docking/reload lifecycle phase. None = normal flight.
     pub dock_phase: Option<AircraftDockPhase>,
     /// Stable ID of the target helipad/airfield building.
@@ -64,17 +67,61 @@ pub struct AircraftAmmo {
 }
 
 impl AircraftAmmo {
+    /// Aircraft InitFromType414033..41404B selects InitialAmmo unless it is
+    /// exactly -1. No clamping to zero or the type's maximum occurs.
+    pub(crate) fn from_type(obj: &crate::rules::object_type::ObjectType) -> Self {
+        let mut ammo = Self::new(obj.ammo);
+        if obj.initial_ammo != -1 {
+            ammo.current = obj.initial_ammo;
+        }
+        ammo
+    }
+
     /// Create a new ammo tracker with full ammo.
     pub fn new(max_ammo: i32) -> Self {
         Self {
             current: max_ammo,
             max: max_ammo,
+            pending_release: false,
             dock_phase: None,
             target_airfield: None,
             target_pad: None,
             reload_timer: 0,
             rescan_cooldown: 0,
         }
+    }
+
+    /// The admitted Mission_Attack release sets this before its Burst loop,
+    /// even for Burst<=0 or a FireAt call that returns no Bullet. Its production
+    /// writer must be connected with the mission/emission migration; a legacy
+    /// fire request alone is not admission.
+    pub(crate) fn begin_release(&mut self) {
+        self.pending_release = true;
+    }
+
+    pub(crate) const fn release_pending(&self) -> bool {
+        self.pending_release
+    }
+
+    /// Mission_Attack state1/3 and AI after leaving Attack always use DEC;
+    /// state10 alone checks Ammo>0. Clear the pending byte even without a debit.
+    /// Native418031/4180A1/418BEC,41505E; aircraft_attack_release.json witnesses.
+    pub(crate) fn consume_release(&mut self, positive_only: bool) {
+        if std::mem::take(&mut self.pending_release) && (!positive_only || self.current > 0) {
+            self.current = self.current.wrapping_sub(1);
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn hash_before_pending_release(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        self.current.hash(hasher);
+        self.max.hash(hasher);
+        self.dock_phase.hash(hasher);
+        self.target_airfield.hash(hasher);
+        self.target_pad.hash(hasher);
+        self.reload_timer.hash(hasher);
+        self.rescan_cooldown.hash(hasher);
     }
 }
 
@@ -386,6 +433,11 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
                 return None;
             }
             let ammo = e.aircraft_ammo.as_ref()?;
+            // A signed counter also exists on unlimited-ammo aircraft; its
+            // presence alone no longer admits the finite-ammo docking FSM.
+            if ammo.max < 0 {
+                return None;
+            }
             // Skip aircraft managed by the mission system.
             if e.aircraft_mission.is_some() {
                 return None;

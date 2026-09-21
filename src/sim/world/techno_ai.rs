@@ -161,6 +161,7 @@ impl Simulation {
                 return;
             }
             sim.mission_host_promote(id, now, rules);
+            sim.aircraft_ammo_after_commence(id);
         });
     }
 
@@ -183,6 +184,21 @@ impl Simulation {
             return;
         }
         self.mission_host_promote(id, self.session.binary_frame, rules);
+        self.aircraft_ammo_after_commence(id);
+    }
+
+    /// AircraftAI41505E..415085 consumes a pending release after Ready/Commence,
+    /// using the resulting native Mission+AC, including when an order interrupts
+    /// Attack. It neither reads nor clears the separate readiness latch+6D2.
+    fn aircraft_ammo_after_commence(&mut self, id: u64) {
+        let Some(entity) = self.substrate.entities.get_mut(id) else {
+            return;
+        };
+        if entity.category == EntityCategory::Aircraft && entity.mission.current().raw() != 1 {
+            if let Some(ammo) = entity.aircraft_ammo.as_mut() {
+                ammo.consume_release(false);
+            }
+        }
     }
 
     /// One `VoxelAnimClass::AI @ 0x00749F30` LogicVector slot.

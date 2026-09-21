@@ -976,8 +976,8 @@ fn child_ammo(sim: &Simulation, child_id: u64) -> i32 {
         .get(child_id)
         .and_then(|c| c.aircraft_ammo.as_ref())
         .map(|a| a.current)
-        // No finite-ammo tracking means unlimited; native reads Ammo=-1 the
-        // same way and never sends such a child home to rearm.
+        // Real Aircraft now retain their signed count, including -1. This
+        // fallback applies only to incomplete/non-Aircraft compatibility data.
         .unwrap_or(i32::MAX)
 }
 
@@ -988,11 +988,7 @@ fn assign_child_attack(sim: &mut Simulation, child_id: u64, target: TargetKind) 
             TargetKind::Cell(rx, ry) => crate::sim::combat::AttackTarget::for_cell(rx, ry),
         });
         if let Some(mission) = child.aircraft_mission.as_mut() {
-            *mission = crate::sim::aircraft::AircraftMission::Attack {
-                sub_state: 0,
-                has_fired: false,
-                is_strafe: false,
-            };
+            *mission = crate::sim::aircraft::AircraftMission::Attack { sub_state: 0 };
         }
     }
 }

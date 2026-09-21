@@ -808,16 +808,12 @@ pub struct GameEntity {
     /// or servicing at a repair depot.
     pub dock_state: Option<DockState>,
     /// Aircraft ammo tracking and airfield docking state.
-    /// Present on aircraft with finite `Ammo=` (>= 0) from rules.ini.
-    /// None for unlimited-ammo aircraft (`Ammo=-1`) and non-aircraft entities.
+    /// Present on all Aircraft, including signed negative native Ammo counts.
+    /// Non-aircraft entities have no aircraft ammo owner.
     pub aircraft_ammo: Option<AircraftAmmo>,
     /// Aircraft mission state machine — controls attack runs, guard, RTB, idle.
     /// Present on aircraft with Fly locomotor. None for non-aircraft and jumpjets.
     pub aircraft_mission: Option<AircraftMission>,
-    /// Final-release latches retained between consecutive `Mission_Attack`
-    /// entries. This stays separate from the broader, still-residual volley
-    /// cadence rather than borrowing RA2 strafe state.
-    pub aircraft_release_tail: Option<crate::sim::aircraft::runtime_contract::AircraftReleaseTail>,
     /// Infantry sub-cell position (0–4). Only meaningful for infantry.
     pub sub_cell: Option<u8>,
     /// Whether this entity can be crushed by vehicles (Crushable= in rules.ini).
@@ -1364,7 +1360,6 @@ impl GameEntity {
             dock_state: None,
             aircraft_ammo: None,
             aircraft_mission: None,
-            aircraft_release_tail: None,
             // Infantry get sub-cell 2 (first distinct position) at spawn so
             // they don't all pile up at cell center when multiple are created.
             sub_cell: if category == EntityCategory::Infantry {
