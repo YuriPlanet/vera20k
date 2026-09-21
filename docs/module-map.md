@@ -1,12 +1,12 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `ba928b648c9ec2df49146e27f5ff404d3d8832ae` (2026-09-21), cargo-modules 0.26.0.
+Generated snapshot: `96135ec43fb28d17b7aeab61507fe97c29edc151` (2026-09-21), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
 External crates and the sysroot are excluded from the dependency graph.
-Contains **839 modules plus the crate root**, and **5311 distinct
+Contains **839 modules plus the crate root**, and **5312 distinct
 cross-module dependency edges**. Check this source commit against your checkout.
 <!-- module-map:provenance:end -->
 
@@ -142,7 +142,7 @@ app::presentation::instances -> app::presentation::instances::helpers; app::pres
 app::presentation::instances::bridges -> app::presentation::instances::helpers; app::state; map::bridge_facts; map::lighting; map::terrain; render::batch; render::bridge_atlas; render::bridge_railing_atlas; render::draw_state; sim::bridge_state
 app::presentation::instances::foot_depth -> app::state; map::entities; map::resolved_terrain; render::foot_depth; rules::object_type; rules::overlay_types; sim::game_entity; sim::movement::locomotor; sim::overlay_grid; sim::runtime; util::native_x87
 app::presentation::instances::helpers -> app::state; map::entities; map::terrain; render::batch; render::draw_state; render::native_z; rules::locomotor_type; sim::components; sim::game_entity; sim::intern; sim::vision; sim::world
-app::presentation::instances::overlays -> app::presentation::instances::helpers; app::presentation::render::draw_plan_lowering; app::state; map::terrain; render::batch; render::bridge_atlas; render::native_z; render::overlay_atlas; render::palette_light; render::sprite_atlas; render::tactical_draw_plan; rules::art_data; rules::house_colors; rules::overlay_types; sim::anim_class; sim::intern; sim::projectile; util::fixed_math
+app::presentation::instances::overlays -> app::presentation::instances::helpers; app::presentation::render::draw_plan_lowering; app::state; map::terrain; render::batch; render::bridge_atlas; render::native_z; render::overlay_atlas; render::palette_light; render::sprite_atlas; render::tactical_draw_plan; rules::art_data; rules::house_colors; rules::overlay_types; sim::anim_class; sim::intern; sim::projectile; sim::world; util::fixed_math
 app::presentation::instances::particles -> app::presentation::instances::helpers; app::state; map::terrain; render::batch; render::sprite_atlas; rules::house_colors; rules::particle_system_type; rules::particle_type
 app::presentation::instances::shp -> app::presentation::instances::helpers; app::presentation::render::draw_plan_lowering; app::state; map::entities; map::lighting; render::batch; render::draw_state; render::native_z; render::palette_light; render::sprite_atlas; render::tactical_draw_plan; render::unit_atlas; rules::art_data; rules::house_colors; sim::animation; sim::components; sim::game_entity; sim::scenario_session; sim::world
 app::presentation::instances::units -> app::presentation::instances::helpers; app::presentation::render::draw_plan_lowering; app::state; map::entities; map::lighting; render::batch; render::draw_state; render::native_z; render::palette_light; render::sprite_atlas; render::tactical_draw_plan; render::unit_atlas; render::unit_slope_transition_cache; rules::house_colors; sim::components; sim::game_entity
