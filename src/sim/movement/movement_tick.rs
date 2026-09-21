@@ -1704,22 +1704,11 @@ fn advance_ordinary_mover(
             } else {
                 target.current_speed * cell_speed_mod
             };
-            let mut frame_budget = if uses_drive_locomotor || uses_ship_locomotor {
-                entity.foot_speed.cached_current_speed
-            } else {
-                movement_step::movement_frame_budget_from_current_speed(effective_speed)
-            };
-            if let Some(crawls) = prone_crawls {
-                frame_budget =
-                    infantry::apply_prone_speed(SimFixed::from_num(frame_budget), crawls)
-                        .to_num::<i32>();
-            }
             // Hover turn-stall: hold position while the body swings through a
             // >45° turn (the throttle keeps braking above). See hover_steer's
             // doc for why translation is suppressed rather than decayed.
             if hover_stall {
                 effective_speed = SIM_ZERO;
-                frame_budget = 0;
             }
 
             // Advance sub_x/sub_y toward the next cell — either via drive track
@@ -1853,6 +1842,32 @@ fn advance_ordinary_mover(
                         movement_step::AdvanceResult::DriveTrackFreshBlocked(refusal)
                     }
                 }
+            } else if entity
+                .locomotor
+                .as_ref()
+                .is_some_and(|l| l.kind == LocomotorKind::Walk)
+            {
+                let object = rules.and_then(|r| r.object(interner.resolve(entity.type_ref())));
+                let adjusted_speed = super::foot_speed::adjusted_speed(
+                    entity,
+                    object,
+                    rules.map_or(1.0, |r| r.general.veteran_speed),
+                );
+                super::walk_step::advance(
+                    entity,
+                    adjusted_speed,
+                    prone_crawls,
+                    native_frame,
+                    resolved_terrain,
+                    path_grid,
+                );
+                movement_step::advance_infantry_wobble(
+                    &mut entity.locomotor,
+                    entity.category,
+                    entity_id,
+                    dt,
+                );
+                movement_step::AdvanceResult::ReadyForCrossings
             } else {
                 movement_step::advance_lepton_position(
                     target,
@@ -1860,14 +1875,14 @@ fn advance_ordinary_mover(
                     &mut entity.locomotor,
                     entity.category,
                     effective_speed,
-                    frame_budget,
                     dt,
                     entity_id,
-                    current_occupation_layer,
-                    path_grid,
-                    resolved_terrain,
                 )
             };
+            let target = entity
+                .movement_target
+                .as_mut()
+                .expect("active execution target");
             if target.next_index > prior_path_index {
                 active_layer = target.layer_at(prior_path_index);
                 if let Some(loco) = entity.locomotor.as_mut() {
@@ -3492,7 +3507,13 @@ fn finalize_finished_entities(
             }
             super::navcom::finish_drive_navigation(entity, resolved_terrain);
             entity.movement_target = None;
-            entity.body_facing = None; // steering/turn interpolator ends with the move
+            if !entity
+                .locomotor
+                .as_ref()
+                .is_some_and(|l| l.kind == LocomotorKind::Walk)
+            {
+                entity.body_facing = None; // legacy steering/turn interpolator cleanup
+            } // Walk's retained FacingClass survives arrival, as native +388 does.
             let old_phase = entity.locomotor.as_ref().map(|l| l.phase);
             if let Some(ref mut loco) = entity.locomotor {
                 loco.phase = GroundMovePhase::Idle;

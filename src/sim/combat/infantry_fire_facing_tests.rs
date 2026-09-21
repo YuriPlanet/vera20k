@@ -529,9 +529,24 @@ fn production_attack_during_paid_walk_step_waits_before_turning_and_firing() {
         "order keeps the paid-step heading"
     );
     assert_eq!(entity.foot_speed.applied_fraction, SimFixed::ONE);
+    let mut resumed = restore_production_pair(&sim);
+    sim.scenario_rng = SimRng::new(0); // Native Scenario load reseeds this stream.
+    assert_eq!(sim.state_hash(), resumed.state_hash());
     let mut refused_frames = 0;
     for _ in 0..100 {
+        let position = &sim.substrate.entities.get(firer).unwrap().position;
+        let current = crate::sim::movement::ground_pose::position_world_xy(position);
+        let step_heading = crate::util::direction_tables::facing16_from_delta(
+            head.x - current[0],
+            head.y - current[1],
+        );
         frame(&mut sim);
+        frame(&mut resumed);
+        assert_eq!(
+            sim.state_hash(),
+            resumed.state_hash(),
+            "paid Walk save/restore continuation"
+        );
         let entity = sim.substrate.entities.get(firer).unwrap();
         let fired = sim
             .fire_events
@@ -540,9 +555,12 @@ fn production_attack_during_paid_walk_step_waits_before_turning_and_firing() {
         if entity.foot_speed.applied_fraction > SimFixed::ONE / SimFixed::from_num(10) {
             assert!(!fired, "a retained paid step cannot fire");
             assert_eq!(
-                entity.body_facing,
-                Some(body),
-                "no premature fire-start turn"
+                entity
+                    .body_facing
+                    .unwrap()
+                    .current(sim.session.binary_frame),
+                step_heading,
+                "movement may correct toward its head; fire must not turn toward the enemy"
             );
             assert!(
                 entity

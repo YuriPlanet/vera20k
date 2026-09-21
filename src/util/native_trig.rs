@@ -7,7 +7,67 @@
 //! multiple of pi/16 therefore reduces to a table read, and porting the read is
 //! exact where recomputing the angle is not.
 //!
-//! Dependencies: none. Data only.
+//! Shared retail table data, bounded FLH lookups and integer Walk displacement.
+
+// Original 0084F084 table, extracted and checked by walk_direction_table.py.
+// The small FLH arrays below are derived lookups for its different, f32-narrowed
+// angle input. Walk uses a full signed direction and must not quantize to 32 steps.
+const RETAIL_SINE_TABLE: &[u8; 10241 * 4] = include_bytes!("native_trig_table.bin");
+
+fn sine_table_bits(index: usize) -> u32 {
+    let offset = index * 4;
+    u32::from_le_bytes(RETAIL_SINE_TABLE[offset..offset + 4].try_into().unwrap())
+}
+
+fn walk_sine_index(facing: u16) -> usize {
+    // 75C067: signed direction - 3FFF, times double 7E2810. Sin/Cos then
+    // multiply by float 8223B0/8223B4. Their exact product is this dyadic ratio.
+    // Integer evaluation gives the same truncated index for ALL 65536 words
+    // as the original instruction sequence (walk_direction_table corpus).
+    const NUMERATOR: i128 = 75_560_166_591_041_506_239_877;
+    const DENOMINATOR: i128 = 1 << 78;
+    let direction = i128::from(facing as i16) - 0x3FFF;
+    let raw = (-direction * NUMERATOR / DENOMINATOR) as i32;
+    let mut index = (raw / 2).rem_euclid(8192);
+    if raw & 1 != 0 && index < 8191 {
+        index += 1;
+    }
+    index as usize
+}
+
+fn advance_integer_coordinate(origin: i32, speed: i32, coefficient: u32) -> i32 {
+    // Keep the table's binary fraction as an integer numerator/denominator.
+    // Rounding it to I16F16 first would erase tiny negative cardinal entries:
+    // native truncates the final world coordinate, so those can pay one lepton.
+    // No host floating point or additional x87 emulation is used here.
+    if coefficient & 0x7FFF_FFFF == 0 || speed == 0 {
+        return origin;
+    }
+    let exponent = ((coefficient >> 23) & 0xFF) as i32;
+    let shift = (150 - exponent) as u32;
+    let mantissa = i128::from((coefficient & 0x7F_FFFF) | 0x80_0000);
+    let signed = if coefficient >> 31 == 0 {
+        mantissa
+    } else {
+        -mantissa
+    };
+    let numerator = (i128::from(origin) << shift) + signed * i128::from(speed);
+    i32::try_from(numerator / (1_i128 << shift)).expect("Walk world coordinate exceeds i32")
+}
+
+/// Walk75C067..75C0CB: advance using the newly requested full direction word.
+/// The body snap may retain its old destination on equality; movement still
+/// consumes the new direction. Inputs/outputs are whole world leptons, with Z
+/// and subsequent placement owned by the caller. Table products remain exact
+/// at the simulation's bounded integer movement speeds; final truncation is
+/// toward zero, after adding each displacement to its world coordinate.
+pub(crate) fn walk_step_world_xy(current: [i32; 2], facing: u16, speed: i32) -> [i32; 2] {
+    let index = walk_sine_index(facing);
+    [
+        advance_integer_coordinate(current[0], speed, sine_table_bits(index + 2048)),
+        advance_integer_coordinate(current[1], speed, sine_table_bits(index) ^ 0x8000_0000),
+    ]
+}
 
 /// The reachable index range on both `TechnoClass::GetFLH` branches.
 ///
@@ -103,6 +163,30 @@ pub fn rotate_z_by_step(point: (f32, f32, f32), step: i32) -> Option<(f32, f32, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_walk_heading_uses_the_original_trig_entries() {
+        use crate::util::sha256::{Sha256, digest_hex, sha256_hex};
+        let oracle: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tools/spatial_oracle/walk_direction_table.json"
+        ))
+        .unwrap();
+        assert_eq!(sha256_hex(RETAIL_SINE_TABLE), oracle["table_sha256"]);
+        let mut indexes = Sha256::new();
+        let mut values = Sha256::new();
+        for heading in 0..=u16::MAX {
+            let sine = walk_sine_index(heading);
+            for index in [sine, sine + 2048] {
+                indexes.update(&(index as u16).to_le_bytes());
+                values.update(&sine_table_bits(index).to_le_bytes());
+            }
+        }
+        assert_eq!(
+            digest_hex(indexes.finalize()),
+            oracle["sin_cos_index_sha256"]
+        );
+        assert_eq!(digest_hex(values.finalize()), oracle["sin_cos_bits_sha256"]);
+    }
 
     #[test]
     fn gsi_08_04_table_covers_the_full_signed_step_range() {

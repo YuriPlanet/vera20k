@@ -472,7 +472,7 @@ fn finalize_tube_object(
             }
         } else {
             let owner_current_speed = entity.movement_target.as_ref().map_or(0, |target| {
-                super::drive_locomotion::owner_current_speed_from_fraction(target.speed, SIM_ONE)
+                super::foot_speed::owner_current_speed_from_fraction(target.speed, SIM_ONE)
             });
             entity.position.rx = tube.exit.0;
             entity.position.ry = tube.exit.1;

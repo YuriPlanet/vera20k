@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "40 paid-step vectors covering ten directions at three integer speeds, three boundary/near-head cases, zero speed, active-turn equality and five chained steps from the Slice6 production head. No complete Process, admission, completion or speed-getter claim.",
+  "assumptions": [
+    "Supplied post-admission paid-head frame, owner XYZ and heading; original Walk constructor executes.",
+    "Flat/same-Z cases; endpoints precede physical coordinate, height and occupation transactions.",
+    "Original facing setter executes, including a live-angle equality contrast."
+  ],
+  "substitutions": [
+    "External Infantry movement-speed receiver returns the supplied integer; its original body and Foot getter are excluded."
+  ],
+  "entry_points": {
+    "walk_process": "0x0075AEC0",
+    "paid_step": "0x0075BFA9",
+    "boundary": "0x0075C117",
+    "same_cell": "0x0075C1FB",
+    "foot_speed_setter": "0x004D3710",
+    "infantry_movement_speed": "0x00521D80",
+    "walk_turn": "0x0075AE00",
+    "facing_snap": "0x004C9300",
+    "sin_table": "0x004CACB0",
+    "cos_table": "0x004CAD00"
+  },
+  "payload_sha256": "c08d850a49023af1b8db58195c390087f808b85e999abc7ce2c3d85ff76ae301"
+}

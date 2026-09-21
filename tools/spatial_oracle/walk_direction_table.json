@@ -1,0 +1,8 @@
+{
+  "facing_count": 65536,
+  "sin_cos_bits_sha256": "7b9d9995043caed446f4e7e2acb4ee9e3ff5ff497a0d255942f16b6fb9d8d6fe",
+  "sin_cos_index_sha256": "184e3095ddd31606fc514e8c373b50a2b1d99346f7a1051f286a2484270951b2",
+  "table_address": "0084F084",
+  "table_length": 10241,
+  "table_sha256": "4ee3da2c916c24aad0bd194f9d548100498a38d0085fed74bd6763adc64628b9"
+}

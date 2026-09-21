@@ -1,10 +1,9 @@
-//! Unit movement system — moves entities along A* paths each tick.
+//! Locomotor movement and its shared Foot/coordinate owners.
 //!
-//! The movement system reads MovementTarget fields and advances entities
-//! toward their destination using lepton-based sub-cell movement.
-//! Each tick, `sub_x`/`sub_y` advance along the direction vector at
-//! `speed` leptons per second. Cell transitions occur when sub_x/sub_y
-//! cross the cell boundary (0 or 256 leptons).
+//! Native-frame visits execute the retained locomotor state: Drive/Ship use
+//! their track hosts and Walk pays a polar step toward its accepted head.
+//! Other locomotors retain their class-specific movement adapters. Coordinate
+//! and occupation transactions publish the resulting whole-cell crossings.
 //!
 //! ## Coordinate update
 //! Movement advances `rx`/`ry`/`sub_x`/`sub_y` only. Screen position is not
@@ -15,8 +14,8 @@
 //! ## Facing
 //! RA2 uses a 0-255 screen-relative DirStruct byte: 0=north on screen (iso -x,-y),
 //! 64=east on screen (iso +x,-y), 128=south on screen (iso +x,+y),
-//! 192=west on screen (iso -x,+y). Facing is updated whenever the entity starts
-//! moving toward a new cell.
+//! 192=west on screen (iso -x,+y). The full heading lives in FacingClass;
+//! Walk updates it on each paid step and publishes its high-byte mirror.
 //!
 //! ## Sub-modules
 //! - `movement_commands` — A* pathfinding and MovementTarget attachment
@@ -58,6 +57,7 @@ mod cell_arrival;
 mod drive_locomotion;
 mod foot_mark;
 mod foot_coordinate;
+mod foot_speed;
 pub(crate) mod ground_pose;
 pub(crate) mod infantry_entry;
 pub(crate) mod locomotor_owner;
@@ -87,6 +87,7 @@ pub(crate) mod track_speed_native;
 pub(crate) mod walk_head;
 mod walk_host;
 mod walk_path;
+mod walk_step;
 
 // --- Movement-related modules (public API) ---
 pub mod air_movement;
@@ -112,7 +113,7 @@ pub mod turret;
 pub use facing_class::FacingClass;
 
 #[cfg(test)]
-pub(crate) use drive_locomotion::owner_current_speed_from_fraction;
+pub(crate) use foot_speed::owner_current_speed_from_fraction;
 // NOT test-gated: `techno_common_pre`'s DisguiseWhenStill check
 // (sim/world/techno_ai.rs) consumes this in every build; a 2026-08-14
 // warning-cleanup gate on it broke release-only compilation.

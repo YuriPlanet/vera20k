@@ -52,7 +52,7 @@ Acceptance before implementation:
 - Relevant Ghidra annotations are saved and read back. Focused tests, the full
   library suite and library Clippy pass before the one independent PR review.
 
-## Current state
+## Accepted first mechanism (PR #439)
 
 The implementation moves Infantry facing from entity/cell orders and
 retaliation into the fire-start receiver. It updates the existing body FacingClass
@@ -114,11 +114,140 @@ Techno legality first, then refuses when Foot `+578` exceeds binary64 0.1
 above; its Ghidra label/comment were saved and read back. NavCom/action interruption
 and locomotor-specific gates remain open. WalkHost supplies completion/boundary
 transactions and `finish_fresh_head` sets applied speed to one; completion clears it.
-The paid step still reaches `movement_tick`'s `advance_lepton_position` adapter,
+At PR439, the paid step still reached `movement_tick`'s `advance_lepton_position` adapter,
 contradicting `movement_step`'s native-polar-step claim. Porting its original numeric
 step remains required. These are leads, not a complete inventory.
 FacingClass::snap's live-angle equality discrepancy is now corrected
 against original-code execution: cancel the timer while retaining the old target.
 
-Next: publish/merge the validated
-increment and continue the required combat chains. The whole-combat goal is open.
+Published and merged as PR #439, merge `d47a9247`; final source correction
+`c0b854a9`. No Cargo process or review remains pending for that increment.
+
+## Next mechanism: paid Walk step used by combat approach
+
+Current branch `feature/combat-walk-step`, based on refreshed `origin/main`
+`d47a9247`, in the same owned worktree. The whole-combat goal remains open.
+
+Native `WalkLocomotionClass::ProcessMovement @ 0075AEC0` takes the paid-head
+arm at `0075BD25`. Outside the `<17` completion arm and owner movement refusal,
+`0075BFA9` sets Foot speed fraction to one, queries Infantry's movement speed
+through `+538 -> 00521D80`, computes the head direction and calls the actual
+Walk facing setter at `0075C035`. `0075C067..0075C0CB` computes signed-heading
+sine/cosine displacement and truncates the final world coordinates. The result
+selects the existing same-cell or boundary transaction. At the branch baseline,
+Rust reached `advance_lepton_position` and a direct normalized vector instead.
+The source comment claiming a live native-polar WalkHost dispatch was incorrect.
+
+Acceptance before implementation:
+
+- Original instruction witnesses cover the numeric step, speed input, direction
+  update and resulting same-cell/boundary decision, including diagonals and small
+  speed/offset contrasts; distinguish supplied speed from the full getter chain.
+- Production Walk pays this step once per native visit through existing Foot,
+  facing and coordinate owners, preserving completion, occupation and height
+  transactions. Remove the competing generic Walk calculation and false claims.
+- Reuse/complete live speed prerequisites, including Infantry's prone override;
+  do not duplicate a track-owned speed calculation as another Walk authority.
+- Demonstrate approach-to-fire behavior and save/restore through production
+  commands/frames; validate deterministic SimFixed math and documented rounding.
+- Native corpus checks, affected production tests, full library tests and Clippy
+  precede one fresh critic for this new PR. Integrate accepted work and continue.
+
+## Current Walk checkpoint
+
+Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
+Branch `feature/combat-walk-step`, source HEAD `c80821f3`, including the runtime
+port `fe7df21a` and the validated critic correction. Fetched main remains `d47a9247`.
+The primary checkout's local instruction edits are untouched.
+
+Production Walk now uses `walk_step::advance`: set Foot fraction, resolve live
+speed plus the Infantry prone override, clear the blocked latch, snap the full
+body heading and pay native table displacement. FacingClass survives arrival.
+The normalized-vector Walk arm and its old budget helpers are deleted. Shared
+speed resolution moved from Track/Drive to `foot_speed`; Track, Walk and Tube
+consumers use it. Other locomotors retain their own execution paths. Existing
+same-cell height and boundary/completion owners remain in place.
+
+Native `walk_paid_step --check` passes 40 original-code vectors. Its first 35
+rows are unchanged, including cardinal transverse rounding and live-turn equality
+(the body may retain its old destination while displacement uses the new SI
+heading). Five additional native outputs carry the production Slice6 head
+through five consecutive steps. The Rust full-frame replay asserts those
+coordinates/headings. `walk_direction_table --check` exhausts all 65,536 direction
+words, comparing original lookup indexes, table bits and the extracted retail
+table. Rust's integer lookup test passes; no new runtime x87 emulator is added.
+The corpora supply the movement-speed integer and do not certify full Process
+admission, placement or the complete Foot getter.
+
+The initial full library run had 9,089 passes, three failures, 134 ignored.
+The new native tests and production move-to-fire/save-restore regression passed.
+Two prone expectations used stale request speed 11 instead of live type speed 10;
+they now expect native prone results 7/15 and verify the Foot cache remains 10.
+The Slice6 hash change was independently attributed against a rebuilt ec27dc26:
+only E1 changes from frame 12, tanks/RNG match on all 16 frames, and replacing only
+E1 restores both prior hashes exactly. See
+[the receipt](../research/COMBAT_WALK_REPLAY_ATTRIBUTION.md). Its pins are updated
+with native per-frame assertions; the global replay pin required no change.
+After the single fresh read-only critic pass and owner correction, the final
+full library run passes: 9,093 passed, zero failed, 134 ignored. Library Clippy
+passes with 1,027 warnings. Final logs are preserved in the owned worktree's
+`.local/walk-validation/lib-tests-final.log` and `clippy-final.log`.
+
+The critic found a competing completion-facing writer: the generic next-cell
+configuration changed the displayed byte toward the next cell while leaving the
+body FacingClass unchanged. Walk completion now advances only the execution path
+cursor. Original75BD70..75BF82 contains no movement turn; fresh acceptance75BC97
+and the paid step75C035 own it. The new regression runs world completion through
+Mark/PerCell, then a refused and accepted next-head selection at a corner, checking
+both heading representations. Native completion (42 rows), paid step (40 rows)
+and exhaustive direction selection were rerun successfully. The75BD97 annotation
+is saved and read back. No second critic pass is needed or requested.
+
+Ghidra comments at 75BFA9/75C067 preserve the paid-step comparisons; the exhaustive
+lookup note is saved/read back. The movement-refusal prerequisite also exposed a
+false source comment: BoomerTorpedo uses APSplash2, Robogun uses AP, and stock
+EMPuls is annotated disabled. Techno70EFD0 reads +504>0; Unit746C90 also tests
++6D8!=-1 (not the claimed DeployTarget+6CC). Its corrected plate is saved/read
+back. EMPulse::Apply4C54E0 writes +504 but its constructor4C52B0 has no observed
+incoming Ghidra references. This does not prove unreachability; creation/load and
++6D8 identity remain open. The cloak comment no longer asserts invented stock
+EMP effects. No EMP behavior was added or declared complete.
+
+Speed prerequisite work remains: House50C050 selects HouseType +0x128 (Infantry),
++0x12C (Unit) or +0x130 (Aircraft) multipliers; Foot4DB1A0 also consumes crate+580 and conditionally
+halves Unit flag-carrier speed. Current `foot_speed` preserves the existing
+fixed projection and FASTER handling; those missing production inputs are not
+closed by `track_speed_native`'s isolated oracle. Infantry521D80 then applies
+prone adjustment, which uses the existing `infantry::apply_prone_speed` owner.
+NavCom/action legality, launch inputs, special warhead effects and the final
+whole-combat audit also remain required; this increment does not close the goal.
+
+Next safe action: publish/merge the validated Walk increment, then continue the
+required combat dependencies. The local
+comparison checkout `.local/walk-baseline-ec27` retains only a temporary test
+probe; it is not a second implementation to publish.
+
+## Next dependency: live Foot speed inputs and crate pickup
+
+Native4DB1A0 applies type speed, House50C050's category factor and Foot+580,
+truncates, applies FASTER/VeteranSpeed with another truncation, then applies
+Foot+578 and truncates before the Unit+6CC conditional halving. Production
+`foot_speed` lacks the house/crate/flag inputs; `CountryRules` does not parse the
+speed multipliers, and `crates` explicitly leaves pickup effects unported.
+
+Walk's accepted-head selection calls481A00 at75C56C, passing the Foot owner and
+the Cell returned by Map565730. This proves a production pickup route; the prior
+Ghidra name `CrateClass__PickupDispatch` assigned the wrong receiver class.
+Renamed to `CellClass__PickupCrate`, with the receiver/caller evidence saved and
+read back. Entry reads Cell+44 overlay and+11E selection. Its speed continuation
+48302E..48306C checks a strict distance, a currently-one+580 multiplier and object
+kind before storing the multiplied factor. The continuation lies beyond Ghidra's
+current function boundary; that boundary was not changed.
+
+Before implementation, establish pickup selection, eligibility, effect iteration,
+RNG, removal and return behavior from original instructions, with executable
+witnesses. Acceptance requires production movement to reach the same pickup
+effects and subsequent Foot speed, including affected consumers and save/restore.
+Use the existing country, crate, Foot and lifecycle owners; adding a supplied
+factor to an isolated speed helper does not complete this dependency. Trace the
+Unit+6CC writer/cleanup before treating its current flag-carrier label as proven.

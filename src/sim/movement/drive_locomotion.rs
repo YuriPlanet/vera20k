@@ -216,31 +216,12 @@ fn update_vehicle_speed_fraction(
     *current_slot = current.clamp(SIM_ZERO, SIM_ONE);
 }
 
-/// Reproduce the positive/zero value returned by owner slot `+0x538` for the
-/// active stock vehicle speed path.
-///
-/// `FootClass::GetCurrentSpeed` first truncates the type/owner-adjusted raw
-/// speed, then multiplies by owner `+0x578` and truncates again. Rust keeps the
-/// adjusted speed in leptons/second, so dividing by the 15-Hz native baseline
-/// recovers the first integer before applying the Foot-owned fraction.
-///
-/// This remains a fixed-point projection. The caller already applies the
-/// FASTER ability for veteran and elite owners, but native house/crate factors,
-/// CTF signed halving, and exact staged x87 truncation require the pending Foot
-/// numeric-owner migration; see track_speed_native and its executable corpus.
-pub(crate) fn owner_current_speed_from_fraction(
-    adjusted_speed_per_second: SimFixed,
-    current_speed_fraction: SimFixed,
-) -> i32 {
-    let adjusted_type_speed = (adjusted_speed_per_second / SimFixed::from_num(15)).to_num::<i32>();
-    (SimFixed::from_num(adjusted_type_speed) * current_speed_fraction).to_num::<i32>()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
     use crate::rules::terrain_rules::{SpeedCostProfile, TerrainClass};
+    use crate::sim::movement::foot_speed::owner_current_speed_from_fraction;
     use crate::util::fixed_math::{SIM_HALF, SIM_ONE, SIM_ZERO};
 
     #[test]

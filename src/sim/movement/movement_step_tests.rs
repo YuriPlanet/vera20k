@@ -38,12 +38,8 @@ fn exhausted_foot_queue_cannot_bypass_drive_or_ship_track_admission() {
                 &mut Some(LocomotorState::for_test_kind(kind)),
                 EntityCategory::Unit,
                 SimFixed::from_num(255),
-                255,
                 SimFixed::from_num(1) / SimFixed::from_num(15),
                 1,
-                MovementLayer::Ground,
-                None,
-                None,
             );
             assert!(
                 matches!(result, AdvanceResult::DriveTrackActive),
@@ -139,66 +135,6 @@ fn test_body_rotation_matches_native_frame_duration() {
     );
     // ROT=0 snaps instantly (no gradual rotation).
     assert_eq!(frames_to_turn(0x00, 0x40, 0), 0, "ROT=0 turns instantly");
-}
-
-fn advance_straight_walk(effective_speed: SimFixed, frame_budget: i32) -> Position {
-    let mut target = MovementTarget {
-        path: vec![(0, 0), (1, 0)],
-        path_layers: vec![MovementLayer::Ground; 2],
-        next_index: 1,
-        speed: effective_speed,
-        current_speed: effective_speed,
-        move_dir_x: SimFixed::from_num(256),
-        move_dir_y: SIM_ZERO,
-        move_dir_len: SimFixed::from_num(256),
-        final_goal: Some((1, 0)),
-        ..Default::default()
-    };
-    let mut position = Position {
-        rx: 0,
-        ry: 0,
-        z: 0,
-        exact_z_leptons: None,
-        sub_x: SimFixed::from_num(128),
-        sub_y: SimFixed::from_num(128),
-    };
-    let mut locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
-
-    let result = advance_lepton_position(
-        &mut target,
-        &mut position,
-        &mut locomotor,
-        EntityCategory::Infantry,
-        effective_speed,
-        frame_budget,
-        SimFixed::from_num(1) / SimFixed::from_num(15),
-        1,
-        MovementLayer::Ground,
-        None,
-        None,
-    );
-    assert!(matches!(result, AdvanceResult::ReadyForCrossings));
-    position
-}
-
-#[test]
-fn straight_walk_commits_the_whole_frame_budget() {
-    let effective_speed = SimFixed::from_num(150);
-    let position = advance_straight_walk(
-        effective_speed,
-        movement_frame_budget_from_current_speed(effective_speed),
-    );
-
-    assert_eq!(position.sub_x, SimFixed::from_num(138));
-    assert_eq!(position.sub_y, SimFixed::from_num(128));
-}
-
-#[test]
-fn straight_walk_zero_budget_leaves_position_unchanged() {
-    let position = advance_straight_walk(SIM_ZERO, 0);
-
-    assert_eq!(position.sub_x, SimFixed::from_num(128));
-    assert_eq!(position.sub_y, SimFixed::from_num(128));
 }
 
 fn native_track_fixture(kind: LocomotorKind, budget: i32) -> (Simulation, TrackInvocation, i32) {
@@ -423,7 +359,8 @@ fn drive_track_completion_preserves_residual_through_fresh_acceptance() {
 #[test]
 fn drive_track_first_native_frame_uses_native_frame_budget() {
     let current_speed = SimFixed::from_num(255) * SimFixed::lit("0.7");
-    let budget = movement_frame_budget_from_current_speed(current_speed);
+    let budget =
+        crate::sim::movement::foot_speed::owner_current_speed_from_fraction(current_speed, SIM_ONE);
     assert_eq!(budget, 11);
     let (mut sim, invocation, budget) = native_track_fixture(LocomotorKind::Drive, budget);
     assert_eq!(
