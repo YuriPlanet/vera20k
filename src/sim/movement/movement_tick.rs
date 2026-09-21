@@ -2515,8 +2515,7 @@ fn prepare_movement_pass(
         mover_owners
             .iter()
             .map(|&owner_id| {
-                let lent =
-                    block_index.lend_current(owner_id, entities, alliances, interner, rules);
+                let lent = block_index.lend_current(owner_id, entities, alliances, interner, rules);
                 (owner_id, lent)
             })
             .collect();
@@ -3292,6 +3291,7 @@ pub(crate) fn finish_movement_pass(
 /// together instead of faster units pulling ahead.
 pub(crate) fn sync_formation_speeds_after_live_pass(entities: &mut EntityStore) {
     let mut group_min_speed: BTreeMap<u32, SimFixed> = BTreeMap::new();
+    let mut grouped: Vec<(u64, u32, SimFixed)> = Vec::new();
     for entity in entities.values() {
         // A Dying corpse keeps its movement_target but won't move; it must not
         // drag a living formation's speed down to its (possibly slower) value.
@@ -3304,23 +3304,20 @@ pub(crate) fn sync_formation_speeds_after_live_pass(entities: &mut EntityStore) 
                 if mt.speed < *entry {
                     *entry = mt.speed;
                 }
+                grouped.push((entity.stable_id(), gid, mt.speed));
             }
         }
     }
-    if !group_min_speed.is_empty() {
-        for entity in entities.values_mut() {
-            if entity.dying {
-                continue;
-            }
-            if let Some(ref mut mt) = entity.movement_target {
-                if let Some(gid) = mt.group_id {
-                    if let Some(&min_spd) = group_min_speed.get(&gid) {
-                        if mt.speed > min_spd {
-                            mt.speed = min_spd;
-                        }
-                    }
-                }
-            }
+    // Only the members that are actually capped are taken mutably: an
+    // all-entity mutable walk would mark the whole store touched every frame.
+    for (id, gid, speed) in grouped {
+        let min_spd = group_min_speed[&gid];
+        if speed > min_spd
+            && let Some(mt) = entities
+                .get_mut(id)
+                .and_then(|entity| entity.movement_target.as_mut())
+        {
+            mt.speed = min_spd;
         }
     }
 }

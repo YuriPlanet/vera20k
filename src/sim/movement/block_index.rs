@@ -91,11 +91,8 @@ fn contribution(
         let Some(obj) = rules.and_then(|r| r.object(interner.resolve(entity.type_ref()))) else {
             return Some(Contribution::Structure(vec![cell]));
         };
-        let foundation_cells = crate::sim::production::building_base_foundation_cells(
-            cell.0,
-            cell.1,
-            &obj.foundation,
-        );
+        let foundation_cells =
+            crate::sim::production::building_base_foundation_cells(cell.0, cell.1, &obj.foundation);
         let is_bunker_occupied = obj.bunker
             && (entity.bunker_occupant.is_some()
                 || entity
@@ -196,7 +193,12 @@ struct OwnerBlockState {
 }
 
 impl OwnerBlockState {
-    fn unplace(&mut self, id: u64, cells: &mut BTreeSet<(u16, u16)>, keys: &mut BTreeSet<LayerCell>) {
+    fn unplace(
+        &mut self,
+        id: u64,
+        cells: &mut BTreeSet<(u16, u16)>,
+        keys: &mut BTreeSet<LayerCell>,
+    ) {
         match self.placed.remove(&id) {
             Some(Contribution::Structure(blocked)) => {
                 for cell in blocked {
@@ -431,7 +433,14 @@ impl OwnerBlockIndex {
             .and_then(|state| state.product.take().map(|product| (state, product)));
         let sets = match kept {
             Some((state, mut product)) => {
-                state.bring_current(&mut product, entities, owner_name, alliances, interner, rules);
+                state.bring_current(
+                    &mut product,
+                    entities,
+                    owner_name,
+                    alliances,
+                    interner,
+                    rules,
+                );
                 state.loan = loan;
                 product
             }
@@ -465,7 +474,14 @@ impl OwnerBlockIndex {
         let owner_name = interner.resolve(owner);
         match self.owners.get_mut(&owner) {
             Some(state) if state.product.is_none() && state.loan == lent.loan => {
-                state.bring_current(&mut lent.sets, entities, owner_name, alliances, interner, rules);
+                state.bring_current(
+                    &mut lent.sets,
+                    entities,
+                    owner_name,
+                    alliances,
+                    interner,
+                    rules,
+                );
             }
             _ => {
                 let (mut state, built) =
@@ -570,14 +586,23 @@ mod tests {
         power.type_ref = test_intern("GAPOWR");
         entities.insert(power);
         let mut index = OwnerBlockIndex::default();
-        assert_eq!(lend_and_check(&mut index, &mut entities, &alliances, &rules), 2);
+        assert_eq!(
+            lend_and_check(&mut index, &mut entities, &alliances, &rules),
+            2
+        );
 
         // Two occupants of one cell: the later id's entry wins, and when it
         // leaves the earlier one's returns.
         entities.get_mut(2).unwrap().position.rx = 5;
-        assert_eq!(lend_and_check(&mut index, &mut entities, &alliances, &rules), 0);
+        assert_eq!(
+            lend_and_check(&mut index, &mut entities, &alliances, &rules),
+            0
+        );
         entities.get_mut(2).unwrap().position.rx = 9;
-        assert_eq!(lend_and_check(&mut index, &mut entities, &alliances, &rules), 0);
+        assert_eq!(
+            lend_and_check(&mut index, &mut entities, &alliances, &rules),
+            0
+        );
 
         // A unit starts moving (code 2 with a next cell, and a moving-ally
         // record), an enemy dies in place, a building goes, a unit arrives.
@@ -590,24 +615,55 @@ mod tests {
         entities.get_mut(3).unwrap().dying = true;
         entities.remove(4);
         entities.insert(unit(5, "Russians", (5, 6)));
-        assert_eq!(lend_and_check(&mut index, &mut entities, &alliances, &rules), 0);
+        assert_eq!(
+            lend_and_check(&mut index, &mut entities, &alliances, &rules),
+            0
+        );
         let americans = &index.owners[&test_intern("Americans")];
         let product = americans.product.as_ref().unwrap();
-        assert!(product.0.is_empty(), "the power plant's cells were released");
-        assert_eq!(product.1.get(MovementLayer::Ground, &(5, 5)).unwrap().cost_code, 2);
-        assert!(product.1.moving_ally(MovementLayer::Ground, &(5, 5)).is_some());
-        assert_eq!(product.1.get(MovementLayer::Ground, &(5, 6)).unwrap().cost_code, 5);
+        assert!(
+            product.0.is_empty(),
+            "the power plant's cells were released"
+        );
+        assert_eq!(
+            product
+                .1
+                .get(MovementLayer::Ground, &(5, 5))
+                .unwrap()
+                .cost_code,
+            2
+        );
+        assert!(
+            product
+                .1
+                .moving_ally(MovementLayer::Ground, &(5, 5))
+                .is_some()
+        );
+        assert_eq!(
+            product
+                .1
+                .get(MovementLayer::Ground, &(5, 6))
+                .unwrap()
+                .cost_code,
+            5
+        );
         assert!(product.1.get(MovementLayer::Ground, &(7, 5)).is_none());
 
         // A changed alliance graph and an all-entity walk both force a rebuild.
         let mut allied = HouseAllianceMap::new();
         allied.insert("Americans".into(), ["Russians".to_string()].into());
         allied.insert("Russians".into(), ["Americans".to_string()].into());
-        assert_eq!(lend_and_check(&mut index, &mut entities, &allied, &rules), 2);
+        assert_eq!(
+            lend_and_check(&mut index, &mut entities, &allied, &rules),
+            2
+        );
         for entity in entities.values_mut() {
             entity.position.ry += 1;
         }
-        assert_eq!(lend_and_check(&mut index, &mut entities, &allied, &rules), 2);
+        assert_eq!(
+            lend_and_check(&mut index, &mut entities, &allied, &rules),
+            2
+        );
     }
 
     #[test]
@@ -625,16 +681,27 @@ mod tests {
         entities.get_mut(1).unwrap().position.rx = 8;
         let second = index.lend_current(owner, &mut entities, &alliances, &interner, Some(&rules));
         index.give_back(owner, first);
-        assert!(index.owners[&owner].product.is_none(), "the older loan is refused");
+        assert!(
+            index.owners[&owner].product.is_none(),
+            "the older loan is refused"
+        );
         index.give_back(owner, second);
         let kept = index.owners[&owner].product.as_ref().unwrap();
         assert!(kept.1.contains_key(MovementLayer::Ground, &(8, 5)));
 
         // A pass holding refused sets is rebuilt on its next refresh.
-        let mut lent = index.lend_current(owner, &mut entities, &alliances, &interner, Some(&rules));
+        let mut lent =
+            index.lend_current(owner, &mut entities, &alliances, &interner, Some(&rules));
         let _newer = index.lend_current(owner, &mut entities, &alliances, &interner, Some(&rules));
         entities.get_mut(1).unwrap().position.rx = 9;
-        index.refresh_lent(owner, &mut lent, &mut entities, &alliances, &interner, Some(&rules));
+        index.refresh_lent(
+            owner,
+            &mut lent,
+            &mut entities,
+            &alliances,
+            &interner,
+            Some(&rules),
+        );
         assert!(lent.sets.1.contains_key(MovementLayer::Ground, &(9, 5)));
     }
 }

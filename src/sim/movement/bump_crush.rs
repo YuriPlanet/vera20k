@@ -99,8 +99,13 @@ pub fn build_entity_block_sets(
     // One rule and one fold, shared with the index that keeps these sets
     // current between movement passes (`block_index`). Buildings are always on
     // the ground layer, so the bridge set is empty.
-    let (ground_blocked, entity_block_map) =
-        super::block_index::build_owner_block_set(entities, mover_owner, alliances, interner, rules);
+    let (ground_blocked, entity_block_map) = super::block_index::build_owner_block_set(
+        entities,
+        mover_owner,
+        alliances,
+        interner,
+        rules,
+    );
     (ground_blocked, BTreeSet::new(), entity_block_map)
 }
 

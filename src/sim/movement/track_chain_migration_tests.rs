@@ -54,8 +54,18 @@ fn owner_block_set_refreshes_when_occupancy_generation_advances() {
     );
     let mut built_at: BTreeMap<crate::sim::intern::InternedId, u64> = BTreeMap::new();
     built_at.insert(owner, 0);
-    assert!(sets[&owner].sets.1.contains_key(MovementLayer::Ground, &(5, 5)));
-    assert!(!sets[&owner].sets.1.contains_key(MovementLayer::Ground, &(6, 6)));
+    assert!(
+        sets[&owner]
+            .sets
+            .1
+            .contains_key(MovementLayer::Ground, &(5, 5))
+    );
+    assert!(
+        !sets[&owner]
+            .sets
+            .1
+            .contains_key(MovementLayer::Ground, &(6, 6))
+    );
 
     // Same-tick move of the blocker to (6,6); occupancy generation advances.
     {
@@ -79,11 +89,17 @@ fn owner_block_set_refreshes_when_occupancy_generation_advances() {
         "stale snapshot must rebuild when generation advances"
     );
     assert!(
-        !sets[&owner].sets.1.contains_key(MovementLayer::Ground, &(5, 5)),
+        !sets[&owner]
+            .sets
+            .1
+            .contains_key(MovementLayer::Ground, &(5, 5)),
         "old cell freed"
     );
     assert!(
-        sets[&owner].sets.1.contains_key(MovementLayer::Ground, &(6, 6)),
+        sets[&owner]
+            .sets
+            .1
+            .contains_key(MovementLayer::Ground, &(6, 6)),
         "new cell blocked"
     );
 }
@@ -125,7 +141,10 @@ fn owner_block_set_not_rebuilt_when_generation_unchanged() {
     );
     assert!(!rebuilt, "no rebuild when generation is unchanged");
     assert!(
-        sets[&owner].sets.1.contains_key(MovementLayer::Ground, &(5, 5)),
+        sets[&owner]
+            .sets
+            .1
+            .contains_key(MovementLayer::Ground, &(5, 5)),
         "snapshot left untouched"
     );
 }
