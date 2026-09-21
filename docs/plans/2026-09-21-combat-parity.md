@@ -231,18 +231,20 @@ probe; it is not a second implementation to publish.
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
 Branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Current validated source: `4a32f4c3bd6a29d1ca9b531cac71b1fe6143853b`: shared fire emission separated from
-admission, with original Aircraft release/entry witnesses and corrected native
-class identities. This is preparation for the open aircraft mission firing and
-pending-ammo migration, not a shot-behavior completion claim. Previous checkpoint:
-`0cbfa458`. Range source `d7c155501e7f260024dc965b415b2c3aa8431979` remains intact,
-including native0x0 foundations. No tracked implementation WIP remains after this
-checkpoint commit. The dependency map is retired by user instruction: do not use
-or refresh it, regardless of the older branch contract text. Facing source
-`be8e2d62ce1fcdfc6d968954204878670f6ebd38` and evidence
-`ae5b3042e66091c584b1bc2335272fca6f360cbc` remain intact, including80 original
-Fly takeoff callbacks. Aircraft attack-state, emission and Fly prerequisites below
-remain open; the range comparison is not whole-aircraft parity.
+Current validated source: `07c48b071bd7a08a0aaa5bcbab391c69483f4cc9`: pending
+Aircraft ammo consumption and initialization, with the false final-release tail
+removed. Native state-entry and post-Commence consumers use one pending flag;
+MissionLeaf already owns the actual+6D2 readiness/action latch. **The release
+writer is not yet connected to a production aircraft burst.** State4 requests
+alone no longer advance the mission or consume ammo. State1's navigation suffix
+and actual emission/cadence remain open. This is a prerequisite checkpoint, not
+completed aircraft firing or whole-combat parity. Snapshot version is186.
+Previous source `4a32f4c3` extracted the unchanged shared emitter; previous
+checkpoint `f578b195`. Range source `d7c15550` remains intact, including native
+0x0 foundations. No tracked implementation WIP remains after this checkpoint.
+The dependency map is retired by user instruction: do not use or refresh it,
+regardless of the older branch contract text. Facing source `be8e2d62` and
+`ae5b3042` takeoff evidence remain intact, including80 original callbacks.
 Carryall move decision source: `450c408bd78490e5a2f42b0b392144ceb91271b1`;
 Display fixture correction: `f4347849`;
 integer Fly height source: `fa615a67a48be364e890b2801e52cdaf28283cdc`.
@@ -682,75 +684,99 @@ still call26/27 Open/Rescue; that is stale identity, not a distinct native chain
 Mission24 Open dispatches to base5B2F50; Mission15 Hunt reaches414A80, so do not
 rename415A50 to Hunt from an incorrectly counted vtable entry.
 
-### Aircraft admission/emission boundary and release witnesses
+### Pending-ammo authority and the open emission handoff
 
-The world receiver now hands its existing admitted shot to one private
-`emit_admitted_fire` function. The borrowed `AdmittedFire` carries the existing
-selected weapon, source and target facts; it adds no retained state or copies of
-emission logic. Every existing fire consumer still reaches this production body.
-Admission, infantry fire-action writes, shot order and inline receiver commits
-retain their previous caller. Acceptance for this preparatory refactor is unchanged
-production results/RNG/save behavior through the full lib suite, plus Clippy.
-It does **not** enable aircraft mission shots or complete the release migration.
+Acceptance for source07c48b07: reproduce original signed ammo initialization and
+pending-consumption prefixes through the production mission/AI owners, including
+mission changes, signed wrap, save/restore and hashing. Remove the fabricated
+final-shot countdown and duplicate flags. This does not certify admission,
+emitted shots, navigation, mission cadence or the whole attack cycle.
 
-`aircraft_attack_release.{py,json,meta.json}` preserves316 original state4
-successful-release loops and post-reveal continuations, plus72 original
-state1/3/10 entry-housekeeping prefixes. SelectWeapon and FireAt are explicit
-scratch callbacks; original GetWeapon, auxiliary+18 and Fighter reads execute.
-The intervening map reveal is excluded. No emitted-shot, damage, scheduling or
-whole-burst parity claim. Important native facts for the implementation:
+`AircraftAmmo` now retains the private+6C8 pending byte beside the actual signed
+count. All Aircraft, including map-authored and negative-ammo objects, receive
+this owner. `InitialAmmo` (Type+680, reader71474C/key843AEC, default-1) selects
+`Ammo` only for exactly-1 at41403A..41404B; other signed values are not clamped.
+The legacy docking FSM checks max>=0 instead of treating component presence as
+finite ammo. Common GetFireError6FCA0D rejects exactly zero, not negative counts.
 
-- Set pending+6C8 BEFORE the first SelectWeapon, even for Burst<=0. Do not use
-  a projectile count or returned Bullet pointer as proof of mission success.
-- Loop body reselects before every FireAt and again before its next Burst test;
-  it does not repeat GetFireError. A cached selected weapon across the entire
-  burst would miss target/selection changes from synchronous effects.
-- The success arm does not debit Ammo+2FC. Auxiliary+18 selects state6 and
-  latch+6D2=true; otherwise Fighter chooses1 for Ammo>0 or10, also latching.
-  Both return slot0 raw ROF. The remaining arm selects5, returns1, and retains
-  the incoming6D2 value. Witness fixtures supply6D2=false.
-- State1/3 consume pending with wrapping signed DEC; state10 clears pending
-  but decrements only positive Ammo. All three clear6D2. Prefixes stop before
-  the target/ammo guards and navigation, so these are not state1 completion.
-- Common FireAt emission must be callable after a single admission, with live
-  target/weapon reads and synchronous receiver commit between burst shots.
-  Existing batch ammo deduction must migrate with the mission pending owner;
-  merely bypassing the active-Attack gate would double-charge ammo.
+`enter_attack_state` clears the existing MissionLeaf action latch+6D2 for
+states0/1/3/10; state0 leaves pending alone. State1/3 consume pending with wrapping
+signed DEC; state10 clears pending and decrements only positive ammo. Aircraft
+AI41505E consumes pending after Ready/Commence when canonical Mission+AC!=1,
+independent of the legacy AircraftMission mirror. The existing live Object turn
+calls this post-movement host. Removed `AircraftReleaseTail`, its five fields,
+and Attack's `has_fired`/`is_strafe` flags and fabricated countdown tests.
+Snapshot186 saves/hashes the real pending byte; it cannot recover arbitrary old
+fake-tail state. Historical hash projections only reconstruct the bounded absent
+tail and false/false Attack fixtures, explicitly not arbitrary old saves.
 
-Ghidra41A9E0 was falsely named Aircraft What_Weapon_Should_I_Use. Actual vtable
-+3C0 and Mission_Attack41832E establish GetFireError; renamed accordingly.
-It first propagates common6FC0B0's errors, then tests6C9/118 and SecondaryFacing
-against DirectionToTarget unless Fighter. Its0/1/2 returns are admission results,
-not weapon indexes. GetROF6FCFA0 is also now named and annotated. Labels and
-comments were saved and read back; no prototypes, boundaries or binary edits.
+Important unfinished production path: `AircraftAmmo::begin_release` currently
+has test callers only. `tick_aircraft_missions` still resets AttackTarget in its
+legacy request adapter, losing cooldown/burst bookkeeping; `combat_fire_gate`
+still excludes active Attack. State4 now waits for real release admission, and
+state1 with a retained target/nonzero ammo waits for its unported FindFireLocation
+suffix (missing target/zero ammo goes10). State10's nonzero re-engagement returns1,
+while its zero-ammo/targetless return-location/conditional-clear/RNG suffix remains
+legacy Guard. Do not mistake these honest open boundaries for completed behavior.
+Do not simply unblock Attack or restore request-time fake ammo bookkeeping.
 
-Original WhatAmI leaves establish **Unit1, Aircraft2, Building6, Infantry15**.
-The initial GetROF class6/Ammo>1 shortcut belongs to Building; class1 Type+6C4
-per-burst delays belong to Unit. The old techno_rearm oracle called class1
-Aircraft, and Rust's comment called it Infantry. Both labels are corrected.
-All267 existing numeric outputs/events/RNG states remain identical after input
-key renames. Its metadata now records execution of the four original RTTI leaves.
-This is evidence correction, not a new aircraft one-frame rearm implementation.
+Use the existing `world_receiver::emit_admitted_fire` extracted by4a32f4c3; it
+still owns all current shot/Spawner/Drain/damage/rearm bookkeeping. Native418403
+sets pending BEFORE the loop even for Burst<=0 or FireAt returning no Bullet.
+It admits once, then reselects before each FireAt and again for each loop bound.
+Commit synchronous receiver effects between shots. Move the generic burst-end
+ammo deduction to the proper caller as part of that migration. Auxiliary+18
+(41B7F0, slot0 ProjectileROT<=1 && !Inviso) selects6 and latches+6D2; otherwise
+Fighter selects1 for Ammo>0 or10 and latches. Both use slot0 raw ROF. The remaining
+arm selects5/delay1 without writing+6D2. Mission cadence and later states stay open.
 
-Final validation for4a32f4c3: `cargo test -p vera20k --lib` passed **9,123 tests,
-0 failed,135 ignored**,17.41s after a7m23s fresh build
-(`.local/aircraft-emission-split-tests.log`). `cargo clippy -p vera20k --lib`
-passed with1,026 warnings in1m45s (`.local/aircraft-emission-split-clippy.log`).
-Both native `--check` commands passed; the release fixture's final shape contains
-316 release rows and72 entry rows. A mechanical comparison confirmed every
-emission statement is unchanged by extraction. No new snapshot schema or replay
-pin; no release retail load or PR/critic in this increment. All owned processes
-are terminal. This run used the owned worktree's `target` cache (CARGO_TARGET_DIR
-was unset), rather than the earlier main-checkout shared cache; preserve it and
-check actual Cargo/config state before continuing.
+`aircraft_attack_release.{py,json,meta.json}` now contains316 successful-release
+rows (SelectWeapon/FireAt are scratch callbacks; reveal omitted),72 state1/3/10
+housekeeping rows,144 post-Commence AI rows,21 ammo-initialization rows and7
+common-fire-error ammo checks. Prior316+72 outputs are unchanged. Rust consumes
+the new/prefix witnesses through actual constructor, mission and AI entry points;
+all72 mission-entry cases also round-trip through GameSnapshot. That test uses
+Scenario seed0 to respect the independent loader reset policy, not a changed RNG
+contract. The corpus excludes full admission, actual damage, scheduling and
+navigation. Do not promote this bounded evidence to whole-burst parity.
+
+Ghidra annotations41505E,41403A,418037,4143FC were saved/read back. The existing
+readiness leaf41B5E0 and Commence41B870 confirm+6D2, with+6D4 separate. Additional
+fire-admission prerequisite: Aircraft Unlimbo4143FC sets+6C9 when PassengerCount
++118!=0, after successful Foot Unlimbo; constructor413D47 clears it. GetFireError
+41A9FF refuses when the retained byte is set and current cargo is empty. Do not
+derive it from current cargo. Other SET writers65DCE9/65E7B8/65EA0B need their
+reinforcement caller/admission traces. No such new retained Rust byte is added
+yet. The preceding Unlimbo+3D4 writer is independent (Selectable/Landable/Camera).
+
+Retain the earlier evidence corrections:41A9E0 is Aircraft GetFireError, not
+weapon selection. Original WhatAmI leaves are Unit1/Aircraft2/Building6/Infantry15.
+GetROF6FCFA0's class6 Ammo>1 shortcut is Building; class1 authored burst delays are
+Unit. All267 techno_rearm outputs/events/RNG are unchanged after correcting names;
+there is no demonstrated special one-frame Aircraft rearm branch.
+
+Validation07c48b07: full `cargo test -p vera20k --lib` passed **9,128 tests,
+0 failed,135 ignored**,17.07s after2m30s compilation
+(`.local/aircraft-release-validated-tests.log`). Clippy passed with1,029 warnings,
+41.00s (`.local/aircraft-release-clippy.log`). Native `aircraft_attack_release
+--check` passed. Three current replay hashes changed only by removing the absent
+release-tail fold: pre186 projections reproduce their prior full pins, preserving
+all replay/position/native Walk/RNG checks and the earlier Infantry-rate probe.
+The initial focused run found two literal ObjectType fixtures needing InitialAmmo
+and a nonzero-Scenario-seed snapshot fixture; fixed without changing load policy.
+No release retail load, PR or critic in this increment; new InitialAmmo and prior
+FlightLevel/IsDropship/Carryall rule changes still need a fresh release retail load
+before merge. All owned processes are terminal. Keep using the owned worktree's
+`target` cache (CARGO_TARGET_DIR unset); do not switch to the main checkout cache.
 
 ### Next safe implementation
 
-Continue the semantic Aircraft pending-ammo/+6D2 and emission migration above,
-using the now-shared production emitter and saved release witnesses. Fly MoveTo
-reads that retained byte; it cannot borrow the legacy completion latch. Preserve
-the validated range correction while replacing the false final-release path and
-porting its required FindFireLocation/NavCom/state1/state10 effects.
+Connect the actual admitted Aircraft burst to the shared production emitter and
+its pending-ammo owner. Finish the required FindFireLocation/NavCom/state1/state10
+and native cadence dependencies; preserve the validated range correction. The
+new pending consumers and+6D2 owner are in place; do not recreate the retired
+final-release tail or add another competing implementation. Do not defer the
+actual emission migration for another isolated helper refactor.
 
 Migrate retained Fly destination state and both Aircraft facing writers/readers,
 then port native phase callbacks with their Mark/Display transaction. The legacy
