@@ -1,0 +1,9680 @@
+[
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "name": "base"
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [],
+    "draws": [],
+    "input": {
+      "name": "null",
+      "null_target": true
+    },
+    "next_random": 2026076499,
+    "ranked": [],
+    "result": null,
+    "rng_changed": false
+  },
+  {
+    "candidates": [],
+    "draws": [],
+    "input": {
+      "name": "strafe_direct",
+      "rot": 0
+    },
+    "next_random": 2026076499,
+    "ranked": [],
+    "result": "target",
+    "rng_changed": false
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "inviso": true,
+      "name": "inviso_search",
+      "rot": 0
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [],
+    "draws": [],
+    "input": {
+      "name": "short",
+      "range": 512
+    },
+    "next_random": 2026076499,
+    "ranked": [],
+    "result": null,
+    "rng_changed": false
+  },
+  {
+    "candidates": [],
+    "draws": [],
+    "input": {
+      "name": "no_weapon",
+      "weapon": false
+    },
+    "next_random": 2026076499,
+    "ranked": [],
+    "result": null,
+    "rng_changed": false
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        14464
+      ],
+      [
+        17295,
+        14619
+      ],
+      [
+        17960,
+        15063
+      ],
+      [
+        18404,
+        15728
+      ],
+      [
+        18560,
+        16512
+      ],
+      [
+        18404,
+        17295
+      ],
+      [
+        17960,
+        17960
+      ],
+      [
+        17295,
+        18404
+      ],
+      [
+        16511,
+        18560
+      ],
+      [
+        15728,
+        18404
+      ],
+      [
+        15063,
+        17960
+      ],
+      [
+        14619,
+        17295
+      ],
+      [
+        14464,
+        16511
+      ],
+      [
+        14619,
+        15728
+      ],
+      [
+        15063,
+        15063
+      ],
+      [
+        15728,
+        14619
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "name": "elite",
+      "veterancy": 2
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          56
+        ],
+        "distance": 6476
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          67,
+          57
+        ],
+        "distance": 7180
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          70,
+          58
+        ],
+        "distance": 7728
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          71,
+          61
+        ],
+        "distance": 8074
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          72,
+          64
+        ],
+        "distance": 8192
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          71,
+          67
+        ],
+        "distance": 8073
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          70,
+          70
+        ],
+        "distance": 7728
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          67,
+          71
+        ],
+        "distance": 7180
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          72
+        ],
+        "distance": 6475
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          61,
+          71
+        ],
+        "distance": 5684
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          58,
+          70
+        ],
+        "distance": 4913
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          57,
+          67
+        ],
+        "distance": 4322
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          56,
+          64
+        ],
+        "distance": 4096
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          57,
+          61
+        ],
+        "distance": 4322
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          58,
+          58
+        ],
+        "distance": 4913
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          61,
+          57
+        ],
+        "distance": 5684
+      }
+    ],
+    "result": [
+      57,
+      67
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "elite_weapon": false,
+      "name": "elite_fallback",
+      "veterancy": 2
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "name": "target_destination",
+      "target_has_destination": true
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 4291
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 3796
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 3317
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 2954
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 2816
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 2954
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 3316
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 3795
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 4292
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 4735
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5083
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 5301
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 5376
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 5301
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5083
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 4736
+      }
+    ],
+    "result": [
+      69,
+      62
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "name": "nonfoot_destination",
+      "target_flags": 1,
+      "target_has_destination": true
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "aircraft": [
+        22656,
+        16512,
+        500
+      ],
+      "name": "opposite_side"
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 5777
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 5316
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 4986
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 5316
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 5777
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6276
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 6738
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 7107
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 7343
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 7343
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 7107
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 6738
+      }
+    ],
+    "result": [
+      69,
+      62
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "aircraft": [
+        12801,
+        15359,
+        500
+      ],
+      "name": "far_corner"
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 3713
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 4199
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 4622
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 4937
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 5122
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 5161
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 5053
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 4805
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 4436
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 3978
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 3478
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 3014
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 2690
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 2613
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 2815
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 3221
+      }
+    ],
+    "result": [
+      59,
+      64
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "game_mode": 0,
+      "name": "campaign"
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      86
+    ],
+    "input": {
+      "name": "seed_0",
+      "seed": 0
+    },
+    "next_random": 2424954917,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      85
+    ],
+    "input": {
+      "name": "seed_1",
+      "seed": 1
+    },
+    "next_random": 660436142,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      18
+    ],
+    "input": {
+      "name": "seed_2",
+      "seed": 2
+    },
+    "next_random": 1680153835,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      64
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      41
+    ],
+    "input": {
+      "name": "seed_7",
+      "seed": 7
+    },
+    "next_random": 4114954595,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      64
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      15
+    ],
+    "input": {
+      "name": "seed_99",
+      "seed": 99
+    },
+    "next_random": 3466270631,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      64
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [],
+    "draws": [],
+    "input": {
+      "name": "range_-1",
+      "range": -1
+    },
+    "next_random": 2026076499,
+    "ranked": [],
+    "result": null,
+    "rng_changed": false
+  },
+  {
+    "candidates": [],
+    "draws": [],
+    "input": {
+      "name": "range_0",
+      "range": 0
+    },
+    "next_random": 2026076499,
+    "ranked": [],
+    "result": null,
+    "rng_changed": false
+  },
+  {
+    "candidates": [],
+    "draws": [],
+    "input": {
+      "name": "range_511",
+      "range": 511
+    },
+    "next_random": 2026076499,
+    "ranked": [],
+    "result": null,
+    "rng_changed": false
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        16255
+      ],
+      [
+        16610,
+        16274
+      ],
+      [
+        16693,
+        16330
+      ],
+      [
+        16749,
+        16413
+      ],
+      [
+        16769,
+        16512
+      ],
+      [
+        16749,
+        16610
+      ],
+      [
+        16693,
+        16693
+      ],
+      [
+        16610,
+        16749
+      ],
+      [
+        16511,
+        16769
+      ],
+      [
+        16413,
+        16749
+      ],
+      [
+        16330,
+        16693
+      ],
+      [
+        16274,
+        16610
+      ],
+      [
+        16255,
+        16511
+      ],
+      [
+        16274,
+        16413
+      ],
+      [
+        16330,
+        16330
+      ],
+      [
+        16413,
+        16274
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "name": "range_513",
+      "range": 513
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          63
+        ],
+        "distance": 6149
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          64,
+          63
+        ],
+        "distance": 6246
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          65,
+          63
+        ],
+        "distance": 6327
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          65,
+          64
+        ],
+        "distance": 6381
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          65,
+          64
+        ],
+        "distance": 6400
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          65,
+          64
+        ],
+        "distance": 6381
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          65,
+          65
+        ],
+        "distance": 6327
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          64,
+          65
+        ],
+        "distance": 6246
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          65
+        ],
+        "distance": 6148
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          64,
+          65
+        ],
+        "distance": 6049
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          63,
+          65
+        ],
+        "distance": 5964
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          63,
+          64
+        ],
+        "distance": 5906
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          63,
+          64
+        ],
+        "distance": 5886
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          63,
+          64
+        ],
+        "distance": 5906
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          63,
+          63
+        ],
+        "distance": 5964
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          64,
+          63
+        ],
+        "distance": 6049
+      }
+    ],
+    "result": [
+      63,
+      64
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        16000
+      ],
+      [
+        16707,
+        16038
+      ],
+      [
+        16874,
+        16149
+      ],
+      [
+        16985,
+        16316
+      ],
+      [
+        17024,
+        16512
+      ],
+      [
+        16985,
+        16707
+      ],
+      [
+        16874,
+        16874
+      ],
+      [
+        16707,
+        16985
+      ],
+      [
+        16511,
+        17024
+      ],
+      [
+        16316,
+        16985
+      ],
+      [
+        16149,
+        16874
+      ],
+      [
+        16038,
+        16707
+      ],
+      [
+        16000,
+        16511
+      ],
+      [
+        16038,
+        16316
+      ],
+      [
+        16149,
+        16149
+      ],
+      [
+        16316,
+        16038
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "name": "range_768",
+      "range": 768
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          62
+        ],
+        "distance": 6165
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          65,
+          62
+        ],
+        "distance": 6356
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          65,
+          63
+        ],
+        "distance": 6516
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          66,
+          63
+        ],
+        "distance": 6619
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          66,
+          64
+        ],
+        "distance": 6656
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          66,
+          65
+        ],
+        "distance": 6619
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          65,
+          65
+        ],
+        "distance": 6515
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          65,
+          66
+        ],
+        "distance": 6356
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          66
+        ],
+        "distance": 6164
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          63,
+          66
+        ],
+        "distance": 5966
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          63,
+          65
+        ],
+        "distance": 5792
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          62,
+          65
+        ],
+        "distance": 5673
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          62,
+          64
+        ],
+        "distance": 5632
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          62,
+          63
+        ],
+        "distance": 5673
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          63,
+          63
+        ],
+        "distance": 5792
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          63,
+          62
+        ],
+        "distance": 5966
+      }
+    ],
+    "result": [
+      62,
+      65
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15999
+      ],
+      [
+        16708,
+        16038
+      ],
+      [
+        16874,
+        16149
+      ],
+      [
+        16985,
+        16315
+      ],
+      [
+        17025,
+        16512
+      ],
+      [
+        16985,
+        16708
+      ],
+      [
+        16874,
+        16874
+      ],
+      [
+        16708,
+        16985
+      ],
+      [
+        16511,
+        17025
+      ],
+      [
+        16315,
+        16985
+      ],
+      [
+        16149,
+        16874
+      ],
+      [
+        16038,
+        16708
+      ],
+      [
+        15999,
+        16511
+      ],
+      [
+        16038,
+        16315
+      ],
+      [
+        16149,
+        16149
+      ],
+      [
+        16315,
+        16038
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "name": "range_769",
+      "range": 769
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          62
+        ],
+        "distance": 6165
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          65,
+          62
+        ],
+        "distance": 6357
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          65,
+          63
+        ],
+        "distance": 6516
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          66,
+          63
+        ],
+        "distance": 6619
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          66,
+          64
+        ],
+        "distance": 6656
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          66,
+          65
+        ],
+        "distance": 6619
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          65,
+          65
+        ],
+        "distance": 6515
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          65,
+          66
+        ],
+        "distance": 6357
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          66
+        ],
+        "distance": 6164
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          63,
+          66
+        ],
+        "distance": 5965
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          63,
+          65
+        ],
+        "distance": 5792
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          62,
+          65
+        ],
+        "distance": 5673
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          62,
+          64
+        ],
+        "distance": 5630
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          62,
+          63
+        ],
+        "distance": 5673
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          63,
+          63
+        ],
+        "distance": 5792
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          63,
+          62
+        ],
+        "distance": 5965
+      }
+    ],
+    "result": [
+      62,
+      65
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15231
+      ],
+      [
+        17002,
+        15328
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17695,
+        16021
+      ],
+      [
+        17793,
+        16512
+      ],
+      [
+        17695,
+        17002
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17002,
+        17695
+      ],
+      [
+        16511,
+        17793
+      ],
+      [
+        16021,
+        17695
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15328,
+        17002
+      ],
+      [
+        15231,
+        16511
+      ],
+      [
+        15328,
+        16021
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16021,
+        15328
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "name": "range_1537",
+      "range": 1537
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6738
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7343
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7343
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6738
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5775
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4983
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4862
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4984
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5775
+      }
+    ],
+    "result": [
+      59,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [],
+    "draws": [],
+    "input": {
+      "name": "rot_-1",
+      "rot": -1
+    },
+    "next_random": 2026076499,
+    "ranked": [],
+    "result": "target",
+    "rng_changed": false
+  },
+  {
+    "candidates": [],
+    "draws": [],
+    "input": {
+      "name": "rot_1",
+      "rot": 1
+    },
+    "next_random": 2026076499,
+    "ranked": [],
+    "result": "target",
+    "rng_changed": false
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "name": "rot_2",
+      "rot": 2
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ],
+      [
+        16512,
+        15488
+      ],
+      [
+        16903,
+        15565
+      ],
+      [
+        17236,
+        15787
+      ],
+      [
+        17458,
+        16120
+      ],
+      [
+        17536,
+        16512
+      ],
+      [
+        17458,
+        16903
+      ],
+      [
+        17236,
+        17236
+      ],
+      [
+        16903,
+        17458
+      ],
+      [
+        16511,
+        17536
+      ],
+      [
+        16120,
+        17458
+      ],
+      [
+        15787,
+        17236
+      ],
+      [
+        15565,
+        16903
+      ],
+      [
+        15488,
+        16511
+      ],
+      [
+        15565,
+        16120
+      ],
+      [
+        15787,
+        15787
+      ],
+      [
+        16120,
+        15565
+      ],
+      [
+        16512,
+        15744
+      ],
+      [
+        16805,
+        15802
+      ],
+      [
+        17055,
+        15968
+      ],
+      [
+        17221,
+        16218
+      ],
+      [
+        17280,
+        16512
+      ],
+      [
+        17221,
+        16805
+      ],
+      [
+        17055,
+        17055
+      ],
+      [
+        16805,
+        17221
+      ],
+      [
+        16511,
+        17280
+      ],
+      [
+        16218,
+        17221
+      ],
+      [
+        15968,
+        17055
+      ],
+      [
+        15802,
+        16805
+      ],
+      [
+        15744,
+        16511
+      ],
+      [
+        15802,
+        16218
+      ],
+      [
+        15968,
+        15968
+      ],
+      [
+        16218,
+        15802
+      ],
+      [
+        16512,
+        16000
+      ],
+      [
+        16707,
+        16038
+      ],
+      [
+        16874,
+        16149
+      ],
+      [
+        16985,
+        16316
+      ],
+      [
+        17024,
+        16512
+      ],
+      [
+        16985,
+        16707
+      ],
+      [
+        16874,
+        16874
+      ],
+      [
+        16707,
+        16985
+      ],
+      [
+        16511,
+        17024
+      ],
+      [
+        16316,
+        16985
+      ],
+      [
+        16149,
+        16874
+      ],
+      [
+        16038,
+        16707
+      ],
+      [
+        16000,
+        16511
+      ],
+      [
+        16038,
+        16316
+      ],
+      [
+        16149,
+        16149
+      ],
+      [
+        16316,
+        16038
+      ]
+    ],
+    "draws": [],
+    "input": {
+      "game_mode": 0,
+      "name": "all_hidden",
+      "visible": false
+    },
+    "next_random": 2026076499,
+    "ranked": [],
+    "result": null,
+    "rng_changed": false
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "flag_3d4": true,
+      "game_mode": 0,
+      "name": "flag_bypasses_hidden",
+      "visible": false
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "game_mode": 1,
+      "name": "mode_bypasses_hidden",
+      "visible": false
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "game_mode": 0,
+      "name": "only_first",
+      "revealed": [
+        [
+          64,
+          59
+        ]
+      ],
+      "visible": false
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      }
+    ],
+    "result": [
+      64,
+      59
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ],
+      [
+        16512,
+        15488
+      ],
+      [
+        16903,
+        15565
+      ],
+      [
+        17236,
+        15787
+      ],
+      [
+        17458,
+        16120
+      ],
+      [
+        17536,
+        16512
+      ],
+      [
+        17458,
+        16903
+      ],
+      [
+        17236,
+        17236
+      ],
+      [
+        16903,
+        17458
+      ],
+      [
+        16511,
+        17536
+      ],
+      [
+        16120,
+        17458
+      ],
+      [
+        15787,
+        17236
+      ],
+      [
+        15565,
+        16903
+      ],
+      [
+        15488,
+        16511
+      ],
+      [
+        15565,
+        16120
+      ],
+      [
+        15787,
+        15787
+      ],
+      [
+        16120,
+        15565
+      ],
+      [
+        16512,
+        15744
+      ],
+      [
+        16805,
+        15802
+      ],
+      [
+        17055,
+        15968
+      ],
+      [
+        17221,
+        16218
+      ],
+      [
+        17280,
+        16512
+      ],
+      [
+        17221,
+        16805
+      ],
+      [
+        17055,
+        17055
+      ],
+      [
+        16805,
+        17221
+      ],
+      [
+        16511,
+        17280
+      ],
+      [
+        16218,
+        17221
+      ],
+      [
+        15968,
+        17055
+      ],
+      [
+        15802,
+        16805
+      ],
+      [
+        15744,
+        16511
+      ],
+      [
+        15802,
+        16218
+      ],
+      [
+        15968,
+        15968
+      ],
+      [
+        16218,
+        15802
+      ],
+      [
+        16512,
+        16000
+      ],
+      [
+        16707,
+        16038
+      ],
+      [
+        16874,
+        16149
+      ],
+      [
+        16985,
+        16316
+      ],
+      [
+        17024,
+        16512
+      ],
+      [
+        16985,
+        16707
+      ],
+      [
+        16874,
+        16874
+      ],
+      [
+        16707,
+        16985
+      ],
+      [
+        16511,
+        17024
+      ],
+      [
+        16316,
+        16985
+      ],
+      [
+        16149,
+        16874
+      ],
+      [
+        16038,
+        16707
+      ],
+      [
+        16000,
+        16511
+      ],
+      [
+        16038,
+        16316
+      ],
+      [
+        16149,
+        16149
+      ],
+      [
+        16316,
+        16038
+      ]
+    ],
+    "draws": [],
+    "input": {
+      "game_mode": 0,
+      "name": "visible_bit_is_not_cache_open",
+      "reveal_bits": 8,
+      "revealed": [
+        [
+          64,
+          59
+        ]
+      ],
+      "visible": false
+    },
+    "next_random": 2026076499,
+    "ranked": [],
+    "result": null,
+    "rng_changed": false
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ],
+      [
+        16512,
+        15488
+      ],
+      [
+        16903,
+        15565
+      ],
+      [
+        17236,
+        15787
+      ],
+      [
+        17458,
+        16120
+      ],
+      [
+        17536,
+        16512
+      ],
+      [
+        17458,
+        16903
+      ],
+      [
+        17236,
+        17236
+      ],
+      [
+        16903,
+        17458
+      ],
+      [
+        16511,
+        17536
+      ],
+      [
+        16120,
+        17458
+      ],
+      [
+        15787,
+        17236
+      ],
+      [
+        15565,
+        16903
+      ],
+      [
+        15488,
+        16511
+      ],
+      [
+        15565,
+        16120
+      ],
+      [
+        15787,
+        15787
+      ],
+      [
+        16120,
+        15565
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "game_mode": 0,
+      "name": "only_inner_ring",
+      "revealed": [
+        [
+          64,
+          60
+        ]
+      ],
+      "visible": false
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 16,
+        "cell": [
+          64,
+          60
+        ],
+        "distance": 6228
+      }
+    ],
+    "result": [
+      64,
+      60
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "aircraft": [
+        16512,
+        16512,
+        500
+      ],
+      "name": "same_leptons"
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 1280
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 1280
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 1280
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 1279
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 1280
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 1279
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 1279
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 1279
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 1280
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 1279
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 1280
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 1280
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 1280
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 1280
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 1281
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 1280
+      }
+    ],
+    "result": [
+      64,
+      59
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      18
+    ],
+    "input": {
+      "aircraft": [
+        15232,
+        16512,
+        500
+      ],
+      "name": "self_reserves_best",
+      "seed": 2
+    },
+    "next_random": 1680153835,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 1810
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 2128
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 2365
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 2510
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 2560
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 2510
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 2364
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 2127
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 1809
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 1421
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 979
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 498
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 499
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 980
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 1422
+      }
+    ],
+    "result": [
+      59,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      18
+    ],
+    "input": {
+      "aircraft": [
+        15232,
+        16512,
+        500
+      ],
+      "include_self": false,
+      "name": "self_not_in_vector",
+      "seed": 2
+    },
+    "next_random": 1680153835,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 1810
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 2128
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 2365
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 2510
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 2560
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 2510
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 2364
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 2127
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 1809
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 1421
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 979
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 498
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 1
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 499
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 980
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 1422
+      }
+    ],
+    "result": [
+      59,
+      64
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      18
+    ],
+    "input": {
+      "blocker": [
+        15232,
+        16512,
+        0
+      ],
+      "name": "physical_blocker",
+      "seed": 2
+    },
+    "next_random": 1680153835,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      18
+    ],
+    "input": {
+      "blocker": [
+        15232,
+        16512,
+        0
+      ],
+      "carryall": true,
+      "carryall_target": true,
+      "name": "carryall_skips_its_unit",
+      "seed": 2
+    },
+    "next_random": 1680153835,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      64
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      18
+    ],
+    "input": {
+      "airport_bound": true,
+      "blocker": [
+        15232,
+        16512,
+        0
+      ],
+      "name": "airport_ignores_blocker",
+      "seed": 2
+    },
+    "next_random": 1680153835,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      64
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      18
+    ],
+    "input": {
+      "name": "reserved_live",
+      "reserved": [
+        [
+          59,
+          64
+        ]
+      ],
+      "seed": 2
+    },
+    "next_random": 1680153835,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      18
+    ],
+    "input": {
+      "name": "reserved_unmarked",
+      "reservation_marked": false,
+      "reserved": [
+        [
+          59,
+          64
+        ]
+      ],
+      "seed": 2
+    },
+    "next_random": 1680153835,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      64
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      18
+    ],
+    "input": {
+      "name": "reserved_limbo",
+      "reservation_limbo": true,
+      "reserved": [
+        [
+          59,
+          64
+        ]
+      ],
+      "seed": 2
+    },
+    "next_random": 1680153835,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      64
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ],
+      [
+        16512,
+        15488
+      ],
+      [
+        16903,
+        15565
+      ],
+      [
+        17236,
+        15787
+      ],
+      [
+        17458,
+        16120
+      ],
+      [
+        17536,
+        16512
+      ],
+      [
+        17458,
+        16903
+      ],
+      [
+        17236,
+        17236
+      ],
+      [
+        16903,
+        17458
+      ],
+      [
+        16511,
+        17536
+      ],
+      [
+        16120,
+        17458
+      ],
+      [
+        15787,
+        17236
+      ],
+      [
+        15565,
+        16903
+      ],
+      [
+        15488,
+        16511
+      ],
+      [
+        15565,
+        16120
+      ],
+      [
+        15787,
+        15787
+      ],
+      [
+        16120,
+        15565
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "name": "first_ring_reserved",
+      "reserved": [
+        [
+          64,
+          59
+        ],
+        [
+          66,
+          59
+        ],
+        [
+          68,
+          60
+        ],
+        [
+          69,
+          62
+        ],
+        [
+          69,
+          64
+        ],
+        [
+          69,
+          66
+        ],
+        [
+          68,
+          68
+        ],
+        [
+          66,
+          69
+        ],
+        [
+          64,
+          69
+        ],
+        [
+          62,
+          69
+        ],
+        [
+          60,
+          68
+        ],
+        [
+          59,
+          66
+        ],
+        [
+          59,
+          64
+        ],
+        [
+          59,
+          62
+        ],
+        [
+          60,
+          60
+        ],
+        [
+          62,
+          59
+        ]
+      ]
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 16,
+        "cell": [
+          64,
+          60
+        ],
+        "distance": 6228
+      },
+      {
+        "candidate_index": 17,
+        "cell": [
+          66,
+          60
+        ],
+        "distance": 6603
+      },
+      {
+        "candidate_index": 18,
+        "cell": [
+          67,
+          61
+        ],
+        "distance": 6906
+      },
+      {
+        "candidate_index": 19,
+        "cell": [
+          68,
+          62
+        ],
+        "distance": 7100
+      },
+      {
+        "candidate_index": 20,
+        "cell": [
+          68,
+          64
+        ],
+        "distance": 7168
+      },
+      {
+        "candidate_index": 21,
+        "cell": [
+          68,
+          66
+        ],
+        "distance": 7100
+      },
+      {
+        "candidate_index": 22,
+        "cell": [
+          67,
+          67
+        ],
+        "distance": 6905
+      },
+      {
+        "candidate_index": 23,
+        "cell": [
+          66,
+          68
+        ],
+        "distance": 6602
+      },
+      {
+        "candidate_index": 24,
+        "cell": [
+          64,
+          68
+        ],
+        "distance": 6227
+      },
+      {
+        "candidate_index": 25,
+        "cell": [
+          62,
+          68
+        ],
+        "distance": 5829
+      },
+      {
+        "candidate_index": 26,
+        "cell": [
+          61,
+          67
+        ],
+        "distance": 5467
+      },
+      {
+        "candidate_index": 27,
+        "cell": [
+          60,
+          66
+        ],
+        "distance": 5211
+      },
+      {
+        "candidate_index": 28,
+        "cell": [
+          60,
+          64
+        ],
+        "distance": 5120
+      },
+      {
+        "candidate_index": 29,
+        "cell": [
+          60,
+          62
+        ],
+        "distance": 5211
+      },
+      {
+        "candidate_index": 30,
+        "cell": [
+          61,
+          61
+        ],
+        "distance": 5467
+      },
+      {
+        "candidate_index": 31,
+        "cell": [
+          62,
+          60
+        ],
+        "distance": 5829
+      }
+    ],
+    "result": [
+      60,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ],
+      [
+        16512,
+        15488
+      ],
+      [
+        16903,
+        15565
+      ],
+      [
+        17236,
+        15787
+      ],
+      [
+        17458,
+        16120
+      ],
+      [
+        17536,
+        16512
+      ],
+      [
+        17458,
+        16903
+      ],
+      [
+        17236,
+        17236
+      ],
+      [
+        16903,
+        17458
+      ],
+      [
+        16511,
+        17536
+      ],
+      [
+        16120,
+        17458
+      ],
+      [
+        15787,
+        17236
+      ],
+      [
+        15565,
+        16903
+      ],
+      [
+        15488,
+        16511
+      ],
+      [
+        15565,
+        16120
+      ],
+      [
+        15787,
+        15787
+      ],
+      [
+        16120,
+        15565
+      ],
+      [
+        16512,
+        15744
+      ],
+      [
+        16805,
+        15802
+      ],
+      [
+        17055,
+        15968
+      ],
+      [
+        17221,
+        16218
+      ],
+      [
+        17280,
+        16512
+      ],
+      [
+        17221,
+        16805
+      ],
+      [
+        17055,
+        17055
+      ],
+      [
+        16805,
+        17221
+      ],
+      [
+        16511,
+        17280
+      ],
+      [
+        16218,
+        17221
+      ],
+      [
+        15968,
+        17055
+      ],
+      [
+        15802,
+        16805
+      ],
+      [
+        15744,
+        16511
+      ],
+      [
+        15802,
+        16218
+      ],
+      [
+        15968,
+        15968
+      ],
+      [
+        16218,
+        15802
+      ],
+      [
+        16512,
+        16000
+      ],
+      [
+        16707,
+        16038
+      ],
+      [
+        16874,
+        16149
+      ],
+      [
+        16985,
+        16316
+      ],
+      [
+        17024,
+        16512
+      ],
+      [
+        16985,
+        16707
+      ],
+      [
+        16874,
+        16874
+      ],
+      [
+        16707,
+        16985
+      ],
+      [
+        16511,
+        17024
+      ],
+      [
+        16316,
+        16985
+      ],
+      [
+        16149,
+        16874
+      ],
+      [
+        16038,
+        16707
+      ],
+      [
+        16000,
+        16511
+      ],
+      [
+        16038,
+        16316
+      ],
+      [
+        16149,
+        16149
+      ],
+      [
+        16316,
+        16038
+      ]
+    ],
+    "draws": [],
+    "input": {
+      "name": "all_rings_reserved",
+      "reserved": [
+        [
+          59,
+          59
+        ],
+        [
+          60,
+          59
+        ],
+        [
+          61,
+          59
+        ],
+        [
+          62,
+          59
+        ],
+        [
+          63,
+          59
+        ],
+        [
+          64,
+          59
+        ],
+        [
+          65,
+          59
+        ],
+        [
+          66,
+          59
+        ],
+        [
+          67,
+          59
+        ],
+        [
+          68,
+          59
+        ],
+        [
+          69,
+          59
+        ],
+        [
+          59,
+          60
+        ],
+        [
+          60,
+          60
+        ],
+        [
+          61,
+          60
+        ],
+        [
+          62,
+          60
+        ],
+        [
+          63,
+          60
+        ],
+        [
+          64,
+          60
+        ],
+        [
+          65,
+          60
+        ],
+        [
+          66,
+          60
+        ],
+        [
+          67,
+          60
+        ],
+        [
+          68,
+          60
+        ],
+        [
+          69,
+          60
+        ],
+        [
+          59,
+          61
+        ],
+        [
+          60,
+          61
+        ],
+        [
+          61,
+          61
+        ],
+        [
+          62,
+          61
+        ],
+        [
+          63,
+          61
+        ],
+        [
+          64,
+          61
+        ],
+        [
+          65,
+          61
+        ],
+        [
+          66,
+          61
+        ],
+        [
+          67,
+          61
+        ],
+        [
+          68,
+          61
+        ],
+        [
+          69,
+          61
+        ],
+        [
+          59,
+          62
+        ],
+        [
+          60,
+          62
+        ],
+        [
+          61,
+          62
+        ],
+        [
+          62,
+          62
+        ],
+        [
+          63,
+          62
+        ],
+        [
+          64,
+          62
+        ],
+        [
+          65,
+          62
+        ],
+        [
+          66,
+          62
+        ],
+        [
+          67,
+          62
+        ],
+        [
+          68,
+          62
+        ],
+        [
+          69,
+          62
+        ],
+        [
+          59,
+          63
+        ],
+        [
+          60,
+          63
+        ],
+        [
+          61,
+          63
+        ],
+        [
+          62,
+          63
+        ],
+        [
+          63,
+          63
+        ],
+        [
+          64,
+          63
+        ],
+        [
+          65,
+          63
+        ],
+        [
+          66,
+          63
+        ],
+        [
+          67,
+          63
+        ],
+        [
+          68,
+          63
+        ],
+        [
+          69,
+          63
+        ],
+        [
+          59,
+          64
+        ],
+        [
+          60,
+          64
+        ],
+        [
+          61,
+          64
+        ],
+        [
+          62,
+          64
+        ],
+        [
+          63,
+          64
+        ],
+        [
+          64,
+          64
+        ],
+        [
+          65,
+          64
+        ],
+        [
+          66,
+          64
+        ],
+        [
+          67,
+          64
+        ],
+        [
+          68,
+          64
+        ],
+        [
+          69,
+          64
+        ],
+        [
+          59,
+          65
+        ],
+        [
+          60,
+          65
+        ],
+        [
+          61,
+          65
+        ],
+        [
+          62,
+          65
+        ],
+        [
+          63,
+          65
+        ],
+        [
+          64,
+          65
+        ],
+        [
+          65,
+          65
+        ],
+        [
+          66,
+          65
+        ],
+        [
+          67,
+          65
+        ],
+        [
+          68,
+          65
+        ],
+        [
+          69,
+          65
+        ],
+        [
+          59,
+          66
+        ],
+        [
+          60,
+          66
+        ],
+        [
+          61,
+          66
+        ],
+        [
+          62,
+          66
+        ],
+        [
+          63,
+          66
+        ],
+        [
+          64,
+          66
+        ],
+        [
+          65,
+          66
+        ],
+        [
+          66,
+          66
+        ],
+        [
+          67,
+          66
+        ],
+        [
+          68,
+          66
+        ],
+        [
+          69,
+          66
+        ],
+        [
+          59,
+          67
+        ],
+        [
+          60,
+          67
+        ],
+        [
+          61,
+          67
+        ],
+        [
+          62,
+          67
+        ],
+        [
+          63,
+          67
+        ],
+        [
+          64,
+          67
+        ],
+        [
+          65,
+          67
+        ],
+        [
+          66,
+          67
+        ],
+        [
+          67,
+          67
+        ],
+        [
+          68,
+          67
+        ],
+        [
+          69,
+          67
+        ],
+        [
+          59,
+          68
+        ],
+        [
+          60,
+          68
+        ],
+        [
+          61,
+          68
+        ],
+        [
+          62,
+          68
+        ],
+        [
+          63,
+          68
+        ],
+        [
+          64,
+          68
+        ],
+        [
+          65,
+          68
+        ],
+        [
+          66,
+          68
+        ],
+        [
+          67,
+          68
+        ],
+        [
+          68,
+          68
+        ],
+        [
+          69,
+          68
+        ],
+        [
+          59,
+          69
+        ],
+        [
+          60,
+          69
+        ],
+        [
+          61,
+          69
+        ],
+        [
+          62,
+          69
+        ],
+        [
+          63,
+          69
+        ],
+        [
+          64,
+          69
+        ],
+        [
+          65,
+          69
+        ],
+        [
+          66,
+          69
+        ],
+        [
+          67,
+          69
+        ],
+        [
+          68,
+          69
+        ],
+        [
+          69,
+          69
+        ]
+      ]
+    },
+    "next_random": 2026076499,
+    "ranked": [],
+    "result": null,
+    "rng_changed": false
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ],
+      [
+        16512,
+        15488
+      ],
+      [
+        16903,
+        15565
+      ],
+      [
+        17236,
+        15787
+      ],
+      [
+        17458,
+        16120
+      ],
+      [
+        17536,
+        16512
+      ],
+      [
+        17458,
+        16903
+      ],
+      [
+        17236,
+        17236
+      ],
+      [
+        16903,
+        17458
+      ],
+      [
+        16511,
+        17536
+      ],
+      [
+        16120,
+        17458
+      ],
+      [
+        15787,
+        17236
+      ],
+      [
+        15565,
+        16903
+      ],
+      [
+        15488,
+        16511
+      ],
+      [
+        15565,
+        16120
+      ],
+      [
+        15787,
+        15787
+      ],
+      [
+        16120,
+        15565
+      ],
+      [
+        16512,
+        15744
+      ],
+      [
+        16805,
+        15802
+      ],
+      [
+        17055,
+        15968
+      ],
+      [
+        17221,
+        16218
+      ],
+      [
+        17280,
+        16512
+      ],
+      [
+        17221,
+        16805
+      ],
+      [
+        17055,
+        17055
+      ],
+      [
+        16805,
+        17221
+      ],
+      [
+        16511,
+        17280
+      ],
+      [
+        16218,
+        17221
+      ],
+      [
+        15968,
+        17055
+      ],
+      [
+        15802,
+        16805
+      ],
+      [
+        15744,
+        16511
+      ],
+      [
+        15802,
+        16218
+      ],
+      [
+        15968,
+        15968
+      ],
+      [
+        16218,
+        15802
+      ],
+      [
+        16512,
+        16000
+      ],
+      [
+        16707,
+        16038
+      ],
+      [
+        16874,
+        16149
+      ],
+      [
+        16985,
+        16316
+      ],
+      [
+        17024,
+        16512
+      ],
+      [
+        16985,
+        16707
+      ],
+      [
+        16874,
+        16874
+      ],
+      [
+        16707,
+        16985
+      ],
+      [
+        16511,
+        17024
+      ],
+      [
+        16316,
+        16985
+      ],
+      [
+        16149,
+        16874
+      ],
+      [
+        16038,
+        16707
+      ],
+      [
+        16000,
+        16511
+      ],
+      [
+        16038,
+        16316
+      ],
+      [
+        16149,
+        16149
+      ],
+      [
+        16316,
+        16038
+      ]
+    ],
+    "draws": [],
+    "input": {
+      "local": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "name": "empty_playfield"
+    },
+    "next_random": 2026076499,
+    "ranked": [],
+    "result": null,
+    "rng_changed": false
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "local": [
+        30,
+        30,
+        8,
+        8
+      ],
+      "name": "clipped_ring"
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      }
+    ],
+    "result": [
+      66,
+      59
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      83
+    ],
+    "input": {
+      "destination": [
+        17792,
+        17536,
+        0
+      ],
+      "name": "record_history_not_second_nearest",
+      "target_has_destination": true
+    },
+    "next_random": 2287577493,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 2635
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 2344
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 1966
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 1517
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 1024
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 543
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 393
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 806
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 1306
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 1777
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 2189
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 2520
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 2757
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 2891
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 2916
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 2829
+      }
+    ],
+    "result": [
+      69,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      18
+    ],
+    "input": {
+      "blocker": [
+        15232,
+        16512,
+        0
+      ],
+      "blocker_cells": [
+        [
+          59,
+          64
+        ]
+      ],
+      "name": "spawned_near_ordinary",
+      "seed": 2,
+      "spawned": true
+    },
+    "next_random": 1680153835,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      66
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      18
+    ],
+    "input": {
+      "blocker": [
+        15232,
+        16512,
+        0
+      ],
+      "blocker_cells": [
+        [
+          59,
+          64
+        ]
+      ],
+      "blocker_spawn_manager": true,
+      "name": "spawned_near_spawn_manager",
+      "seed": 2,
+      "spawned": true
+    },
+    "next_random": 1680153835,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      64
+    ],
+    "rng_changed": true
+  },
+  {
+    "candidates": [
+      [
+        16512,
+        15232
+      ],
+      [
+        17001,
+        15329
+      ],
+      [
+        17417,
+        15606
+      ],
+      [
+        17694,
+        16022
+      ],
+      [
+        17792,
+        16512
+      ],
+      [
+        17694,
+        17001
+      ],
+      [
+        17417,
+        17417
+      ],
+      [
+        17001,
+        17694
+      ],
+      [
+        16511,
+        17792
+      ],
+      [
+        16022,
+        17694
+      ],
+      [
+        15606,
+        17417
+      ],
+      [
+        15329,
+        17001
+      ],
+      [
+        15232,
+        16511
+      ],
+      [
+        15329,
+        16022
+      ],
+      [
+        15606,
+        15606
+      ],
+      [
+        16022,
+        15329
+      ]
+    ],
+    "draws": [
+      18
+    ],
+    "input": {
+      "blocker": [
+        15232,
+        16512,
+        0
+      ],
+      "blocker_cells": [
+        [
+          59,
+          64
+        ]
+      ],
+      "blocker_spawned": true,
+      "name": "spawned_near_spawned",
+      "seed": 2,
+      "spawned": true
+    },
+    "next_random": 1680153835,
+    "ranked": [
+      {
+        "candidate_index": 0,
+        "cell": [
+          64,
+          59
+        ],
+        "distance": 6275
+      },
+      {
+        "candidate_index": 1,
+        "cell": [
+          66,
+          59
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 2,
+        "cell": [
+          68,
+          60
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 3,
+        "cell": [
+          69,
+          62
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 4,
+        "cell": [
+          69,
+          64
+        ],
+        "distance": 7424
+      },
+      {
+        "candidate_index": 5,
+        "cell": [
+          69,
+          66
+        ],
+        "distance": 7342
+      },
+      {
+        "candidate_index": 6,
+        "cell": [
+          68,
+          68
+        ],
+        "distance": 7106
+      },
+      {
+        "candidate_index": 7,
+        "cell": [
+          66,
+          69
+        ],
+        "distance": 6737
+      },
+      {
+        "candidate_index": 8,
+        "cell": [
+          64,
+          69
+        ],
+        "distance": 6274
+      },
+      {
+        "candidate_index": 9,
+        "cell": [
+          62,
+          69
+        ],
+        "distance": 5776
+      },
+      {
+        "candidate_index": 10,
+        "cell": [
+          60,
+          68
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 11,
+        "cell": [
+          59,
+          66
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 12,
+        "cell": [
+          59,
+          64
+        ],
+        "distance": 4864
+      },
+      {
+        "candidate_index": 13,
+        "cell": [
+          59,
+          62
+        ],
+        "distance": 4985
+      },
+      {
+        "candidate_index": 14,
+        "cell": [
+          60,
+          60
+        ],
+        "distance": 5315
+      },
+      {
+        "candidate_index": 15,
+        "cell": [
+          62,
+          59
+        ],
+        "distance": 5776
+      }
+    ],
+    "result": [
+      59,
+      64
+    ],
+    "rng_changed": true
+  }
+]

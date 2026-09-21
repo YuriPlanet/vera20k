@@ -1,82 +1,9 @@
 //! Evidence-bounded YR aircraft runtime contracts.
 
-#[cfg(test)]
-use std::collections::HashSet;
-
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::sim::cell_rect::{
     IsClearToMoveResult, LiveCellPassabilityQuery, evaluate_live_cell_passability,
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FireLocationSearch {
-    pub aircraft_leptons: (i32, i32),
-    pub reference_leptons: Option<(i32, i32)>,
-    pub range_leptons: i32,
-    pub playable_cells: (u16, u16),
-    /// Scenario RNG result already reduced to the native inclusive 0..99 range.
-    pub random_0_to_99: u8,
-}
-
-/// Search the first usable sixteen-angle ring for an aircraft firing cell.
-///
-/// Named location: `AircraftClass::FindFireLocation`.
-#[cfg(test)]
-pub fn find_fire_location(
-    input: FireLocationSearch,
-    blocked_cells: &HashSet<(u16, u16)>,
-) -> Option<(u16, u16)> {
-    let mut radius = input.range_leptons - 0x100;
-    if radius <= 0x100 {
-        return None;
-    }
-    let reference = input.reference_leptons.unwrap_or(input.aircraft_leptons);
-
-    while radius > 0x100 {
-        let mut best: Option<(u64, (u16, u16))> = None;
-        let mut second: Option<(u64, (u16, u16))> = None;
-        for angle in (0..=0xf0).step_by(0x10) {
-            let angle_units = ((angle as i32) << 8) - 0x3fff;
-            let radians = angle_units as f64 * -std::f64::consts::PI / 32768.0;
-            let candidate_x =
-                (input.aircraft_leptons.0 as f64 + radians.sin() * radius as f64) as i32;
-            let candidate_y =
-                (input.aircraft_leptons.1 as f64 - radians.cos() * radius as f64) as i32;
-            let cell_x = candidate_x / 0x100;
-            let cell_y = candidate_y / 0x100;
-            if cell_x < 0
-                || cell_y < 0
-                || cell_x >= input.playable_cells.0 as i32
-                || cell_y >= input.playable_cells.1 as i32
-            {
-                continue;
-            }
-            let cell = (cell_x as u16, cell_y as u16);
-            if blocked_cells.contains(&cell) {
-                continue;
-            }
-            let dx = i64::from(reference.0 - candidate_x);
-            let dy = i64::from(reference.1 - candidate_y);
-            let distance = ((dx * dx + dy * dy) as f64).sqrt() as u64;
-            let ranked = (distance, cell);
-            if best.is_none_or(|current| ranked.0 < current.0) {
-                second = best;
-                best = Some(ranked);
-            } else if second.is_none_or(|current| ranked.0 < current.0) {
-                second = Some(ranked);
-            }
-        }
-        if let Some(best) = best {
-            return Some(if input.random_0_to_99 < 0x32 {
-                best.1
-            } else {
-                second.unwrap_or(best).1
-            });
-        }
-        radius -= 0x100;
-    }
-    None
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AircraftUpdateStep {
@@ -170,40 +97,6 @@ pub fn aircraft_landing_cell_leaf_clear() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn radial_search_rejects_short_ranges() {
-        let input = FireLocationSearch {
-            aircraft_leptons: (10 * 256, 10 * 256),
-            reference_leptons: None,
-            range_leptons: 512,
-            playable_cells: (20, 20),
-            random_0_to_99: 0,
-        };
-        assert_eq!(find_fire_location(input, &HashSet::new()), None);
-    }
-
-    #[test]
-    fn radial_search_uses_first_ring_and_rng_rank() {
-        let base = FireLocationSearch {
-            aircraft_leptons: (10 * 256 + 128, 10 * 256 + 128),
-            reference_leptons: Some((10 * 256 + 128, 4 * 256 + 128)),
-            range_leptons: 5 * 256,
-            playable_cells: (30, 30),
-            random_0_to_99: 0,
-        };
-        let first = find_fire_location(base, &HashSet::new()).unwrap();
-        let second = find_fire_location(
-            FireLocationSearch {
-                random_0_to_99: 99,
-                ..base
-            },
-            &HashSet::new(),
-        )
-        .unwrap();
-        assert_ne!(first, second);
-        assert!((first.0 as i32 - 10).abs().max((first.1 as i32 - 10).abs()) >= 3);
-    }
 
     #[test]
     fn firing_branch_skips_base_update() {

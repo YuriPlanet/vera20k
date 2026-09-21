@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "51 original full FindFireLocation calls including range/tier, sixteen-angle rings, native trig/distance, map/visibility, candidate admission, conditional RNG and its next draw. Supplied-state comparison; excludes initialization, reinforcement writers, OpenTopped passenger-range reduction, AssignDestination, Fly movement and full Mission_Attack.",
+  "assumptions": [
+    "Supplied Aircraft/Unit object bytes, original vtables and retained destination identities.",
+    "128x128 allocated flat cells; global map width64 and supplied LocalSize; supplied Cell+12C bits.",
+    "Supplied Foot vector, native marked/limbo bytes and physical/destination reservations.",
+    "Scenario RNG initialized by original65C6D0; PC53/chop ambient state.",
+    "Supplied Cell ground list and Techno/Foot class flags for Spawned candidate admission.",
+    "Type+5E4 OpenTopped passenger-range arm is zero in these cases."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "search": "0x004197C0",
+    "candidate_admission": "0x00419B00",
+    "range": "0x007012C0",
+    "get_weapon": "0x0070E140",
+    "sin": "0x004CACB0",
+    "cos": "0x004CAD00",
+    "sqrt": "0x004CAC40",
+    "rng": "0x0065C7E0",
+    "rng_next": "0x0065C780",
+    "playfield": "0x00578460",
+    "cell_lookup": "0x005657A0"
+  },
+  "payload_sha256": "72a4f59a46baf666991f7d7af2a441fc1fa8b4531997b032904ebf07cc8a33ae"
+}

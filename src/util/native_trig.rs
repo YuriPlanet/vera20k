@@ -164,6 +164,79 @@ pub fn rotate_z_by_step(point: (f32, f32, f32), step: i32) -> Option<(f32, f32, 
 mod tests {
     use super::*;
 
+    /// Full original FindFireLocation4197C0 calls record every candidate before
+    /// map/visibility/reservation filtering. This establishes which existing
+    /// deterministic geometry can serve the pending production search port;
+    /// it does not assert that Mission_Attack already calls that search.
+    #[test]
+    fn aircraft_fire_location_candidates_and_distances_match_native() {
+        let rows: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tools/spatial_oracle/aircraft_fire_location.json"
+        ))
+        .unwrap();
+        let mut candidate_count = 0;
+        let mut distance_count = 0;
+        for row in rows.as_array().unwrap() {
+            let input = &row["input"];
+            let xyz = |key: &str, default: [i32; 3]| -> [i32; 3] {
+                input[key].as_array().map_or(default, |v| {
+                    std::array::from_fn(|axis| v[axis].as_i64().unwrap() as i32)
+                })
+            };
+            let target = xyz("target", [16512, 16512, 0]);
+            let elite = input["veterancy"].as_i64().unwrap_or(0) >= 2
+                && input["elite_weapon"].as_bool().unwrap_or(true);
+            let range = input[if elite { "elite_range" } else { "range" }]
+                .as_i64()
+                .unwrap_or(if elite { 2304 } else { 1536 }) as i32;
+            let candidates = row["candidates"].as_array().unwrap();
+            for (index, native) in candidates.iter().enumerate() {
+                let radius = range - 256 * (1 + index as i32 / 16);
+                let actual =
+                    walk_step_world_xy([target[0], target[1]], ((index % 16) as u16) << 12, radius);
+                assert_eq!(
+                    actual[0],
+                    native[0].as_i64().unwrap() as i32,
+                    "{input}, candidate {index} X"
+                );
+                assert_eq!(
+                    actual[1],
+                    native[1].as_i64().unwrap() as i32,
+                    "{input}, candidate {index} Y"
+                );
+                candidate_count += 1;
+            }
+            let reference = if input["target_has_destination"].as_bool().unwrap_or(false)
+                && input["target_flags"].as_i64().unwrap_or(4) & 4 != 0
+            {
+                xyz("destination", [20608, 16512, 0])
+            } else {
+                xyz("aircraft", [10368, 16512, 500])
+            };
+            // The native observer records which candidate reached ranking;
+            // equal packed cells across rings must retain their distinct XYZ.
+            for ranked in row["ranked"].as_array().unwrap() {
+                let native = &candidates[ranked["candidate_index"].as_u64().unwrap() as usize];
+                let actual = crate::util::native_x87::distance_3d_leptons(
+                    [
+                        native[0].as_i64().unwrap() as i32,
+                        native[1].as_i64().unwrap() as i32,
+                        0,
+                    ],
+                    [reference[0], reference[1], 0],
+                );
+                assert_eq!(
+                    actual as i64,
+                    ranked["distance"].as_i64().unwrap(),
+                    "{input}: {ranked}"
+                );
+                distance_count += 1;
+            }
+        }
+        assert!(candidate_count > 600);
+        assert!(distance_count > 400);
+    }
+
     #[test]
     fn every_walk_heading_uses_the_original_trig_entries() {
         use crate::util::sha256::{Sha256, digest_hex, sha256_hex};
