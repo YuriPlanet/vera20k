@@ -231,12 +231,14 @@ probe; it is not a second implementation to publish.
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
 Branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Current source HEAD: `bae495bff341bcccc905a3b97d8f13068adf0a9e`; this checkpoint
-accompanies the validated increment. No tracked implementation WIP remains.
+Current validated source: `fa615a67a48be364e890b2801e52cdaf28283cdc`; this
+checkpoint accompanies it. No tracked implementation WIP remains. Preceding
+checkpoint HEAD: `20b31f3b8979b587016e98ace1136d33d17a0996`. Prior FlightLevel
+source: `bae495bff341bcccc905a3b97d8f13068adf0a9e`.
 Preceding checkpoint: `783eeb236c8c49295222d149fbdf8037012a4bcc`.
 `c3e4876fb7a843181f7cadf5c3ef9f4683c9b2ad` migrated Ground rendering and entity
-picking to retained Display. The current increment resolves type FlightLevel through
-its rules owner and carries original Fly vertical-controller comparisons.
+picking to retained Display. The current increment ports integer Fly height stepping, migrates its state and
+consumers, and corrects the native bridge/slope comparison fixture.
 Preceding checkpoint HEAD: `3cace950259197a4db3b0075d752a32beeaf5c44`; animation
 source increment: `17520993c5e79ec1752736a0a9f2a5774bde887d`.
 No PR or critic pass for this branch. Production pickup and the complete Display
@@ -419,47 +421,89 @@ inspection corrected `JumpjetLocomotionClass__State5_Touchdown` at54CA90 to
 index4 calls normal descent54C550. Comments54CC0D,4CD4E7 and41CC67 are saved
 and read back. No binary, signature or boundary edits.
 
-### Required continuation
+### Fly height migration and required continuation
 
-The Fly height prerequisite now has reproducible evidence:
-`tools.spatial_oracle.fly_height` executes136 original4CDD0D..4CDFBC/4CE145
-steps with actual Aircraft/Unit vtables, QueryInterface and GetHeight/SetHeight.
-This remains native-only evidence, not Rust controller parity. The fixture supplies
-post-horizontal state, native+51 and captured IsDropship; no call is substituted.
-It excludes the earlier crash relocation, following descent drift and phase/Display
-transactions. Climb is min(delta,IsDropship?16:hasPassenger?10:20); ordinary
-descent clamps its step to20..50 and can undershoot a nonzero target. Bridge Z
-and OnBridge write ordering is visible in the saved results.
+Current implementation moves Fly's integer target+38 and takeoff/landing+50/+51
+into private `FlyRuntime` fields in its locomotor payload. Constructor target is0;
+accepted takeoff resolves the type's FlightLevel. Common `air_phase`,
+`target_altitude`, `climb_rate`, the 300-lepton rate constant and `tick_altitude`
+are removed. Jumpjet continues using its own parameter/runtime owner; Rocket
+and Parachute remain separate. Snapshot185 saves the new Fly fields, including
+stashed payloads, and hashes all three. Fixed separators preserve old non-air
+hash slots; no replay golden has been changed.
 
-Type+C95 is **IsDropship**, ctor7113B9=false and reader712350..712373 key84447C;
-no stock rulesmd type sets it. It is not currently a Rust rules field. Aircraft
-auxiliary interface7E2250 at owner+6C0 is returned by QueryInterface414290 for
-IID820F501C-4F39-11D2-9B70-00104B972FE8 (literals7E9B40/822410). Its+14
-function41B7D0 checks owner+118 FirstPassenger, not Carryall; use existing
-passenger cargo ownership when porting the climb input. Its+0C function41B6A0
-supplies a0/100 landing base height via type+DFC/radio/mission/building gates.
-Original414290 was falsely named Destructor; renamed QueryInterface. Comments
-4142C1,4CDE64,712336 saved and read back. No signature/boundary/binary changes.
+`air_movement` now calls original-range integer stepping after committed XY.
+Object Z is authoritative and the old SimFixed altitude is only a saturated cache.
+Rules supply IsDropship and effective FlightLevel; Aircraft cargo supplies the
+FirstPassenger predicate. Missions derive their compatibility phase from exact
+physical height. Their repeated current-target/3 attack update is removed:
+4CF3D4..4CF4CF instead selects destination-relative height, conditional
+IsDropship approach height or Type FlightLevel. The full native horizontal target
+selector is STILL REQUIRED; removal of that invented writer does not implement it.
+All aircraft/docking/paradrop/spawn-manager destination calls use the existing
+Simulation destination owner. No new independent mission altitude field exists.
 
-`ObjectType::flight_level(general)` now models717800: only exactly-1 falls back.
-The type reader712336/71234A and constructor711050 (EBP=-1 from710CED) establish
-the field. The30-case `flight_level` corpus is consumed by Rust rules tests;
-Fly construction, attack recovery and paradrop initialization use this owner.
-The existing I16F16 altitude adapter saturates non-retail values outside its range;
-native integer altitude/target state remains part of the required Fly migration.
-The getter change adds no serialized field to Simulation. A new release retail
-load is required for this rules change before merge; the prior load predates it.
-Fly constructor4CC9A0 clears target+38, speed+40/+48, phase+50/+51 and fall
-accumulator+58. Link4CCA20 only sets full+18 from AircraftType.AirportBound+E0D;
-it does not seed the target. Do not mistake the legacy Rust construction target
-for a native runtime initializer. The extra+50 store4CD3C3 is a failed Ground
-landing transition: layer changed to Ground, +50 clear, owner virtual+550 false;
-it sets+50, clears OnBridge and SetHeight(GetHeight()+10) inside Mark0/1.
-For Aircraft, BeginTakeoff's four virtual refusals resolve through7E22A4 to
-70EFD0 (+504>0),4DE770 (Foot timer+6A0/+6A8),70C5B0 (+270) and70C5C0 (+271).
-`world/techno_ai_cloak.rs` already records missing EMP and an unproven dormant
-timer claim; recheck writers/reachability rather than adopting false defaults.
-Its teleport predicates are an existing owner lead for the two warp bytes.
+`tools.spatial_oracle.fly_height` now executes144 original4CDD0D..4CDFBC/4CE145
+steps with real Aircraft/Unit vtables, QueryInterface and GetHeight/SetHeight.
+IMPORTANT evidence correction: the previously committed136-case fixture supplied
+the cell-table pointer but omitted its length, so ground and bridge lookups used
+Dummy. Seven old outputs changed after initializing Map+140; bridge/slope claims
+from the earlier corpus are invalid. Read-only observers now require every ground
+and bridge query to select the real fixture cell. Eight added cases cover signed
+heights and40000/65536 targets beyond I16F16. No instruction/call is substituted.
+The comparison excludes full Process admission, preceding XY/crash relocation,
+following drift/speed, phase, sounds/animation and Display transactions.
+
+Climb is min(delta,IsDropship?16:hasPassenger?10:20). Ordinary descent clamps its
+step to20..50 and can undershoot nonzero targets. Bridge normalization and the
+SetHeight-before-OnBridge-clear ordering are preserved. Rust's kernel consumes
+all144 outputs. The production cell transaction consumes132 healthy outputs;
+health<=0 belongs to the earlier unported crash/fall controller. Additional tests
+cover saved target/flags/cargo, eight-frame continuation, hash distinctions and
+repeated attack mission visits. Full `cargo test -p vera20k --lib` passed:
+**9,116 passed,0 failed,135 ignored**,34.31s, `.local/fly-height-validated-tests.log`.
+`fly_height --check`144 and `flight_level --check`30 passed. Earlier failures
+were the omitted native table length, a stale snapshot-version assertion,
+mapless-ground fallback and an incompletely populated terrain fixture; those
+are fixed. `cargo clippy -p vera20k --lib` passed with1,027 warnings in1m23s
+(`.local/fly-height-clippy.log`). All owned validation processes are terminal.
+This is not complete Fly or combat parity.
+
+Type+C95 IsDropship: ctor7113B9=false, reader712350..712373 key84447C; no stock
+rulesmd type sets it. Aircraft auxiliary interface7E2250 at owner+6C0 comes from
+QueryInterface414290 for IID820F501C-4F39-11D2-9B70-00104B972FE8. Its+14 function
+41B7D0 checks owner+118 FirstPassenger. Its+0C function41B6A0 supplies a0/100
+landing base from Carryall/type+DFC, cargo head+118, radio, mission7 and
+contacted-building gates; that owner is not ported. Carryall reader41CCAA uses
+literal818028 and stores+DFC at41CCC7 (comment saved/read back). Rust has no
+Carryall rules field yet. The contacted building+16A9/+16CB identities still
+need proof; do not infer them from likely names.
+`ObjectType::flight_level(general)` models717800 with exact-1 fallback;30 native
+reader/getter cases remain checked. A new release retail load for FlightLevel and
+IsDropship is required before merge; the prior release load predates both changes.
+
+The newly stored takeoff flag still lacks its native clearing callback:4CE680
+clears BOTH flags unconditionally at4CE756/4CE763, then thresholds select facing/
+speed effects. It must run inside4CD2A0's explicit Display/Mark transaction, not
+be approximated by reaching the target height. BeginLanding still lacks+52,
+admission, sound/animation, air-slot and touchdown effects. Legacy docking adapters
+reissue the start mutations each mission visit; port their proper native callers.
+BeginTakeoff refusals are70EFD0 (+504 EMP),4DE770 (Foot timer+6A0/+6A8),70C5B0
+(+270) and70C5C0 (+271). Existing teleport/power predicates are used; missing EMP
+and timer producers are not equivalent to deploy_state or assumed unreachable.
+The failed Ground landing transition4CD3C3 also sets+50, clears OnBridge and
+SetHeight(GetHeight()+10) inside Mark0/1 when owner virtual+550 refuses.
+
+Ghidra comments4CF4B6 and4CE756 are saved/read back: conditional type-based dive
+versus repeated mutable-target division, and unconditional takeoff flag clears.
+Prior QueryInterface rename414290 and comments4142C1/4CDE64/712336 remain saved.
+No signature, function-boundary or binary edits.
+
+Next safe implementation: port Carryall landing-base ownership and the native
+phase callbacks together with their Mark/Display transaction. Verify missing
+radio/building inputs first. Full MoveTo destination XYZ, mode+5C and null-stop
+behavior, EMP/Foot timer producers, continuous horizontal slowdown and target
+selection, descent drift and crash relocation remain required too.
 
 1. Complete explicit Fly resubmissions:4CD2A0 enters Mark(REMOVE)4CD324 and
    RemoveDisplay4CD333 only for health>0 with loco+50/+51, runs their height
@@ -469,9 +513,8 @@ Its teleport predicates are an existing owner lead for the two warp bytes.
    Existing Rules has `landable`; do not add another authority. Helper4CE840
    behind+51 handles landing (dock/bridge base height, refusal/alternate cells,
    touchdown+slot cleanup);4CE680 behind+50 clears both flags and stages takeoff
-   facing/speed. Neither is a substitute for the missing native vertical-motion
-   owner. Current AirMovePhase/tick_altitude is synthetic; do not infer native
-   flags just from its names. Proven full-object writers:4CF9A5 clears+51 and
+   facing/speed. The new vertical owner does not implement these transactions.
+   AirMovePhase is now a derived mission compatibility view, not native flags. Proven full-object writers:4CF9A5 clears+51 and
    sets+50, then type virtual+BC supplies+38;4CFADF clears+50, sets+51, clears+52
    and zeroes+38 after its refusal/docking gates. ILoco offsets+4C/+4D address
    these same full-object+50/+51 bytes. Comments4CF9A5/4CFADF saved/read back.
