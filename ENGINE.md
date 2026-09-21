@@ -90,8 +90,9 @@ differences, validate affected paths and keep cleanup within task scope.
 State and shared decisions have one owner. Before writing simulation state or
 adding a decision helper, find the existing writers and name the owner in the PR.
 Never add a second writer, a mirror field or a local variant of a shared helper;
-extend or fix the owner, in a prior PR when large. Keep consolidated state private
-to its owner so a second writer fails to compile.
+extend or fix the owner, in a prior PR when large. Keep new and consolidated
+simulation state private to its owning module, mutated only through the owner, so a
+second writer fails to compile.
 
 Use relevant rows in the [dependency map](docs/module-map.md); verify against source.
 Refresh with `python tools/module_map.py` after dependency, layout, visibility or
@@ -102,6 +103,12 @@ integration and review. Consider the surrounding architecture and affected consu
 and use integration evidence appropriate to the change, including runtime reproduction
 when needed. Reassess worsening fixes.
 Design/plan artifacts are optional; implementation authority includes design choices.
+
+Port gameplay one native call chain at a time, from trigger to leaf across every class
+it crosses, and delete the replaced path in the same change. Record the RNG draws,
+timer writes and detach calls the chain passes in its residuals or ledger row, even
+when they are not ported. Behavior invented where a native body exists is a recorded
+residual with a reason, never a silent default.
 
 Promote coherent prerequisites when a smaller patch creates broken behavior, duplicate
 authority or predictable rework. Choose branch/PR boundaries to keep dependencies
@@ -134,6 +141,8 @@ production behavior and protection against regressions.
 - Rust PR readiness: one full `cargo test -p vera20k --lib` plus
   `cargo clippy -p vera20k --lib` for the final candidate; repeat only if later
   changes/failures invalidate it.
+- Asset binding, loader or rules-closure changes: a release-build retail map load
+  before merge; the lib suite never runs the app loader against retail assets.
 - Docs/skills: validate content, links/examples and tooling; no Cargo suite.
 - Every `cargo test` uses `--lib`.
 
