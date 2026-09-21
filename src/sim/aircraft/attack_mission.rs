@@ -1,7 +1,8 @@
 //! 11-state attack mission state machine for aircraft.
 //!
 //! Implements the core attack cycle: approach target → check range →
-//! fire weapon → return to base. Matches gamemd.exe Mission_Attack.
+//! fire weapon → return to base. Native branches and outstanding differences
+//! are documented below; this legacy dispatcher is not complete Mission_Attack parity.
 //!
 //! ## State overview
 //! - 0: Init — clear flags, validate target
@@ -18,16 +19,15 @@ use crate::sim::aircraft::AircraftMission;
 use crate::sim::combat::{AttackTarget, TargetKind};
 use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::StringInterner;
-use crate::util::fixed_math::SimFixed;
+
+#[cfg(test)]
+#[path = "approach_range_tests.rs"]
+mod approach_range_tests;
 
 /// ±11.25° firing arc in 16-bit facing units.
 /// 0x800 = 2048 out of 65536 = 11.25°.
 /// Aircraft can only fire when target bearing is within this arc of their heading.
 const FIRING_ARC_TOLERANCE: u16 = 0x800;
-
-/// Distance threshold for "in weapon range" checks, in cells (SimFixed).
-/// Used as fallback when weapon range lookup fails.
-const DEFAULT_WEAPON_RANGE_CELLS: SimFixed = SimFixed::lit("5");
 
 /// Resolved status of an aircraft's current attack target — abstracts over
 /// Entity vs Cell so the state machine doesn't care which kind it is.
@@ -103,59 +103,15 @@ pub fn tick_attack_state(
     // Look up type info.
     let type_str = interner.resolve(type_ref);
     let obj = rules.object(type_str);
-    // Weapon range for the state-3 in-range test, in cells.
-    //
-    // gamemd-derived: `AircraftClass::Mission_Attack @ 0x00417FE0` case 3 zeroes
-    // EBX at `0x004180A7` and pushes it as the argument at `0x004180F6`, then
-    // calls the object's own vtable `+0x3F8` at `0x004180F9`. In the
-    // `AircraftClass` vtable (base `0x007E22A4`; `read_memory 0x007E2698` gives
-    // `+0x3F4` = `GetCurrentWeapon 0x0070E1A0` and `+0x3F8` =
-    // `TechnoClass::GetWeapon 0x0070E140`) aircraft do not override the slot, so
-    // this is `GetWeapon(0)` — which swaps in `EliteWeapon[0]` whenever
-    // `VeterancyClass::IsElite` and that slot names a weapon. The comparison is
-    // then `Distance_To(target) (0x005F6440)` against
-    // `WeaponType->Range (+0xB4)` at `0x0041810F`, `JGE` → keep approaching,
-    // otherwise `sub_state = 4` (fire) at `0x00418117`.
-    //
-    // So the elite tier belongs here: it is the only gate on the 3 → 4
-    // transition, and it decides both the tick an elite aircraft fires and the
-    // cells it flies over getting there. Stock: `[ORCA]` `Maverick` Range 6 →
-    // `MaverickE` 9, `[BEAG]` `Maverick2` 6 → `Maverick2E` 9.
-    //
-    // `weapon_for_index` reads native array slot 0 (`TechnoTypeClass+0x898` /
-    // elite `+0xA94`), which `Primary=`/`ElitePrimary=` alias — see
-    // `ObjectType::read_weapon_arrays`.
-    //
-    // RESIDUAL (DRIFT, pre-existing, not introduced here): the native side is
-    // established, so this is a confirmed difference rather than an UNCHECKED
-    // one. `ObjectClass::Distance_To @ 0x005F6440` is a 2-D *Euclidean* lepton
-    // distance (`Sqrt_Approx` then `Math__ftol`) and the `JGE` at `0x0041810F`
-    // is a signed strict compare, so firing needs `dist < Range`. This compares
-    // a cell-Chebyshev distance with `<=`.
-    //
-    // Two terms diverge, and the elite fix above *enlarges* the first because
-    // the gap scales with Range:
-    // - Chebyshev underestimates Euclidean by up to √2, so an elite `[ORCA]`
-    //   (Range 9) against a target at cell offset (9, 9) fires here while gamemd
-    //   is still approaching — about 3.7 cells, not one.
-    // - `Distance_To` subtracts `(FoundationH + FoundationW) * 0x40` leptons for
-    //   a building target — 2 cells against a 4×4 structure. This subtracts
-    //   nothing.
-    //
-    // Trigger: any attack run; the building term on every run against a base.
-    // Player effect: the approach ends early, so an aircraft opens fire from
-    // outside the range gamemd would use. Frequency: every aircraft attack.
-    // Downstream: the firing tick and the cells flown over. Not fixed here
-    // because replacing the distance model is a whole-function change outside
-    // this mechanism's scope.
-    let weapon_range_cells: SimFixed = obj
-        .and_then(|o| {
-            let wpn_name =
-                crate::sim::combat::combat_weapon::primary_for_tier(o, entity_veterancy)?;
-            let wpn = rules.weapon(wpn_name)?;
-            Some(wpn.range)
-        })
-        .unwrap_or(DEFAULT_WEAPON_RANGE_CELLS);
+    // Aircraft417FE0 range branch4180F4..418117 uses GetWeapon(0), including
+    // elite fallback, then signed Distance_To < raw Range leptons. No generic
+    // CanFireAt range bonuses or cell-rounded five-cell fallback belong here.
+    // Scope: the legacy state3 handler still needs its native auxiliary+18
+    // admission and the other navigation/facing arms418146..4182A2 migrated.
+    let weapon_range_leptons = obj
+        .and_then(|o| crate::sim::combat::combat_weapon::primary_for_tier(o, entity_veterancy))
+        .and_then(|name| rules.weapon(name))
+        .map(|weapon| weapon.range_leptons);
 
     match sub_state {
         // ---------------------------------------------------------------
@@ -199,12 +155,17 @@ pub fn tick_attack_state(
                 });
             }
 
-            // Distance check (cell-based Chebyshev).
-            let dx = (entity_rx as i32 - status.rx as i32).abs();
-            let dy = (entity_ry as i32 - status.ry as i32).abs();
-            let dist = SimFixed::from_num(dx.max(dy));
-
-            if dist <= weapon_range_cells {
+            let distance = crate::sim::combat::object_distance_to(
+                entity,
+                &status.kind,
+                entities,
+                rules,
+                interner,
+            );
+            if distance
+                .zip(weapon_range_leptons)
+                .is_some_and(|(distance, range)| distance < range)
+            {
                 // In range → fire.
                 AttackTickResult::stay(AircraftMission::Attack {
                     sub_state: 4,
@@ -590,7 +551,7 @@ mod tests {
             AircraftMission::Attack { sub_state: 3, .. } => {}
             other => panic!("rookie ORCA at 8 cells should still approach, got {other:?}"),
         }
-        // Elite: 8 <= MaverickE Range 9 → fire.
+        // Elite: native lepton distance < MaverickE Range 9 → fire.
         match run_at(200).new_mission {
             AircraftMission::Attack { sub_state: 4, .. } => {}
             other => panic!("elite ORCA at 8 cells should fire, got {other:?}"),

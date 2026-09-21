@@ -29,10 +29,10 @@ pub(crate) mod fire_decision;
 pub(crate) mod greatest_threat;
 pub(crate) mod in_range;
 mod inviso_scatter;
+mod object_health;
 #[cfg(test)]
 pub(crate) mod receiver_fixture;
 mod receiver_health;
-mod object_health;
 #[cfg(test)]
 pub(crate) use receiver_fixture::{
     BaseDefenseResponseTraceEntry, FixtureTrace, commit_area_damage_receivers,
@@ -79,7 +79,6 @@ mod combat_cloak_damage_tests;
 mod delayed_building_fire_tests;
 
 use std::collections::{BTreeMap, BTreeSet};
-
 
 use self::combat_weapon::{WeaponSlot, select_weapon_against, select_weapon_slot};
 use crate::map::entities::EntityCategory;
@@ -850,9 +849,8 @@ impl AttackTarget {
 ///   X = Location.X + (foundationWidth  - 1) * 128
 ///   Y = Location.Y + (foundationHeight - 1) * 128
 ///
-/// The vanilla game has bugs where some code paths use raw Location (NW corner)
-/// instead of foundation center — e.g. Destroyers mis-targeting Naval Yards
-/// from certain angles (Phobos bugfix at 0x70BCE6). We fix this from the start.
+/// Native virtual GetCoords: Object5F65A0 and Building447AC0. Callers which
+/// consume stored Location rather than this virtual point keep that distinction.
 fn target_coords(
     entity: &GameEntity,
     rules: Option<&RuleSet>,
@@ -870,8 +868,10 @@ fn target_coords(
             // (fw-1)*128 leptons in X, (fh-1)*128 leptons in Y.
             // sub_x/sub_y may exceed 256 — lepton_distance_sq_raw handles
             // this correctly since it computes cell*256+sub as a flat value.
-            let offset_x = (fw.saturating_sub(1) as i32) * 128;
-            let offset_y = (fh.saturating_sub(1) as i32) * 128;
+            //447AC0 subtracts1 as a signed integer, including the native0x0
+            //foundation: its GetCoords lies128 leptons before the raw anchor.
+            let offset_x = (i32::from(fw) - 1) * 128;
+            let offset_y = (i32::from(fh) - 1) * 128;
             let full_x: i32 = rx as i32 * 256 + sub_x.to_num::<i32>() + offset_x;
             let full_y: i32 = ry as i32 * 256 + sub_y.to_num::<i32>() + offset_y;
             rx = (full_x / 256) as u16;
@@ -912,6 +912,50 @@ pub(crate) fn resolve_target_coords(
         TargetKind::Entity(id) => entities.get(id).map(|t| target_coords(t, rules, interner)),
         TargetKind::Cell(rx, ry) => Some(cell_center_coords(rx, ry)),
     }
+}
+
+/// ObjectClass::Distance_To5F6440: planar GetCoords distance, then the target
+/// building's (foundation width + height)*64 discount, clamped to zero. This
+/// differs from the weapon CanFireAt/InRange gate and has no altitude bonus.
+/// Reuse the coordinate projection and deterministic native sqrt owner: exact
+/// integer sqrt changes observable lepton ties (1281 becomes1280 natively).
+/// Native comparisons: tools/spatial_oracle/aircraft_approach_range.{py,json}.
+pub(crate) fn object_distance_to(
+    source: &GameEntity,
+    target: &TargetKind,
+    entities: &EntityStore,
+    rules: &RuleSet,
+    interner: &StringInterner,
+) -> Option<i32> {
+    let planar = |(rx, ry, sx, sy): (u16, u16, SimFixed, SimFixed)| {
+        [
+            i32::from(rx) * 256 + sx.to_num::<i32>(),
+            i32::from(ry) * 256 + sy.to_num::<i32>(),
+            0,
+        ]
+    };
+    let from = planar(target_coords(source, Some(rules), interner));
+    let to = planar(resolve_target_coords(
+        target,
+        entities,
+        Some(rules),
+        interner,
+    )?);
+    let distance = crate::util::native_x87::distance_3d_leptons(from, to);
+    if let TargetKind::Entity(id) = *target
+        && let Some(building) = entities.get(id)
+        && building.category == EntityCategory::Structure
+    {
+        let object = rules.object(interner.resolve(building.type_ref()))?;
+        let (width, height) = foundation_dimensions(&object.foundation);
+        // Height query45ECA0 receives false: Bib never adds to this discount.
+        return Some(
+            distance
+                .wrapping_sub((i32::from(width) + i32::from(height)) * 64)
+                .max(0),
+        );
+    }
+    Some(distance)
 }
 
 /// Whether the attacker's normally selected weapon can currently reach this

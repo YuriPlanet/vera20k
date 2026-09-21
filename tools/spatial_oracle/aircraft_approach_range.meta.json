@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "235 original full Distance_To queries and Aircraft range branches, including primary/elite fallback, native sqrt ties, strict signed range boundary, cell targets and building centre/discount/clamp. Stops before navigation or firing; excludes mission scheduling and other attack-state branches.",
+  "assumptions": [
+    "Original Aircraft/Unit/Building/Cell vtables; supplied physical XYZ and native primary/elite weapon slots.",
+    "All 22 original foundation entries, with Bib both ways; immutable dimension arrays retained.",
+    "PC53/chop 0E7F; flat Cell target; source altitude and target altitude differ deliberately.",
+    "Entry after auxiliary+18 has selected the range branch. Does not establish that admission predicate."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "aircraft_range": "0x004180F4",
+    "distance_to": "0x005F6440",
+    "get_weapon": "0x0070E140",
+    "building_coords": "0x00447AC0",
+    "foundation_width": "0x0045EC90",
+    "foundation_height": "0x0045ECA0",
+    "sqrt": "0x004CAC40",
+    "ftol": "0x007C5F00"
+  },
+  "payload_sha256": "883863cfab2664e46b982837eb82e2bb4821044ade30b0e2c759b5e10b80bb29"
+}
