@@ -1,0 +1,79 @@
+[
+  {
+    "fire_error": null,
+    "fixed_bits": 0,
+    "fraction": 0.0,
+    "name": "fixed_0",
+    "refused": false
+  },
+  {
+    "fire_error": null,
+    "fixed_bits": 1,
+    "fraction": 1.52587890625e-05,
+    "name": "fixed_1",
+    "refused": false
+  },
+  {
+    "fire_error": null,
+    "fixed_bits": 6552,
+    "fraction": 0.0999755859375,
+    "name": "fixed_6552",
+    "refused": false
+  },
+  {
+    "fire_error": null,
+    "fixed_bits": 6553,
+    "fraction": 0.0999908447265625,
+    "name": "fixed_6553",
+    "refused": false
+  },
+  {
+    "fire_error": 7,
+    "fixed_bits": 6554,
+    "fraction": 0.100006103515625,
+    "name": "fixed_6554",
+    "refused": true
+  },
+  {
+    "fire_error": 7,
+    "fixed_bits": 6555,
+    "fraction": 0.1000213623046875,
+    "name": "fixed_6555",
+    "refused": true
+  },
+  {
+    "fire_error": 7,
+    "fixed_bits": 32768,
+    "fraction": 0.5,
+    "name": "fixed_32768",
+    "refused": true
+  },
+  {
+    "fire_error": 7,
+    "fixed_bits": 65536,
+    "fraction": 1.0,
+    "name": "fixed_65536",
+    "refused": true
+  },
+  {
+    "fire_error": null,
+    "fixed_bits": null,
+    "fraction": 0.09999999999999999,
+    "name": "below_native_threshold",
+    "refused": false
+  },
+  {
+    "fire_error": null,
+    "fixed_bits": null,
+    "fraction": 0.1,
+    "name": "native_threshold",
+    "refused": false
+  },
+  {
+    "fire_error": 7,
+    "fixed_bits": null,
+    "fraction": 0.10000000000000002,
+    "name": "above_native_threshold",
+    "refused": true
+  }
+]

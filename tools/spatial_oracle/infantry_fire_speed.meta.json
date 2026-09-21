@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "11 speed-refusal witnesses; earlier common legality and subsequent NavCom/action, weapon and locomotor gates are excluded.",
+  "assumptions": [
+    "Supplied Foot+578 fraction and post-common-legality CPU frame.",
+    "Eight exactly representable SimFixed inputs and three binary64 threshold neighbors."
+  ],
+  "substitutions": [
+    "No original instructions patched and no supplied call results within the region."
+  ],
+  "entry_points": {
+    "infantry_get_fire_error": "0x0051C8B0",
+    "speed_gate": "0x0051C9B8",
+    "allowed_boundary": "0x0051C9CF",
+    "refused_return": "0x0051CAFA"
+  },
+  "payload_sha256": "849f00172e3fde2b6627e66013e7980df7a748a3a691b1f508cca7f8db6fd366"
+}

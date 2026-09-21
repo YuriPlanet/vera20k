@@ -166,6 +166,84 @@ fn infantry_refused_or_reloading_does_not_snap() {
 }
 
 #[test]
+fn infantry_fire_speed_refusal_matches_original_threshold() {
+    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/infantry_fire_speed.json"
+    ))
+    .unwrap();
+    let rules = infantry_fire_frame_rules();
+    let mut compared = 0;
+    for row in rows.iter().filter(|row| !row["fixed_bits"].is_null()) {
+        let mut store = pair();
+        let firer = store.get_mut(1).unwrap();
+        firer.foot_speed.applied_fraction =
+            SimFixed::from_bits(row["fixed_bits"].as_i64().unwrap() as i32);
+        firer.attack_target = Some(AttackTarget::new(2));
+        let result = visit(&mut store, &rules, 100);
+        let firer = store.get(1).unwrap();
+        let refused = row["refused"].as_bool().unwrap();
+        assert_eq!(
+            firer
+                .attack_target
+                .as_ref()
+                .unwrap()
+                .pending_infantry_fire
+                .is_none(),
+            refused,
+            "{}",
+            row["name"]
+        );
+        assert_eq!(
+            firer.body_facing.unwrap().current(100),
+            if refused { 0x8123 } else { 0x3FFF },
+            "{}",
+            row["name"]
+        );
+        assert!(result.consequences.fire_events().is_empty());
+        compared += 1;
+    }
+    assert_eq!(compared, 8);
+}
+
+#[test]
+fn infantry_speed_refusal_at_fire_frame_clears_pending_sequence() {
+    let rules = infantry_fire_frame_rules();
+    let mut store = pair();
+    store.get_mut(1).unwrap().attack_target = Some(AttackTarget::new(2));
+    visit(&mut store, &rules, 100);
+    let body = store.get(1).unwrap().body_facing;
+    set_anim_frame(&mut store, 1, 2);
+    let firer = store.get_mut(1).unwrap();
+    assert!(
+        firer
+            .attack_target
+            .as_ref()
+            .unwrap()
+            .pending_infantry_fire
+            .is_some()
+    );
+    // Isolate the live Foot predicate from the older movement-target shortcut.
+    assert!(firer.movement_target.is_none());
+    firer.foot_speed.applied_fraction = SimFixed::ONE;
+    let result = visit(&mut store, &rules, 101);
+    let firer = store.get(1).unwrap();
+    assert!(result.consequences.fire_events().is_empty());
+    assert!(
+        firer
+            .attack_target
+            .as_ref()
+            .unwrap()
+            .pending_infantry_fire
+            .is_none()
+    );
+    assert_eq!(
+        firer.animation.as_ref().unwrap().sequence,
+        SequenceKind::Stand
+    );
+    assert_eq!(firer.body_facing, body);
+}
+
+#[test]
 fn pending_sequence_keeps_start_facing_when_target_moves() {
     let rules = infantry_fire_frame_rules();
     let mut store = pair();
@@ -369,4 +447,129 @@ fn production_pending_fire_restores_heading_and_reaches_emission() {
         }
     }
     panic!("restored production fire sequence did not emit");
+}
+
+#[test]
+fn production_attack_during_paid_walk_step_waits_before_turning_and_firing() {
+    use crate::sim::command::Command;
+
+    let rules = production_rules(0);
+    let (mut sim, firer, target) = production_pair(&rules);
+    assert!(sim.rebuild_dynamic_navigation(&rules));
+    let command = |sim: &mut Simulation, command: Command| {
+        let grid = sim.path_grid_snapshot();
+        assert!(sim.apply_command_with_overlays(
+            "Americans",
+            &command,
+            Some(&rules),
+            grid.as_deref(),
+            &BTreeMap::new(),
+            None,
+        ));
+    };
+    let frame = |sim: &mut Simulation| {
+        let grid = sim.path_grid_snapshot();
+        sim.advance_tick(
+            &[],
+            Some(&rules),
+            &BTreeMap::new(),
+            grid.as_deref(),
+            None,
+            67,
+        );
+    };
+    // Walk south, then attack the enemy east of us. The turn is observable.
+    command(
+        &mut sim,
+        Command::Move {
+            entity_id: firer,
+            target_rx: 5,
+            target_ry: 10,
+            queue: false,
+            group_id: None,
+        },
+    );
+    for _ in 0..50 {
+        frame(&mut sim);
+        if sim
+            .substrate
+            .entities
+            .get(firer)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .step_head()
+            .is_some()
+        {
+            break;
+        }
+    }
+    let entity = sim.substrate.entities.get(firer).unwrap();
+    let head = entity
+        .locomotor
+        .as_ref()
+        .unwrap()
+        .step_head()
+        .expect("accepted Walk step");
+    let body = entity.body_facing.expect("Walk's heading owner");
+    assert_eq!(entity.foot_speed.applied_fraction, SimFixed::ONE);
+    command(
+        &mut sim,
+        Command::Attack {
+            attacker_id: firer,
+            target_id: target,
+        },
+    );
+    let entity = sim.substrate.entities.get(firer).unwrap();
+    assert_eq!(entity.locomotor.as_ref().unwrap().step_head(), Some(head));
+    assert_eq!(
+        entity.body_facing,
+        Some(body),
+        "order keeps the paid-step heading"
+    );
+    assert_eq!(entity.foot_speed.applied_fraction, SimFixed::ONE);
+    let mut refused_frames = 0;
+    for _ in 0..100 {
+        frame(&mut sim);
+        let entity = sim.substrate.entities.get(firer).unwrap();
+        let fired = sim
+            .fire_events
+            .iter()
+            .any(|event| event.attacker_id == firer);
+        if entity.foot_speed.applied_fraction > SimFixed::ONE / SimFixed::from_num(10) {
+            assert!(!fired, "a retained paid step cannot fire");
+            assert_eq!(
+                entity.body_facing,
+                Some(body),
+                "no premature fire-start turn"
+            );
+            assert!(
+                entity
+                    .attack_target
+                    .as_ref()
+                    .unwrap()
+                    .pending_infantry_fire
+                    .is_none()
+            );
+            refused_frames += 1;
+        } else if fired {
+            assert!(
+                refused_frames > 0,
+                "exercise a frame with the step still live"
+            );
+            assert!(entity.locomotor.as_ref().unwrap().step_head().is_none());
+            assert_ne!(
+                entity.body_facing,
+                Some(body),
+                "face target at accepted fire start"
+            );
+            assert_eq!(
+                sim.substrate.entities.get(target).unwrap().health.current,
+                100
+            );
+            return;
+        }
+    }
+    panic!("paid-step completion never reached a production shot");
 }

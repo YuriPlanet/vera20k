@@ -2352,6 +2352,32 @@ pub(super) fn resolve_attacker_fire(
         return;
     }
 
+    // InfantryClass::GetFireError 0051C9B8..0051C9C9: after common legality,
+    // Foot+578 > binary64 0.1 returns error 7, before starting or emitting fire.
+    // Read the existing Foot owner: an attack order retains its paid Walk step
+    // even after clearing NavCom. A movement-target test is not this predicate.
+    // 0.1 lies between SimFixed raw 6553 and 6554; integer division selects the
+    // largest admissible representable fraction. Original boundary witnesses:
+    // tools/spatial_oracle/infantry_fire_speed.json.
+    if snap.category == EntityCategory::Infantry
+        && world
+            .substrate
+            .entities
+            .get(snap.stable_id)
+            .is_some_and(|entity| {
+                entity.foot_speed.applied_fraction > SimFixed::ONE / SimFixed::from_num(10)
+            })
+    {
+        if pending_at_fire_frame {
+            out.pending_infantry_updates.push((snap.stable_id, None));
+            out.animation_switches.push((
+                snap.stable_id,
+                infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
+            ));
+        }
+        return;
+    }
+
     // TechnoClass::GetFireError @ 0x006FC0B0 returns 9 after the ordinary
     // busy/rearm/ammo gates when DecloakToFire= is set and the current cloak
     // state requires surfacing. UnitClass::Fire_At_Target @ 0x00736DF0 then

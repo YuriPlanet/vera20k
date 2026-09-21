@@ -65,16 +65,36 @@ sidecar. Thirty-three heading cases feed Rust receiver comparisons, including
 building/cell coordinate getters and a live-turn equality edge. The remaining
 native witnesses do not certify the supplied legality/action receivers.
 
-`cargo test -p vera20k --lib` passes: 9,089 passed, zero failed, 134 ignored.
-All seven added tests pass, including full-frame firing/damage and both immediate
+`cargo test -p vera20k --lib` passes: 9,092 passed, zero failed, 134 ignored.
+All ten added tests pass, including full-frame firing/damage and both immediate
 and pending-action save/restore continuation. The fixtures bind sight, action
 sequences and flat terrain through existing owners; restore validates object
 membership and rebuilds map-derived caches. Existing global replay pins pass
 without rebaselining. Output: `%TEMP%/vera20k-combat-lib-tests.log`.
-`cargo clippy -p vera20k --lib` passes (1,031 warnings), recorded in
-`%TEMP%/vera20k-combat-clippy.log`. The single critic and PR remain pending.
+`cargo clippy -p vera20k --lib` passes for the corrected candidate (1,031 warnings),
+recorded in `%TEMP%/vera20k-combat-clippy.log`.
 Source checkpoint: `3621bac4`. The module map was regenerated for that commit;
-its production dependency edges are unchanged. The single critic pass is running.
+its production dependency edges are unchanged. The single critic pass completed.
+
+The critic found one required prerequisite defect: a new fire sequence could turn
+and fire during an accepted Walk step retained by an attack order. Confirmed the
+production chain from `finish_ordered_walk_attack` through the retained head and
+the Foot speed writer in `walk_head::finish_fresh_head`. The firing receiver now
+checks the existing `FootSpeedState.applied_fraction` against native's strict
+`> 0.1` predicate, including the pending fire-frame refusal cleanup. No additional
+stored speed or movement boolean substitutes for it. The original-code corpus
+`infantry_fire_speed` passes eleven comparison/return witnesses, including both
+adjacent fixed-point values and binary64 threshold neighbors. Added Rust checks
+cover the eight representable inputs, pending cancellation and a real movement
+order followed by attack during the accepted step. Focused and full library tests
+pass for the correction. The owner validates fixes; do not request a second critic pass.
+
+The critic also identified an ownership improvement: several older snap callers
+publish the requested byte heading instead of sampling `body.current()` after
+the native equality branch. No ordinary production equality trigger was established
+through those callers. Audit `track_host`, `walk_head`, `animation`, `infantry` and
+`jumpjet_cruise` when consolidating body-snap/mirror publication; the new fire-start
+writer already samples the actual resulting heading.
 
 Ghidra: `ObjectClass__DirectionToTarget @ 005F3DB0` named and its plate, plus the
 `InfantryClass__Fire_At_Target` plate, saved and read back. Original Infantry
@@ -90,14 +110,15 @@ Other open leads: special detonation effect bodies, launch/guidance inputs,
 fire-legality residuals, scanner and locomotor prerequisites. Native
 `InfantryClass::GetFireError @ 0051C8B0`, selected by vtable `+3C0`, checks common
 Techno legality first, then refuses when Foot `+578` exceeds binary64 0.1
-(`0051C9B8..0051C9C9`, error 7 at `0051CAFA`). The existing FootSpeedState owns
-that state; Rust's firing receiver lacks the check. NavCom/action interruption
-and locomotor-specific gates also remain open. WalkHost currently supplies the
-completion/boundary transactions; the live paid-step call and speed writer need
-inspection, because movement_step's native-polar-step claim conflicts with the
-WalkHost header and generic integrator. These are leads, not a complete inventory.
+(`0051C9B8..0051C9C9`, error 7 at `0051CAFA`). This speed gate is the review fix
+above; its Ghidra label/comment were saved and read back. NavCom/action interruption
+and locomotor-specific gates remain open. WalkHost supplies completion/boundary
+transactions and `finish_fresh_head` sets applied speed to one; completion clears it.
+The paid step still reaches `movement_tick`'s `advance_lepton_position` adapter,
+contradicting `movement_step`'s native-polar-step claim. Porting its original numeric
+step remains required. These are leads, not a complete inventory.
 FacingClass::snap's live-angle equality discrepancy is now corrected
 against original-code execution: cancel the timer while retaining the old target.
 
-Next: resolve the single pre-PR review, then publish/merge the validated
+Next: publish/merge the validated
 increment and continue the required combat chains. The whole-combat goal is open.
