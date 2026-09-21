@@ -1,12 +1,12 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `96135ec43fb28d17b7aeab61507fe97c29edc151` (2026-09-21), cargo-modules 0.26.0.
+Generated snapshot: `f55a8bcfbf86c28b7480516d70b19f0d92039cd6` (2026-09-21), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
 External crates and the sysroot are excluded from the dependency graph.
-Contains **839 modules plus the crate root**, and **5312 distinct
+Contains **839 modules plus the crate root**, and **5311 distinct
 cross-module dependency edges**. Check this source commit against your checkout.
 <!-- module-map:provenance:end -->
 
@@ -589,7 +589,7 @@ sim::movement::homing_movement -> sim::entity_store; util::fixed_math
 sim::movement::hover -> sim::movement::homing_movement; util::fixed_math
 sim::movement::infantry_entry -> map::cell_index; map::resolved_terrain
 sim::movement::jumpjet_flight -> map::retail_trig; rules::jumpjet_params; sim::movement::facing_class; util::native_x87
-sim::movement::jumpjet_movement -> map::resolved_terrain; rules::jumpjet_params; sim::components; sim::entity_store; sim::intern; sim::movement::jumpjet_flight; sim::movement::locomotor; sim::occupancy; sim::rng; util::fixed_math
+sim::movement::jumpjet_movement -> map::resolved_terrain; rules::jumpjet_params; sim::components; sim::entity_store; sim::intern; sim::movement::jumpjet_flight; sim::occupancy; sim::rng; util::fixed_math
 sim::movement::locomotion -> sim::movement::locomotion::install; sim::movement::locomotion::piggyback; sim::movement::locomotion::slot
 sim::movement::locomotion::install -> rules::locomotor_type; sim::movement::locomotion::slot; sim::substrate::locomotion::class
 sim::movement::locomotion::piggyback -> rules::locomotor_type; sim::movement::drop_pod_movement; sim::movement::jumpjet_movement; sim::movement::locomotor; sim::movement::rocket_movement; sim::movement::slope_transition; sim::movement::teleport_movement; sim::movement::tunnel_movement; util::fixed_math
