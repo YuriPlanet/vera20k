@@ -3166,17 +3166,19 @@ pub(super) fn resolve_attacker_fire(
             sub_x: snap.sub_x,
             sub_y: snap.sub_y,
             facing: snap.facing,
-            category: snap.category,
-            burst_index,
         },
         target: snap.target,
         report_sound_id,
-        garrison_muzzle_index: snap.garrison.as_ref().map(|gs| gs.fire_index),
         fire_coord: fire.coord,
         fire_offset_y: fire.offset_y,
-        muzzle_anim: super::fire_coord::muzzle_anim_name(weapon, fire.aim_facing16, is_garrison)
-            .map(|name| world.interner.intern(name)),
-        occupied_building: is_garrison,
+        muzzle_anim: super::fire_coord::muzzle_anim_name(
+            weapon,
+            fire.aim_facing16,
+            snap.garrison.is_some(),
+        )
+        .map(|name| world.interner.intern(name)),
+        occupied_building: snap.garrison.is_some(),
+        firer_category: snap.category,
     });
     if weapon.reveal_on_fire {
         out.reveal_events.push(RevealEvent {

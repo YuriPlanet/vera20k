@@ -104,6 +104,15 @@ impl DamageConsequences {
             delivery,
         } = self;
         let ordinary = matches!(&delivery, DamageDelivery::Ordinary { .. });
+        // Muzzle animations first: `Fire_At` constructs them when the shot
+        // leaves, before anything the pass killed is torn down. A firer that
+        // died in the same pass is still stored here, so its flash attaches
+        // and the teardown below expires it through the ordinary pointer
+        // notification; constructed after the teardown it would keep a
+        // reference nothing will ever clear.
+        if let DamageDelivery::Ordinary { fire_events, .. } = &delivery {
+            admit_muzzle_anims(world, rules, fire_events);
+        }
         // Capture owner/category now: ordinary delivery follows SpawnManager,
         // while immediate delivery finishes before its caller's next live cursor.
         let dead_infos: Vec<(InternedId, EntityCategory)> = effects
@@ -195,11 +204,6 @@ impl DamageConsequences {
         }
 
         world.admit_death_debris(std::mem::take(&mut effects.voxel_debris));
-        // Muzzle animations first: `Fire_At` constructs them when the shot
-        // leaves, before anything the shot does on arrival.
-        if let DamageDelivery::Ordinary { fire_events, .. } = &delivery {
-            admit_muzzle_anims(world, rules, fire_events);
-        }
         // Explosion animations from the completed receiver transaction.
         // `AnimClass` instances, not legacy world effects: only the real
         // constructor reaches `AnimClass::Start @ 0x00424CE0`, which is what
@@ -275,9 +279,10 @@ const MUZZLE_ANIM_DRAW_FLAGS: u32 = 0x600;
 /// An art type that never bound constructs nothing, as elsewhere in the store.
 ///
 /// RESIDUAL: VERA collects a tick's shots and constructs their animations
-/// here, after the whole combat pass, so two firers' flashes take ids after
-/// both shots' other objects rather than interleaved shot by shot. Player
-/// effect: none. Downstream risk: id order differs from native's within one
+/// here, after the whole combat pass, so two firers' flashes take their ids,
+/// and a `RandomRate=` type its scenario-RNG draw, after both shots' other
+/// objects and draws rather than interleaved shot by shot. Player effect:
+/// none. Downstream risk: id and draw order differ from native's within one
 /// frame, which matters only to a cross-engine comparison.
 fn admit_muzzle_anims(world: &mut Simulation, rules: &RuleSet, fire_events: &[SimFireEvent]) {
     for event in fire_events {
@@ -289,7 +294,7 @@ fn admit_muzzle_anims(world: &mut Simulation, rules: &RuleSet, fire_events: &[Si
             y: event.fire_coord.y,
             z: event.fire_coord.z,
         };
-        let is_building = event.origin_snapshot.category == EntityCategory::Structure;
+        let is_building = event.firer_category == EntityCategory::Structure;
         let (rx, ry, sub_x, sub_y, level) = coord.to_cell_sub_z();
         let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
             delay: 0,
@@ -453,7 +458,7 @@ mod muzzle_anim_tests {
 
     fn shot(sim: &mut Simulation, attacker_id: u64, category: EntityCategory) -> SimFireEvent {
         let mut event = SimFireEvent::for_test(attacker_id);
-        event.origin_snapshot.category = category;
+        event.firer_category = category;
         event.muzzle_anim = Some(sim.interner.intern("GUNFIRE"));
         event.fire_coord = ProjectileCoord::new(10 * 256 + 200, 10 * 256 + 60, 105);
         event
@@ -512,6 +517,36 @@ mod muzzle_anim_tests {
         assert!(anims.iter().all(|anim| anim.owner_entity.is_none()));
         assert_eq!(anims[0].z_adjust, -32);
         assert_eq!(anims[1].z_adjust, -200);
+    }
+
+    /// A firer killed in the pass that carried its shot: the flash is built
+    /// while the firer is still stored, and the firer's teardown expires the
+    /// attachment through the ordinary pointer notification. Built after the
+    /// teardown, the anim kept an owner id nothing would clear, and resolved
+    /// its coordinate as a bare delta near the map origin.
+    #[test]
+    fn a_flash_outlives_a_firer_that_dies_without_a_dangling_owner() {
+        let (mut sim, rules, tank) = fixture(EntityCategory::Unit);
+        sim.reveal(tank);
+        let event = shot(&mut sim, tank, EntityCategory::Unit);
+        let fire = event.fire_coord;
+        admit_muzzle_anims(&mut sim, &rules, &[event]);
+        let id = *sim.substrate.anims.iter().next().expect("muzzle anim").0;
+
+        sim.uninit_with_rules(tank, &rules);
+
+        let anim = sim.anim(id).expect("the anim is still stored this frame");
+        assert_eq!(anim.owner_entity, None, "the teardown detached it");
+        assert!(anim.runtime.inactive, "and marked it for removal");
+        assert_eq!(
+            sim.anim_absolute_coord(id),
+            Some(AnimWorldCoord {
+                x: fire.x,
+                y: fire.y,
+                z: fire.z,
+            }),
+            "detach wrote the absolute coordinate back"
+        );
     }
 
     #[test]

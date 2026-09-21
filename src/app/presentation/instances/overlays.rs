@@ -1,7 +1,7 @@
-//! Overlay, muzzle flash, and fog snapshot instance builders.
+//! Overlay, AnimClass, and fog snapshot instance builders.
 //!
 //! Generates SpriteInstances for map overlays (ore/gems, bridges, terrain objects),
-//! muzzle flashes, and fog-of-war building snapshots.
+//! the simulation's AnimClass objects, and fog-of-war building snapshots.
 //! Split from `presentation::instances` to keep files under the 600-line limit.
 //!
 //! ## Dependency rules

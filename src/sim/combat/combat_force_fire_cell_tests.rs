@@ -275,3 +275,91 @@ fn force_fire_cell_pursuit_then_fire_integration() {
         "unit should walk into range and fire within 400 ticks"
     );
 }
+
+/// End to end through the production tick: a force-fired shot constructs the
+/// weapon's `Anim=` as an `AnimClass` in the store, at the shot's fire
+/// coordinate, owned by the firer (`TechnoClass::Fire_At`, `0x006FF3C2` and
+/// `0x006FF43A`).
+#[test]
+fn a_fired_shot_constructs_its_muzzle_anim_in_the_store() {
+    use crate::rules::art_data::ArtRegistry;
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::pathfinding::PathGrid;
+    use crate::sim::world::Simulation;
+    use std::collections::BTreeMap;
+
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=MTNK\n[InfantryTypes]\n[BuildingTypes]\n[AircraftTypes]\n\n\
+         [Animations]\n0=GUNFIRE\n\n\
+         [MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=105mm\n\n\
+         [105mm]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\nAnim=GUNFIRE\n\n\
+         [AP]\nVerses=100%,100%,90%,75%,75%,75%,60%,30%,20%,0%,0%\n",
+    ))
+    .expect("rules");
+    let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+        "[MTNK]\nPrimaryFireFLH=150,0,100\n[GUNFIRE]\nRate=900\n",
+    ));
+    art.bind_anim_frame_count_for_test("GUNFIRE", 6);
+    rules.merge_art_data(&art);
+    rules.art_registry = art;
+
+    let mut sim = Simulation::new();
+    sim.input_delay_ticks = 0;
+    // The tank takes its id from the shared counter, so the anim's id is free.
+    let tank = sim.allocate_stable_id();
+    assert_eq!(tank, 1);
+    sim.substrate
+        .entities
+        .insert(make_unit(tank, "MTNK", 5, 5, 300));
+    sim.interner = crate::sim::intern::test_interner();
+    let owner_id = sim.interner.intern("Americans");
+    sim.reveal(tank);
+    let grid = PathGrid::test_all_passable(64, 64);
+    let height_map: BTreeMap<(u16, u16), u8> = BTreeMap::new();
+    sim.queue_command(CommandEnvelope::new(
+        owner_id,
+        sim.session.tick + 1,
+        Command::ForceAttackCell {
+            attacker_id: tank,
+            target_rx: 8,
+            target_ry: 5,
+        },
+    ));
+
+    let mut shot = None;
+    for _ in 0..200 {
+        let pending = sim.take_due_commands();
+        sim.advance_tick(&pending, Some(&rules), &height_map, Some(&grid), None, 100);
+        if let Some(event) = sim.fire_events.first() {
+            shot = Some(event.clone());
+            break;
+        }
+    }
+    let shot = shot.expect("the tank fires at a cell three cells away");
+    assert_eq!(
+        shot.muzzle_anim
+            .map(|id| sim.interner.resolve(id).to_string()),
+        Some("GUNFIRE".to_string())
+    );
+
+    let muzzle: Vec<_> = sim
+        .substrate
+        .anims
+        .iter()
+        .filter(|(_, anim)| sim.interner.resolve(anim.type_id) == "GUNFIRE")
+        .map(|(id, anim)| (*id, anim.owner_entity, anim.draw_flags))
+        .collect();
+    assert_eq!(muzzle.len(), 1, "one shot, one muzzle anim");
+    let (anim_id, owner, draw_flags) = muzzle[0];
+    assert_eq!((owner, draw_flags), (Some(1), 0x600));
+    let absolute = sim.anim_absolute_coord(anim_id).expect("anim coordinate");
+    assert_eq!(
+        (absolute.x, absolute.y, absolute.z),
+        (shot.fire_coord.x, shot.fire_coord.y, shot.fire_coord.z),
+        "the flash sits on the coordinate the shot left from"
+    );
+    // The FLH put the muzzle off the hull centre and 100 leptons up.
+    let centre = (5 * 256 + 128, 5 * 256 + 128);
+    assert_ne!((shot.fire_coord.x, shot.fire_coord.y), centre);
+    assert_eq!(shot.fire_coord.z, 100);
+}

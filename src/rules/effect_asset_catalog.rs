@@ -182,18 +182,19 @@ pub(crate) const CLIFF_COLLAPSE_ANIMS: [&str; 3] = ["XGRYMED1", "XGRYMED2", "XGR
 /// Every animation name the simulation can turn into an `AnimClass` instance,
 /// which the loader must bind before the match starts.
 ///
-/// The three producers that fill `CombatResult::explosion_effects`:
+/// Combat fills `CombatResult::explosion_effects` from three producers:
 /// - the killing warhead's `AnimList=` pick
 ///   (`WarheadTypeClass::Detonate` -> `Warhead::SelectExplosionAnim @ 0x0048A4F0`),
 /// - the infantry death animation for the warhead's `InfDeath=`,
 /// - the dying object's own `Explosion=` / `DestroyAnim=` pick
 ///   (`UnitClass::Death_Explosion @ 0x00738680`).
 ///
-/// The list is derived from loaded rules, never hand-written: over retail
-/// `rulesmd.ini` it resolves to 58 distinct names (34 `AnimList=`, 14
-/// `Explosion=`, 13 `DestroyAnim=`, plus the infantry-death family), which is
-/// why the binder that consumes it must tolerate the handful retail authors
-/// with no art section.
+/// The other roots (muzzle flashes, warps, superweapon and bridge animations,
+/// ore twinkle, cliff collapse) are named at their inserts below.
+///
+/// The list is derived from loaded rules, never hand-written, and retail
+/// authors several names with no art section or sprite, which is why the
+/// binder that consumes it is the tolerant one.
 pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     let mut roots = BTreeSet::new();
     let mut insert = |name: &str| {

@@ -712,9 +712,6 @@ pub struct FireOriginSnapshot {
     pub sub_y: SimFixed,
     pub z: u8,
     pub facing: u8,
-    pub category: EntityCategory,
-    /// Pre-shot burst index. First shot in a burst is 0.
-    pub burst_index: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -740,9 +737,6 @@ pub struct SimFireEvent {
     /// Weapon report sound id. The app layer positions this at the resolved
     /// fire origin for both normal and garrison fire.
     pub report_sound_id: Option<InternedId>,
-    /// For garrison fire: which muzzle port index fired (for fire port positioning).
-    /// None = normal weapon FLH, Some(idx) = garrison fire port index.
-    pub garrison_muzzle_index: Option<u8>,
     /// The shot's fire coordinate in world leptons (`combat::fire_coord`): the
     /// bullet origin, the muzzle animation and the report sound share it.
     pub fire_coord: crate::sim::projectile::ProjectileCoord,
@@ -752,8 +746,11 @@ pub struct SimFireEvent {
     /// The muzzle `AnimClass` type this shot constructs, if any: the weapon's
     /// `Anim=` by aim facing, or `OccupantAnim=` for an occupied building.
     pub muzzle_anim: Option<InternedId>,
-    /// The shot came from an occupied building's occupant.
+    /// The firer is a building with occupants (native's `+0x408` count above
+    /// zero), whichever weapon fired.
     pub occupied_building: bool,
+    /// The firer's class: a building's flash is not attached to it.
+    pub firer_category: EntityCategory,
 }
 
 #[cfg(test)]
@@ -775,16 +772,14 @@ impl SimFireEvent {
                 sub_y: crate::util::fixed_math::SimFixed::ZERO,
                 z: 0,
                 facing: 0,
-                category: EntityCategory::Unit,
-                burst_index: 0,
             },
             target: crate::sim::combat::TargetKind::Cell(0, 0),
             report_sound_id: None,
-            garrison_muzzle_index: None,
             fire_coord: crate::sim::projectile::ProjectileCoord::new(0, 0, 0),
             fire_offset_y: 0,
             muzzle_anim: None,
             occupied_building: false,
+            firer_category: EntityCategory::Unit,
         }
     }
 }

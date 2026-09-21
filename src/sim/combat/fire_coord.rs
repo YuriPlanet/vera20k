@@ -32,7 +32,8 @@ pub(crate) struct FireCoordinate {
     /// the body's otherwise. Selects the 8-way muzzle animation.
     pub aim_facing16: u16,
     /// `coord.y` minus the Y of the object coordinate (`vtable+0xAC`) the
-    /// offset was added to. Every arm adds its offset to that same coordinate,
+    /// offset was added to. Every arm, the base `GetFLH` included
+    /// (`CALL [vtable+0xAC]` at its tail), adds its offset to that coordinate,
     /// so this is the difference `Fire_At` takes for a building's `ZAdjust`
     /// whichever arm produced the shot.
     pub offset_y: i32,
@@ -69,7 +70,7 @@ impl From<&AttackerSnapshot> for FireSource {
             level: snap.pos_z,
             exact_z_leptons: snap.pos_exact_z_leptons,
             facing: snap.facing,
-            barrel_facing: snap.barrel_facing.clone(),
+            barrel_facing: snap.barrel_facing,
             veterancy: snap.veterancy,
             garrison_fire_index: snap.garrison.as_ref().map(|garrison| garrison.fire_index),
         }
@@ -117,8 +118,19 @@ pub(crate) fn fire_coordinate(
         .map(|entity| super::object_world_z_leptons(entity, world.resolved_terrain.as_ref()))
         .or(snap.exact_z_leptons)
         .unwrap_or_else(|| i32::from(snap.level).wrapping_mul(LEPTONS_PER_LEVEL as i32));
-    let source_x = i32::from(snap.rx) * 256 + snap.sub_x.to_num::<i32>();
-    let source_y = i32::from(snap.ry) * 256 + snap.sub_y.to_num::<i32>();
+    // The object coordinate every arm starts from, `vtable+0xAC`. For a
+    // building that slot is `0x00459EF0`, the stored location minus 128 on X
+    // and Y (the anchor cell's corner); for everything else it is the
+    // location. The building FLH arm used to start from the un-shifted
+    // location, which put every stock defence's shot 128 leptons off on both
+    // axes.
+    let base_shift = if snap.category == EntityCategory::Structure {
+        128
+    } else {
+        0
+    };
+    let source_x = (i32::from(snap.rx) * 256 + snap.sub_x.to_num::<i32>()).wrapping_sub(base_shift);
+    let source_y = (i32::from(snap.ry) * 256 + snap.sub_y.to_num::<i32>()).wrapping_sub(base_shift);
 
     let body_facing16 = crate::sim::movement::turret::body_facing_to_turret(snap.facing);
     let aim_facing16 = snap
@@ -137,12 +149,9 @@ pub(crate) fn fire_coordinate(
     {
         let (dx, dy) = PixelConversionBounds::isometric_pixel_to_leptons(px, py);
         return FireCoordinate {
-            // The building coordinate the pixel offsets are authored against
-            // is the anchor cell's corner, as for the building's slot anims
-            // (`Simulation::building_anim_world_coord`).
             coord: ProjectileCoord::new(
-                source_x.wrapping_sub(128).wrapping_add(dx),
-                source_y.wrapping_sub(128).wrapping_add(dy),
+                source_x.wrapping_add(dx),
+                source_y.wrapping_add(dy),
                 source_z,
             ),
             source_z,
@@ -216,8 +225,12 @@ fn building_pixel_offset(
 /// gamemd-derived, `TechnoClass::Fire_At` `0x006FF2D1..0x006FF349`: a weapon
 /// with exactly eight `Anim=` entries picks one by the fire facing,
 /// `(dir8(facing) + 1) & 7`; any other non-empty list picks its first entry.
-/// When the firer's occupied-fire virtual (`+0x400`) answers true the pick is
-/// replaced by the weapon's `OccupantAnim=` (`+0x110`), null included.
+/// When the firer's occupied virtual (`+0x400`, for a building `0x00458DD0`:
+/// type bytes `+0x157B` and `+0x157C` and an occupant count above zero)
+/// answers true the pick is replaced by the weapon's `OccupantAnim=`
+/// (`+0x110`), null included. That is the building's state, not a record of
+/// which weapon was chosen, so VERA keys it on the building being occupied.
+/// Type byte `+0x157C` is UNCHECKED and not modelled.
 ///
 /// RESIDUAL: a third source, `weapon+0x118`, taken when nothing was picked and
 /// the firer's byte `+0x82` is set, is not modelled; both identities are
@@ -319,6 +332,29 @@ mod tests {
         assert_eq!((primary.source_z, primary.offset_y), (Z, 0));
     }
 
+    /// The source Z is the stored firer's actual height, not its level byte.
+    #[test]
+    fn a_stored_firers_exact_height_carries_into_the_fire_coordinate() {
+        let rules = rules();
+        let mut world = Simulation::new();
+        let id = world.allocate_stable_id();
+        let mut gi =
+            crate::sim::game_entity::GameEntity::test_default(id, "E1", "Americans", 10, 11);
+        gi.position.exact_z_leptons = Some(333);
+        world.substrate.entities.insert(gi);
+        let mut shooter = source(EntityCategory::Infantry);
+        shooter.stable_id = id;
+        let fire = fire_coordinate(
+            &world,
+            &rules,
+            &shooter,
+            rules.object("E1").unwrap(),
+            WeaponSlot::Primary,
+            0,
+        );
+        assert_eq!((fire.source_z, fire.coord.z), (333, 333 + 105));
+    }
+
     #[test]
     fn an_occupied_building_fires_from_the_occupants_muzzle_port() {
         let (rules, world) = (rules(), Simulation::new());
@@ -349,9 +385,10 @@ mod tests {
         let odd = fire_coordinate(&world, &rules, &tower, obj, WeaponSlot::Primary, 1);
         assert_eq!(even.coord, ProjectileCoord::new(X - 128 + 256, Y - 128, Z));
         assert_eq!(odd.coord, ProjectileCoord::new(X - 128, Y - 128 + 256, Z));
-        // No secondary offset authored: the base FLH, which is the firer here.
+        // No secondary offset authored: the base FLH, from the same building
+        // coordinate the pixel arms use.
         let secondary = fire_coordinate(&world, &rules, &tower, obj, WeaponSlot::Secondary, 0);
-        assert_eq!(secondary.coord, ProjectileCoord::new(X, Y, Z));
+        assert_eq!(secondary.coord, ProjectileCoord::new(X - 128, Y - 128, Z));
     }
 
     #[test]
