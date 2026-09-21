@@ -231,16 +231,17 @@ probe; it is not a second implementation to publish.
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
 Branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Current validated source: `07c48b071bd7a08a0aaa5bcbab391c69483f4cc9`: pending
-Aircraft ammo consumption and initialization, with the false final-release tail
-removed. Native state-entry and post-Commence consumers use one pending flag;
-MissionLeaf already owns the actual+6D2 readiness/action latch. **The release
-writer is not yet connected to a production aircraft burst.** State4 requests
-alone no longer advance the mission or consume ammo. State1's navigation suffix
-and actual emission/cadence remain open. This is a prerequisite checkpoint, not
-completed aircraft firing or whole-combat parity. Snapshot version is186.
-Previous source `4a32f4c3` extracted the unchanged shared emitter; previous
-checkpoint `f578b195`. Range source `d7c15550` remains intact, including native
+Current validated source: `9d3be1105c1ed7beaa73ebf11a40c594d5be5fec`: admitted
+Aircraft state4 releases now run through shared production emission, synchronous
+burst control, pending ammo and native success state/readiness/raw-delay writes.
+The call-local request preserves AttackTarget and rearm. Retained `WeaponBurst`
+replaces the obsolete target-owned remaining-shot count; snapshot version187.
+The previous pending-state/initialization source `07c48b07` and MissionLeaf+6D2
+owner remain intact. **State1 navigation and the full Aircraft attack cycle
+remain unfinished.** See the release integration section for exact coverage and
+required residuals; this is not whole-combat parity.
+Previous source `4a32f4c3` extracted the shared emitter; preceding checkpoint
+`1e069d75`. Range source `d7c15550` remains intact, including native
 0x0 foundations. No tracked implementation WIP remains after this checkpoint.
 The dependency map is retired by user instruction: do not use or refresh it,
 regardless of the older branch contract text. Facing source `be8e2d62` and
@@ -710,11 +711,12 @@ Snapshot186 saves/hashes the real pending byte; it cannot recover arbitrary old
 fake-tail state. Historical hash projections only reconstruct the bounded absent
 tail and false/false Attack fixtures, explicitly not arbitrary old saves.
 
-Important unfinished production path: `AircraftAmmo::begin_release` currently
-has test callers only. `tick_aircraft_missions` still resets AttackTarget in its
-legacy request adapter, losing cooldown/burst bookkeeping; `combat_fire_gate`
-still excludes active Attack. State4 now waits for real release admission, and
-state1 with a retained target/nonzero ammo waits for its unported FindFireLocation
+Historical07c48b07 boundary, superseded by the release integration below:
+`AircraftAmmo::begin_release` had test callers only. `tick_aircraft_missions`
+reset AttackTarget in its legacy request adapter, losing cooldown/burst
+bookkeeping; `combat_fire_gate` still excluded active Attack. State4 waited for
+real release admission, and state1 with a retained target/nonzero ammo waited for
+its unported FindFireLocation
 suffix (missing target/zero ammo goes10). State10's nonzero re-engagement returns1,
 while its zero-ammo/targetless return-location/conditional-clear/RNG suffix remains
 legacy Guard. Do not mistake these honest open boundaries for completed behavior.
@@ -769,19 +771,102 @@ FlightLevel/IsDropship/Carryall rule changes still need a fresh release retail l
 before merge. All owned processes are terminal. Keep using the owned worktree's
 `target` cache (CARGO_TARGET_DIR unset); do not switch to the main checkout cache.
 
+### Admitted Aircraft release integration (source9d3be110)
+
+Acceptance: a state4 mission visit reaches shared admission once, then runs
+native signed Burst control with live selection and synchronous effects between
+shots. Pending ammo must precede even a zero-shot/NULL-return release; the native
+success suffix must own state, readiness and raw mission delay. Preserve existing
+rearm when requesting fire. Save/hash the retained object burst index and remove
+the superseded target-owned remaining-shot count. This is bounded release
+integration, not complete Aircraft Mission_Attack or projectile parity.
+
+`tick_aircraft_missions` now returns call-local firing receipts through
+`advance_tick` into the combat host. It no longer replaces AttackTarget. The
+generic gate no longer blocks every Attack; the combat snapshot requires that
+visit's receipt, and the release caller rechecks the live state4 before admission.
+State3 reaching4 cannot fire on that same visit. The shared admission result is
+owned call-local data, never saved permission. Shared weapon resolution separates
+GetFireError's targeting checks from selection for an already admitted FireAt.
+
+`combat/aircraft_release.rs` sets pending before the signed Burst test, reselects
+from current target/type/tier before each FireAt and subsequent bound, and runs
+the shared emitter. NULL/detached targets still take part in the bound without
+emission. `FireCommitBoundary` commits damage/deaths, weapon writes, rearm,
+drain/spawner links and wave callbacks before another shot. Active mission
+releases bypass the old generic burst-end ammo deduction. Suffix4184C2 selects
+6 for auxiliary+18, otherwise Fighter1/10 by Ammo>0, otherwise5; only the first
+two write readiness and raw slot0 ROF, the last returns1 without clearing the
+latch. The existing Mission dispatch timer gates subsequent Attack visits.
+
+State4's non-strafe body/secondary Set writers4182D3..41830C precede admission.
+Aircraft secondary facing is initialized even without Turret; the generic
+target-or-body turret sweep no longer overwrites it. Aircraft admission reads
+secondary current with inclusive0x800 tolerance and Fighter bypass; OmniFire and
+homing do not bypass/widen that class leaf. Other Aircraft/Fly facing writers
+remain open below; initializing this controller does not complete them.
+
+`WeaponBurst` privately owns Techno+3B8. Shared FireAt uses its pre-shot parity
+for FLH and incremented signed index for the mid-burst rearm branch, then stores
+the signed remainder. Removed AttackTarget/AttackerSnapshot `burst_remaining`
+and migrated all consumers/fixtures. Assign_Target6FCF5B resets the index only on
+a changed assignment whose final target is null; same-target and non-null
+replacement preserve it. Direct Detach is not that setter. Snapshot187 replaces
+the obsolete count with the retained index; pre187 hash projections only restore
+the independently established zero-count replay fixtures, not arbitrary old state.
+
+Evidence: existing316 original release rows now exercise actual mission-to-combat
+dispatch and shared emission for loop count/pending/suffix assertions. Their
+native FireAt remains a NULL callback, so actual projectile/damage parity is not
+claimed. New `techno_burst_index` executes54 original signed increment/remainder
+tails, including wrapping index and Burst257; supplied GetROF only records the
+incremented index and returns20. Both generators pass `--check`. Ghidra comments
+41840E,6FF27F,6FCF5B saved/read back. Rust also covers raw Burst257, one pending
+charge, request/rearm preservation, state3 handoff timing, snapshot continuation,
+secondary-facing boundaries and an actual `advance_tick` release.
+
+Required residuals: the common admission is still an incomplete native
+GetFireError, including unported Aircraft+6C9 retained cargo history. Loaded
+Aircraft's DropPayload arm is explicitly still blocked rather than substituted
+with gun fire. Native481670 release reveal, error-specific state4 transitions,
+FindFireLocation/state1, state3 auxiliary/navigation branches, states5..9 and
+state10 return/navigation/RNG remain required. Air FireAt's launch velocity,
+ROT0/1/homing math and6CA suffix remain unported. The host remains phased rather
+than the native per-object schedule. Shared GetROF still has bounded/clamped
+legacy cooldown arithmetic and lacks House/bunker/full authored-delay behavior;
+its timer remains split between AttackTarget and cloak. SpawnManager's temporary
+parent burst-index writes6B73F6/6B7585 around launch were found but not migrated
+here. Two more writes746493/74656C require verified surrounding caller context;
+current Ghidra save/load labels alone are insufficient evidence. These are not
+resolved by the new index owner. Snapshot continuation isolates the existing
+loader's Scenario-seed reset policy; it does not certify that separate policy.
+
+Validation9d3be110: full `cargo test -p vera20k --lib` passed **9,136 tests,
+0 failed,135 ignored**,17.30s after2m56s compilation
+(`.local/aircraft-release-validated-tests.log`). Clippy passed with1,032 warnings,
+21.38s (`.local/aircraft-release-clippy.log`); two unused copied coordinates were
+removed after the test run without changing behavior. Both native generators
+passed `--check`. The first full candidate's only failures were three expected
+current-hash pins; pre187 projections reproduce each preceding full pin, and all
+historical/native Walk/replay/position/RNG checks remain intact. Current pins:
+globalC373742E090E5AAC, bridge17815022180346188402, slice6=8A7D78556AAF1E46.
+The initial fixture failure copied its interner before constructing the actor;
+fixed the fixture, with no registry/load-policy change.
+No critic, PR or release retail load has run for this branch. Required rules-load
+and review checks still precede merge. Owned compile/native processes are terminal.
+
 ### Next safe implementation
 
-Connect the actual admitted Aircraft burst to the shared production emitter and
-its pending-ammo owner. Finish the required FindFireLocation/NavCom/state1/state10
-and native cadence dependencies; preserve the validated range correction. The
-new pending consumers and+6D2 owner are in place; do not recreate the retired
-final-release tail or add another competing implementation. Do not defer the
-actual emission migration for another isolated helper refactor.
+Finish FindFireLocation/NavCom/state1/state10 and native cadence dependencies;
+preserve the validated range correction and now-connected release caller. Trace
+the class-specific error transitions and payload/launch/reveal arms listed above.
+The pending consumers, burst position and+6D2 owner are in place; do not recreate
+the retired final-release tail or target-owned remaining-shot count.
 
-Migrate retained Fly destination state and both Aircraft facing writers/readers,
-then port native phase callbacks with their Mark/Display transaction. The legacy
-turret sweep would overwrite newly enabled stock-aircraft SecondaryFacing;
-adding its initialization alone cannot complete the prerequisite.
+Migrate retained Fly destination state and the remaining Aircraft facing writers/
+readers, then native phase callbacks with their Mark/Display transaction. The
+generic turret sweep now excludes Aircraft and state4 owns its two Set calls;
+that does not complete takeoff, navigation or other mission-state setters.
 Full MoveTo
 destination XYZ, mode+5C and null-stop
 behavior, EMP/Foot timer producers, continuous horizontal slowdown and target
