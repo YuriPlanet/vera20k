@@ -227,11 +227,12 @@ The local
 comparison checkout `.local/walk-baseline-ec27` retains only a temporary test
 probe; it is not a second implementation to publish.
 
-## Next dependency: live Foot speed inputs and crate pickup
+## Current dependency: live Foot speed inputs and crate pickup
 
 Current task-owned branch: `feature/combat-foot-speed`, created from fetched
-`origin/main` at `a37e8118`. Walk work is integrated; no Cargo process or critic
-review is pending. The primary checkout remains untouched.
+`origin/main` at `a37e8118`. Walk work is integrated. Pickup selection/removal
+prerequisites are implemented locally; no PR or critic pass has been requested
+for this unfinished mechanism. The primary checkout remains untouched.
 
 Native4DB1A0 applies type speed, House50C050's category factor and Foot+580,
 truncates, applies FASTER/VeteranSpeed with another truncation, then applies
@@ -254,7 +255,7 @@ witnesses. Acceptance requires production movement to reach the same pickup
 effects and subsequent Foot speed, including affected consumers and save/restore.
 Use the existing country, crate, Foot and lifecycle owners; adding a supplied
 factor to an isolated speed helper does not complete this dependency. Trace the
-Unit+6CC writer/cleanup before treating its current flag-carrier label as proven.
+Unit+6CC active-scenario reachability before adding a producer to normal play.
 
 Native evidence checkpoint: `crate_speed_effect --check` passes 23 original
 recipient loops followed by original Foot4DB1A0 queries on the resulting state.
@@ -269,8 +270,51 @@ then makes raw speed10 return11, not12, in original Foot speed math. The483054
 annotation is saved/read back. None of these cases executes weighted selection,
 removal or the UI suffix; pickup production code remains to be implemented.
 
-Next safe action: trace selection/removal and their callbacks through481A00 and
-its out-of-function continuations, then implement the coherent pickup-to-speed
-chain using this corpus. Preserve the effect loop's live vector order and its
-exact predicates. Extend native comparisons where integration exposes uncertainty;
-the current evidence does not close the required speed dependency or combat goal.
+`crate_pickup --check` now preserves 28 original entry-to-return/dispatch cases.
+Four guards stop before selection; 24 cases expose the prepared outcome, full
+Scenario RNG before/after, removal return, overlay fields and both first slots.
+Only screen rectangle/dirty sinks are supplied; gameplay callees execute original
+bytes. Free-MCV preemption, attached triggers, regeneration and non-speed effects
+remain outside this corpus. The unchanged speed-effect corpus still passes.
+
+`crates::pickup::select_pickup_outcome` ports stored/weighted selection and solo
+overrides using existing rule/RNG owners. Silver, Wood and Water image matches
+run independently in that order: aliased images allow later mappings to win.
+Only stored selection zero installs SoloCrateMoney and those overrides. The
+multiplayer eligibility fallbacks still follow, so e.g. a drawn Firepower may
+become Money without refunding RNG. A one-weight table consumes no draw.
+
+`crates::runtime::remove_pickup_crate` ports Map56C020. Multiplayer clears the
+first occupied matching slot using the existing clear/timer owner; no matching
+slot leaves a visible crate intact. Solo accepts any Crate-flagged overlay,
+without the diamond precheck, and does not touch slots. The existing regeneration
+path retains its Rules-image identity gate; both paths share only final field
+erasure and its presentation receipt. Rust corpus tests compare 24 removal
+transitions and 24 prepared selections/full RNG states. These owners are not yet
+called from movement: do not describe this as production pickup parity or merge
+it as a finished pickup mechanism. The final expanded crate suite passes:
+63 passed, zero failed. Log: `.local/crate-pickup-tests.log`. Both native corpus
+checks, Python compilation/help and `git diff --check` pass. No Cargo operation
+remains pending. Full-library/Clippy and one fresh critic remain pre-PR work once
+the production mechanism is integrated.
+
+Native identities/comments corrected in source and saved/read back in Ghidra:
+Cell receiver at481A00 (not CrateClass), removal56C020, solo ordering481B58,
+and Foot speed's final truncation4DB213 (third when FASTER runs, second otherwise).
+Unit+6CC identity now has writer/lifecycle evidence: constructor7353F2 seeds-1;
+740DF0 attaches the flag index and re-Marks;740E20 detaches;7440BD and735884
+return/clear it on Limbo/destruction. Render73D395 indexes Houses with it.
+The sole observed House4FC060 creation caller688C02 is gated by Scenario[0]&0x10
+at688BF8. Retail `[MultiplayerDefaults] CaptureTheFlag=no` is explicitly marked
+DESUPPORTED, but this does not prove all-scenario unreachability. The4DB226 note
+preserves that distinction; normal-play flag creation is not implemented.
+
+Next safe action: finish the pickup eligibility/effect host, including free-MCV
+selection, the synchronous trigger, replacement-before-effect order and return
+behavior; integrate movement callers and live Foot inputs/save-restore. Reuse
+`combat_weapon::is_armed` for the Firepower vt+2AC predicate (original701120),
+not a new primary-weapon check. `HouseState::owned_unit_count` counts all
+non-buildings, so do not substitute it for native House+2E8 Unit/House+2F4 Infantry counts
+without tracing their lifecycle. EntityStore's per-type count also documents a
+limbo-window difference. Preserve effect vector order and exact predicates.
+The full speed dependency and whole-combat goal remain open.

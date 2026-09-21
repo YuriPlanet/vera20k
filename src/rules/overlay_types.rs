@@ -132,7 +132,7 @@ pub struct OverlayTypeFlags {
     pub crate_type: bool,
     /// `CrateTrigger=` -> `OverlayTypeClass+0x2AB`, read beside `Crate=` at
     /// `OverlayTypeClass::Read_INI @ 0x005FE82E`. A set flag makes
-    /// `CrateClass__PickupDispatch` spring trigger event `0x31` and latch
+    /// `CellClass__PickupCrate` spring trigger event `0x31` and latch
     /// `ScenarioClass+0x34BE`, which `LogicClass__PerTickUpdate` consumes and
     /// clears. Both stock crate overlays set it.
     pub crate_trigger: bool,

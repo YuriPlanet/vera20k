@@ -20,7 +20,7 @@ VTABLES = {'infantry': 0x7EB058, 'unit': 0x7F5C70, 'aircraft': 0x7E22A4}
 TYPE_VTABLES = {'infantry': 0x7EB610, 'unit': 0x7F6218, 'aircraft': 0x7E2868}
 
 
-def execute(case):
+def fixture(case):
     u = Uc(UC_ARCH_X86, UC_MODE_32)
     load_image(u)
     u.mem_map(STACK_BASE, STACK_SIZE)
@@ -68,6 +68,11 @@ def execute(case):
     u.mem_write(VECTOR, dwords(*pointers))
     u.mem_write(0x8A0394, dwords(VECTOR))
     u.mem_write(0x8A03A0, dwords(len(pointers)))
+    return u, sp, pointers, indexes
+
+
+def execute(case):
+    u, sp, pointers, indexes = fixture(case)
     visits, distances, kinds = [], [], []
 
     def observe(_u, address, _size, _data):
