@@ -8,7 +8,7 @@
 //! - `helpers` — depth sorting, interpolation, visibility checks
 //! - `units` — voxel unit instance generation (turrets, harvest overlays)
 //! - `shp` — SHP building/infantry instances (building anims, bibs)
-//! - `overlays` — map overlays, muzzle flashes, fog snapshots
+//! - `overlays` — map overlays, AnimClass objects, fog snapshots
 //!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.

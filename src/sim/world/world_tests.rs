@@ -3048,13 +3048,14 @@ fn sonic_fire_event(sim: &mut Simulation, attacker_id: u64, target_id: u64) -> S
             sub_y: SimFixed::from_num(0),
             z: 0,
             facing: 0,
-            category: EntityCategory::Unit,
-            burst_index: 0,
         },
         target: crate::sim::combat::TargetKind::Entity(target_id),
         report_sound_id: None,
-        garrison_muzzle_index: None,
-        occupant_anim: None,
+        fire_coord: crate::sim::projectile::ProjectileCoord::new(0, 0, 0),
+        fire_offset_y: 0,
+        muzzle_anim: None,
+        occupied_building: false,
+        firer_category: EntityCategory::Unit,
     }
 }
 

@@ -753,88 +753,6 @@ pub struct LastAttacker {
     pub attacker: u64,
 }
 
-/// App-side runtime state for a normal AnimClass-like SHP animation.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AnimRuntime {
-    /// Current art section / SHP type, uppercase (e.g. "UCFLASH").
-    pub type_name: String,
-    /// Native current frame field before the type Start offset is applied.
-    pub current_frame: i32,
-    /// Signed frame step. Reverse and PingPong mutate this.
-    pub frame_step: i32,
-    /// Constructor delay / loop random delay in native logic visits.
-    pub delay_logic_frames: u16,
-    /// Chosen frame-delay reload in native logic visits. Zero blocks advance.
-    pub reload_logic_frames: u16,
-    /// Accumulated non-guard visits since the previous frame advance.
-    pub rate_elapsed_logic_frames: u16,
-    /// Remaining loop byte. `0xFF` is the native infinite sentinel.
-    pub loop_remaining: u8,
-    /// Constructor-set first AI guard; first visit clears this and returns.
-    pub first_ai_guard: bool,
-    /// Native expired/destroyed marker for app retention.
-    pub expired: bool,
-    /// Instance reverse bit from the constructor argument.
-    pub constructor_reverse: bool,
-    /// Accumulated fixed-sim elapsed time for AI visits.
-    pub elapsed_logic_ms: u32,
-}
-
-/// A one-shot muzzle flash animation at a garrison building's fire port.
-///
-/// Spawned when a garrisoned building fires (one per shot). Positioned at the
-/// building's screen origin + MuzzleFlash pixel offset from art.ini. Auto-removed
-/// by the embedded AnimClass-like runtime.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct GarrisonMuzzleFlash {
-    /// Stable ID of the building entity (to look up screen position each frame).
-    pub building_id: u64,
-    /// App-side AnimClass-like lifecycle state.
-    pub runtime: AnimRuntime,
-    /// Pixel X offset from building screen origin (from art.ini MuzzleFlashN).
-    pub pixel_x: i32,
-    /// Pixel Y offset from building screen origin (from art.ini MuzzleFlashN).
-    pub pixel_y: i32,
-    /// Fixed screen-space fire origin from the firing tick.
-    pub screen_x: f32,
-    pub screen_y: f32,
-    /// Cell/elevation used for lighting and depth.
-    pub rx: u16,
-    pub ry: u16,
-    pub z: u8,
-    /// Native AnimClass `ZAdjust` sort adjustment. Occupied building shots
-    /// write -200 after constructing the `OccupantAnim` AnimClass.
-    pub z_adjust: i32,
-}
-
-/// A one-shot weapon muzzle flash animation at a fixed fire-tick origin.
-///
-/// Spawned by app-layer fire-effect processing for non-garrison weapon
-/// `Anim=` entries. This is presentation state, parallel to
-/// `GarrisonMuzzleFlash`, and is not authoritative gameplay state.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct WeaponMuzzleFlash {
-    /// Stable ID of the firing entity at spawn time.
-    pub attacker_id: u64,
-    /// SHP type id (e.g., "MGUN-N").
-    pub shp_name: String,
-    /// Fixed screen-space fire origin from the firing tick.
-    pub screen_x: f32,
-    pub screen_y: f32,
-    /// Cell/elevation used for lighting and depth.
-    pub rx: u16,
-    pub ry: u16,
-    pub z: u8,
-    /// Current animation frame.
-    pub frame: u16,
-    /// Total frames in the SHP (one-shot: removed when frame >= total_frames).
-    pub total_frames: u16,
-    /// Milliseconds per frame (~67ms = 15fps, standard for RA2 muzzle flashes).
-    pub rate_ms: u32,
-    /// Accumulated ms since last frame advance.
-    pub elapsed_ms: u32,
-}
-
 /// Constructor row for a generic AnimClass-like runtime spawn.
 ///
 /// This preserves the fields passed to `AnimClass::Constructor` separately from
@@ -1216,5 +1134,4 @@ mod tests {
         r.is_ship_rocking = true;
         assert!(!r.is_neutral());
     }
-
 }

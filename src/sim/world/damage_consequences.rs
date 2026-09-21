@@ -104,6 +104,15 @@ impl DamageConsequences {
             delivery,
         } = self;
         let ordinary = matches!(&delivery, DamageDelivery::Ordinary { .. });
+        // Muzzle animations first: `Fire_At` constructs them when the shot
+        // leaves, before anything the pass killed is torn down. A firer that
+        // died in the same pass is still stored here, so its flash attaches
+        // and the teardown below expires it through the ordinary pointer
+        // notification; constructed after the teardown it would keep a
+        // reference nothing will ever clear.
+        if let DamageDelivery::Ordinary { fire_events, .. } = &delivery {
+            admit_muzzle_anims(world, rules, fire_events);
+        }
         // Capture owner/category now: ordinary delivery follows SpawnManager,
         // while immediate delivery finishes before its caller's next live cursor.
         let dead_infos: Vec<(InternedId, EntityCategory)> = effects
@@ -253,6 +262,71 @@ impl DamageConsequences {
     }
 }
 
+/// `AnimClass` draw flags of a muzzle animation (`PUSH 0x600`, `0x006FF3B1`).
+const MUZZLE_ANIM_DRAW_FLAGS: u32 = 0x600;
+
+/// Construct each shot's muzzle animation.
+///
+/// gamemd-derived, the tail of `TechnoClass::Fire_At` (`0x006FF394..0x006FF43F`):
+/// `AnimClass(type, &fireCoord, delay 0, loopCount 1, drawFlags 0x600,
+/// zAdjust 0, reverse 0)` at `0x006FF3C2`. A building firer (`WhatAmI == 6`)
+/// then stores the anim's `ZAdjust` (`+0x100`); every other firer becomes the
+/// anim's owner through `AnimClass::SetOwnerObject @ 0x00424B50`, so the flash
+/// rides a moving or airborne firer. Weapon `Anim=` and occupant
+/// `OccupantAnim=` flashes are this one block; the type is chosen by
+/// `fire_coord::muzzle_anim_name`.
+///
+/// An art type that never bound constructs nothing, as elsewhere in the store.
+///
+/// RESIDUAL: VERA collects a tick's shots and constructs their animations
+/// here, after the whole combat pass, so two firers' flashes take their ids,
+/// and a `RandomRate=` type its scenario-RNG draw, after both shots' other
+/// objects and draws rather than interleaved shot by shot. Player effect:
+/// none. Downstream risk: id and draw order differ from native's within one
+/// frame, which matters only to a cross-engine comparison.
+fn admit_muzzle_anims(world: &mut Simulation, rules: &RuleSet, fire_events: &[SimFireEvent]) {
+    for event in fire_events {
+        let Some(type_name) = event.muzzle_anim else {
+            continue;
+        };
+        let coord = crate::sim::anim_class::AnimWorldCoord {
+            x: event.fire_coord.x,
+            y: event.fire_coord.y,
+            z: event.fire_coord.z,
+        };
+        let is_building = event.firer_category == EntityCategory::Structure;
+        let (rx, ry, sub_x, sub_y, level) = coord.to_cell_sub_z();
+        let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
+            delay: 0,
+            loop_count: 1,
+            draw_flags: MUZZLE_ANIM_DRAW_FLAGS,
+            z_adjust: if is_building {
+                crate::sim::combat::fire_coord::building_muzzle_z_adjust(
+                    event.fire_offset_y,
+                    event.occupied_building,
+                )
+            } else {
+                0
+            },
+            reverse: false,
+            ..crate::sim::components::AnimClassSpawnDescriptor::new(
+                type_name, rx, ry, sub_x, sub_y, level,
+            )
+        };
+        match world.spawn_anim_at_world(rules, descriptor, coord) {
+            Ok(anim_id) => {
+                if !is_building {
+                    world.set_anim_owner_object(anim_id, Some(event.attacker_id));
+                }
+            }
+            Err(error) => log::debug!(
+                "muzzle anim [{}] did not construct: {error}",
+                world.interner.resolve(type_name)
+            ),
+        }
+    }
+}
+
 fn admit_electric_sparks(world: &mut Simulation, rules: &RuleSet, fire_events: &[SimFireEvent]) {
     // gamemd-derived: `EBolt::Init @ 0x004C2A60` creates one spark
     // system per electric bolt at `0x004C2B30`, passing
@@ -330,5 +404,180 @@ fn admit_electric_sparks(world: &mut Simulation, rules: &RuleSet, fire_events: &
                 rules,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod muzzle_anim_tests {
+    use super::*;
+    use crate::rules::art_data::ArtRegistry;
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::anim_class::AnimWorldCoord;
+    use crate::sim::components::Health;
+    use crate::sim::game_entity::GameEntity;
+    use crate::sim::projectile::ProjectileCoord;
+
+    fn fixture(category: EntityCategory) -> (Simulation, RuleSet, u64) {
+        let mut rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=TANK\n[BuildingTypes]\n0=TOWER\n[TANK]\nStrength=100\n[TOWER]\nStrength=100\n",
+        ))
+        .expect("rules");
+        let mut art = ArtRegistry::from_ini(&IniFile::from_str("[GUNFIRE]\nRate=900\n"));
+        art.bind_anim_frame_count_for_test("GUNFIRE", 6);
+        rules.merge_art_data(&art);
+        rules.art_registry = art;
+
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("A");
+        let type_ref = sim
+            .interner
+            .intern(if category == EntityCategory::Structure {
+                "TOWER"
+            } else {
+                "TANK"
+            });
+        let id = sim.allocate_stable_id();
+        sim.substrate
+            .entities
+            .insert(GameEntity::new_at_frame_zero_for_test(
+                id,
+                10,
+                10,
+                0,
+                0,
+                owner,
+                Health { current: 100 },
+                type_ref,
+                category,
+                0,
+                5,
+                false,
+            ));
+        (sim, rules, id)
+    }
+
+    fn shot(sim: &mut Simulation, attacker_id: u64, category: EntityCategory) -> SimFireEvent {
+        let mut event = SimFireEvent::for_test(attacker_id);
+        event.firer_category = category;
+        event.muzzle_anim = Some(sim.interner.intern("GUNFIRE"));
+        event.fire_coord = ProjectileCoord::new(10 * 256 + 200, 10 * 256 + 60, 105);
+        event
+    }
+
+    /// `0x006FF3C2` then `0x006FF43A`: the constructor row, then
+    /// `SetOwnerObject(firer)` for anything that is not a building.
+    #[test]
+    fn a_units_muzzle_anim_is_built_at_the_fire_coordinate_and_rides_the_firer() {
+        let (mut sim, rules, tank) = fixture(EntityCategory::Unit);
+        let event = shot(&mut sim, tank, EntityCategory::Unit);
+        admit_muzzle_anims(&mut sim, &rules, &[event]);
+
+        let (id, anim) = sim.substrate.anims.iter().next().expect("one muzzle anim");
+        let id = *id;
+        assert_eq!(sim.interner.resolve(anim.type_id), "GUNFIRE");
+        assert_eq!((anim.draw_flags, anim.z_adjust), (0x600, 0));
+        assert_eq!(anim.runtime.loop_remaining, 1);
+        assert_eq!(anim.owner_entity, Some(tank));
+        let at_fire = AnimWorldCoord {
+            x: 10 * 256 + 200,
+            y: 10 * 256 + 60,
+            z: 105,
+        };
+        assert_eq!(sim.anim_absolute_coord(id), Some(at_fire));
+
+        // The firer drives one cell east and climbs: the flash goes with it.
+        {
+            let firer = sim.substrate.entities.get_mut(tank).unwrap();
+            firer.position.rx += 1;
+            firer.position.exact_z_leptons = Some(70);
+        }
+        assert_eq!(
+            sim.anim_absolute_coord(id),
+            Some(AnimWorldCoord {
+                x: at_fire.x + 256,
+                y: at_fire.y,
+                z: at_fire.z + 70,
+            })
+        );
+    }
+
+    /// `0x006FF3D9..0x006FF427`: a building's anim is not attached; it takes a
+    /// `ZAdjust` from the fire offset, or -200 when occupants fired.
+    #[test]
+    fn a_buildings_muzzle_anim_stays_put_and_takes_the_native_z_adjust() {
+        let (mut sim, rules, tower) = fixture(EntityCategory::Structure);
+        let mut own_weapon = shot(&mut sim, tower, EntityCategory::Structure);
+        own_weapon.fire_offset_y = 130;
+        let mut occupants = own_weapon.clone();
+        occupants.occupied_building = true;
+        admit_muzzle_anims(&mut sim, &rules, &[own_weapon, occupants]);
+
+        let anims: Vec<_> = sim.substrate.anims.iter().map(|(_, anim)| anim).collect();
+        assert_eq!(anims.len(), 2);
+        assert!(anims.iter().all(|anim| anim.owner_entity.is_none()));
+        assert_eq!(anims[0].z_adjust, -32);
+        assert_eq!(anims[1].z_adjust, -200);
+    }
+
+    /// A firer killed in the pass that carried its shot: the flash is built
+    /// while the firer is still stored, and the firer's teardown expires the
+    /// attachment through the ordinary pointer notification. Built after the
+    /// teardown, the anim kept an owner id nothing would clear, and resolved
+    /// its coordinate as a bare delta near the map origin.
+    #[test]
+    fn a_flash_outlives_a_firer_that_dies_without_a_dangling_owner() {
+        let (mut sim, rules, tank) = fixture(EntityCategory::Unit);
+        sim.reveal(tank);
+        let event = shot(&mut sim, tank, EntityCategory::Unit);
+        let fire = event.fire_coord;
+        admit_muzzle_anims(&mut sim, &rules, &[event]);
+        let id = *sim.substrate.anims.iter().next().expect("muzzle anim").0;
+
+        sim.uninit_with_rules(tank, &rules);
+
+        let anim = sim.anim(id).expect("the anim is still stored this frame");
+        assert_eq!(anim.owner_entity, None, "the teardown detached it");
+        assert!(anim.runtime.inactive, "and marked it for removal");
+        assert_eq!(
+            sim.anim_absolute_coord(id),
+            Some(AnimWorldCoord {
+                x: fire.x,
+                y: fire.y,
+                z: fire.z,
+            }),
+            "detach wrote the absolute coordinate back"
+        );
+    }
+
+    /// The same, through `commit`: the flash is constructed before the
+    /// teardown loop. Constructed after it, the attach would still succeed (the
+    /// torn-down firer stays stored until the frame's tail) and leave an owner
+    /// id that no later notification clears.
+    #[test]
+    fn commit_builds_the_flash_before_it_tears_the_firer_down() {
+        let (mut sim, rules, tank) = fixture(EntityCategory::Unit);
+        sim.reveal(tank);
+        let event = shot(&mut sim, tank, EntityCategory::Unit);
+        let effects = DeathEffects {
+            immediate_uninit_ids: vec![tank],
+            ..DeathEffects::default()
+        };
+        DamageConsequences::ordinary(effects, Vec::new(), Vec::new(), Vec::new(), vec![event])
+            .commit(&mut sim, &rules, None, None);
+
+        let (_, anim) = sim.substrate.anims.iter().next().expect("muzzle anim");
+        assert_eq!(anim.owner_entity, None);
+        assert!(anim.runtime.inactive);
+    }
+
+    #[test]
+    fn a_shot_without_a_bound_muzzle_type_constructs_nothing() {
+        let (mut sim, rules, tank) = fixture(EntityCategory::Unit);
+        let mut unbound = shot(&mut sim, tank, EntityCategory::Unit);
+        unbound.muzzle_anim = Some(sim.interner.intern("NOSUCHANIM"));
+        let mut none = unbound.clone();
+        none.muzzle_anim = None;
+        admit_muzzle_anims(&mut sim, &rules, &[unbound, none]);
+        assert_eq!(sim.substrate.anims.iter().count(), 0);
     }
 }

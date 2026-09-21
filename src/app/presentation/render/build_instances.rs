@@ -181,7 +181,11 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
             sh,
             uv_fn,
             bridge_state,
-            state.match_state.sim_runtime.as_ref().and_then(|rt| rt.view().resolved_terrain()),
+            state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .and_then(|rt| rt.view().resolved_terrain()),
         )
     } else {
         crate::render::terrain_instances::TerrainInstances { normal: Vec::new() }
@@ -323,12 +327,8 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
             .as_ref()
             .map_or(&[], |rt| rt.view().tactical_registration_order()),
     );
-    // Non-garrison weapon muzzle flashes at FLH fire origins.
-    instances::build_weapon_muzzle_flash_instances(state, &mut shp_paged);
     // In-flight projectile sprites (e.g. Guardian GI DRAGON missile).
     instances::build_projectile_visual_instances(state, &mut shp_paged);
-    // Garrison muzzle flashes (OccupantAnim) at fire port positions.
-    instances::build_garrison_muzzle_flash_instances(state, &mut shp_paged);
     // Parachute SHPs above descending paradropped infantry (Layer 2 — sorts
     // with the GI body, at the body's own key).
     instances::build_parachute_instances(state, &mut ground_objects, &parachute_body_depths);

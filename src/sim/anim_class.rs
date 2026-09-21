@@ -6,8 +6,9 @@
 //! edge, logic-frame timing, loops, reverse/ping-pong, Next, trailer, sound
 //! identity, owner attachment, conceal, and deferred deletion. Its producers
 //! are building slots and damage fires, tile and crate animations, combat
-//! explosions, teleport warps, superweapon invokes, Lightning Storm bolts,
-//! bridge collapse explosions, wakes and ore twinkles.
+//! explosions, weapon and occupant muzzle flashes, teleport warps,
+//! superweapon invokes, Lightning Storm bolts, bridge collapse explosions,
+//! wakes and ore twinkles.
 //!
 //! ## Residuals — two `AnimClass::AI` arms are not built
 //!
@@ -1244,10 +1245,10 @@ impl Simulation {
     /// - The same guard also gates a virtual call on the OWNER,
     ///   `CALL [owner_vtable+0x17C]` at `0x00424BB0` — read directly, not
     ///   inferred: BuildingClass's primary vtable base is `0x007E3EBC` and
-    ///   `+0x17C` there is `0x005F43C0`, whose body is a bare `RET`. So for the
-    ///   only producer this engine has, the skipped call does nothing. A
-    ///   non-building owner may override it; whoever adds the first such
-    ///   producer must read `+0x17C` on that class before reusing this.
+    ///   `+0x17C` there is `0x005F43C0`, whose body is a bare `RET`. The Unit,
+    ///   Infantry and Aircraft vtables hold the same `0x005F43C0` at `+0x17C`
+    ///   (read for the muzzle flash, the first non-building attach producer),
+    ///   so the skipped call does nothing for any owner this engine attaches.
     /// - The `DisplayClass::RemoveFromLayer` / `Submit_Object` re-registration
     ///   pair either side of the pointer write (`0x004A9770` / `0x004A9720`).
     ///   Layer membership is rebuilt from `tactical_registration_order` every
@@ -1459,10 +1460,12 @@ impl Simulation {
     /// (`world/lifecycle.rs pending_object_is_ready`), so the marker and object
     /// liveness are one field where native keeps display-layer membership
     /// separate from both.
-    /// - Trigger: an attached anim that must outlive its owner.
-    /// - Player effect: none. No such producer exists — every native attach
-    ///   producer either dies with its owner or is not built here.
-    /// - Frequency: zero occurrences in this build.
+    /// - Trigger: an attached anim whose owner is torn down first: a
+    ///   building's damage fire, or a muzzle flash whose firer dies within the
+    ///   flash's few frames.
+    /// - Player effect: the flash disappears with the firer instead of playing
+    ///   out its last frames where it stood.
+    /// - Frequency: common in any firefight; a handful of frames each.
     /// - Downstream risk: recorded because splitting the two fields is a
     ///   prerequisite for any future producer whose anim survives its owner;
     ///   nothing else depends on it.

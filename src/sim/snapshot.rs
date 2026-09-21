@@ -525,7 +525,11 @@ use crate::sim::world::Simulation;
 // `level * 104`, and an attached anim's delta is taken from the owner's actual
 // height. The layout is unchanged, but a 176 save with such an anim above
 // level 0 would draw and hash it at the wrong height.
-const SNAPSHOT_VERSION: u32 = 177;
+// 177 -> 178: weapon and occupant muzzle flashes are AnimStore members. The
+// layout is unchanged, but they are now saved, hashed and take ids from the
+// shared stable-id counter, so a 177 save taken mid-firefight resumes with
+// different ids.
+const SNAPSHOT_VERSION: u32 = 178;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3419,7 +3423,7 @@ mod tests {
         // 170 -> 171: shared animation bounds and retained HasEngineer.
         // 173 -> 174: ProductionState drops the resource node map.
         // 174 -> 175: bridge collapse explosions join the AnimStore.
-        assert_eq!(super::SNAPSHOT_VERSION, 177);
+        assert_eq!(super::SNAPSHOT_VERSION, 178);
     }
 
     #[test]

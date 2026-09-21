@@ -692,18 +692,8 @@ impl SimSoundEvent {
     }
 }
 
-/// A fire event produced during combat — carries firing-tick facts for
-/// render-side muzzle flash positioning and future projectile origin computation.
-///
-/// The sim emits this whenever a weapon fires. Non-garrison fields snapshot
-/// the selected weapon, attacker type/facing/veterancy, and optional report
-/// sound id at the authoritative fire tick. Garrison fields remain
-/// fire-port/occupant-specific so the app layer can keep the existing
-/// `OccupantAnim` path separate.
-/// Source position facts captured at the authoritative fire tick.
-///
-/// The app layer combines this deterministic snapshot with art/rules metadata
-/// to resolve the visible muzzle, projectile, and report-sound origin.
+/// The firer's own position at the authoritative fire tick (the electric
+/// spark admission reads it; the muzzle is `SimFireEvent::fire_coord`).
 #[derive(Debug, Clone)]
 pub struct FireOriginSnapshot {
     pub rx: u16,
@@ -712,11 +702,11 @@ pub struct FireOriginSnapshot {
     pub sub_y: SimFixed,
     pub z: u8,
     pub facing: u8,
-    pub category: EntityCategory,
-    /// Pre-shot burst index. First shot in a burst is 0.
-    pub burst_index: u8,
 }
 
+/// One shot, as combat resolved it at the authoritative fire tick. The world
+/// constructs the shot's muzzle animation from it and the app positions the
+/// weapon report sound at `fire_coord`.
 #[derive(Debug, Clone)]
 pub struct SimFireEvent {
     /// Stable ID of the entity that fired.
@@ -740,12 +730,51 @@ pub struct SimFireEvent {
     /// Weapon report sound id. The app layer positions this at the resolved
     /// fire origin for both normal and garrison fire.
     pub report_sound_id: Option<InternedId>,
-    /// For garrison fire: which muzzle port index fired (for fire port positioning).
-    /// None = normal weapon FLH, Some(idx) = garrison fire port index.
-    pub garrison_muzzle_index: Option<u8>,
-    /// For garrison fire: the weapon's OccupantAnim interned ID (e.g., "UCFLASH").
-    /// Pushed through the event so the render layer doesn't need to re-derive the weapon.
-    pub occupant_anim: Option<InternedId>,
+    /// The shot's fire coordinate in world leptons (`combat::fire_coord`): the
+    /// bullet origin, the muzzle animation and the report sound share it.
+    pub fire_coord: crate::sim::projectile::ProjectileCoord,
+    /// `fire_coord.y` minus the firer coordinate's Y; a building's muzzle
+    /// animation derives its `ZAdjust` from it.
+    pub fire_offset_y: i32,
+    /// The muzzle `AnimClass` type this shot constructs, if any: the weapon's
+    /// `Anim=` by aim facing, or `OccupantAnim=` for an occupied building.
+    pub muzzle_anim: Option<InternedId>,
+    /// The firer is a building with occupants (native's `+0x408` count above
+    /// zero), whichever weapon fired.
+    pub occupied_building: bool,
+    /// The firer's class: a building's flash is not attached to it.
+    pub firer_category: EntityCategory,
+}
+
+#[cfg(test)]
+impl SimFireEvent {
+    /// A primary-weapon shot by unit `attacker_id` from cell (0, 0), with no
+    /// report, no muzzle animation and a zero fire coordinate.
+    pub(crate) fn for_test(attacker_id: u64) -> Self {
+        Self {
+            attacker_id,
+            attacker_type_ref: crate::sim::intern::test_intern("TESTFIRER"),
+            weapon_slot: crate::sim::combat::combat_weapon::WeaponSlot::Primary,
+            weapon_id: crate::sim::intern::test_intern("TESTWEAPON"),
+            facing: 0,
+            veterancy: 0,
+            origin_snapshot: FireOriginSnapshot {
+                rx: 0,
+                ry: 0,
+                sub_x: crate::util::fixed_math::SimFixed::ZERO,
+                sub_y: crate::util::fixed_math::SimFixed::ZERO,
+                z: 0,
+                facing: 0,
+            },
+            target: crate::sim::combat::TargetKind::Cell(0, 0),
+            report_sound_id: None,
+            fire_coord: crate::sim::projectile::ProjectileCoord::new(0, 0, 0),
+            fire_offset_y: 0,
+            muzzle_anim: None,
+            occupied_building: false,
+            firer_category: EntityCategory::Unit,
+        }
+    }
 }
 
 /// Borrowed names for the three native RNG authorities.
