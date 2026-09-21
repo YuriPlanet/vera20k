@@ -2288,6 +2288,13 @@ struct BlockerPlaneKey {
 }
 
 impl MovementPassCache {
+    /// How often the block index had to read every entity: once at the start,
+    /// and again only when something hands out the whole store mutably.
+    #[cfg(test)]
+    pub(crate) fn block_index_world_rebuilds(&self) -> usize {
+        self.block_index.world_rebuilds
+    }
+
     #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     fn blocker_plane(

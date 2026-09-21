@@ -297,6 +297,7 @@ impl EntityStore {
     /// Idempotent. Safe if `stable_id` is absent.
     pub fn clear_radio_contacts_for(&mut self, stable_id: u64) {
         let stored = self.entities.len();
+        self.touched.note(stable_id, stored);
         for entity in self.entities.values_mut() {
             if entity.has_live_contact_with(stable_id)
                 || entity.dock_entered_with == Some(stable_id)

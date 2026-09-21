@@ -904,6 +904,15 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
             ));
         }
     }
+    // The movement pass keeps its owner block sets current from the entity
+    // store's touch log. Anything that hands out every entity mutably each
+    // frame (`values_mut`) would quietly turn that back into a whole-world
+    // read per frame, with correct results and no other symptom.
+    let world_reads = rec.movement_pass_cache.block_index_world_rebuilds();
+    assert!(
+        world_reads <= 2,
+        "the block index read every entity {world_reads} times; look for a new all-entity mutable walk"
+    );
     assert!(
         miner_engaged,
         "the miner system must engage the harvester (acquire an ore target) — \

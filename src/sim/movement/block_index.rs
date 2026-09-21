@@ -172,33 +172,31 @@ fn insert_unit(map: &mut LayeredEntityBlockMap, unit: &UnitContribution, friendl
     }
 }
 
-/// Everything behind one owner's product.
+/// Where every entity sits, whoever is looking. Shared by all owners.
 #[derive(Debug, Default)]
-struct OwnerBlockState {
-    /// Each entity's contribution as the product last saw it.
+struct Placements {
+    /// Each entity's contribution as of the last sync.
     placed: BTreeMap<u64, Contribution>,
     units_at: BTreeMap<LayerCell, BTreeSet<u64>>,
     /// How many placed buildings block each cell.
     structure_refs: BTreeMap<(u16, u16), u32>,
-    /// Touched since this owner's product was last brought current.
-    pending: BTreeSet<u64>,
-    /// `are_houses_friendly(owner, other)` under the alliance graph the index
-    /// last saw; the index drops every state when that graph changes.
-    friendly: BTreeMap<InternedId, bool>,
-    /// `None` while a movement pass holds it.
-    product: Option<OwnerBlockSet>,
-    /// Which loan holds the product. A pass that comes back with another
-    /// number held sets this state no longer describes.
-    loan: u64,
 }
 
-impl OwnerBlockState {
-    fn unplace(
-        &mut self,
-        id: u64,
-        cells: &mut BTreeSet<(u16, u16)>,
-        keys: &mut BTreeSet<LayerCell>,
-    ) {
+/// Cells and keys whose contributors changed.
+#[derive(Debug, Default)]
+struct Dirty {
+    cells: BTreeSet<(u16, u16)>,
+    keys: BTreeSet<LayerCell>,
+}
+
+impl Dirty {
+    fn len(&self) -> usize {
+        self.cells.len() + self.keys.len()
+    }
+}
+
+impl Placements {
+    fn unplace(&mut self, id: u64, dirty: &mut Dirty) {
         match self.placed.remove(&id) {
             Some(Contribution::Structure(blocked)) => {
                 for cell in blocked {
@@ -208,7 +206,7 @@ impl OwnerBlockState {
                             self.structure_refs.remove(&cell);
                         }
                     }
-                    cells.insert(cell);
+                    dirty.cells.insert(cell);
                 }
             }
             Some(Contribution::Unit(unit)) => {
@@ -219,68 +217,113 @@ impl OwnerBlockState {
                         self.units_at.remove(&key);
                     }
                 }
-                keys.insert(key);
+                dirty.keys.insert(key);
             }
             None => {}
         }
     }
 
-    fn place(
-        &mut self,
-        id: u64,
-        contribution: Contribution,
-        cells: &mut BTreeSet<(u16, u16)>,
-        keys: &mut BTreeSet<LayerCell>,
-    ) {
+    fn place(&mut self, id: u64, contribution: Contribution, dirty: &mut Dirty) {
         match &contribution {
             Contribution::Structure(blocked) => {
                 for &cell in blocked {
                     *self.structure_refs.entry(cell).or_insert(0) += 1;
-                    cells.insert(cell);
+                    dirty.cells.insert(cell);
                 }
             }
             Contribution::Unit(unit) => {
                 let key = (unit.layer, unit.cell);
                 self.units_at.entry(key).or_default().insert(id);
-                keys.insert(key);
+                dirty.keys.insert(key);
             }
         }
         self.placed.insert(id, contribution);
     }
 
-    /// Rewrite the product at the cells whose contributors changed.
-    fn rewrite(
+    /// Re-derive one entity; report where it sat and where it sits if that
+    /// changed.
+    fn rederive(
+        &mut self,
+        id: u64,
+        entities: &EntityStore,
+        interner: &StringInterner,
+        rules: Option<&RuleSet>,
+        dirty: &mut Dirty,
+    ) {
+        let now = entities
+            .get(id)
+            .and_then(|entity| contribution(entity, interner, rules));
+        if self.placed.get(&id) == now.as_ref() {
+            return;
+        }
+        self.unplace(id, dirty);
+        if let Some(now) = now {
+            self.place(id, now, dirty);
+        }
+    }
+
+    fn of_everyone(
+        entities: &EntityStore,
+        interner: &StringInterner,
+        rules: Option<&RuleSet>,
+    ) -> Self {
+        let mut placements = Self::default();
+        let mut dirty = Dirty::default();
+        for entity in entities.values() {
+            if let Some(contribution) = contribution(entity, interner, rules) {
+                placements.place(entity.stable_id(), contribution, &mut dirty);
+            }
+        }
+        placements
+    }
+}
+
+/// One owner's view of the shared placements.
+#[derive(Debug, Default)]
+struct OwnerView {
+    /// Changed since this owner's product was last brought current.
+    dirty: Dirty,
+    /// `are_houses_friendly(owner, other)` under the alliance graph the index
+    /// last saw; the index drops every view when that graph changes.
+    friendly: BTreeMap<InternedId, bool>,
+    /// `None` while a movement pass holds it.
+    product: Option<OwnerBlockSet>,
+    /// Which loan holds the product. A pass that comes back with another
+    /// number held sets this view no longer describes.
+    loan: u64,
+}
+
+impl OwnerView {
+    /// Rewrite the product at the dirty cells and keys from the placements.
+    fn bring_current(
         &mut self,
         product: &mut OwnerBlockSet,
-        cells: &BTreeSet<(u16, u16)>,
-        keys: &BTreeSet<LayerCell>,
+        placements: &Placements,
         owner: &str,
         alliances: &HouseAllianceMap,
         interner: &StringInterner,
     ) {
-        for &cell in cells {
-            if self.structure_refs.contains_key(&cell) {
+        let dirty = std::mem::take(&mut self.dirty);
+        for cell in dirty.cells {
+            if placements.structure_refs.contains_key(&cell) {
                 product.0.insert(cell);
             } else {
                 product.0.remove(&cell);
             }
         }
-        for &(layer, cell) in keys {
-            let placed = &self.placed;
-            let friendly = &mut self.friendly;
-            let units = self
+        for (layer, cell) in dirty.keys {
+            product.1.remove(layer, &cell);
+            product.1.remove_moving_ally(layer, &cell);
+            let ids = placements
                 .units_at
                 .get(&(layer, cell))
                 .into_iter()
-                .flatten()
-                .filter_map(|id| match placed.get(id) {
-                    Some(Contribution::Unit(unit)) => Some(unit),
-                    _ => None,
-                });
-            product.1.remove(layer, &cell);
-            product.1.remove_moving_ally(layer, &cell);
-            for unit in units {
-                let friendly = *friendly.entry(unit.owner).or_insert_with(|| {
+                .flatten();
+            for id in ids {
+                let Some(Contribution::Unit(unit)) = placements.placed.get(id) else {
+                    continue;
+                };
+                let friendly = *self.friendly.entry(unit.owner).or_insert_with(|| {
                     crate::map::houses::are_houses_friendly(
                         alliances,
                         owner,
@@ -292,54 +335,22 @@ impl OwnerBlockState {
         }
     }
 
-    /// Re-derive the pending entities and rewrite the product where they sit
-    /// or sat.
-    fn bring_current(
+    /// A product from every placement: no entity is read.
+    fn build(
         &mut self,
-        product: &mut OwnerBlockSet,
-        entities: &EntityStore,
+        placements: &Placements,
         owner: &str,
         alliances: &HouseAllianceMap,
         interner: &StringInterner,
-        rules: Option<&RuleSet>,
-    ) {
-        let mut cells = BTreeSet::new();
-        let mut keys = BTreeSet::new();
-        for id in std::mem::take(&mut self.pending) {
-            let now = entities
-                .get(id)
-                .and_then(|entity| contribution(entity, interner, rules));
-            if self.placed.get(&id) == now.as_ref() {
-                continue;
-            }
-            self.unplace(id, &mut cells, &mut keys);
-            if let Some(now) = now {
-                self.place(id, now, &mut cells, &mut keys);
-            }
-        }
-        self.rewrite(product, &cells, &keys, owner, alliances, interner);
+    ) -> OwnerBlockSet {
+        self.dirty = Dirty {
+            cells: placements.structure_refs.keys().copied().collect(),
+            keys: placements.units_at.keys().copied().collect(),
+        };
+        let mut product = OwnerBlockSet::default();
+        self.bring_current(&mut product, placements, owner, alliances, interner);
+        product
     }
-}
-
-/// The whole-world build: every entity placed, every cell folded.
-fn build_state(
-    entities: &EntityStore,
-    owner: &str,
-    alliances: &HouseAllianceMap,
-    interner: &StringInterner,
-    rules: Option<&RuleSet>,
-) -> (OwnerBlockState, OwnerBlockSet) {
-    let mut state = OwnerBlockState::default();
-    let mut cells = BTreeSet::new();
-    let mut keys = BTreeSet::new();
-    for entity in entities.values() {
-        if let Some(contribution) = contribution(entity, interner, rules) {
-            state.place(entity.stable_id(), contribution, &mut cells, &mut keys);
-        }
-    }
-    let mut product = OwnerBlockSet::default();
-    state.rewrite(&mut product, &cells, &keys, owner, alliances, interner);
-    (state, product)
 }
 
 /// The owner block sets built from every entity, in id order, with none of
@@ -376,13 +387,19 @@ pub(crate) fn build_owner_block_set(
 /// Each owner's block sets, kept between movement passes.
 #[derive(Debug, Default)]
 pub(crate) struct OwnerBlockIndex {
-    owners: BTreeMap<InternedId, OwnerBlockState>,
+    /// `None` until the first sync, and again whenever the store reports that
+    /// anything may have changed or the rules are not the ones last seen.
+    placements: Option<Placements>,
+    owners: BTreeMap<InternedId, OwnerView>,
     /// The alliance graph the owners' friendliness answers were taken under.
     alliances_seen: Option<HouseAllianceMap>,
+    /// Which rules the placements were derived under, by address: a building's
+    /// blocked cells come from its type. Never dereferenced.
+    rules_seen: Option<usize>,
     last_loan: u64,
-    /// How many owner states were built from every entity.
+    /// How many times the placements were rebuilt from every entity.
     #[cfg(test)]
-    rebuilds: usize,
+    pub(crate) world_rebuilds: usize,
 }
 
 /// Sets on loan to a movement pass, with the number that returns them.
@@ -393,24 +410,53 @@ pub(crate) struct LentOwnerBlockSet {
 }
 
 impl OwnerBlockIndex {
-    /// Move the store's touch log onto every owner's pending list.
-    fn take_touched(&mut self, entities: &mut EntityStore, alliances: &HouseAllianceMap) {
+    /// Bring the shared placements to the entities' current state and tell
+    /// every owner what moved.
+    fn sync_placements(
+        &mut self,
+        entities: &mut EntityStore,
+        alliances: &HouseAllianceMap,
+        interner: &StringInterner,
+        rules: Option<&RuleSet>,
+    ) -> &Placements {
         if self.alliances_seen.as_ref() != Some(alliances) {
             self.owners.clear();
             self.alliances_seen = Some(alliances.clone());
         }
-        match entities.take_touched() {
-            TouchedEntities::All => self.owners.clear(),
-            TouchedEntities::Ids(ids) => {
-                for state in self.owners.values_mut() {
-                    state.pending.extend(ids.iter().copied());
+        let rules_now = rules.map(|rules| std::ptr::from_ref(rules) as usize);
+        if self.rules_seen != rules_now {
+            self.placements = None;
+            self.rules_seen = rules_now;
+        }
+        let touched = entities.take_touched();
+        match (self.placements.as_mut(), touched) {
+            (Some(placements), TouchedEntities::Ids(ids)) => {
+                let mut dirty = Dirty::default();
+                // Sorted and deduplicated: each entity is re-derived once.
+                for id in ids.into_iter().collect::<BTreeSet<u64>>() {
+                    placements.rederive(id, entities, interner, rules, &mut dirty);
                 }
-                // An owner that stopped moving would collect ids for ever;
-                // past this point a rebuild is cheaper than the backlog.
-                self.owners
-                    .retain(|_, state| state.pending.len() <= state.placed.len() / 2 + 256);
+                // A view that stopped being asked for would collect dirt for
+                // ever; past this point building it afresh is cheaper.
+                let limit = placements.units_at.len() / 2 + 256;
+                self.owners.retain(|_, view| {
+                    view.dirty.cells.extend(dirty.cells.iter().copied());
+                    view.dirty.keys.extend(dirty.keys.iter().copied());
+                    view.dirty.len() <= limit
+                });
+            }
+            _ => {
+                self.placements = Some(Placements::of_everyone(entities, interner, rules));
+                self.owners.clear();
+                #[cfg(test)]
+                {
+                    self.world_rebuilds += 1;
+                }
             }
         }
+        self.placements
+            .as_ref()
+            .expect("placements were just ensured")
     }
 
     /// The owner's sets as a build from the entities would give them now,
@@ -423,39 +469,22 @@ impl OwnerBlockIndex {
         interner: &StringInterner,
         rules: Option<&RuleSet>,
     ) -> LentOwnerBlockSet {
-        self.take_touched(entities, alliances);
+        self.sync_placements(entities, alliances, interner, rules);
+        let placements = self.placements.as_ref().expect("synced above");
         let owner_name = interner.resolve(owner);
         self.last_loan += 1;
         let loan = self.last_loan;
-        let kept = self
-            .owners
-            .get_mut(&owner)
-            .and_then(|state| state.product.take().map(|product| (state, product)));
-        let sets = match kept {
-            Some((state, mut product)) => {
-                state.bring_current(
-                    &mut product,
-                    entities,
-                    owner_name,
-                    alliances,
-                    interner,
-                    rules,
-                );
-                state.loan = loan;
+        let view = self.owners.entry(owner).or_default();
+        let sets = match view.product.take() {
+            Some(mut product) => {
+                view.bring_current(&mut product, placements, owner_name, alliances, interner);
                 product
             }
-            None => {
-                let (mut state, product) =
-                    build_state(entities, owner_name, alliances, interner, rules);
-                #[cfg(test)]
-                {
-                    self.rebuilds += 1;
-                }
-                state.loan = loan;
-                self.owners.insert(owner, state);
-                product
-            }
+            // No view yet, or its product is out with a pass that will be
+            // refused: build from the placements.
+            None => view.build(placements, owner_name, alliances, interner),
         };
+        view.loan = loan;
         debug_assert_current(&sets, entities, owner_name, alliances, interner, rules);
         LentOwnerBlockSet { loan, sets }
     }
@@ -470,44 +499,35 @@ impl OwnerBlockIndex {
         interner: &StringInterner,
         rules: Option<&RuleSet>,
     ) {
-        self.take_touched(entities, alliances);
+        self.sync_placements(entities, alliances, interner, rules);
+        let placements = self.placements.as_ref().expect("synced above");
         let owner_name = interner.resolve(owner);
         match self.owners.get_mut(&owner) {
-            Some(state) if state.product.is_none() && state.loan == lent.loan => {
-                state.bring_current(
-                    &mut lent.sets,
-                    entities,
-                    owner_name,
-                    alliances,
-                    interner,
-                    rules,
-                );
+            Some(view) if view.product.is_none() && view.loan == lent.loan => {
+                view.bring_current(&mut lent.sets, placements, owner_name, alliances, interner);
             }
+            // The view was dropped or lent again since: these sets are
+            // nobody's, so rebuild them and take the loan over.
             _ => {
-                let (mut state, built) =
-                    build_state(entities, owner_name, alliances, interner, rules);
-                #[cfg(test)]
-                {
-                    self.rebuilds += 1;
-                }
+                let view = self.owners.entry(owner).or_default();
+                view.product = None;
+                lent.sets = view.build(placements, owner_name, alliances, interner);
                 self.last_loan += 1;
-                state.loan = self.last_loan;
-                lent.loan = state.loan;
-                lent.sets = built;
-                self.owners.insert(owner, state);
+                view.loan = self.last_loan;
+                lent.loan = view.loan;
             }
         }
         debug_assert_current(&lent.sets, entities, owner_name, alliances, interner, rules);
     }
 
-    /// Take back what [`Self::lend_current`] handed out. Sets whose state was
-    /// dropped in the meantime are discarded; the next loan rebuilds.
+    /// Take back what [`Self::lend_current`] handed out. Sets whose view was
+    /// dropped or lent again in the meantime are discarded.
     pub(crate) fn give_back(&mut self, owner: InternedId, lent: LentOwnerBlockSet) {
-        if let Some(state) = self.owners.get_mut(&owner)
-            && state.product.is_none()
-            && state.loan == lent.loan
+        if let Some(view) = self.owners.get_mut(&owner)
+            && view.product.is_none()
+            && view.loan == lent.loan
         {
-            state.product = Some(lent.sets);
+            view.product = Some(lent.sets);
         }
     }
 }
@@ -534,6 +554,8 @@ mod tests {
     use crate::sim::components::MovementTarget;
     use crate::sim::intern::{test_intern, test_interner};
 
+    const OWNERS: [&str; 2] = ["Americans", "Russians"];
+
     fn unit(id: u64, owner: &str, cell: (u16, u16)) -> GameEntity {
         let mut entity = GameEntity::test_default(id, "MTNK", owner, cell.0, cell.1);
         entity.category = EntityCategory::Unit;
@@ -542,16 +564,38 @@ mod tests {
         entity
     }
 
+    fn structure(id: u64, type_id: &str, owner: &str, cell: (u16, u16)) -> GameEntity {
+        let mut entity = GameEntity::test_default(id, type_id, owner, cell.0, cell.1);
+        entity.category = EntityCategory::Structure;
+        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.cell_marked = true;
+        entity
+    }
+
+    fn moving_to(next: (u16, u16), from: (u16, u16)) -> Option<MovementTarget> {
+        Some(MovementTarget {
+            path: vec![from, next],
+            path_layers: vec![MovementLayer::Ground; 2],
+            next_index: 1,
+            ..MovementTarget::default()
+        })
+    }
+
+    fn rules_again() -> RuleSet {
+        rules()
+    }
+
     fn rules() -> RuleSet {
         RuleSet::from_ini(&IniFile::from_str(
-            "[VehicleTypes]\n0=MTNK\n[BuildingTypes]\n0=GAPOWR\n\
-             [MTNK]\nSpeed=4\n[GAPOWR]\nFoundation=2x2\n",
+            "[VehicleTypes]\n0=MTNK\n[BuildingTypes]\n0=GAPOWR\n1=NABNKR\n\
+             [MTNK]\nSpeed=4\n[GAPOWR]\nFoundation=2x2\n\
+             [NABNKR]\nFoundation=1x1\nBunker=yes\n",
         ))
         .expect("rules")
     }
 
-    /// Lend, compare with the whole-world build for both viewing owners, give
-    /// back. Returns how many states were rebuilt from scratch to do it.
+    /// Lend to both owners, compare with the whole-world build, give back.
+    /// Returns how many times the placements were rebuilt from every entity.
     fn lend_and_check(
         index: &mut OwnerBlockIndex,
         entities: &mut EntityStore,
@@ -559,18 +603,33 @@ mod tests {
         rules: &RuleSet,
     ) -> usize {
         let interner = test_interner();
-        let before = index.rebuilds;
-        for owner in ["Americans", "Russians"] {
+        let before = index.world_rebuilds;
+        for owner in OWNERS {
             let id = test_intern(owner);
             let lent = index.lend_current(id, entities, alliances, &interner, Some(rules));
             assert_eq!(
                 lent.sets,
                 build_owner_block_set(entities, owner, alliances, &interner, Some(rules)),
-                "{owner}'s sets differ from a build of the whole world"
+                "{owner}: the kept sets differ from a build of the whole world"
             );
             index.give_back(id, lent);
         }
-        index.rebuilds - before
+        index.world_rebuilds - before
+    }
+
+    fn kept<'a>(index: &'a OwnerBlockIndex, owner: &str) -> &'a OwnerBlockSet {
+        index.owners[&test_intern(owner)]
+            .product
+            .as_ref()
+            .expect("the sets are back in the index")
+    }
+
+    fn code(index: &OwnerBlockIndex, owner: &str, layer: MovementLayer, cell: (u16, u16)) -> u8 {
+        kept(index, owner)
+            .1
+            .get(layer, &cell)
+            .expect("an entry at the cell")
+            .cost_code
     }
 
     #[test]
@@ -581,18 +640,16 @@ mod tests {
         entities.insert(unit(1, "Americans", (5, 5)));
         entities.insert(unit(2, "Americans", (6, 5)));
         entities.insert(unit(3, "Russians", (7, 5)));
-        let mut power = unit(4, "Russians", (20, 20));
-        power.category = EntityCategory::Structure;
-        power.type_ref = test_intern("GAPOWR");
-        entities.insert(power);
+        entities.insert(structure(4, "GAPOWR", "Russians", (20, 20)));
         let mut index = OwnerBlockIndex::default();
         assert_eq!(
             lend_and_check(&mut index, &mut entities, &alliances, &rules),
-            2
+            1,
+            "the first loan reads everyone"
         );
 
-        // Two occupants of one cell: the later id's entry wins, and when it
-        // leaves the earlier one's returns.
+        // Two occupants of one cell: the later id wins, and when it leaves the
+        // earlier one returns.
         entities.get_mut(2).unwrap().position.rx = 5;
         assert_eq!(
             lend_and_check(&mut index, &mut entities, &alliances, &rules),
@@ -606,12 +663,7 @@ mod tests {
 
         // A unit starts moving (code 2 with a next cell, and a moving-ally
         // record), an enemy dies in place, a building goes, a unit arrives.
-        entities.get_mut(1).unwrap().movement_target = Some(MovementTarget {
-            path: vec![(5, 5), (5, 6)],
-            path_layers: vec![MovementLayer::Ground; 2],
-            next_index: 1,
-            ..MovementTarget::default()
-        });
+        entities.get_mut(1).unwrap().movement_target = moving_to((5, 6), (5, 5));
         entities.get_mut(3).unwrap().dying = true;
         entities.remove(4);
         entities.insert(unit(5, "Russians", (5, 6)));
@@ -619,51 +671,157 @@ mod tests {
             lend_and_check(&mut index, &mut entities, &alliances, &rules),
             0
         );
-        let americans = &index.owners[&test_intern("Americans")];
-        let product = americans.product.as_ref().unwrap();
+        let americans = kept(&index, "Americans");
         assert!(
-            product.0.is_empty(),
-            "the power plant's cells were released"
+            americans.0.is_empty(),
+            "the power plant cells were released"
         );
-        assert_eq!(
-            product
-                .1
-                .get(MovementLayer::Ground, &(5, 5))
-                .unwrap()
-                .cost_code,
-            2
-        );
+        let at = |cell| americans.1.get(MovementLayer::Ground, &cell);
+        assert_eq!(at((5, 5)).unwrap().cost_code, 2);
+        assert_eq!(at((5, 5)).unwrap().next_cell, Some((5, 6)));
         assert!(
-            product
+            americans
                 .1
                 .moving_ally(MovementLayer::Ground, &(5, 5))
                 .is_some()
         );
-        assert_eq!(
-            product
-                .1
-                .get(MovementLayer::Ground, &(5, 6))
-                .unwrap()
-                .cost_code,
-            5
-        );
-        assert!(product.1.get(MovementLayer::Ground, &(7, 5)).is_none());
+        assert_eq!(at((5, 6)).unwrap().cost_code, 5);
+        assert!(at((7, 5)).is_none());
+    }
 
-        // A changed alliance graph and an all-entity walk both force a rebuild.
+    #[test]
+    fn layer_owner_bunker_and_reused_ids_follow_the_entities() {
+        let rules = rules();
+        let alliances = HouseAllianceMap::new();
+        let mut entities = EntityStore::new();
+        entities.insert(unit(1, "Americans", (5, 5)));
+        entities.insert(unit(2, "Russians", (5, 5)));
+        entities.insert(structure(3, "NABNKR", "Russians", (9, 9)));
+        let mut index = OwnerBlockIndex::default();
+        assert_eq!(
+            lend_and_check(&mut index, &mut entities, &alliances, &rules),
+            1
+        );
+
+        // Onto the bridge deck above the same cell: another list, another key.
+        entities.get_mut(2).unwrap().on_bridge = true;
+        assert_eq!(
+            lend_and_check(&mut index, &mut entities, &alliances, &rules),
+            0
+        );
+        assert_eq!(code(&index, "Americans", MovementLayer::Ground, (5, 5)), 6);
+        assert_eq!(code(&index, "Americans", MovementLayer::Bridge, (5, 5)), 5);
+
+        // The store changes its owner; the bunker takes an occupant; an id
+        // comes back as another kind of thing somewhere else.
+        entities.change_owner(2, test_intern("Americans"));
+        entities.get_mut(3).unwrap().bunker_occupant = Some(1);
+        assert_eq!(
+            lend_and_check(&mut index, &mut entities, &alliances, &rules),
+            0
+        );
+        assert_eq!(code(&index, "Americans", MovementLayer::Bridge, (5, 5)), 6);
+        entities.remove(1);
+        entities.insert(structure(1, "GAPOWR", "Americans", (30, 30)));
+        assert_eq!(
+            lend_and_check(&mut index, &mut entities, &alliances, &rules),
+            0
+        );
+        assert!(kept(&index, "Russians").0.contains(&(31, 31)));
+    }
+
+    #[test]
+    fn alliances_rules_and_whole_store_walks_rebuild_what_they_must() {
+        let rules = rules();
+        let mut entities = EntityStore::new();
+        entities.insert(unit(1, "Americans", (5, 5)));
+        entities.insert(unit(2, "Russians", (5, 6)));
+        let mut index = OwnerBlockIndex::default();
+        let enemies = HouseAllianceMap::new();
+        assert_eq!(
+            lend_and_check(&mut index, &mut entities, &enemies, &rules),
+            1
+        );
+        assert_eq!(code(&index, "Americans", MovementLayer::Ground, (5, 6)), 5);
+
+        // A changed alliance graph rebuilds the views from the kept placements.
         let mut allied = HouseAllianceMap::new();
-        allied.insert("Americans".into(), ["Russians".to_string()].into());
-        allied.insert("Russians".into(), ["Americans".to_string()].into());
+        allied.insert("AMERICANS".into(), ["RUSSIANS".to_string()].into());
+        allied.insert("RUSSIANS".into(), ["AMERICANS".to_string()].into());
         assert_eq!(
             lend_and_check(&mut index, &mut entities, &allied, &rules),
-            2
+            0
         );
+        assert_eq!(code(&index, "Americans", MovementLayer::Ground, (5, 6)), 6);
+
+        // An all-entity mutable walk, and rules at another address, rebuild
+        // the placements.
         for entity in entities.values_mut() {
             entity.position.ry += 1;
         }
         assert_eq!(
             lend_and_check(&mut index, &mut entities, &allied, &rules),
-            2
+            1
         );
+        let other_rules = rules_again();
+        assert_eq!(
+            lend_and_check(&mut index, &mut entities, &allied, &other_rules),
+            1
+        );
+    }
+
+    /// Random edits through the store's own interface, each batch followed by
+    /// a comparison of both owners' sets with a whole-world build.
+    #[test]
+    fn random_edits_never_leave_the_sets_behind_the_world() {
+        let rules = rules();
+        let alliances = HouseAllianceMap::new();
+        let mut entities = EntityStore::new();
+        let mut index = OwnerBlockIndex::default();
+        let mut state = 0x2545_F491_4F6C_DD1D_u64;
+        let mut next = |bound: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % bound
+        };
+        let mut rebuilds = 0;
+        for _ in 0..600 {
+            let id = 1 + next(14);
+            let cell = (4 + next(4) as u16, 4 + next(4) as u16);
+            let owner = OWNERS[next(2) as usize];
+            match next(9) {
+                0 => {
+                    entities.remove(id);
+                }
+                1 => {
+                    entities.insert(unit(id, owner, cell));
+                }
+                2 => {
+                    let kind = if next(2) == 0 { "GAPOWR" } else { "NABNKR" };
+                    entities.insert(structure(id, kind, owner, cell));
+                }
+                3 => entities.change_owner(id, test_intern(owner)),
+                edit => {
+                    if let Some(entity) = entities.get_mut(id) {
+                        match edit {
+                            4 => (entity.position.rx, entity.position.ry) = cell,
+                            5 => entity.on_bridge = !entity.on_bridge,
+                            6 => entity.movement_target = moving_to(cell, (0, 0)),
+                            7 => entity.dying = !entity.dying,
+                            _ => {
+                                entity.foot_occupation_enabled = !entity.foot_occupation_enabled;
+                                entity.bunker_occupant = entity.bunker_occupant.xor(Some(1));
+                            }
+                        }
+                    }
+                }
+            }
+            if next(3) == 0 {
+                rebuilds += lend_and_check(&mut index, &mut entities, &alliances, &rules);
+            }
+        }
+        assert_eq!(rebuilds, 1, "only the first loan read every entity");
     }
 
     #[test]
@@ -676,23 +834,24 @@ mod tests {
         // After the fixture, so it can resolve what the fixture interned.
         let interner = test_interner();
         let mut index = OwnerBlockIndex::default();
-        let first = index.lend_current(owner, &mut entities, &alliances, &interner, Some(&rules));
+        let lend = |index: &mut OwnerBlockIndex, entities: &mut EntityStore| {
+            index.lend_current(owner, entities, &alliances, &interner, Some(&rules))
+        };
+        let first = lend(&mut index, &mut entities);
         // A second pass asks while the first still holds the sets.
         entities.get_mut(1).unwrap().position.rx = 8;
-        let second = index.lend_current(owner, &mut entities, &alliances, &interner, Some(&rules));
+        let second = lend(&mut index, &mut entities);
         index.give_back(owner, first);
         assert!(
             index.owners[&owner].product.is_none(),
             "the older loan is refused"
         );
         index.give_back(owner, second);
-        let kept = index.owners[&owner].product.as_ref().unwrap();
-        assert!(kept.1.contains_key(MovementLayer::Ground, &(8, 5)));
+        assert_eq!(code(&index, "Americans", MovementLayer::Ground, (8, 5)), 6);
 
         // A pass holding refused sets is rebuilt on its next refresh.
-        let mut lent =
-            index.lend_current(owner, &mut entities, &alliances, &interner, Some(&rules));
-        let _newer = index.lend_current(owner, &mut entities, &alliances, &interner, Some(&rules));
+        let mut lent = lend(&mut index, &mut entities);
+        let _newer = lend(&mut index, &mut entities);
         entities.get_mut(1).unwrap().position.rx = 9;
         index.refresh_lent(
             owner,
