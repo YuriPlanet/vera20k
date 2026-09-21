@@ -229,89 +229,130 @@ probe; it is not a second implementation to publish.
 
 ## Current dependency: live Foot speed inputs and crate pickup
 
-Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`,
-branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Selection/removal prerequisites are committed at `8c8e0f8e`; live speed state
-and Ground-list evidence are committed at `d2a45ba4` (snapshot181).
-No PR or critic pass yet: production pickup is unfinished.
-The primary checkout and `.local/` data remain untouched by publication.
+Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
+Branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
+Selection/removal prerequisites: `8c8e0f8e`; live speed: `d2a45ba4`;
+display ownership source HEAD: `e8e12fb2` (snapshot182).
+Module map refreshed from that commit:842 modules,5,311 dependency edges.
+No PR or critic pass for this branch. Production pickup remains unfinished.
+The primary checkout and `.local/` data are excluded from publication.
 
 Acceptance remains movement pickup through native selection, eligibility,
-trigger, removal/replacement, selected effect and subsequent movement/combat,
-with matching RNG, returns and save/restore. Helper comparisons alone do not
-complete pickup. The whole-combat goal also remains open.
+trigger, removal/replacement, effect and subsequent movement/combat, with matching
+RNG, returns and save/restore. The display prerequisite must preserve registration,
+resubmission, removal and single-pass Ground ordering through all actual consumers.
+Neither the isolated effects nor an entity-only list complete pickup.
 
-`FootSpeedState` now owns the private binary64 +580 crate factor, initialized
-exactly1.0 (constructor4D3292/4D329B). The speed effect writes this owner; the
-shared entity speed resolver consumes it before FASTER, preserving separate
-native truncations. Existing movement readers use that resolver; retained Hover
-and Unit tube exit no longer retain an order-time factor. Drive/Ship and paid
-Walk regressions cover live changes without another move order, and the Walk
-attack case survives production save/restore. These tests apply the factor
-through its owner, not by walking through a crate. Snapshot181 persists it;
-hash projections excluding only this field distinguish schema from behavior.
-House/category speed factors and Unit flag-carrier halving remain unported.
-The existing SimFixed speed interface also limits large non-retail multipliers;
-stock1.2 comparisons do not prove arbitrary numeric-range closure.
+### Retained speed work
 
-Native comparisons: `crate_speed_effect` has23 original recipient loops and
-subsequent Foot queries; `crate_pickup` has28 entry-to-return/dispatch cases;
-`track_speed_native` has75 full getters and116 Drive/Ship prefixes. The six new
-stock getter cases prove VeteranSpeed1.2 maps native10/15/17 to11/17/20, or
-13/20/23 after crate1.2. The former Rust Rhino expectation18 was wrong.
-Every older corpus output was preserved. Exact pre-effect factor/multiplier
-bits now accompany the speed corpus: approximate JSON f64 decoding otherwise
-rounded the lower neighbor of1.0 up to1.0 and invalidated the refusal fixture.
-All three native `--check` commands pass. Final library validation passes:
-9,099 passed, zero failed,134 ignored. Library Clippy exits successfully with
-1,032 warnings, including the intentionally uncalled pickup effect. Logs:
-`.local/crate-speed-live-tests-final.log` and `crate-speed-live-clippy.log`.
-Global, bridge and retask fixtures reproduce their prior whole-state hashes
-when only the new+580 field is excluded; the corresponding current pins change
-only for its added fold. Existing path, RNG and record/replay assertions pass.
+`FootSpeedState` owns binary64 +580, initialized exactly1.0. The effect writes
+this owner; the entity speed resolver consumes it before FASTER, retaining the
+separate native truncations. Drive/Ship and paid Walk regressions cover live
+changes without another move order; Walk attack survives production save/load.
+Hover and tube exit use the live getter. These tests do not walk through a crate.
+Snapshot181 introduced the factor; current work advances the schema to182.
 
-The speed effect scans **Ground display membership**, buffer8A0394/count8A03A0,
-not LogicVector. DisplaySubmit4A9720 removes Object+94's prior registration,
-queries virtual+78, then submits to base8A0360 + layer*24. Ground2 uses sorted
-insertion551A90; other layers append. MainTick55DBC3/55DBC8 runs one adjacent
-Y-sort pass551A30, not a full sort. ObjectUnlimbo5F4FE2 submits display before
-its separate Logic eligibility gate; ObjectConceal removes display before Logic.
-Fly, Jumpjet, falling and attached animations also have explicit resubmissions.
-Current Rust lifecycle exposes display receipts, but app consumes no persistent
-layer membership and `tactical_registration_order()` returns Logic order.
-`crates::speed` therefore still takes a supplied ground vector. Its writes
-commute and do not mutate membership; that does not justify inventing membership.
-Use ObjectSubstrate/lifecycle ownership for the required registration state.
-`crate_ground_membership --check` now preserves six original Submit/Remove/sort
-sequences using real Unit/Infantry tables and constructed Drive/Walk. Equal-key
-reinsertion moves behind peers; removal compacts; a wrong cached layer invokes
-the fallback scan. Reversed four-member order becomes `[1,2,3,0]` after one pass,
-then `[2,3,1,0]`, then `[3,2,1,0]`. Full Unlimbo/Conceal, airborne transitions and
-non-Foot Y-sort keys are excluded and remain required owner integration work.
+`crate_speed_effect` has23 original recipient loops plus subsequent Foot queries;
+`crate_pickup` has28 entry-to-return/dispatch cases; `track_speed_native` has75 full
+getters and116 Drive/Ship prefixes. Exact input bit strings prevent the JSON
+decoder from rounding a neighbor of1.0 into an eligible factor. Stock
+VeteranSpeed1.2 produces10/15/17 ->11/17/20, or13/20/23 after crate1.2.
+The previous committed candidate passed9,099 library tests,134 ignored, and
+library Clippy (1,032 warnings). Logs remain under `.local/crate-speed-live-*`.
 
-Next: complete that membership dependency and the pickup host. Selection already
-ports stored/weighted choices and ordered solo image overrides; removal already
-ports first matching multiplayer slot versus solo Crate-flag overlays. Both
-remain uncalled from movement. The remaining host must preserve passive guards,
-synchronous Tag49/Scenario+34BE trigger, free-MCV preemption, multiplayer eligibility,
-water fallback, removal and replacement-before-effect order, and return behavior.
-Reuse `combat_weapon::is_armed` for original701120's Firepower predicate.
-`HouseState::owned_unit_count` includes all non-buildings and cannot stand in for
-native separate Unit+2E8/Infantry+2F4 counts; per-type counts also retain a known
-limbo-window mismatch. Trace those producers before using them. Other selected
-powerup arms and movement pickup callers still require production implementation.
+### Display owner under implementation
 
-Unit+6CC is a carried CTF flag index: constructor7353F2 initializes-1,
-740DF0 attaches and740E20 detaches, Limbo/destruction return it, and render73D395
-indexes Houses. House4FC060's observed creation caller688C02 is gated by
-Scenario[0]&0x10. Retail CaptureTheFlag=no/DESUPPORTED alone does not prove
-all-scenario unreachability; follow the scenario flag producer before declaring
-this getter arm irrelevant. CountryRules still lacks HouseType speed factors.
+`world/display_layers.rs` owns five private ordered vectors. The ID-to-layer
+index is derived, never iterated for gameplay, and rebuilt on load. Submit4A9720
+removes old membership, queries the layer and inserts Ground before the first
+strictly greater GetYSort; equal keys remain ahead. Other layers append. Remove
+4A9770 preserves order and has a fallback scan for a wrong cached layer.
+MainTick55DBC8 runs one adjacent Ground sort551A30 before Logic55DC9E, including
+its trigger work. Snapshot182 preserves the vectors and rejects null/duplicate
+or missing identities. Hashing folds their order independently of Logic.
 
-Ghidra annotations saved/read back: corrected Cell481A00 receiver, removal56C020,
-solo override481B58, getter4DB213/4DB226, crate constructor4D329B, Ground registration
-4A9752/482F6E, and FASTER4DB200. Source's stale Conceal InLimbo offset was corrected
-to+81 from original5F4D45/5F4E9E. No binary patches or structural analysis repair.
-Preserve this validated progress, but do not merge it as completed pickup.
-Full library/Clippy and the one fresh pre-PR critic apply when
-the production mechanism is coherent. Broader combat residuals above remain required.
+Entity Reveal submits at its existing display boundary before the separate
+Logic gate; Conceal removes display before Logic. Ground sorting runs at the
+pre-Logic frame rung. Jumpjet Process captures its live layer query on entry,
+then the alive tail resubmits only if its new query differs (54AECB/54AED1 and
+54B16F..54B18E). It does not compare with cached Object+94. Speed effects now
+read the owner's Ground slice rather than accepting an arbitrary supplied list.
+The building render-coordinate/Y-sort adjustment is shared with presentation
+through `ground_pose`, replacing that duplicated math.
+
+`display_entity_layer` executes88 original query cases with real Unit/Building
+vtables and constructed Walk/Drive/Fly/Jumpjet instances. Physical GetHeight,
+marked-on-map, structural bridge, falling, slope and distinct linked/global
+heights are covered. No calls are substituted; supplied lifecycle/type/map state
+and excluded Process cadence are declared in the sidecar. All88 Rust comparisons
+passed the first run. `crate_ground_membership` preserves six actual registration,
+removal and single-pass-sort sequences; its Rust comparisons also passed.
+Both corpora and `crate_speed_effect --check` reproduce their saved native outputs.
+
+The independent [JumpjetControls] CruiseHeight reader supplies Rules+420:
+constructor665C3A defaults400; ReadJumpjet67446D/67447E reads the signed key.
+Object5F4260 uses it, while Jumpjet54B8D0 uses linked locomotor+2C.
+Retail RULESMD sets500. The Rust reader also handles an absent General section.
+Rules changed, so a release retail map-load check is still required before merge.
+
+First full Rust run:9,099 passed,4 failed,134 ignored. New owner/query/save tests
+passed. Three failures were current replay pins; old pre181 projections and RNG
+checks still passed. New pre182 projections now require the exact previous whole
+fixture hashes before accepting the new pins. The fourth failure exposed a
+cloaking fixture that erased a displayed entity directly from storage; it now
+calls Conceal before erase. Jumpjet's initial cached-layer comparison was also
+replaced with the native before/after query comparison, with a regression for
+stale cached membership, missing registration and the alive gate.
+Final full library validation passes:9,105 passed,0failed,134 ignored, logged
+in `.local/display-owner-tests-final.log`. The pre182 projections reproduce all
+three former full-state pins; only the added display fold changes their current
+hashes. The production lifecycle/effect test changes the displayed non-Logic
+recipient and leaves concealed/unrevealed peers unchanged. A display-only sort
+changes the current hash while preserving its pre182 projection.
+No critic, Clippy or release loader run for this unfinished candidate.
+
+### Required continuation
+
+1. Complete non-entity display dispatch and lifecycle (anims including owner
+   attach/expiry, terrain, voxel debris, projectiles, particles and waves).
+   The current sort dispatcher deliberately expects entity identities; extend
+   it before admitting another registry. Do not substitute Logic membership.
+2. Complete Fly, falling/DropIn and other explicit resubmission writers. Fly
+   cannot use a generic layer/cache refresh:4CD4E7 submits in its ascent/descent
+   wrapper before Mark(PUT), and4CD75A/4CD792 surround relocation. The current
+   integration does not claim these producers. Aircraft special-type +54
+   overrides and invalid/headless-only locomotor combinations also need their
+   actual receiver when they become reachable. No-terrain query fallback remains
+   a headless adapter, not native parity evidence.
+3. Migrate presentation/input from `tactical_registration_order()` (still Logic)
+   and full sorting to the actual display owner. Its entity fallback currently
+   appends store objects. Do not expose the partial display migration as complete.
+4. Finish movement pickup. Selection/removal helpers remain uncalled. Preserve
+   passive guards, Tag49/Scenario+34BE, free-MCV preemption, multiplayer eligibility,
+   water fallback, removal and replacement-before-effect order, and returns.
+   Reuse `combat_weapon::is_armed` for701120. House `owned_unit_count` combines
+   non-building families; per-type counts also have a limbo-window mismatch.
+   Trace native Unit+2E8/Infantry+2F4 producers before using those counts.
+   Port all selected effect arms through their downstream owners.
+
+HouseType speed multipliers+128/+12C/+130 remain absent. Unit+6CC carries a CTF
+flag, initialized-1;740DF0/740E20 attach/detach, Limbo/destruction return it.
+Creation4FC060 has caller688C02 gated by Scenario[0]&0x10. Retail disabled flags
+alone do not prove unreachability; trace the scenario producer. SimFixed's public
+speed range also does not certify arbitrary large non-retail crate multipliers.
+
+The broader goal remains open: vehicle Active_Click_With+6E0, shared cursor/click
+resolution, NavCom/action/fire legality, launch FLH slope/scatter/homing, special
+warheads, visibility and the final whole-combat audit. Prior accepted PR439/440
+critic passes are complete; do not repeat them. This branch needs its one fresh
+pre-PR critic only after coherent production integration and validation.
+
+Ghidra annotations are saved/read back at55DBC8 (pre-Logic adjacent sort),67447E
+(global CruiseHeight),54B17F (live before/after query). Corrected the false
+FlyLocomotionClass__Layer name at4CCB40 to FlyLocomotionClass__ILoco_Process:
+constructor4CCA12 installs table7E89F4, slot+40 ->4CCB40; active FootAI4DA877
+calls it through Foot+674. Slot+74 ->4CFCF0 is the real layer getter. This is a
+label/comment correction only, with no signature, boundary or byte changes.
+Earlier crate/getter annotations remain saved. Preserve these unfinished
+production migrations; a passed owner test or committed dependency does not
+complete the mechanism or the combat goal.
