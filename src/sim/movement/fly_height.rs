@@ -1,4 +1,4 @@
-//! Fly's integer height target and the original vertical-motion range.
+//! Fly's retained destination, integer height target and vertical-motion range.
 //!
 //! Native4CDD0D..4CDFBC/4CE145 reads Object coordinates; it has no elapsed-time
 //! climb rate or four-phase altitude machine. The surrounding horizontal,
@@ -6,6 +6,7 @@
 //! migrated. Native comparisons: tools/spatial_oracle/fly_height.{py,json}.
 
 use super::locomotor::AirMovePhase;
+use crate::sim::components::DriveCoord;
 
 /// Constructor4CC9EE..4CC9FA clears target+38 and takeoff/landing+50/+51.
 /// Only this owner mutates those fields. Object coordinates own current Z.
@@ -14,9 +15,46 @@ pub struct FlyRuntime {
     target_height: i32,
     taking_off: bool,
     landing: bool,
+    /// Full Fly+1C/+20/+24, initialized to CoordStruct::Empty by4CC9A0.
+    /// This is independent of Foot's NavCom identity and its changing position.
+    destination: [i32; 3],
 }
 
 impl FlyRuntime {
+    pub(crate) fn destination(&self) -> DriveCoord {
+        let [x, y, z] = self.destination;
+        DriveCoord { x, y, z }
+    }
+
+    /// MoveTo4CCC80..4CCCE0: signed truncation, then 16-bit CellStruct equality.
+    /// This refusal precedes owner disable/power gates and all ground queries.
+    pub(crate) fn ignores_destination(&self, request: DriveCoord) -> bool {
+        self.landing
+            && (self.destination[0] / 256) as i16 == (request.x / 256) as i16
+            && (self.destination[1] / 256) as i16 == (request.y / 256) as i16
+    }
+
+    /// Admitted non-null MoveTo4CCE1C..4CCE6E. A live Target and signed Ammo!=0
+    /// replace Z with ground+FlightLevel; ground is read only on that arm.
+    /// Moving+34, mode+5C and null/Stop still belong to the pending native
+    /// Process/landing migration, not to the legacy MovementTarget lifetime.
+    pub(crate) fn retain_destination(
+        &mut self,
+        request: DriveCoord,
+        armed_flight_level: Option<i32>,
+        ground: impl FnOnce() -> i32,
+    ) {
+        self.destination = [request.x, request.y, request.z];
+        if let Some(flight_level) = armed_flight_level {
+            self.destination[2] = ground().wrapping_add(flight_level);
+        }
+    }
+
+    /// Historical hash projection before the destination was retained (188).
+    pub(crate) fn height_hash_fields(&self) -> (i32, bool, bool) {
+        (self.target_height, self.taking_off, self.landing)
+    }
+
     pub(crate) fn target_height(&self) -> i32 {
         self.target_height
     }

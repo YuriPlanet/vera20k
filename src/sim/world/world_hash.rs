@@ -2336,7 +2336,13 @@ fn hash_locomotor_payload(
         }
         LocomotorRuntimePayload::Fly(state) => {
             9u8.hash(hasher);
-            state.hash(hasher);
+            let (target_height, taking_off, landing) = state.height_hash_fields();
+            target_height.hash(hasher);
+            taking_off.hash(hasher);
+            landing.hash(hasher);
+            if schema.includes(HashFeature::FlyDestination) {
+                state.destination().hash(hasher);
+            }
         }
         LocomotorRuntimePayload::Jumpjet(state) => {
             10u8.hash(hasher);

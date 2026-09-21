@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "26 original non-null MoveTo calls: retained XYZ, signed-cell landing refusal, power refusal, Target/Ammo Z substitution, height120 boundary, readiness and Landable mode. Rust destination comparisons do not certify the unported moving/mode suffix. Excludes null requests, phase callbacks, owner-gate producers and the subsequent Process/navigation/mission chain.",
+  "assumptions": [
+    "Original Aircraft/Fly vtables; supplied health100 and airborne coordinate or taking-off phase avoid BeginTakeoff.",
+    "Non-null destination only; landing same-cell refusal precedes gates and all queries.",
+    "Flat allocated map, optional destination level/slope; owner warp/EMP/Foot timer gates zero, radio and cargo empty.",
+    "Constructor initializes power; optional power-off contrast. Original executable and all callees unmodified."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "move_to": "0x004CCC80",
+    "constructor": "0x004CC9A0",
+    "ground": "0x00578080",
+    "landing_base": "0x0041B6A0",
+    "readiness": "0x0041B860",
+    "flight_level": "0x00717800"
+  },
+  "payload_sha256": "75cf3d44ea5443be19273ac8b286ad2d66f468a6ae138231bf9bddf40dea9ec0"
+}

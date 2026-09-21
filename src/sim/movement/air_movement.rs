@@ -6,7 +6,7 @@
 //! their native migration; they are not covered by that height comparison.
 
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::sim::components::MovementTarget;
+use crate::sim::components::{DriveCoord, MovementTarget};
 use crate::sim::debug_event_log::DebugEventKind;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::movement::facing_from_delta;
@@ -14,7 +14,6 @@ use crate::sim::movement::locomotor::{AirMovePhase, LocomotorState, MovementLaye
 use crate::util::fixed_math::{
     SIM_HALF, SIM_ONE, SIM_ZERO, SimFixed, native_movement_frame_fraction,
 };
-use crate::util::lepton::CELL_CENTER_LEPTON as CELL_CENTER;
 
 /// Checked SimFixed multiply — logs a warning and saturates on overflow
 /// instead of panicking. Used to diagnose I16F16 overflows in air movement.
@@ -107,14 +106,15 @@ fn turn_facing_toward(current: u8, desired: u8, rot: i32) -> u8 {
 
 /// Issue a move command for an air unit.
 ///
-/// Returns true if the command was accepted through the available disable gates.
+/// Returns whether the legacy execution adapter changed. Native MoveTo is void;
+/// this bool is not the enclosing Foot AssignDestination/NavCom outcome.
 /// Aircraft ignore ordinary terrain blocking
 /// (no terrain blocking check needed — they fly over everything).
 ///
-/// For Fly units, no Bresenham path is generated — movement direction comes
-/// from the entity's facing, which is gradually turned toward the goal each
-/// tick via ROT. This produces curved approach paths matching the original
-/// FlyLocomotionClass.
+/// Fly retains the resolved Cell coordinate once; its horizontal adapter reads
+/// that owner instead of rebuilding a coordinate from the path cache each tick.
+/// Native Aircraft/Foot AssignDestination and Fly null/Stop are still separate
+/// pending migrations; this is not their complete navigation transaction.
 pub fn issue_air_move_command(
     entities: &mut EntityStore,
     entity_id: u64,
@@ -127,9 +127,58 @@ pub fn issue_air_move_command(
         &crate::sim::intern::StringInterner,
     )>,
 ) -> bool {
+    let is_fly = entities.get(entity_id).is_some_and(|entity| {
+        entity
+            .locomotor
+            .as_ref()
+            .and_then(|l| l.fly_runtime())
+            .is_some()
+    });
+    let coordinate = if is_fly {
+        super::navcom::target_cell_coord(target.0, target.1, terrain)
+    } else {
+        DriveCoord::cell(target.0, target.1, 0)
+    };
+    issue_air_coordinate_move_command(
+        entities,
+        entity_id,
+        coordinate,
+        speed,
+        timing,
+        terrain,
+        rules_context,
+    )
+}
+
+/// The non-null coordinate boundary used by the air order adapter. It does not
+/// replace the owner NavCom reference or implement requester-specific +4C calls.
+pub(crate) fn issue_air_coordinate_move_command(
+    entities: &mut EntityStore,
+    entity_id: u64,
+    request: DriveCoord,
+    speed: SimFixed,
+    timing: super::DestinationTiming,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    rules_context: Option<(
+        &crate::rules::ruleset::RuleSet,
+        &crate::sim::intern::StringInterner,
+    )>,
+) -> bool {
     let Some(entity) = entities.get(entity_id) else {
         return false;
     };
+    if entity
+        .locomotor
+        .as_ref()
+        .and_then(|l| l.fly_runtime())
+        .is_some_and(|state| state.ignores_destination(request))
+    {
+        return false;
+    }
+    // Empty coordinates require the separate native null/landing transaction.
+    if request == (DriveCoord { x: 0, y: 0, z: 0 }) {
+        return false;
+    }
     // MoveTo4CCCEE..4CCD3A admits through owner warp/disable and power gates.
     // EMP+504 and the Foot+6A0 timer still need their missing native producers;
     // see world/techno_ai_cloak.rs. Do not substitute deploy_state for either.
@@ -142,6 +191,31 @@ pub fn issue_air_move_command(
         return false;
     }
 
+    let flight_level = rules_context.map_or(500, |(rules, interner)| {
+        rules
+            .object(interner.resolve(entity.type_ref()))
+            .map_or(rules.general.flight_level, |object| {
+                object.flight_level(rules.general.flight_level)
+            })
+    });
+    let armed_flight_level = (entity.attack_target.is_some()
+        && entity
+            .aircraft_ammo
+            .as_ref()
+            .is_some_and(|ammo| ammo.current != 0))
+    .then_some(flight_level);
+    // Native stores/substitutes the destination BEFORE querying landing base
+    // and owner height. The ground query can stamp the shared Cell Dummy.
+    if let Some(state) = entities
+        .get_mut(entity_id)
+        .and_then(|entity| entity.locomotor.as_mut().and_then(|l| l.fly_runtime_mut()))
+    {
+        state.retain_destination(request, armed_flight_level, || {
+            super::ground_pose::ground_surface_z_at([request.x, request.y], false, terrain, None)
+                .unwrap_or(0)
+        });
+    }
+    let entity = entities.get(entity_id).expect("selected air mover");
     let begin_takeoff = entity
         .locomotor
         .as_ref()
@@ -155,16 +229,13 @@ pub fn issue_air_move_command(
                 base,
             )
         });
-    let flight_level = rules_context.map_or(500, |(rules, interner)| {
-        rules
-            .object(interner.resolve(entity.type_ref()))
-            .map_or(rules.general.flight_level, |object| {
-                object.flight_level(rules.general.flight_level)
-            })
-    });
-
-    // Minimal MovementTarget — only final_goal matters for Fly units.
-    // No Bresenham path needed; movement direction comes from facing.
+    // Derived cell projection for remaining mission/path consumers; Fly's XYZ
+    // is authoritative. Legacy execution lifetime and speed remain here until
+    // the complete native Process/Stop and mission consumers are migrated.
+    let target = (
+        (request.x / 256) as i16 as u16,
+        (request.y / 256) as i16 as u16,
+    );
     let movement = MovementTarget {
         path: vec![target],
         path_layers: vec![MovementLayer::Air],
@@ -264,18 +335,19 @@ pub fn tick_air_movement(
                 .is_some_and(|l| height >= l.fly_target_height() / 2);
 
             if can_move {
-                let final_goal = entity
-                    .movement_target
+                let destination = entity
+                    .locomotor
                     .as_ref()
-                    .and_then(|t| t.final_goal)
-                    .unwrap_or((entity.position.rx, entity.position.ry));
+                    .unwrap()
+                    .fly_runtime()
+                    .expect("selected Fly mover")
+                    .destination();
 
                 // Compute distance to goal in leptons.
                 use fixed::types::I48F16;
                 let lep256 = I48F16::from_num(256);
-                let lep128 = I48F16::from_num(128);
-                let goal_lx = I48F16::from_num(final_goal.0) * lep256 + lep128;
-                let goal_ly = I48F16::from_num(final_goal.1) * lep256 + lep128;
+                let goal_lx = I48F16::from_num(destination.x);
+                let goal_ly = I48F16::from_num(destination.y);
                 let cur_lx = I48F16::from_num(entity.position.rx) * lep256
                     + I48F16::from(entity.position.sub_x);
                 let cur_ly = I48F16::from_num(entity.position.ry) * lep256
@@ -299,8 +371,8 @@ pub fn tick_air_movement(
                 let dist_i32: i32 = dist.to_num::<i32>();
 
                 // 1. Compute desired facing toward goal.
-                let face_dx = final_goal.0 as i32 - entity.position.rx as i32;
-                let face_dy = final_goal.1 as i32 - entity.position.ry as i32;
+                let face_dx = dlx.to_num::<i32>();
+                let face_dy = dly.to_num::<i32>();
                 let desired_facing = if face_dx != 0 || face_dy != 0 {
                     facing_from_delta(face_dx, face_dy)
                 } else {
@@ -383,10 +455,10 @@ pub fn tick_air_movement(
                         .as_ref()
                         .is_some_and(|l| l.fly_current_speed < MIN_CREEP_SPEED);
                 if arrived {
-                    entity.position.rx = final_goal.0;
-                    entity.position.ry = final_goal.1;
-                    entity.position.sub_x = CELL_CENTER;
-                    entity.position.sub_y = CELL_CENTER;
+                    entity.position.rx = destination.x.div_euclid(256) as u16;
+                    entity.position.ry = destination.y.div_euclid(256) as u16;
+                    entity.position.sub_x = SimFixed::from_num(destination.x.rem_euclid(256));
+                    entity.position.sub_y = SimFixed::from_num(destination.y.rem_euclid(256));
                     finished.push(entity_id);
                     stats.arrivals = stats.arrivals.saturating_add(1);
                 }

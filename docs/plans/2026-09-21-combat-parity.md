@@ -900,8 +900,8 @@ cell docking interactions before Foot. Foot clears NavComAux before refusal
 gates; stores the live NavCom at4D9510; gets requester-dependent target+4C
 coordinates and calls locomotor MoveTo. A null Aircraft destination while
 current/queued Attack and Target non-null skips Stop at4D9672..4D969C, but still
-writes Foot timer epilogue. Current `issue_air_cell_destination`/Fly adapter
-only builds a cell MovementTarget and does not preserve these effects.
+writes Foot timer epilogue. The Fly adapter now retains non-null XYZ (see below),
+but `issue_air_cell_destination` still lacks these class-specific NavCom effects.
 FindFireLocation itself uses target+48, not navigation+4C: Unit/Aircraft5F65A0;
 Building vtable7E3EBC+48 ->447AC0 adds foundation center offsets. Type+5E4 is
 OpenTopped (7143BD/7143CA, literal843CCC read back), so7012C0's cargo-minimum
@@ -917,6 +917,62 @@ was needed for this fixture and dead-code cleanup. The previous full runtime
 validation is9d3be110 above. No critic, PR or retail release load has run yet.
 All owned Cargo/native sessions are terminal; keep the existing target cache.
 
+### Retained Fly destination increment (2026-09-22)
+
+Bounded acceptance: retain the original non-null destination XYZ and refusal
+rules in the existing Fly owner; make production steering read it; preserve
+active/stashed runtime through save/restore and hash it. No full MoveTo, Stop,
+FindFireLocation/state1 or Fly Process acceptance is claimed by this increment.
+
+`fly_destination.{py,json,meta.json}` executes26 full original4CCC80 calls with
+the real Fly constructor, Aircraft vtables, type getter and ground/auxiliary
+calls. No instructions or callees are substituted. Cases deliberately avoid
+BeginTakeoff/BeginLanding callbacks, which throw if unexpectedly entered.
+Draft fixture correction before acceptance: FlightLevel is Type+618, not+D00;
+original717800 uses exactly -1 to select Rules+7B4. The corrected corpus includes
+negative/zero/large FlightLevel, signed Ammo -1/0/positive, slope/level, subcell,
+power refusal and signed-truncation/i16-alias same-cell landing refusal.
+
+`FlyRuntime` privately owns full+1C/+20/+24. Non-null requests preserve supplied
+XYZ except when Target exists and retained Aircraft Ammo!=0: then native
+4CCE25..4CCE6E reads destination ground and adds resolved FlightLevel. This
+happens before landing-base/current-height queries. Same-cell landing refusal
+precedes power/warp admission. The cell order adapter resolves Cell+4C through
+the shared coordinate owner. Horizontal steering/distance and legacy arrival
+now read Fly's exact XY; they no longer reconstruct cell-center coordinates
+from `MovementTarget.final_goal`. That cache remains a cell projection for
+legacy mission consumers and owns the still-unported execution lifetime/speed.
+Snapshot188 stores the retained destination, including the piggyback stash;
+pre188 hash projections omit only the new XYZ fold.
+
+Required residuals: native moving+34 and mode+5C lifecycle/consumers; mode's
+second ground query and readiness/Landable suffix; native horizontal/facing,
+phase/Mark/Display callbacks, null4CCC80 and Stop4CCFD0; actual Aircraft/Foot
+AssignDestination and its NavComAux/refusal/teardown/timer ordering. The current
+adapter's bool reports its execution update, whereas native MoveTo returns void;
+Foot can retain a new NavCom and execute its timer epilogue even if Fly ignores
+the coordinate request. Do not use this bool as state1's NavCom result. These
+residuals affect normal attack approach/landing and keep the combat loop open.
+Fly on a non-Aircraft owner also needs the common native Ammo authority instead
+of assuming an AircraftAmmo component. Arrival still uses the legacy adapter;
+its cache clear must not fabricate a native retained-destination clear.
+
+Ghidra comments4CCC80/4CCE1C/4CCED9 are saved/read back, distinguishing the
+interface+4 receiver, exact destination writes and unported mode suffix.
+The dependency map is retired by explicit user instruction; do not use/refresh it.
+
+Validation: `python -m tools.spatial_oracle.fly_destination --check` passes26
+native calls. `cargo test -p vera20k --lib` passes **9,139 tests,0 failures,
+135 ignored** (3m17s compilation,16.86s execution), including the26 destination
+comparisons, production cell order, deliberately stale-cell-cache subcell arrival,
+active/stashed save/restore, hash exclusion, existing144 vertical vectors and249
+landing-base cases. Log: `.local/fly-destination-full-tests.log`. All established
+whole-fixture hash pins remain unchanged; none was rebaselined. An initial
+test-only AttackTarget import error was fixed before this passing run. No critic
+or PR was opened for this increment; retain the single final pre-PR review.
+`cargo clippy -p vera20k --lib` also passes (37.04s,1032 existing warnings;
+`.local/fly-destination-clippy.log`). Both owned Cargo sessions are terminal.
+
 ### Next safe implementation
 
 Finish FindFireLocation/NavCom/state1/state10 and native cadence dependencies;
@@ -928,12 +984,12 @@ Use the new native search corpus. Complete the destination owner and retained
 Techno+3D4 producers before wiring state1; do not flatten returned entity targets
 to cells or install the removed test-only search as a production shortcut.
 
-Migrate retained Fly destination state and the remaining Aircraft facing writers/
+Finish Fly destination lifecycle and the remaining Aircraft facing writers/
 readers, then native phase callbacks with their Mark/Display transaction. The
 generic turret sweep now excludes Aircraft and state4 owns its two Set calls;
 that does not complete takeoff, navigation or other mission-state setters.
-Full MoveTo
-destination XYZ, mode+5C and null-stop
+The remaining MoveTo
+moving/mode state and null-stop
 behavior, EMP/Foot timer producers, continuous horizontal slowdown and target
 selection, descent drift and crash relocation remain required too.
 

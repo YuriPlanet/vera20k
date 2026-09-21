@@ -86,6 +86,7 @@ pub(super) enum HashFeature {
     AnimationDisplay = 184,
     AircraftReleaseAuthority = 186,
     WeaponBurstAuthority = 187,
+    FlyDestination = 188,
 }
 
 impl HashSchema {
@@ -103,6 +104,7 @@ impl HashSchema {
                     | HashFeature::AnimationDisplay
                     | HashFeature::AircraftReleaseAuthority
                     | HashFeature::WeaponBurstAuthority
+                    | HashFeature::FlyDestination
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {
