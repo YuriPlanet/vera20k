@@ -7738,7 +7738,8 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
             (2, 2),
             SimFixed::from_num(3840),
             DestinationTiming::new(0, 60),
-            1500
+            sim.resolved_terrain.as_ref(),
+            None,
         ));
         sim.tick_air_movement_with_cell_lists_one(1, None);
         let entity = sim.substrate.entities.get_mut(1).unwrap();

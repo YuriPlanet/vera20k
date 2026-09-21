@@ -328,6 +328,7 @@ fn make_obj(locomotor: LocomotorKind, category: ObjectCategory) -> ObjectType {
         fly_by: false,
         fly_back: false,
         landable: false,
+        carryall: false,
         jumpjet: false,
         jumpjet_params: JumpjetParams::default(),
         deploys_into: None,

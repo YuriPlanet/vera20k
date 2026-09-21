@@ -13,6 +13,7 @@
 pub mod attack_mission;
 pub mod drop_payload;
 pub mod idle_mode;
+pub(crate) mod landing_base;
 pub mod paradrop_mission;
 pub mod runtime_contract;
 

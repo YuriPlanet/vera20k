@@ -23,8 +23,15 @@ impl FlyRuntime {
 
     /// MoveTo4CCEAE..4CCED4. The caller owns admission and the Aircraft
     /// landing-base query (zero for ordinary, non-Carryall aircraft).
-    pub(crate) fn should_begin_takeoff(&self, health: i32, height: i32, landing_base: i32) -> bool {
-        health > 0 && !self.taking_off && (self.landing || height <= landing_base)
+    pub(crate) fn should_begin_takeoff(
+        &self,
+        health: i32,
+        height: impl FnOnce() -> i32,
+        landing_base: i32,
+    ) -> bool {
+        // GetHeight may stamp the shared map Dummy. Native calls it only on
+        // the final arm, after health and both phase gates.
+        health > 0 && !self.taking_off && (self.landing || height() <= landing_base)
     }
 
     /// Admitted BeginTakeoff stores4CF9A5/4CF9A8/4CF9F8. Owner refusal,

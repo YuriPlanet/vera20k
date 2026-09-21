@@ -836,6 +836,9 @@ pub struct ObjectType {
     pub fly_back: bool,
     /// Landable=yes — aircraft can land on the ground.
     pub landable: bool,
+    /// AircraftType+DFC, Carryall reader41CC9B..41CCC7; ctor41C8D0=false.
+    /// Aircraft's landing-base query41B6A0 combines it with live cargo/radio.
+    pub(crate) carryall: bool,
     /// `JumpJet=` in rules.ini — `TechnoTypeClass+0xD94`, a sibling of the
     /// nine parameters below rather than a gate on them.
     pub jumpjet: bool,
@@ -1995,6 +1998,7 @@ impl ObjectType {
             fly_by: section.get_bool("FlyBy").unwrap_or(false),
             fly_back: section.get_bool("FlyBack").unwrap_or(false),
             landable: section.get_bool("Landable").unwrap_or(false),
+            carryall: section.get_bool("Carryall").unwrap_or(false),
             // gamemd-derived: `TechnoTypeClass::ReadINI` reads `JumpJet` into
             // its own boolean at `+0xD94` (`0x007151EC PUSH 0x843640` ->
             // `0x00715200 MOV [EBP+0xD94],AL`), the last member of the same

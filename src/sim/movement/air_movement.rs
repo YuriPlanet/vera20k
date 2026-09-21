@@ -121,7 +121,11 @@ pub fn issue_air_move_command(
     target: (u16, u16),
     speed: SimFixed,
     timing: super::DestinationTiming,
-    flight_level: i32,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    rules_context: Option<(
+        &crate::rules::ruleset::RuleSet,
+        &crate::sim::intern::StringInterner,
+    )>,
 ) -> bool {
     let Some(entity) = entities.get(entity_id) else {
         return false;
@@ -137,6 +141,27 @@ pub fn issue_air_move_command(
     {
         return false;
     }
+
+    let begin_takeoff = entity
+        .locomotor
+        .as_ref()
+        .and_then(|loco| loco.fly_runtime())
+        .is_some_and(|state| {
+            let base =
+                crate::sim::aircraft::landing_base::landing_base(entity, entities, rules_context);
+            state.should_begin_takeoff(
+                entity.health.current,
+                || current_fly_height(entity, terrain),
+                base,
+            )
+        });
+    let flight_level = rules_context.map_or(500, |(rules, interner)| {
+        rules
+            .object(interner.resolve(entity.type_ref()))
+            .map_or(rules.general.flight_level, |object| {
+                object.flight_level(rules.general.flight_level)
+            })
+    });
 
     // Minimal MovementTarget — only final_goal matters for Fly units.
     // No Bresenham path needed; movement direction comes from facing.
@@ -155,16 +180,12 @@ pub fn issue_air_move_command(
     timing.accept(entity);
     entity.movement_target = Some(movement);
 
-    if let Some(loco) = entity.locomotor.as_mut() {
-        let height = loco.altitude.to_num::<i32>();
-        // Aircraft auxiliary+0C has a Carryall/radio base-height arm which
-        // remains to be integrated. Ordinary retail flight uses base zero.
-        if loco
-            .fly_runtime()
-            .is_some_and(|state| state.should_begin_takeoff(entity.health.current, height, 0))
-        {
-            loco.begin_fly_takeoff(flight_level);
-        }
+    if begin_takeoff {
+        entity
+            .locomotor
+            .as_mut()
+            .expect("selected Fly locomotor")
+            .begin_fly_takeoff(flight_level);
     }
     true
 }
@@ -504,7 +525,8 @@ mod tests {
             (20, 15),
             SimFixed::from_num(10),
             crate::sim::movement::DestinationTiming::new(0, 60),
-            1500,
+            None,
+            None,
         );
         assert!(ok);
 
@@ -536,7 +558,8 @@ mod tests {
             (20, 15),
             SimFixed::from_num(10),
             crate::sim::movement::DestinationTiming::new(0, 60),
-            1500
+            None,
+            None,
         ));
 
         let e = entities.get(1).expect("has entity");
@@ -560,7 +583,8 @@ mod tests {
             (10, 10),
             SimFixed::from_num(10),
             crate::sim::movement::DestinationTiming::new(0, 60),
-            1500,
+            None,
+            None,
         );
         assert!(ok);
         // Native MoveTo accepts a nonnull destination even at the owner cell.
