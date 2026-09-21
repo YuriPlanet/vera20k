@@ -538,7 +538,9 @@ use crate::sim::world::Simulation;
 // from what a 179 save holds.
 // 180 -> 181: Foot+580 crate speed multiplier is retained with the Foot owner,
 // including across locomotor replacement. It is serialized and hashed.
-const SNAPSHOT_VERSION: u32 = 181;
+// 181 -> 182: persistent DisplayClass layer membership and order. Its lookup
+// cache is rebuilt, but history cannot be recovered from current coordinates.
+const SNAPSHOT_VERSION: u32 = 182;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -685,6 +687,8 @@ pub enum SnapshotRestoreError {
     DuplicateLogicIdentity { object_id: u64 },
     #[error("LogicVector object id {object_id} has no restored registry identity")]
     MissingLogicIdentity { object_id: u64 },
+    #[error("DisplayClass object id {object_id} has no restored registry identity")]
+    MissingDisplayIdentity { object_id: u64 },
     #[error("live {registry} object id {object_id} is absent from LogicVector")]
     MissingRequiredLogicIdentity {
         registry: &'static str,
@@ -3433,7 +3437,7 @@ mod tests {
         // 173 -> 174: ProductionState drops the resource node map.
         // 174 -> 175: bridge collapse explosions join the AnimStore.
         // 180 -> 181: Foot+580 crate multiplier survives save/restore.
-        assert_eq!(super::SNAPSHOT_VERSION, 181);
+        assert_eq!(super::SNAPSHOT_VERSION, 182);
     }
 
     #[test]

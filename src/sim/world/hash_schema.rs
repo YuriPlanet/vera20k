@@ -77,6 +77,7 @@ pub(super) enum HashFeature {
     /// hashes, not an arbitrary pre-174 stream.
     RetiredTiberiumNodeState = 174,
     FootCrateSpeed = 181,
+    DisplayLayers = 182,
 }
 
 impl HashSchema {
@@ -90,6 +91,7 @@ impl HashSchema {
                     | HashFeature::AnimationAuthority
                     | HashFeature::RetiredTiberiumNodeState
                     | HashFeature::FootCrateSpeed
+                    | HashFeature::DisplayLayers
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

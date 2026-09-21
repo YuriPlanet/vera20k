@@ -1,4 +1,4 @@
-//! The LogicClass active-object vector: the single authority on object order.
+//! The LogicClass active-object vector: the authority on AI visitation order.
 //!
 //! Owns an insertion-ordered list of stable_ids. Tail-append on reveal,
 //! order-preserving compacting remove on conceal, no sort. Membership itself is

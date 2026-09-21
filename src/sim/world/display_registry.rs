@@ -1,0 +1,242 @@
+//! Entity DisplayClass lifecycle dispatch. The vectors belong to ObjectSubstrate.
+//! Non-entity registration and the presentation migration remain open; this
+//! module must grow those dispatch arms rather than create another list owner.
+
+use super::Simulation;
+use super::display_layers::DisplayLayer;
+use crate::map::entities::EntityCategory;
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::rules::locomotor_type::LocomotorKind;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::game_entity::GameEntity;
+use crate::sim::movement::ground_pose::{
+    building_render_order_parts, ground_surface_z_at, position_world_coord,
+};
+
+/// Foot4DB7E0 / Aircraft41ADC0 dispatch to the active locomotor. Fly4CFCF0
+/// reads physical GetHeight, Jumpjet54B8D0 additionally reads marked-on-map,
+/// structural bridge, falling and its linked +2C height. Ground movers do not
+/// query height. No terrain is a headless compatibility case, not native proof.
+fn entity_layer(
+    entity: &GameEntity,
+    terrain: Option<&ResolvedTerrainGrid>,
+    rules: Option<&RuleSet>,
+) -> DisplayLayer {
+    let kind = entity.locomotor.as_ref().map(|l| l.active_kind());
+    if entity.category != EntityCategory::Structure {
+        if kind == Some(LocomotorKind::Rocket) || (kind.is_none() && entity.rocket_state.is_some())
+        {
+            return DisplayLayer::AIR;
+        }
+        if !matches!(kind, Some(LocomotorKind::Fly | LocomotorKind::Jumpjet)) {
+            return DisplayLayer::GROUND;
+        }
+    }
+    let raw = position_world_coord(&entity.position);
+    let height = ground_surface_z_at([raw.x, raw.y], entity.on_bridge, terrain, None)
+        .map(|ground| raw.z.wrapping_sub(ground))
+        .unwrap_or_else(|| {
+            entity
+                .locomotor
+                .as_ref()
+                .map_or(0, |l| l.altitude.to_num::<i32>())
+        });
+    if kind == Some(LocomotorKind::Fly) && entity.category != EntityCategory::Structure {
+        return if height > 0 {
+            DisplayLayer::TOP
+        } else {
+            DisplayLayer::GROUND
+        };
+    }
+    let mut adjusted_height = height;
+    if kind == Some(LocomotorKind::Jumpjet) && !entity.on_bridge {
+        // This map lookup precedes the high-flying gate even when +74 is false.
+        let flags = terrain.map_or(0, |terrain| {
+            let cell = terrain.native_cell_identity(((raw.x / 256) as i16, (raw.y / 256) as i16));
+            terrain.native_cell_flags(cell)
+        });
+        if flags & 0x100 != 0 && height >= 416 && entity.object_is_falling_down == 0 {
+            adjusted_height = height.wrapping_sub(416);
+        }
+    }
+    // Object5F6B90 (+54 via4DE620): marked and GetHeight>=two levels.
+    if !entity.lifecycle.cell_marked || height < 208 || adjusted_height == 0 {
+        return DisplayLayer::GROUND;
+    }
+    let cruise_height = if kind == Some(LocomotorKind::Jumpjet) {
+        entity
+            .locomotor
+            .as_ref()
+            .and_then(|l| l.jumpjet_runtime())
+            .expect("active Jumpjet owns its runtime")
+            .params
+            .height
+    } else {
+        // Object5F4260 uses Rules+420, not FlightLevel or a type's height.
+        rules.map_or(400, |rules| rules.general.display_cruise_height)
+    };
+    if adjusted_height < cruise_height {
+        DisplayLayer::AIR
+    } else {
+        DisplayLayer::TOP
+    }
+}
+
+fn entity_sort_key(
+    entity: &GameEntity,
+    object: Option<&crate::rules::object_type::ObjectType>,
+) -> i32 {
+    let raw = position_world_coord(&entity.position);
+    let (coord, adjust) = if entity.category == EntityCategory::Structure {
+        building_render_order_parts(
+            raw,
+            object.is_some_and(|object| object.turret_anim_is_voxel),
+            object.is_some_and(|object| object.gate),
+        )
+    } else {
+        (raw, 0)
+    };
+    coord.x.wrapping_add(coord.y).wrapping_add(adjust)
+}
+
+impl Simulation {
+    pub(super) fn submit_entity_display(
+        &mut self,
+        id: u64,
+        rules: Option<&RuleSet>,
+        terrain: Option<&ResolvedTerrainGrid>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let layer = entity_layer(entity, terrain.or(self.resolved_terrain.as_ref()), rules);
+        let entities = &self.substrate.entities;
+        let interner = &self.interner;
+        self.substrate.display.submit(id, Some(layer), |id| {
+            let entity = entities.get(id).expect("entity display identity");
+            entity_sort_key(
+                entity,
+                rules.and_then(|r| r.object(interner.resolve(entity.type_ref()))),
+            )
+        });
+    }
+
+    pub(super) fn entity_display_layer(
+        &self,
+        id: u64,
+        rules: Option<&RuleSet>,
+    ) -> Option<DisplayLayer> {
+        self.substrate
+            .entities
+            .get(id)
+            .map(|entity| entity_layer(entity, self.resolved_terrain.as_ref(), rules))
+    }
+
+    /// Jumpjet54AECB/54AED1 captures the live query before Process.54B16F
+    /// checks alive, then54B17F compares the new answer with that capture,
+    /// not Object+94. Fly has different explicit resubmission sites and must
+    /// not be normalized here by a generic per-frame layer/cache comparison.
+    pub(super) fn complete_jumpjet_display_process(
+        &mut self,
+        id: u64,
+        before: DisplayLayer,
+        rules: Option<&RuleSet>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if entity.lifecycle.object_alive
+            && entity_layer(entity, self.resolved_terrain.as_ref(), rules) != before
+        {
+            self.submit_entity_display(id, rules, None);
+        }
+    }
+
+    pub(super) fn sort_display_ground(&mut self, rules: Option<&RuleSet>) {
+        let entities = &self.substrate.entities;
+        let interner = &self.interner;
+        self.substrate.display.sort_ground_pass(|id| {
+            let entity = entities.get(id).expect("entity display identity");
+            entity_sort_key(
+                entity,
+                rules.and_then(|r| r.object(interner.resolve(entity.type_ref()))),
+            )
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::movement::locomotor::LocomotorState;
+    use crate::util::fixed_math::SimFixed;
+
+    #[test]
+    fn entity_layer_matches_original_queries() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/display_entity_layer.json"
+        ))
+        .unwrap();
+        assert_eq!(rows.len(), 88);
+        for row in rows {
+            let input = &row["input"];
+            let name = input["name"].as_str().unwrap();
+            let mut sim = Simulation::new();
+            let kind = input["kind"].as_str().unwrap();
+            super::super::lifecycle_tests::insert_entity(
+                &mut sim,
+                1,
+                if kind == "building" {
+                    EntityCategory::Structure
+                } else {
+                    EntityCategory::Unit
+                },
+            );
+            let entity = sim.substrate.entities.get_mut(1).unwrap();
+            entity.position.rx = 10;
+            entity.position.ry = 10;
+            entity.position.sub_x = SimFixed::from_num(128);
+            entity.position.sub_y = SimFixed::from_num(128);
+            entity.position.exact_z_leptons = Some(input["z"].as_i64().unwrap() as i32);
+            entity.lifecycle.cell_marked = input["marked"].as_bool().unwrap_or(true);
+            entity.on_bridge = input["on_bridge"].as_bool().unwrap_or(false);
+            entity.object_is_falling_down = u8::from(input["falling"].as_bool().unwrap_or(false));
+            let loco_kind = match kind {
+                "walk" => Some(LocomotorKind::Walk),
+                "drive" => Some(LocomotorKind::Drive),
+                "fly" => Some(LocomotorKind::Fly),
+                "jumpjet" => Some(LocomotorKind::Jumpjet),
+                "building" => None,
+                _ => panic!("unexpected {kind}"),
+            };
+            entity.locomotor = loco_kind.map(LocomotorState::for_test_kind);
+            if let Some(runtime) = entity
+                .locomotor
+                .as_mut()
+                .and_then(|l| l.jumpjet_runtime_mut())
+            {
+                runtime.params.height = input["linked_height"].as_i64().unwrap_or(500) as i32;
+            }
+            let mut cell = super::super::common_raw_test_terrain_cell(
+                10,
+                10,
+                input["level"].as_u64().unwrap_or(0) as u8,
+                input["bridge"].as_bool().unwrap_or(false),
+            );
+            cell.slope_type = input["slope"].as_u64().unwrap_or(0) as u8;
+            let terrain = ResolvedTerrainGrid::from_cells(16, 16, vec![cell]);
+            // Exercise the independent section reader, including no General.
+            let ini = format!(
+                "[JumpjetControls]\nCruiseHeight={}\n",
+                input["global_cruise_height"].as_i64().unwrap_or(400)
+            );
+            let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
+            assert_eq!(
+                entity_layer(entity, Some(&terrain), Some(&rules)),
+                DisplayLayer::from_index(row["layer"].as_u64().unwrap() as u8).unwrap(),
+                "{name}"
+            );
+        }
+    }
+}

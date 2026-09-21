@@ -325,6 +325,9 @@ pub struct GeneralRules {
     /// rulesmd.ini always supplies its own (1500), so the fallback only fires
     /// for a non-retail INI missing the key. Per-type override not yet implemented.
     pub flight_level: i32,
+    /// Rules+420, [JumpjetControls] CruiseHeight. Object5F4260 uses this
+    /// global threshold; linked Jumpjets instead use their own +2C height.
+    pub display_cruise_height: i32,
     /// Hover locomotor cruise altitude in leptons (`[General] HoverHeight=`, default 120).
     /// The damped-spring vertical controller holds hover units at this height.
     pub hover_height: i32,
@@ -1144,6 +1147,7 @@ impl Default for GeneralRules {
             tunnel_speed: sim_from_f32(6.0),
             missile_rot_var: sim_from_f32(1.0),
             flight_level: 500,
+            display_cruise_height: 400, // Rules constructor665C3A
             hover_height: 120,
             hover_bob: sim_from_f32(0.04),
             hover_boost: sim_from_f32(1.5),
@@ -1619,6 +1623,12 @@ impl GeneralRules {
 
     fn from_ini(ini: &IniFile) -> Self {
         let defaults = Self::default();
+        // Separate ReadJumpjetControls674467..67447E, no General gate.
+        let display_cruise_height = ini
+            .section("JumpjetControls")
+            .map_or(defaults.display_cruise_height, |s| {
+                s.read_int("CruiseHeight", defaults.display_cruise_height)
+            });
         // gamemd-derived: `RulesClass__ReadIQ @ 0x00674240` reads signed
         // `[IQ] Production` into `Rules+0x143C` at `0x006742C1`, independently
         // of the `[General]` pass and without clamping the parsed dword.
@@ -1648,6 +1658,7 @@ impl GeneralRules {
         let Some(general) = ini.section("General") else {
             return Self {
                 iq_production,
+                display_cruise_height,
                 condition_yellow: condition_yellow_native,
                 condition_red: condition_red_native,
                 path_delay,
@@ -1824,6 +1835,7 @@ impl GeneralRules {
                 .map(sim_from_f32)
                 .unwrap_or(sim_from_f32(1.0)),
             flight_level: general.get_i32("FlightLevel").unwrap_or(500),
+            display_cruise_height,
             // Hover keys. gamemd reads these with the %-aware Get_Double (150% → 1.5),
             // which `get_percent` matches (it also passes bare floats like `.02` through).
             // The three time keys (bob/accel/brake) are in MINUTES; ×900 = ticks.

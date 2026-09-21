@@ -607,6 +607,9 @@ fn a_non_allied_sensors_neighbour_surfaces_a_cloaked_mover_on_cell_entry() {
         &mut sim, id, &rules
     ));
     assert!(sim.sound_events.is_empty());
+    // Leave cell, Logic and display membership through their common owner
+    // before removing storage; raw erase left a dangling display identity.
+    sim.object_conceal(friendly);
     sim.substrate.entities.remove(friendly);
 
     // A hostile one with `Sensors=yes` forces the surface, with the cue.

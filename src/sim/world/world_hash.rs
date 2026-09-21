@@ -750,6 +750,9 @@ impl Simulation {
         for id in order {
             id.hash(&mut hasher);
         }
+        if schema.includes(HashFeature::DisplayLayers) {
+            self.substrate.display.fold_hash(&mut hasher);
+        }
 
         if schema.includes(HashFeature::Lifecycle) {
             // PendingDeleteList is an independent ordered substrate fact. The

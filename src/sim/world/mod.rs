@@ -29,6 +29,8 @@ mod jumpjet_cruise;
 pub(crate) use infantry_terminal::InfantryDeathSequence;
 pub(crate) use infantry_terminal::{InfantryDeathPostlude, InfantryTerminal};
 pub(crate) mod damage_consequences;
+pub(crate) mod display_layers;
+mod display_registry;
 mod frame_error;
 mod lifecycle;
 mod load_object_lifecycle;
@@ -2186,9 +2188,8 @@ impl Simulation {
                         // two row-major attempts at each of the 15 grid cells.
                         // Every representable allocation is successful, so
                         // each attempt consumes type, X, Y, and delay draws.
-                        let anim_types =
-                            crate::rules::effect_asset_catalog::CLIFF_COLLAPSE_ANIMS
-                                .map(|name| self.interner.intern(name));
+                        let anim_types = crate::rules::effect_asset_catalog::CLIFF_COLLAPSE_ANIMS
+                            .map(|name| self.interner.intern(name));
                         for &(cell_x, cell_y) in &mutation.animation_cells {
                             for _ in 0..2 {
                                 let type_index =
@@ -5687,7 +5688,6 @@ impl Simulation {
         // Advance building-down (undeploy) animations; spawn units when done.
         *spawned_entities |= self.tick_building_down(rules, overlay_registry);
 
-
         // EventClass dispatch is a Main_Tick tail rung: the complete live
         // Logic walk observes frame N's pre-command state, so an accepted
         // command first changes that object's AI behavior on frame N+1.
@@ -6001,6 +6001,9 @@ impl Simulation {
         }
         #[cfg(test)]
         self.trace_master_frame_rung(MasterFrameTestRung::SessionCommands);
+
+        // MainTick55DBC8 precedes Logic55DC9E (including trigger polling).
+        self.sort_display_ground(rules);
 
         // YR LogicClass::Update establishes trigger state before visiting the
         // live LogicVector, so object work in this frame observes its actions.

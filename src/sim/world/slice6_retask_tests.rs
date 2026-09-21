@@ -443,7 +443,10 @@ const SLICE6_BASELINE_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 0x8C50_893A_CF
 const SLICE6_BASELINE_HASH_PRE_CRATE_SPEED_V181: u64 = 0x3D7F_B762_F752_444A;
 // v181 folds Foot+580, including default1.0. The pre-181 assertion below
 // proves this fixture's shift comes only from the added hash field.
-const SLICE6_BASELINE_HASH: u64 = 0x720D_C262_694D_3821;
+const SLICE6_BASELINE_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0x720D_C262_694D_3821;
+// Snapshot182 adds ordered display vectors. The pre-182 projection below
+// must reproduce the previous whole-fixture hash, including all RNG/state.
+const SLICE6_BASELINE_HASH: u64 = 209154586170202422;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -692,6 +695,11 @@ fn replay_hash_stable_through_slice6() {
         sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(181)),
         SLICE6_BASELINE_HASH_PRE_CRATE_SPEED_V181,
         "excluding only Foot+580 must preserve the pre-181 fixture"
+    );
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(182)),
+        SLICE6_BASELINE_HASH_PRE_DISPLAY_LAYERS_V182,
+        "excluding only display vectors must preserve the pre-182 fixture"
     );
     assert_eq!(
         hash, SLICE6_BASELINE_HASH,

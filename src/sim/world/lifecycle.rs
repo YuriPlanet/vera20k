@@ -929,6 +929,7 @@ impl Simulation {
             self.mark_building_base_reservation_with_arg(stable_id, false, context);
             self.fill_base_plan_from_successful_building_unlimbo(stable_id);
         }
+        self.submit_entity_display(stable_id, context.rules, context.terrain());
         self.lifecycle_outputs
             .push(LifecycleOutput::RevealDisplay { stable_id });
         #[cfg(test)]
@@ -1755,6 +1756,17 @@ impl Simulation {
         use crate::rules::locomotor_type::LocomotorKind;
         use crate::sim::movement::locomotor::MovementLayer;
 
+        let jumpjet_layer_before = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .filter(|entity| {
+                entity
+                    .locomotor
+                    .as_ref()
+                    .is_some_and(|l| l.active_kind() == LocomotorKind::Jumpjet)
+            })
+            .and_then(|_| self.entity_display_layer(stable_id, rules));
         let transact_fly = self
             .substrate
             .entities
@@ -1796,6 +1808,9 @@ impl Simulation {
             self.add_entity_occupancy(stable_id);
         }
         self.sync_air_spatial_membership(stable_id);
+        if let Some(before) = jumpjet_layer_before {
+            self.complete_jumpjet_display_process(stable_id, before, rules);
+        }
         stats
     }
 
@@ -2133,6 +2148,7 @@ impl Simulation {
             self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealUnmarked);
         }
 
+        self.substrate.display.remove(stable_id);
         self.lifecycle_outputs
             .push(LifecycleOutput::DisplayRemove { stable_id });
         #[cfg(test)]

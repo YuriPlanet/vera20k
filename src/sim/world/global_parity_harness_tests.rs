@@ -671,7 +671,10 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 111509923
 const GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 17631878483843703671;
 // v181 adds the default Foot+580 factor to every entity's hash. The pre-181
 // assertion below retains the previous entire fixture state/RNG ratchet.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0xBC5E_52DA_969F_F60C;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xBC5E_52DA_969F_F60C;
+// Snapshot182 adds ordered display vectors. The pre-182 projection below
+// must reproduce the previous whole-fixture hash, including all RNG/state.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 12759965280527249411;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -1062,6 +1065,11 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(181)),
         GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181,
         "excluding only Foot+580 must preserve the pre-181 fixture"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(182)),
+        GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182,
+        "excluding only display vectors must preserve the pre-182 fixture"
     );
     println!(
         "[schema168 global] pre168={:016X}",

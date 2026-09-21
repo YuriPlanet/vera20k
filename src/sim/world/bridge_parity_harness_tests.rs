@@ -203,7 +203,10 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 398787009
 const BRIDGE_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 6311521725375046682;
 // v181 folds Foot+580, including default1.0. The pre-181 assertion below
 // reproduces the previous whole fixture hash; path and RNG pins are unchanged.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 6927658555461959538;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 6927658555461959538;
+// Snapshot182 adds ordered display vectors. The pre-182 projection below
+// must reproduce the previous whole-fixture hash, including all RNG/state.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 121431099463487950;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
@@ -789,6 +792,11 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(181)),
         BRIDGE_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181,
         "excluding only Foot+580 must preserve the pre-181 fixture"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(182)),
+        BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182,
+        "excluding only display vectors must preserve the pre-182 fixture"
     );
     assert_eq!(
         final_hash, BRIDGE_HARNESS_FINAL_HASH,

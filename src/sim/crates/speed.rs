@@ -1,8 +1,8 @@
 //! Speed powerup's recipient effect, Cell482F4A..483098.
 //!
-//! The caller supplies the native ground display membership/order and the
-//! crate's ground center after selection/removal/replacement. Movement pickup
-//! integration is still open; Logic order is not a substitute for this vector.
+//! Reads ObjectSubstrate's persistent Ground display vector. The caller supplies
+//! the crate center after selection/removal/replacement. Movement pickup and
+//! complete display lifecycle integration remain open.
 
 use crate::map::entities::EntityCategory;
 use crate::sim::components::DriveCoord;
@@ -12,10 +12,8 @@ use crate::util::native_x87::{NativeF64Bits, distance_3d_leptons};
 
 /// Returns the native local EVA latch: at least one changed recipient's house
 /// has PlayerControl(+1ED). No owner-equality filter or RNG draw occurs here.
-/// Supplied entries may name non-Foot objects or missing/null members.
 pub(super) fn apply_speed_crate(
     sim: &mut Simulation,
-    ground_members: &[u64],
     center: DriveCoord,
     radius: i32,
     multiplier: NativeF64Bits,
@@ -23,7 +21,11 @@ pub(super) fn apply_speed_crate(
     let mut announce = false;
     // This arm has no callback that changes the display vector. Coordinate
     // getters are retained XYZ, and the only entity write is Foot+580.
-    for &id in ground_members {
+    for &id in sim
+        .substrate
+        .display
+        .members(crate::sim::world::display_layers::DisplayLayer::GROUND)
+    {
         let Some(entity) = sim.substrate.entities.get_mut(id) else {
             continue;
         };
@@ -57,6 +59,83 @@ mod tests {
     use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
     use crate::sim::{components::Health, game_entity::GameEntity, house_state::HouseState};
     use crate::util::fixed_math::SimFixed;
+
+    #[test]
+    fn lifecycle_ground_membership_controls_recipients_independently_of_logic() {
+        use crate::sim::world::{PlacementEvidence, RevealPosition, RevealRequest};
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        let type_id = sim.interner.intern("E1");
+        for id in 1..=3 {
+            assert_eq!(sim.allocate_stable_id(), id);
+            let mut entity = GameEntity::new_at_frame_zero_for_test(
+                id,
+                10,
+                10,
+                0,
+                0,
+                owner,
+                Health { current: 100 },
+                type_id,
+                EntityCategory::Infantry,
+                0,
+                5,
+                true,
+            );
+            entity.position.sub_x = SimFixed::from_num(128);
+            entity.position.sub_y = SimFixed::from_num(128);
+            sim.substrate.entities.insert(entity);
+            if id != 3 {
+                sim.try_reveal_entity(
+                    id,
+                    RevealRequest {
+                        position: RevealPosition {
+                            rx: 10,
+                            ry: 10,
+                            z: 0,
+                            sub_x: SimFixed::from_num(128),
+                            sub_y: SimFixed::from_num(128),
+                        },
+                        placement: PlacementEvidence::MarkSucceeded,
+                        logic_eligible: id == 2,
+                    },
+                );
+            }
+        }
+        sim.object_conceal(2);
+        assert!(sim.substrate.logic.as_slice().is_empty());
+        let multiplier = NativeF64Bits::from_bits(1.2f64.to_bits());
+        apply_speed_crate(
+            &mut sim,
+            DriveCoord {
+                x: 2688,
+                y: 2688,
+                z: 0,
+            },
+            768,
+            multiplier,
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .foot_speed
+                .crate_multiplier(),
+            multiplier
+        );
+        for id in [2, 3] {
+            assert_eq!(
+                sim.substrate
+                    .entities
+                    .get(id)
+                    .unwrap()
+                    .foot_speed
+                    .crate_multiplier(),
+                NativeF64Bits::ONE
+            );
+        }
+    }
 
     #[test]
     fn original_speed_effect_updates_live_foot_speed_for_every_recipient() {
@@ -134,6 +213,13 @@ mod tests {
                 );
                 assert!(entity.foot_speed.accept_speed_crate(factor));
                 sim.substrate.entities.insert(entity);
+                // The effect corpus supplies membership independently of
+                // GetLayer/Unlimbo. Display registration has its own corpus.
+                sim.substrate.display.submit(
+                    id,
+                    Some(crate::sim::world::display_layers::DisplayLayer::GROUND),
+                    |_| 0,
+                );
             }
             let center = DriveCoord {
                 x: 2688,
@@ -149,7 +235,6 @@ mod tests {
             let rng_before = sim.scenario_rng.logical_state();
             let announce = apply_speed_crate(
                 &mut sim,
-                &members,
                 center,
                 input["radius"].as_i64().unwrap_or(768) as i32,
                 NativeF64Bits::from_bits(

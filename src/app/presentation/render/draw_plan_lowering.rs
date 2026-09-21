@@ -114,19 +114,23 @@ pub(crate) fn building_ground_order_parts(
     turret_anim_is_voxel: bool,
     gate: bool,
 ) -> (TacticalCoord, i32) {
-    let render_coord = TacticalCoord {
-        x: location.x.wrapping_sub(128),
-        y: location.y.wrapping_sub(128),
-        z: location.z,
-    };
-    let mut y_sort_adjust = 0i32;
-    if turret_anim_is_voxel {
-        y_sort_adjust = y_sort_adjust.wrapping_add(32);
-    }
-    if gate {
-        y_sort_adjust = y_sort_adjust.wrapping_sub(16);
-    }
-    (render_coord, y_sort_adjust)
+    let (coord, adjust) = crate::sim::movement::ground_pose::building_render_order_parts(
+        crate::sim::components::DriveCoord {
+            x: location.x,
+            y: location.y,
+            z: location.z,
+        },
+        turret_anim_is_voxel,
+        gate,
+    );
+    (
+        TacticalCoord {
+            x: coord.x,
+            y: coord.y,
+            z: coord.z,
+        },
+        adjust,
+    )
 }
 
 impl NativeGroundOrder {

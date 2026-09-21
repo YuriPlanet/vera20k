@@ -73,6 +73,21 @@ pub(crate) fn position_world_coord(position: &Position) -> DriveCoord {
     }
 }
 
+/// Building render-coordinate459EF0 and GetYSort449410's type adjustment.
+/// Shared by display registration and presentation; neither uses center coords.
+pub(crate) fn building_render_order_parts(
+    mut location: DriveCoord,
+    turret_anim_is_voxel: bool,
+    gate: bool,
+) -> (DriveCoord, i32) {
+    location.x = location.x.wrapping_sub(128);
+    location.y = location.y.wrapping_sub(128);
+    (
+        location,
+        i32::from(turret_anim_is_voxel) * 32 - i32::from(gate) * 16,
+    )
+}
+
 /// Object virtual+48: Unit/Infantry/Aircraft5F65A0 copy retained XYZ;
 /// Building447AC0 adds the foundation-center XY offset and keeps raw Z.
 /// This is not Building+4C's optional dock/bunker approach-coordinate owner.
@@ -91,8 +106,7 @@ pub(crate) fn object_center_coord_with_foundation(
 ) -> DriveCoord {
     let mut coord = position_world_coord(&entity.position);
     if entity.category == crate::map::entities::EntityCategory::Structure {
-        let (width, height) =
-            crate::rules::foundation::foundation_dimensions(foundation);
+        let (width, height) = crate::rules::foundation::foundation_dimensions(foundation);
         coord.x = coord
             .x
             .wrapping_add(i32::from(width).wrapping_mul(128).wrapping_sub(128));

@@ -1,7 +1,7 @@
 //! Shared object storage, registration order and spatial occupation authority.
 //!
 //! ObjectSubstrate owns the entity, animation, voxel-animation and particle-system
-//! stores, the LogicVector, identity/enter-order counters and occupation planes.
+//! stores, independent Logic/display vectors, counters and occupation planes.
 //! Terrain, projectile and wave stores remain in their mechanism owners and
 //! participate in the same lifecycle dispatch and global object-ID namespace.
 //!
@@ -91,10 +91,13 @@ pub(crate) struct ObjectSubstrate {
     /// Monotonic source for CellClass-style object-list (enter) order and the
     /// independently ordered AirTracker. See `EnterOrderCounter`.
     pub(crate) next_occupancy_enter_order: EnterOrderCounter,
-    /// LogicClass active-object vector — the single authority on object order.
+    /// LogicClass active-object vector — the authority on AI visitation order.
     /// Tail-append on reveal, compacting-remove on conceal. Serialized verbatim.
     #[serde(default)]
     pub(crate) logic: LogicVector,
+    /// Independent persistent DisplayClass layers, including the Ground vector
+    /// read by crate effects. Never reconstructed from Logic or storage order.
+    pub(crate) display: super::display_layers::DisplayLayers,
     /// Actual CellClass-style memberships/order, preserved across save/restore.
     /// Cell483C10/4839F0 saves and swizzles its ground/deck heads; rebuilding
     /// from current locomotor phase or terrain cannot recover those histories.
@@ -165,6 +168,7 @@ impl ObjectSubstrate {
             next_stable_object_id: 1,
             next_occupancy_enter_order: EnterOrderCounter::new(),
             logic: LogicVector::new(),
+            display: Default::default(),
             occupancy: OccupancyGrid::new(),
             cell_occupation: CellOccupationGrid::new(),
             raw_cell_occupation: RawCellOccupationGrid::new(),
@@ -218,6 +222,11 @@ impl ObjectSubstrate {
         }
 
         let mut seen_logic = std::collections::BTreeSet::new();
+        for &object_id in self.display.ordered_ids() {
+            if !identities.contains_key(&object_id) {
+                return Err(SnapshotRestoreError::MissingDisplayIdentity { object_id });
+            }
+        }
         for &object_id in self.logic.as_slice() {
             if !seen_logic.insert(object_id) {
                 return Err(SnapshotRestoreError::DuplicateLogicIdentity { object_id });

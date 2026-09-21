@@ -7786,3 +7786,109 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
         assert!(landed, "Fly must finish its actual descent");
     }
 }
+
+#[test]
+fn display_lifecycle_is_independent_of_logic_and_survives_production_save() {
+    use super::display_layers::DisplayLayer;
+    let mut sim = Simulation::new();
+    for _ in 0..4 {
+        let id = sim.allocate_stable_id();
+        insert_entity(&mut sim, id, EntityCategory::Unit);
+        let mut req = common_raw_request(2 + id as u16, 3, 0, 128, 128);
+        req.logic_eligible = id != 2;
+        assert!(matches!(
+            sim.try_reveal_entity(id, req),
+            RevealOutcome::Revealed { .. }
+        ));
+    }
+    assert_eq!(sim.substrate.logic.as_slice(), [1, 3, 4]);
+    assert_eq!(
+        sim.substrate.display.members(DisplayLayer::GROUND),
+        [1, 2, 3, 4]
+    );
+    // Coordinates change without resubmitting. MainTick's single adjacent
+    // pass has a different result from either Logic order or a full sort.
+    for id in 1..=4 {
+        sim.substrate.entities.get_mut(id).unwrap().position.rx = 7 - id as u16;
+    }
+    let before_sort = sim.state_hash();
+    let before_sort_without_display =
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(182));
+    sim.sort_display_ground(None);
+    assert_ne!(sim.state_hash(), before_sort);
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(182)),
+        before_sort_without_display
+    );
+    assert_eq!(
+        sim.substrate.display.members(DisplayLayer::GROUND),
+        [2, 3, 4, 1]
+    );
+    let bytes = GameSnapshot::save(&sim, 0, 0, "display-order", 0);
+    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+    restored.restore_after_snapshot_load().unwrap();
+    assert_eq!(
+        restored.substrate.display.members(DisplayLayer::GROUND),
+        [2, 3, 4, 1]
+    );
+    restored.sort_display_ground(None);
+    assert_eq!(
+        restored.substrate.display.members(DisplayLayer::GROUND),
+        [3, 4, 2, 1]
+    );
+    let hash = restored.state_hash();
+    restored.object_conceal(2);
+    assert_eq!(
+        restored.substrate.display.members(DisplayLayer::GROUND),
+        [3, 4, 1]
+    );
+    assert_eq!(restored.substrate.logic.as_slice(), [1, 3, 4]);
+    assert_ne!(hash, restored.state_hash());
+    restored
+        .substrate
+        .display
+        .submit(999, Some(DisplayLayer::TOP), |_| 0);
+    assert!(matches!(
+        restored.restore_after_snapshot_load(),
+        Err(SnapshotRestoreError::MissingDisplayIdentity { object_id: 999 })
+    ));
+}
+
+#[test]
+fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
+    use super::display_layers::DisplayLayer;
+    let mut sim = Simulation::new();
+    let id = sim.allocate_stable_id();
+    insert_entity(&mut sim, id, EntityCategory::Unit);
+    sim.substrate.entities.get_mut(id).unwrap().locomotor =
+        Some(LocomotorState::for_test_kind(LocomotorKind::Jumpjet));
+    sim.try_reveal_entity(id, common_raw_request(3, 3, 0, 128, 128));
+    // Explicit stale display cache witness. Native compares its two +74
+    // queries and leaves this history alone while the Process answer is stable.
+    sim.substrate
+        .display
+        .submit(id, Some(DisplayLayer::TOP), |_| 0);
+    sim.tick_air_movement_with_cell_lists_one(id, None);
+    assert_eq!(sim.substrate.display.layer_of(id), Some(DisplayLayer::TOP));
+
+    // A real changed query re-submits even if cached membership is absent.
+    sim.substrate.display.remove(id);
+    let before = sim.entity_display_layer(id, None).unwrap();
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .locomotor
+        .as_mut()
+        .unwrap()
+        .altitude = SimFixed::from_num(600);
+    sim.complete_jumpjet_display_process(id, before, None);
+    assert_eq!(sim.substrate.display.layer_of(id), Some(DisplayLayer::TOP));
+    // The native tail's alive gate prevents another submission after death.
+    let before = sim.entity_display_layer(id, None).unwrap();
+    let entity = sim.substrate.entities.get_mut(id).unwrap();
+    entity.lifecycle.object_alive = false;
+    entity.locomotor.as_mut().unwrap().altitude = SimFixed::ZERO;
+    sim.complete_jumpjet_display_process(id, before, None);
+    assert_eq!(sim.substrate.display.layer_of(id), Some(DisplayLayer::TOP));
+}
