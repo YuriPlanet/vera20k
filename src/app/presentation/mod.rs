@@ -4,7 +4,6 @@
 //! render index.
 
 pub(crate) mod building_anim;
-pub(crate) mod chute_anim;
 pub(crate) mod combat_lights;
 pub(crate) mod fire_effects;
 pub(crate) mod instances;

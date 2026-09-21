@@ -95,10 +95,6 @@ pub(crate) struct MatchPresentationState {
     pub(crate) theater_ext: String,
     /// Target/action lines — colored lines from selected units to command destinations.
     pub(crate) target_lines: crate::app::presentation::target_lines::TargetLineState,
-    /// Active parachute animations, one per descending paradropped infantry.
-    /// Polling-based lifecycle: spawned when an entity gains parachute_state
-    /// in the sim, removed on landing or death. Render-only; not snapshotted.
-    pub(crate) parachute_anims: Vec<crate::sim::components::ParachuteAnim>,
     /// Global elapsed time for looping terrain overlay animations.
     pub(crate) idle_anim_elapsed_ms: u32,
     // -- Reusable per-frame scratch buffers (avoid allocation each frame) --

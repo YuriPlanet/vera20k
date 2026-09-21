@@ -21,6 +21,7 @@ Replace this file on each update; do not append a diary.
 | Mover path facts | the crusher flag every move-order caller passed; facts now come from the mover (`from_snapshot`, `from_entity_without_wall_arm`), cell-entry contexts take the wall-arm key from `CrushCapability`. The wall arm on order and Drive tick searches is movement-ledger row I9b, a parity port, not a duplicate | this PR |
 | Animation | `AnimStore`'s private 128-per-level Z scale: one frame, world leptons (104 per level), owner-attached anims follow the owner's actual height, sprites project from exact Z. Prerequisite for the muzzle flashes; snapshot 177 | this PR |
 | Animation | weapon `Anim=` and occupant `OccupantAnim=` muzzle flashes on `AnimStore`, built at the sim's one fire coordinate (`combat/fire_coord.rs`, also the bullet origin and the report sound position). A building's FLH arm now starts from the building coordinate native uses (location minus 128), like its pixel arms. Deleted: the app's second AnimClass stepper, both flash lists and draw paths, the `f32` FLH transforms and pixel-offset math. Snapshot 178 | this PR |
+| Animation | the parachute canopy: an owner-attached `AnimClass` built by the drop (`ObjectClass::Paradrop @ 0x005F5940`, canopy at `0x005F5A9D`) and wound down at landing (`0x005F3F9D`). Deleted: the app's third stepper (`chute_anim.rs`, `ParachuteAnim`) and `ParachuteRenderConfig`, a second parse of the `PARACH` AnimType's art. The app keeps only the canopy's placement on the body's sort key. Snapshot 179 | this PR |
 | Dead code | items dead in both builds; superseded test-only duplicates (map-list funnels, `radiation_light_epoch`); test probes gated; the effect asset catalog trimmed to particle images, which changes the rules hash, so snapshot 176 | #421 |
 
 Three per-mover world scans went with those: the per-frame dock sweep, the
@@ -66,11 +67,6 @@ them discards evidence-backed work; wiring each is a port. The six unused
 `state_hash_without_*` probes in `world_hash.rs` are replay-pin provenance.
 
 ## Open
-
-**Animation: parachute.** `app/presentation/chute_anim.rs` +
-`components::ParachuteAnim` is a third app-side stepper. Natively the chute is
-an AnimClass attached to the object (`Object+0x88`); `AnimStore` supports owner
-attachment.
 
 **Per-mover world scans.** `movement_tick.rs` rebuilds
 `build_live_building_entry_skip_map` and `snapshot_bridge_marker_peers` (every
@@ -126,4 +122,4 @@ release: a chrono warp, a superweapon invoke, a bridge collapse.
 - The separate `vera20k-engine-authority` checkout, branch
   `feature/persistent-facing-authority`: dirty facing, turret, walk-head
   and snapshot files. No open lead above touches them; its snapshot bump must
-  land after 178.
+  land after 179.

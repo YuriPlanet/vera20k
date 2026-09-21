@@ -498,12 +498,22 @@ impl Simulation {
             sim.session.tick,
         );
         if let Some(rules) = rules {
+            let falling = |sim: &Simulation| {
+                sim.substrate
+                    .entities
+                    .get(stable_id)
+                    .is_some_and(|entity| entity.parachute_state.is_some())
+            };
+            let was_falling = falling(sim);
             parachute_descent::tick_parachute_descent_in_order(
                 &mut sim.substrate.entities,
                 &one,
                 rules.general.parachute_max_fall_rate,
                 sim.session.tick,
             );
+            if was_falling && !falling(sim) {
+                sim.wind_down_parachute_anim(rules, stable_id);
+            }
         }
         movement::tick_locomotor_piggyback_restore_one(&mut sim.substrate.entities, stable_id);
 

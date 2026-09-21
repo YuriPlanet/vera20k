@@ -565,7 +565,6 @@ impl App {
                     theater_name: "TEMPERATE".to_string(),
                     theater_ext: "tem".to_string(),
                     target_lines: startup_target_lines,
-                    parachute_anims: Vec::new(),
                     idle_anim_elapsed_ms: 0,
                     cached_overlay_instances: Vec::new(),
                     cached_unit_instances: Vec::new(),

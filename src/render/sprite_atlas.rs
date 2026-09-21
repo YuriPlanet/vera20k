@@ -1043,43 +1043,44 @@ pub fn build_sprite_atlas(
     }
 
     // Step 1e: Pre-load the parachute SHP (`[General] Parachute=`).
-    // The parachute is reached through `[General] Parachute=` rather than the
-    // animation closure, so its frames need registering here. Its palette is not
+    // The canopy's frames are keyed on the unit-palette context the parachute
+    // pass draws with, so they are registered here as well as through the
+    // AnimClass closure `[General] Parachute=` now belongs to. Its palette is not
     // decided by this registration: `sprite_palette_choice` reads the art type's
     // `AltPalette=` flag, which PARACH sets, and that selects the unit palette.
     if let Some(r) = rules {
-        if let Some(pc) = r.general.parachute_render.as_ref() {
-            let lower: String = pc.shp_name.to_ascii_lowercase();
+        if let Some(shp_name) = r.general.parachute_shp.as_deref() {
+            let lower: String = shp_name.to_ascii_lowercase();
             let candidates: Vec<String> =
-                vec![format!("{}.shp", lower), format!("{}.SHP", pc.shp_name)];
+                vec![format!("{}.shp", lower), format!("{}.SHP", shp_name)];
             if let Some(data) = candidates.iter().find_map(|c| asset_manager.get_ref(c)) {
                 if let Ok(shp) = ShpFile::from_bytes(data) {
                     let frame_count: u16 = shp.frames.len() as u16;
                     for f in 0..frame_count {
                         needed.insert(ShpSpriteKey {
                             palette_context: ShpPaletteContext::GlobalAnim,
-                            type_id: pc.shp_name.clone(),
+                            type_id: shp_name.to_string(),
                             facing: 0,
                             frame: f,
                             house_color: HouseColorIndex(0),
                         });
                     }
-                    active_anim_frame_counts.insert(pc.shp_name.clone(), frame_count);
+                    active_anim_frame_counts.insert(shp_name.to_string(), frame_count);
                     log::info!(
                         "Parachute SHP {}: {} frames loaded (unit palette per AltPalette=yes)",
-                        pc.shp_name,
+                        shp_name,
                         frame_count
                     );
                 } else {
                     log::warn!(
                         "Parachute SHP {} found in MIX but failed to parse",
-                        pc.shp_name
+                        shp_name
                     );
                 }
             } else {
                 log::warn!(
                     "Parachute SHP {} not found in MIX archives — chute will not render",
-                    pc.shp_name
+                    shp_name
                 );
             }
         }

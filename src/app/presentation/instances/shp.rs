@@ -33,7 +33,7 @@ use crate::rules::house_colors::HouseColorIndex;
 use crate::sim::animation;
 use crate::sim::components::BuildingUp;
 
-/// Sort keys of the bodies currently hanging under a parachute, by entity id.
+/// Sort keys of the bodies that currently own a parachute canopy, by entity id.
 ///
 /// A parachute canopy is not an object in gamemd — `AnimClass::GetLayer` forces
 /// an owner-attached anim into the owner's own layer, and the canopy is
@@ -108,6 +108,7 @@ pub(crate) fn build_shp_instances(
     let ignore_visibility = state.match_state.sandbox_full_visibility;
     let art_reg: Option<&crate::rules::art_data::ArtRegistry> =
         state.rules().map(|rules| &rules.art_registry);
+    let canopy_owners = super::overlays::parachute_canopy_owners(state, sim);
 
     let encounter_order = super::helpers::tactical_entity_encounter_order(sim, state.rules());
     for stable_id in encounter_order {
@@ -307,7 +308,9 @@ pub(crate) fn build_shp_instances(
             }
         };
         let depth: f32 = base_depth;
-        if entity.parachute_state.is_some() {
+        // Keyed on the canopy, not on the fall: natively the canopy outlives
+        // the landing while it plays out, still attached to the landed body.
+        if canopy_owners.contains(&entity.stable_id()) {
             parachute_body_depths.insert(entity.stable_id(), depth);
         }
         let tint = shp_body_tint(

@@ -696,7 +696,6 @@ fn advance_in_game_runtime_mode(
         // were finalized inside the authoritative sim transaction. Only the
         // independent wall-clock terrain-overlay timer remains app-owned.
         crate::app::presentation::building_anim::tick_terrain_overlay_animations(state, 16);
-        crate::app::presentation::chute_anim::tick_parachute_anims(state);
     }
 
     // Ordered native source/global operations were applied with the frame
@@ -922,13 +921,9 @@ fn advance_one_simulation_frame(state: &mut AppState, tick_lane: TickLane) -> bo
         // direct attachment or retained audio handle.
         for output in drained_lifecycle_outputs {
             match output {
-                LifecycleOutput::DetachAttachedAnims { stable_id } => {
-                    state
-                        .match_state
-                        .match_presentation
-                        .parachute_anims
-                        .retain(|anim| anim.target_id != stable_id);
-                }
+                // Attached anims are simulation objects; the store detaches
+                // them itself.
+                LifecycleOutput::DetachAttachedAnims { .. } => {}
                 LifecycleOutput::StopVoc { stable_id } => {
                     if let Some(sfx) = state.audio.sfx_player.as_mut() {
                         sfx.stop_animation_sound(stable_id);

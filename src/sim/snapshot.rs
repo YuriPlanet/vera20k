@@ -529,7 +529,10 @@ use crate::sim::world::Simulation;
 // layout is unchanged, but they are now saved, hashed and take ids from the
 // shared stable-id counter, so a 177 save taken mid-firefight resumes with
 // different ids.
-const SNAPSHOT_VERSION: u32 = 178;
+// 178 -> 179: a dropped object's parachute canopy is an AnimStore member
+// attached to it. The layout is unchanged, but a 178 save taken during a
+// paradrop resumes without canopies and with different ids.
+const SNAPSHOT_VERSION: u32 = 179;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3423,7 +3426,7 @@ mod tests {
         // 170 -> 171: shared animation bounds and retained HasEngineer.
         // 173 -> 174: ProductionState drops the resource node map.
         // 174 -> 175: bridge collapse explosions join the AnimStore.
-        assert_eq!(super::SNAPSHOT_VERSION, 178);
+        assert_eq!(super::SNAPSHOT_VERSION, 179);
     }
 
     #[test]
