@@ -2986,11 +2986,15 @@ impl Simulation {
         &self.substrate.entities
     }
 
-    /// Current ObjectClass registration order used by the tactical layer.
-    /// Presentation code may sort registered objects into LayerClass order,
-    /// but must not reconstruct equal-key ordering from EntityStore keys.
-    pub(crate) fn tactical_registration_order(&self) -> &[u64] {
+    /// Logic scheduling order, also consumed by the current radar pipeline.
+    pub(crate) fn logic_order(&self) -> &[u64] {
         self.substrate.logic.as_slice()
+    }
+
+    /// Retained Display membership and order. Tactical6D8F19..6D95A9 walks
+    /// these five vectors directly; it neither queries GetLayer nor re-sorts.
+    pub(crate) fn display_layers(&self) -> &display_layers::DisplayLayers {
+        &self.substrate.display
     }
 
     /// Mutable entity-store access for above-sim callers.

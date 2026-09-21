@@ -25,9 +25,7 @@ use crate::render::native_z::{
     pack_z_gradient,
 };
 use crate::render::sprite_atlas::ShpSpriteKey;
-use crate::render::tactical_draw_plan::{
-    BlitPolicy, BuildingPieceKind, SpriteEncoding, TacticalCoord,
-};
+use crate::render::tactical_draw_plan::{BlitPolicy, BuildingPieceKind, SpriteEncoding};
 use crate::render::unit_atlas::{UnitSpriteKey, VxlLayer, canonical_turret_facing};
 use crate::rules::house_colors::HouseColorIndex;
 use crate::sim::animation;
@@ -110,7 +108,7 @@ pub(crate) fn build_shp_instances(
         state.rules().map(|rules| &rules.art_registry);
     let canopy_owners = super::overlays::parachute_canopy_owners(state, sim);
 
-    let encounter_order = super::helpers::tactical_entity_encounter_order(sim, state.rules());
+    let encounter_order = super::helpers::tactical_entity_encounter_order(sim);
     for stable_id in encounter_order {
         let Some(entity) = sim.entities().get(stable_id) else {
             continue;
@@ -437,13 +435,8 @@ pub(crate) fn build_shp_instances(
                 instance: body,
             });
         } else if collect_ground {
-            let coord = TacticalCoord {
-                x: i32::from(pos.rx) * 256 + crate::util::fixed_math::sim_to_i32(pos.sub_x),
-                y: i32::from(pos.ry) * 256 + crate::util::fixed_math::sim_to_i32(pos.sub_y),
-                z: i32::from(pos.z),
-            };
             if let Some(parent) =
-                ground_order.object_draw(entity.stable_id(), coord, SpriteEncoding::Plain)
+                ground_order.object_draw(entity.stable_id(), SpriteEncoding::Plain)
             {
                 ground_objects.push(PlannedGroundObjectInstance::object(
                     parent,
@@ -560,22 +553,9 @@ pub(crate) fn build_shp_instances(
         }
 
         if entity.category == EntityCategory::Structure {
-            let location = TacticalCoord {
-                x: i32::from(pos.rx) * 256 + crate::util::fixed_math::sim_to_i32(pos.sub_x),
-                y: i32::from(pos.ry) * 256 + crate::util::fixed_math::sim_to_i32(pos.sub_y),
-                z: i32::from(pos.z),
-            };
-            let actual_type = state
-                .rules()
-                .and_then(|rules| rules.object(sim.interner.resolve(entity.type_ref())));
-            if let Some(parent) = actual_type.and_then(|object_type| {
-                ground_order.building_object_draw(
-                    entity.stable_id(),
-                    location,
-                    object_type,
-                    SpriteEncoding::Plain,
-                )
-            }) {
+            if let Some(parent) =
+                ground_order.object_draw(entity.stable_id(), SpriteEncoding::Plain)
+            {
                 ground_objects.push(PlannedGroundObjectInstance::building(
                     parent,
                     building_pieces,

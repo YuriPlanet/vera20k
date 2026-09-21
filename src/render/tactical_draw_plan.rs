@@ -1,20 +1,12 @@
 //! Pure tactical draw planning before GPU atlas submission.
 //!
-//! This models the ordering authority only. The app layer lowers the resulting
-//! plan to atlas/page buffers; it does not replace wgpu or asset decoding.
+//! Simulation Display vectors own object order. This planner reassembles their
+//! positions after class-specific builders and preserves building piece order.
 
 use std::cmp::Ordering;
 
 /// Opaque identifier retained by render planning and its eventual GPU lowering.
 pub type DrawId = u64;
-
-/// Integer tactical coordinate in native world units.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TacticalCoord {
-    pub x: i32,
-    pub y: i32,
-    pub z: i32,
-}
 
 /// Coarse `LayerClass` bucket. Lower layers draw first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -128,27 +120,14 @@ impl CellPass {
     }
 }
 
-/// An object submitted to the depth-sorted `LayerClass` equivalent.
+/// An object already admitted to an authoritative Display vector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ObjectDraw {
     pub id: DrawId,
     pub layer: TacticalLayer,
-    pub coord: TacticalCoord,
-    /// Class-owned adjustment, such as an anim's YSortAdjust.
-    pub y_sort_adjust: i32,
-    /// Registration order resolves equal native Y-sort keys.
-    pub registration_order: u64,
+    /// Position in the retained Display vector, including its sort history.
+    pub display_order: u64,
     pub policy: BlitPolicy,
-}
-
-impl ObjectDraw {
-    /// `ObjectClass::GetYSort`: X + Y, then a caller-supplied class adjustment.
-    pub fn y_sort_key(self) -> i32 {
-        self.coord
-            .x
-            .wrapping_add(self.coord.y)
-            .wrapping_add(self.y_sort_adjust)
-    }
 }
 
 /// Building-owned pieces stay grouped inside their parent's object draw.
@@ -178,7 +157,7 @@ pub struct BuildingOwnedPlan {
     pub pieces: Vec<BuildingPiece>,
 }
 
-/// One entry in a depth-sorted layer.
+/// One entry in a retained Display layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LayerEntry {
     Object(ObjectDraw),
@@ -194,7 +173,7 @@ impl LayerEntry {
     }
 }
 
-/// Layer output after native-shaped integer sorting.
+/// Layer output in retained Display order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObjectLayerPass {
     pub layer: TacticalLayer,
@@ -209,7 +188,7 @@ pub enum TacticalDrawInput {
     Building(BuildingOwnedPlan),
 }
 
-/// Pure tactical render authority, modeled after `YR TacticalClass::Draw`.
+/// Presentation plan lowered from the simulation-owned Display vectors.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TacticalDrawPlan {
     pub cell_pass: CellPass,
@@ -217,29 +196,9 @@ pub struct TacticalDrawPlan {
 }
 
 impl TacticalDrawPlan {
-    /// Build fixed cell passes plus stable `LayerClass` object ordering.
-    /// RESIDUAL (GSI-13.12) — `render/tactical_compat.rs`, pass 1's named
-    /// suspect, is not an ordering path at all. The legacy world-effect bypass
-    /// pass 2 named is gone: bridge explosions are `AnimClass` objects. Their
-    /// types author no `Layer=`, so they default to `Top` and join the flat
-    /// registration-ordered stream, not this planner; only `Layer=Ground` and
-    /// owner-attached anims reach it.
-    /// - **`Submit_Object @ 0x004A9720` sorts only layer 2.** VERA Y-sorts every
-    ///   layer, so any two objects sharing another layer can swap against
-    ///   retail.
-    /// - Trigger: any frame with two objects in a non-ground layer.
-    /// - Player effect: one sprite draws in front of or behind another it
-    ///   should not.
-    /// - Frequency: bounded by that condition rather than continuous.
-    /// - Downstream risk: restricting the Y-sort to layer 2 shifts the render
-    ///   goldens.
-    ///
-    /// The owner-attached anim half of this row is CLOSED — GSI-05.12 removed
-    /// the short-circuit that used to keep burning-building fires out of this
-    /// planner. `AnimClass::GetLayer @ 0x00424CB0` forces layer 2 for any anim
-    /// carrying an owner, so `anim_render_destination` routes them through
-    /// `anim_object_draw` into the same `ground_objects` vector as buildings and
-    /// units, and they sort here on the same key.
+    /// Reassemble class-specific draws in retained Display order. The sim owns
+    /// Submit4A9720 and the single adjacent Ground pass551A30. Tactical6D8F19
+    /// walks each vector forward; a fresh full Y-sort here would erase history.
     pub fn build(inputs: impl IntoIterator<Item = TacticalDrawInput>) -> Self {
         let mut plan = Self::default();
         let mut entries = Vec::new();
@@ -258,7 +217,7 @@ impl TacticalDrawPlan {
             }
         }
 
-        // LayerClass uses ObjectClass::GetYSort with registration-order ties.
+        // Atlas emission order cannot replace the retained Display order.
         entries.sort_by(native_layer_order);
         for entry in entries {
             let object = entry.object();
@@ -296,8 +255,7 @@ fn native_layer_order(left: &LayerEntry, right: &LayerEntry) -> Ordering {
     let right = right.object();
     left.layer
         .cmp(&right.layer)
-        .then_with(|| left.y_sort_key().cmp(&right.y_sort_key()))
-        .then_with(|| left.registration_order.cmp(&right.registration_order))
+        .then_with(|| left.display_order.cmp(&right.display_order))
 }
 
 #[cfg(test)]
@@ -306,13 +264,11 @@ mod tests {
 
     const OPAQUE_SHP: BlitPolicy = BlitPolicy::opaque(SpriteEncoding::Plain);
 
-    fn object(id: DrawId, layer: u8, x: i32, y: i32, adjust: i32, registration: u64) -> ObjectDraw {
+    fn object(id: DrawId, layer: u8, display_order: u64) -> ObjectDraw {
         ObjectDraw {
             id,
             layer: TacticalLayer(layer),
-            coord: TacticalCoord { x, y, z: 0 },
-            y_sort_adjust: adjust,
-            registration_order: registration,
+            display_order,
             policy: OPAQUE_SHP,
         }
     }
@@ -369,13 +325,13 @@ mod tests {
     }
 
     #[test]
-    fn object_layers_use_integer_ysort_then_registration_order() {
+    fn object_layers_preserve_display_positions_across_builder_emission_order() {
         let plan = TacticalDrawPlan::build([
-            TacticalDrawInput::Object(object(1, 2, 300, 200, 0, 9)),
-            TacticalDrawInput::Object(object(2, 2, 100, 400, 0, 2)),
-            TacticalDrawInput::Object(object(3, 1, 999, 999, 0, 1)),
-            TacticalDrawInput::Object(object(4, 2, 200, 300, 0, 1)),
-            TacticalDrawInput::Object(object(5, 2, 200, 300, 32, 0)),
+            TacticalDrawInput::Object(object(1, 2, 9)),
+            TacticalDrawInput::Object(object(2, 2, 2)),
+            TacticalDrawInput::Object(object(3, 1, 1)),
+            TacticalDrawInput::Object(object(4, 2, 1)),
+            TacticalDrawInput::Object(object(5, 2, 0)),
         ]);
 
         assert_eq!(plan.object_layers.len(), 2);
@@ -386,14 +342,14 @@ mod tests {
                 .iter()
                 .map(|entry| entry.object().id)
                 .collect::<Vec<_>>(),
-            [4, 2, 1, 5]
+            [5, 4, 2, 1]
         );
     }
 
     #[test]
     fn building_pieces_remain_grouped_inside_global_parent_order() {
         let building = BuildingOwnedPlan {
-            parent: object(20, 2, 100, 100, 0, 1),
+            parent: object(20, 2, 1),
             pieces: vec![
                 BuildingPiece {
                     id: 21,
@@ -410,9 +366,9 @@ mod tests {
             ],
         };
         let plan = TacticalDrawPlan::build([
-            TacticalDrawInput::Object(object(10, 2, 50, 50, 0, 0)),
+            TacticalDrawInput::Object(object(10, 2, 0)),
             TacticalDrawInput::Building(building),
-            TacticalDrawInput::Object(object(30, 2, 200, 200, 0, 2)),
+            TacticalDrawInput::Object(object(30, 2, 2)),
         ]);
 
         let entries = &plan.object_layers[0].entries;

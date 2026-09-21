@@ -141,9 +141,13 @@ impl<'a> SimView<'a> {
         self.simulation.overlay_grid.as_ref()
     }
 
-    /// LogicClass active-object order — presentation draws in this order.
-    pub(crate) fn tactical_registration_order(&self) -> &'a [u64] {
-        self.simulation.tactical_registration_order()
+    /// Logic scheduling order, consumed separately by the radar pipeline.
+    pub(crate) fn logic_order(&self) -> &'a [u64] {
+        self.simulation.logic_order()
+    }
+
+    pub(crate) fn display_layers(&self) -> &'a super::world::display_layers::DisplayLayers {
+        self.simulation.display_layers()
     }
 
     /// Pending radar-terrain batch for the minimap dirty gate. Presentation

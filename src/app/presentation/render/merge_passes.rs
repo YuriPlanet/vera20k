@@ -116,7 +116,7 @@ impl<'tex, 'inst> DrawGroup<'tex, 'inst> {
 ///
 /// Every run is a contiguous slice of one flat instance buffer. Texture page,
 /// atlas family, and `SpriteInstance.depth` select only GPU state; none can
-/// change the signed integer parent order established by `TacticalDrawPlan`.
+/// change the retained Display parent order carried by `TacticalDrawPlan`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn draw_native_ground_object_pass<'a>(
     encoder: &mut wgpu::CommandEncoder,

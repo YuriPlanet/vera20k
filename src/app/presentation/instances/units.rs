@@ -283,7 +283,7 @@ pub(crate) fn build_unit_instances(
     let art_reg: Option<&crate::rules::art_data::ArtRegistry> =
         state.rules().map(|rules| &rules.art_registry);
 
-    let encounter_order = super::helpers::tactical_entity_encounter_order(sim, state.rules());
+    let encounter_order = super::helpers::tactical_entity_encounter_order(sim);
     for stable_id in encounter_order {
         let Some(entity) = sim.entities().get(stable_id) else {
             continue;
@@ -576,30 +576,10 @@ pub(crate) fn build_unit_instances(
         }
 
         if collect_ground && !ground_pieces.is_empty() {
-            let location = crate::render::tactical_draw_plan::TacticalCoord {
-                x: i32::from(pos.rx) * 256 + crate::util::fixed_math::sim_to_i32(pos.sub_x),
-                y: i32::from(pos.ry) * 256 + crate::util::fixed_math::sim_to_i32(pos.sub_y),
-                z: i32::from(pos.z),
-            };
-            let parent = if entity.category == EntityCategory::Structure {
-                state
-                    .rules()
-                    .and_then(|rules| rules.object(sim.interner.resolve(entity.type_ref())))
-                    .and_then(|object_type| {
-                        ground_order.building_object_draw(
-                            entity.stable_id(),
-                            location,
-                            object_type,
-                            crate::render::tactical_draw_plan::SpriteEncoding::Voxel,
-                        )
-                    })
-            } else {
-                ground_order.object_draw(
-                    entity.stable_id(),
-                    location,
-                    crate::render::tactical_draw_plan::SpriteEncoding::Voxel,
-                )
-            };
+            let parent = ground_order.object_draw(
+                entity.stable_id(),
+                crate::render::tactical_draw_plan::SpriteEncoding::Voxel,
+            );
             if let Some(parent) = parent {
                 ground_objects.push(PlannedGroundObjectInstance::object(parent, ground_pieces));
             }

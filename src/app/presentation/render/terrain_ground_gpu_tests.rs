@@ -5,12 +5,157 @@ use super::super::draw_plan_lowering::{
     GroundPieceInstance, PlannedGroundObjectInstance, lower_ground_object_instances,
 };
 use super::*;
-use crate::render::tactical_draw_plan::{
-    BlitPolicy, ObjectDraw, SpriteEncoding, TacticalCoord, TacticalLayer,
-};
+use crate::render::tactical_draw_plan::{BlitPolicy, ObjectDraw, SpriteEncoding, TacticalLayer};
 use crate::render::terrain_draw::{TerrainDrawRenderer, TerrainPiece};
 use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, encoded, extent, sprite};
 use wgpu::util::DeviceExt;
+
+#[test]
+#[ignore = "requires GPU; retained native Display history through production lowering and draw replay"]
+fn retained_ground_history_controls_overlapping_atlas_pixels() {
+    use super::super::draw_plan_lowering::NativeGroundOrder;
+    use crate::sim::world::display_layers::{DisplayLayer, DisplayLayers};
+
+    // Execute the same relocation/sort history as the original-instruction
+    // corpus. Stop after one pass: a fresh full sort has a different overlap.
+    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../../tools/spatial_oracle/crate_ground_membership.json"
+    ))
+    .unwrap();
+    let row = rows
+        .iter()
+        .find(|row| row["input"]["name"] == "one_adjacent_sort_pass_per_call")
+        .unwrap();
+    let mut display = DisplayLayers::default();
+    let mut keys: Vec<i32> = row["input"]["actors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|actor| 5376 + actor["delta"][0].as_i64().unwrap() as i32)
+        .collect();
+    for (step, observed) in row["input"]["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(row["after_steps"].as_array().unwrap())
+    {
+        let id = step["actor"].as_u64().map(|index| index + 1);
+        match step["op"].as_str().unwrap() {
+            "submit" => {
+                display.submit(id.unwrap(), Some(DisplayLayer::GROUND), |id| {
+                    keys[id as usize - 1]
+                });
+            }
+            "coordinates" => {
+                keys[id.unwrap() as usize - 1] =
+                    (step["xyz"][0].as_i64().unwrap() + step["xyz"][1].as_i64().unwrap()) as i32
+            }
+            "sort" => {
+                display.sort_ground_pass(|id| keys[id as usize - 1]);
+                let expected: Vec<_> = observed["layers"][2]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|id| id.as_u64().unwrap() + 1)
+                    .collect();
+                assert_eq!(display.members(DisplayLayer::GROUND), expected);
+                break;
+            }
+            op => panic!("unexpected {op}"),
+        }
+    }
+    // Save/restore must not replace retained history with freshly sorted keys.
+    let display: DisplayLayers =
+        bincode::deserialize(&bincode::serialize(&display).unwrap()).unwrap();
+    let order = NativeGroundOrder::new(display.members(DisplayLayer::GROUND));
+    let gpu = Gpu::new();
+    let size = [4, 2];
+    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
+    let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+    batch.write_camera(&gpu.queue, camera(size));
+    let color = gpu.target(size, format);
+    let cv = color.create_view(&Default::default());
+    let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+    let dv = depth.create_view(&Default::default());
+    let mut terrain = TerrainDrawRenderer::new(&gpu.device, format, &batch);
+    terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
+    let shp = SpriteAtlas::from_test_pages(
+        [[0, 252, 0, 255], [248, 0, 0, 255], [0, 0, 248, 255]]
+            .into_iter()
+            .map(|rgba| crate::render::sprite_atlas::SpriteAtlasPage {
+                texture: batch.create_texture_on_device(
+                    &gpu.device,
+                    &gpu.queue,
+                    &rgba,
+                    1,
+                    1,
+                    Some(&[1]),
+                ),
+            })
+            .collect(),
+    );
+    let ground = lower_ground_object_instances(
+        (1..=4)
+            .rev()
+            .map(|id| {
+                let (x, page) = match id {
+                    1 => (0., 0),
+                    2 => (2., 1),
+                    3 => (2., 2),
+                    4 => (0., 1),
+                    _ => unreachable!(),
+                };
+                PlannedGroundObjectInstance::object(
+                    order.object_draw(id, SpriteEncoding::Plain).unwrap(),
+                    vec![GroundPieceInstance {
+                        target: GroundTexture::ShpPage(page),
+                        render_z: RenderZPolicy::None,
+                        instance: sprite([x, 0.], [2., 2.], 0.),
+                    }],
+                )
+            })
+            .collect(),
+    );
+    assert_eq!(ground.owners, [2, 3, 4, 1]);
+    let mut pool = InstanceBufferPool::new();
+    pool.upload_on_device(&gpu.device, &gpu.queue, "ground_objects", &ground.instances);
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    clear(
+        &mut encoder,
+        &cv,
+        &dv,
+        65535,
+        wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+    );
+    draw_native_ground_object_pass(
+        &mut encoder,
+        &cv,
+        &dv,
+        &mut terrain,
+        [0, 0, 4, 2],
+        &batch,
+        &pool,
+        &ground,
+        None,
+        None,
+        &VxlSlopeTransitionCache::default(),
+        Some(&shp),
+        None,
+        batch.default_zshape_bind_group(),
+    );
+    let reads = [gpu.read(&mut encoder, &color)];
+    let output = gpu.finish(encoder, &reads, size);
+    assert_eq!(
+        &output[0][0..4],
+        encoded(0x07e0, format),
+        "last retained left sprite"
+    );
+    assert_eq!(
+        &output[0][8..12],
+        encoded(0x001f, format),
+        "retained order draws blue; full Y-sort would draw red"
+    );
+}
 
 #[test]
 #[ignore = "requires GPU; actual Ground lowering, atlas upload and voxel body/shadow replay"]
@@ -73,9 +218,7 @@ fn vehicle_shadow_after_body_preserves_body_and_clipped_read_only_depth() {
                 ObjectDraw {
                     id: i,
                     layer: TacticalLayer(2),
-                    coord: TacticalCoord { x: 0, y: 0, z: 0 },
-                    y_sort_adjust: 0,
-                    registration_order: i,
+                    display_order: i,
                     policy: BlitPolicy::z_read(SpriteEncoding::Plain),
                 },
                 vec![
@@ -302,9 +445,7 @@ fn tree_transactions_preserve_tmp_shp_voxel_overlap_and_coalesced_order() {
                         ObjectDraw {
                             id: id as u64,
                             layer: TacticalLayer(2),
-                            coord: TacticalCoord { x: 0, y: 0, z: 0 },
-                            y_sort_adjust: 0,
-                            registration_order: id as u64,
+                            display_order: id as u64,
                             policy: BlitPolicy::z_read(SpriteEncoding::Plain),
                         },
                         vec![GroundPieceInstance {
@@ -459,9 +600,7 @@ fn tree_batching_ground_fences_do_not_plan_ordinary_unit_instances() {
                     ObjectDraw {
                         id: i as u64,
                         layer: TacticalLayer(2),
-                        coord: TacticalCoord { x: 0, y: 0, z: 0 },
-                        y_sort_adjust: 0,
-                        registration_order: i as u64,
+                        display_order: i as u64,
                         policy: BlitPolicy::z_read(SpriteEncoding::Plain),
                     },
                     vec![GroundPieceInstance {

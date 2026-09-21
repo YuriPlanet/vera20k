@@ -18,73 +18,13 @@ use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
 use crate::util::fixed_math::SIM_ZERO;
 
-/// Produce the one entity encounter order shared by tactical rendering and
-/// input picking. Layer/Y-sort comes from `TacticalDrawPlan`; equal keys retain
-/// the live ObjectClass registration order rather than falling back to map-key
-/// order. Entities absent from the live vector are appended in creation order
-/// solely so pre-reveal test/dev objects retain the renderer's old visibility.
-pub(crate) fn tactical_entity_encounter_order(
-    sim: &crate::sim::world::Simulation,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
-) -> Vec<u64> {
-    use crate::render::tactical_draw_plan::{
-        BlitPolicy, ObjectDraw, SpriteEncoding, TacticalCoord, TacticalDrawInput, TacticalDrawPlan,
-        TacticalLayer,
-    };
-
-    let mut registered = Vec::with_capacity(sim.entities().len());
-    let mut seen = std::collections::BTreeSet::new();
-    for &id in sim.tactical_registration_order() {
-        if sim.entities().get(id).is_some() && seen.insert(id) {
-            registered.push(id);
-        }
-    }
-    for entity in sim.entities().values() {
-        if seen.insert(entity.stable_id()) {
-            registered.push(entity.stable_id());
-        }
-    }
-
-    let inputs = registered
-        .iter()
-        .enumerate()
-        .filter_map(|(registration, id)| {
-            let entity = sim.entities().get(*id)?;
-            let layer = match entity_draw_band(entity) {
-                EntityDrawBand::Ground => 2,
-                EntityDrawBand::Top => 4,
-            };
-            let location = TacticalCoord {
-                x: i32::from(entity.position.rx) * 256
-                    + crate::util::fixed_math::sim_to_i32(entity.position.sub_x),
-                y: i32::from(entity.position.ry) * 256
-                    + crate::util::fixed_math::sim_to_i32(entity.position.sub_y),
-                z: i32::from(entity.position.z),
-            };
-            let (coord, y_sort_adjust) = if entity.category == EntityCategory::Structure {
-                let object_type =
-                    rules.and_then(|rules| rules.object(sim.interner.resolve(entity.type_ref())));
-                crate::app::presentation::render::draw_plan_lowering::building_ground_order_parts(
-                    location,
-                    object_type.is_some_and(|object| object.turret_anim_is_voxel),
-                    object_type.is_some_and(|object| object.gate),
-                )
-            } else {
-                (location, 0)
-            };
-            Some(TacticalDrawInput::Object(ObjectDraw {
-                id: *id,
-                layer: TacticalLayer(layer),
-                coord,
-                y_sort_adjust,
-                registration_order: registration as u64,
-                policy: BlitPolicy::opaque(SpriteEncoding::Plain),
-            }))
-        });
-    TacticalDrawPlan::build(inputs)
-        .object_layers
-        .into_iter()
-        .flat_map(|layer| layer.entries.into_iter().map(|entry| entry.object().id))
+/// Tactical6D8F19..6D95A9 visits the five retained Display vectors forward.
+/// Store-only and Logic-only entities cannot become render/pick candidates.
+pub(crate) fn tactical_entity_encounter_order(sim: &crate::sim::world::Simulation) -> Vec<u64> {
+    sim.display_layers()
+        .ordered_ids()
+        .copied()
+        .filter(|id| sim.entities().get(*id).is_some())
         .collect()
 }
 
@@ -169,7 +109,6 @@ fn tactical_bounded_entity_encounter_order(
 
     compose_tactical_screen_entity_encounter_order(
         sim,
-        state.rules(),
         (min_x, min_y, max_x, max_y),
         local_owner.as_deref(),
         local_owner_id,
@@ -183,7 +122,6 @@ fn tactical_bounded_entity_encounter_order(
 #[allow(clippy::too_many_arguments)]
 fn compose_tactical_screen_entity_encounter_order(
     sim: &crate::sim::world::Simulation,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
     bounds: (f32, f32, f32, f32),
     local_owner: Option<&str>,
     local_owner_id: Option<InternedId>,
@@ -193,7 +131,17 @@ fn compose_tactical_screen_entity_encounter_order(
     bulk_register_live_buildings: bool,
 ) -> Vec<u64> {
     let (min_x, min_y, max_x, max_y) = bounds;
-    tactical_entity_encounter_order(sim, rules)
+    let mut candidates = tactical_entity_encounter_order(sim);
+    // Band-box preflight has a separate native bulk Building registration
+    // path. Ordinary picking/rendering never scans the unregistered store.
+    if bulk_register_live_buildings {
+        candidates.extend(sim.entities().values().filter_map(|entity| {
+            (entity.category == EntityCategory::Structure
+                && sim.display_layers().layer_of(entity.stable_id()).is_none())
+            .then_some(entity.stable_id())
+        }));
+    }
+    candidates
         .into_iter()
         .filter(|id| {
             sim.entities().get(*id).is_some_and(|entity| {
@@ -547,8 +495,32 @@ mod tests {
             .insert(GameEntity::test_default(1, "E1", "Americans", 10, 10));
         sim.entities_mut()
             .insert(GameEntity::test_default(2, "E1", "Americans", 10, 10));
-        sim.set_logic_order_for_test(vec![2, 1]);
-        assert_eq!(tactical_entity_encounter_order(&sim, None), [2, 1]);
+        sim.entities_mut().get_mut(2).unwrap().lifecycle.in_limbo = true;
+        sim.entities_mut().get_mut(1).unwrap().lifecycle.in_limbo = true;
+        sim.reveal(2);
+        sim.reveal(1);
+        sim.set_logic_order_for_test(vec![1, 2]);
+        assert_eq!(tactical_entity_encounter_order(&sim), [2, 1]);
+        sim.entities_mut()
+            .insert(GameEntity::test_default(3, "E1", "Americans", 10, 10));
+        sim.set_logic_order_for_test(vec![3, 1, 2]);
+        assert_eq!(
+            tactical_entity_encounter_order(&sim),
+            [2, 1],
+            "Logic/store membership is insufficient"
+        );
+        sim.conceal(2);
+        assert_eq!(
+            tactical_entity_encounter_order(&sim),
+            [1],
+            "conceal removes the pick/render candidate"
+        );
+        sim.reveal(2);
+        assert_eq!(
+            tactical_entity_encounter_order(&sim),
+            [1, 2],
+            "resubmission follows retained equal-key members"
+        );
     }
 
     #[test]
@@ -641,7 +613,8 @@ mod tests {
         let building_anchor = interpolated_screen_position_entity(&hidden_building);
         sim.entities_mut().insert(hidden_mobile);
         sim.entities_mut().insert(hidden_building);
-        sim.set_logic_order_for_test(vec![1, 2]);
+        sim.entities_mut().get_mut(1).unwrap().lifecycle.in_limbo = true;
+        sim.reveal(1);
 
         let bounds = (
             mobile_anchor.0.min(building_anchor.0) - 32.0,
@@ -651,7 +624,6 @@ mod tests {
         );
         let visible = compose_tactical_screen_entity_encounter_order(
             &sim,
-            None,
             bounds,
             Some("Americans"),
             Some(local_owner),
@@ -662,7 +634,6 @@ mod tests {
         );
         let preflight = compose_tactical_screen_entity_encounter_order(
             &sim,
-            None,
             bounds,
             Some("Americans"),
             Some(local_owner),

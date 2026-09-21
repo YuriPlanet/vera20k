@@ -553,7 +553,7 @@ Rate=120
     sim.spawn_wakes_for_frame(&rules);
 
     let wake_anims: Vec<u64> = sim
-        .tactical_registration_order()
+        .logic_order()
         .iter()
         .copied()
         .filter(|id| {
@@ -590,7 +590,7 @@ Rate=120
         .cached_current_speed = 0;
     sim.spawn_wakes_for_frame(&rules);
     let count_after = sim
-        .tactical_registration_order()
+        .logic_order()
         .iter()
         .filter(|id| {
             sim.anim(**id)

@@ -1,6 +1,7 @@
 //! DisplayClass lifecycle queries. The vectors belong to ObjectSubstrate;
 //! queries borrow the object stores without copying coordinates or sort keys.
-//! Presentation migration remains open.
+//! Ground rendering and entity picking consume the retained vectors. Upper-layer
+//! GPU interleaving and remaining locomotor resubmission writers are still open.
 //! Native query/membership comparisons: tools/spatial_oracle/display_non_entity.json.
 
 use super::Simulation;
@@ -225,6 +226,60 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::sim::movement::locomotor::LocomotorState;
     use crate::util::fixed_math::SimFixed;
+
+    #[test]
+    fn building_rules_key_terms_feed_display_submission() {
+        // Building459EF0 subtracts128 from X/Y; GetYSort449410 independently
+        // adds32 for TurretAnimIsVoxel and subtracts16 for Gate. Keep these
+        // regressions at the authority, not in the presentation planner.
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=NORMAL\n1=TURRET\n2=GATE\n3=BOTH\n\
+             [NORMAL]\nStrength=100\n[TURRET]\nStrength=100\nTurretAnimIsVoxel=yes\n\
+             [GATE]\nStrength=100\nGate=yes\n\
+             [BOTH]\nStrength=100\nTurretAnimIsVoxel=yes\nGate=yes\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        for (index, (name, expected)) in [
+            ("NORMAL", 7680),
+            ("TURRET", 7712),
+            ("GATE", 7664),
+            ("BOTH", 7696),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = index as u64 + 1;
+            let mut entity = GameEntity::new_at_frame_zero_for_test(
+                id,
+                10,
+                20,
+                13,
+                0,
+                owner,
+                crate::sim::components::Health { current: 100 },
+                sim.interner.intern(name),
+                EntityCategory::Structure,
+                0,
+                5,
+                false,
+            );
+            entity.position.sub_x = SimFixed::from_num(128);
+            entity.position.sub_y = SimFixed::from_num(128);
+            assert_eq!(
+                entity_sort_key(&entity, rules.object(name)),
+                expected,
+                "{name}"
+            );
+            sim.entities_mut().insert(entity);
+            sim.submit_object_display(id, DisplayLayer::GROUND, Some(&rules));
+        }
+        assert_eq!(
+            sim.display_layers().members(DisplayLayer::GROUND),
+            [3, 1, 4, 2]
+        );
+    }
 
     #[test]
     fn entity_layer_matches_original_queries() {

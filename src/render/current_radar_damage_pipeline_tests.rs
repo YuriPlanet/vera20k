@@ -409,7 +409,7 @@ fn gsi_04_01_production_tick_keeps_pavement_damage_through_ordinary_overlay_repa
             .simulation
             .fog
             .is_cell_visible(owner, CENTER.0, CENTER.1),
-        runtime.simulation.tactical_registration_order(),
+        runtime.simulation.logic_order(),
     );
     assert_eq!(runtime.simulation.radar_terrain_dirty_generation, 3);
     let mut uploaded_rgba = Vec::new();
