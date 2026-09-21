@@ -260,7 +260,7 @@ pub(super) fn detect_deferred_cell_check(
     current_object_list_layer: MovementLayer,
     occupancy: &OccupancyGrid,
     cell_occupation: &CellOccupationGrid,
-    live_building_entry_skips: &LiveBuildingEntrySkipMap,
+    live_building_entry_skips: &impl BuildingEntrySkipLookup,
 ) -> Option<DeferredCellCheck> {
     let object_list_layer = layer_context.object_list_layer;
     let occupancy_bits_layer = layer_context.occupancy_bits_layer;
@@ -277,16 +277,13 @@ pub(super) fn detect_deferred_cell_check(
     // can suppress specific building occupants such as refinery bib pads and
     // stable-open gates while preserving later blockers in the same cell list.
     let cell_occ = occupancy.get(next_cell.0, next_cell.1);
+    let ignored = live_building_entry_skips.skips_at(next_cell, occupancy);
+    let ignored = ignored.as_deref();
     if mover_category == EntityCategory::Infantry {
         if bit_only_block
             || cell_occ.is_some_and(|o| {
-                has_unignored_blocker_on(o, object_list_layer, next_cell, live_building_entry_skips)
-                    || has_unignored_blocker_on(
-                        o,
-                        occupancy_bits_layer,
-                        next_cell,
-                        live_building_entry_skips,
-                    )
+                has_unignored_blocker_on(o, object_list_layer, ignored)
+                    || has_unignored_blocker_on(o, occupancy_bits_layer, ignored)
                     || o.infantry(object_list_layer).next().is_some()
                     || o.infantry(occupancy_bits_layer).next().is_some()
             })
@@ -295,14 +292,9 @@ pub(super) fn detect_deferred_cell_check(
         }
     } else if bit_only_block
         || cell_occ.is_some_and(|o| {
-            has_unignored_blocker_on(o, object_list_layer, next_cell, live_building_entry_skips)
+            has_unignored_blocker_on(o, object_list_layer, ignored)
                 || o.infantry(object_list_layer).next().is_some()
-                || has_unignored_blocker_on(
-                    o,
-                    occupancy_bits_layer,
-                    next_cell,
-                    live_building_entry_skips,
-                )
+                || has_unignored_blocker_on(o, occupancy_bits_layer, ignored)
                 || o.infantry(occupancy_bits_layer).next().is_some()
         })
     {
@@ -315,124 +307,265 @@ pub(super) fn detect_deferred_cell_check(
 fn has_unignored_blocker_on(
     occ: &crate::sim::occupancy::CellOccupancy,
     layer: MovementLayer,
-    cell: (u16, u16),
-    live_building_entry_skips: &LiveBuildingEntrySkipMap,
+    ignored: Option<&BTreeSet<u64>>,
 ) -> bool {
-    let ignored = live_building_entry_skips.get(&cell);
     occ.iter_layer(layer).any(|occupant| {
         occupant.sub_cell.is_none() && !ignored.is_some_and(|ids| ids.contains(&occupant.entity_id))
     })
 }
 
+/// Which building occupants of a cell the mover's entry walk skips.
+pub(super) trait BuildingEntrySkipLookup {
+    fn skips_at(
+        &self,
+        cell: (u16, u16),
+        occupancy: &OccupancyGrid,
+    ) -> Option<std::borrow::Cow<'_, BTreeSet<u64>>>;
+}
+
+impl BuildingEntrySkipLookup for LiveBuildingEntrySkipMap {
+    fn skips_at(
+        &self,
+        cell: (u16, u16),
+        _occupancy: &OccupancyGrid,
+    ) -> Option<std::borrow::Cow<'_, BTreeSet<u64>>> {
+        self.get(&cell).map(std::borrow::Cow::Borrowed)
+    }
+}
+
+/// The mover's side of the building-entry exceptions, as its turn begins.
+#[derive(Debug, Clone)]
+pub(super) struct MoverBuildingEntryFacts {
+    category: EntityCategory,
+    capture_target: Option<u64>,
+    c4_target: Option<u64>,
+    contacts: crate::sim::radio::contacts::Contacts,
+}
+
+impl MoverBuildingEntryFacts {
+    /// `None` when no exception can apply: no rules, or a mover that is neither
+    /// a vehicle nor an infantryman.
+    pub(super) fn new(
+        mover: &crate::sim::game_entity::GameEntity,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+    ) -> Option<Self> {
+        rules?;
+        matches!(
+            mover.category,
+            EntityCategory::Unit | EntityCategory::Infantry
+        )
+        .then(|| Self {
+            category: mover.category,
+            capture_target: mover.capture_target,
+            c4_target: mover.c4_plant.map(|plant| plant.target_building_id),
+            contacts: mover.radio_contacts.clone(),
+        })
+    }
+}
+
+/// The building-entry exceptions read from the buildings on a cell's object
+/// list, as the native entry walk meets them. A building marks every cell of
+/// its foundation (`occupancy::entity_occupancy_cells`), which is the cell set
+/// the exceptions range over, so the list at a cell names every building that
+/// can be skipped there.
+#[derive(Clone, Copy)]
+pub(super) struct LiveBuildingEntrySkips<'a> {
+    pub mover: Option<&'a MoverBuildingEntryFacts>,
+    pub others: crate::sim::entity_store::OtherEntities<'a>,
+    pub rules: Option<&'a crate::rules::ruleset::RuleSet>,
+    pub interner: &'a crate::sim::intern::StringInterner,
+    /// Debug builds: the whole-world map built when `mover` was captured.
+    #[cfg(debug_assertions)]
+    pub check: Option<&'a LiveBuildingEntrySkipMap>,
+}
+
+impl BuildingEntrySkipLookup for LiveBuildingEntrySkips<'_> {
+    fn skips_at(
+        &self,
+        cell: (u16, u16),
+        occupancy: &OccupancyGrid,
+    ) -> Option<std::borrow::Cow<'_, BTreeSet<u64>>> {
+        let mut skipped = BTreeSet::new();
+        if let (Some(mover), Some(rules), Some(occupants)) =
+            (self.mover, self.rules, occupancy.get(cell.0, cell.1))
+        {
+            for occupant in occupants.occupants.iter().filter(|o| o.is_building) {
+                if let Some(building) = self.others.get(occupant.entity_id)
+                    && building_entry_skip_cells(mover, building, rules, self.interner)
+                        .contains(&cell)
+                {
+                    skipped.insert(occupant.entity_id);
+                }
+            }
+        }
+        let skipped = (!skipped.is_empty()).then_some(skipped);
+        #[cfg(debug_assertions)]
+        if let Some(check) = self.check {
+            debug_assert_eq!(
+                skipped.as_ref(),
+                check.get(&cell),
+                "live building entry skips at {cell:?} diverged from the turn-start map"
+            );
+        }
+        skipped.map(std::borrow::Cow::Owned)
+    }
+}
+
+/// [`LiveBuildingEntrySkips`] before it is given the entities it may read.
+#[derive(Clone, Copy)]
+pub(super) struct DeferredBuildingEntrySkips<'a> {
+    pub mover: Option<&'a MoverBuildingEntryFacts>,
+    pub rules: Option<&'a crate::rules::ruleset::RuleSet>,
+    pub interner: &'a crate::sim::intern::StringInterner,
+    #[cfg(debug_assertions)]
+    pub check: Option<&'a LiveBuildingEntrySkipMap>,
+}
+
+impl<'a> DeferredBuildingEntrySkips<'a> {
+    pub(super) fn reading(
+        self,
+        others: crate::sim::entity_store::OtherEntities<'a>,
+    ) -> LiveBuildingEntrySkips<'a> {
+        LiveBuildingEntrySkips {
+            mover: self.mover,
+            others,
+            rules: self.rules,
+            interner: self.interner,
+            #[cfg(debug_assertions)]
+            check: self.check,
+        }
+    }
+}
+
+/// The foundation cells at which `building` is skipped for this mover.
+fn building_entry_skip_cells(
+    mover: &MoverBuildingEntryFacts,
+    building: &crate::sim::game_entity::GameEntity,
+    rules: &crate::rules::ruleset::RuleSet,
+    interner: &crate::sim::intern::StringInterner,
+) -> Vec<(u16, u16)> {
+    let vehicle_row_helpers = mover.category == EntityCategory::Unit;
+    let gate_helpers = matches!(
+        mover.category,
+        EntityCategory::Unit | EntityCategory::Infantry
+    );
+    // A Dying building corpse no longer offers gate/bunker/bib entry cells.
+    if building.dying
+        || !building.lifecycle.cell_marked
+        || building.category != EntityCategory::Structure
+    {
+        return Vec::new();
+    }
+    let Some(obj) = rules.object(interner.resolve(building.type_ref())) else {
+        return Vec::new();
+    };
+    let gate_skip = gate_helpers
+        && obj.gate
+        && building
+            .building_gate
+            .is_some_and(|state| state.can_garrison_passable());
+    let infantry_entry_target = mover.category == EntityCategory::Infantry
+        && (mover.capture_target == Some(building.stable_id())
+            || mover.c4_target == Some(building.stable_id()));
+    let has_contact = vehicle_row_helpers && mover.contacts.contains(building.stable_id());
+    let has_vehicle_exception =
+        vehicle_row_helpers && (has_contact || obj.unit_repair || obj.bunker || obj.bib);
+    if !has_vehicle_exception && !gate_skip && !infantry_entry_target {
+        return Vec::new();
+    }
+    let is_bunker_occupied = obj.bunker
+        && (building.bunker_occupant.is_some()
+            || building
+                .passenger_role
+                .cargo()
+                .is_some_and(|cargo| cargo.count() > 0));
+    let foundation_cells = crate::sim::production::building_base_foundation_cells(
+        building.position.rx,
+        building.position.ry,
+        &obj.foundation,
+    );
+    let foundation_cell_set: BTreeSet<(u16, u16)> = foundation_cells.iter().copied().collect();
+    let mut skipped = Vec::new();
+    for (cx, cy) in foundation_cells {
+        let (contact_skip, second_callsite_skip) = if vehicle_row_helpers {
+            let input = LiveVehicleBuildingEntry {
+                mover_category: mover.category,
+                branch: VehicleBuildingEntryBranch::RadioContact {
+                    mover_has_contact: has_contact,
+                },
+                checked_building_id: building.stable_id(),
+                candidate_building_id: Some(building.stable_id()),
+                candidate_x: cx,
+                building_origin_x: building.position.rx,
+                number_impassable_rows: obj.number_impassable_rows,
+                is_unit_repair: obj.unit_repair,
+                is_bunker: obj.bunker,
+                bunker_occupied: is_bunker_occupied,
+            };
+            (
+                cell_entry::decide_live_vehicle_building_entry(input),
+                cell_entry::decide_live_vehicle_building_entry(LiveVehicleBuildingEntry {
+                    branch: VehicleBuildingEntryBranch::UnitRepairOrBunker,
+                    ..input
+                }),
+            )
+        } else {
+            (
+                BuildingOccupantEntryDecision::KeepBlocker,
+                BuildingOccupantEntryDecision::KeepBlocker,
+            )
+        };
+        let bib_skip = vehicle_row_helpers
+            && obj.bib
+            && cx
+                .checked_add(1)
+                .is_some_and(|east_x| !foundation_cell_set.contains(&(east_x, cy)));
+        if matches!(contact_skip, BuildingOccupantEntryDecision::SkipBlocker)
+            || matches!(
+                second_callsite_skip,
+                BuildingOccupantEntryDecision::SkipBlocker
+            )
+            || bib_skip
+            || gate_skip
+            || infantry_entry_target
+        {
+            skipped.push((cx, cy));
+        }
+    }
+    skipped
+}
+
+/// Whether debug builds compare the movement pass's derived inputs with a
+/// fresh whole-world build: the live per-turn reads (marker peers, building
+/// entry skips) and the cached blocker plane. Never in release. On in debug
+/// unless `VERA20K_SKIP_LIVE_READ_CHECK` is set, which the scale benchmark uses
+/// to time the pass without the O(entities) rebuilds the checks cost every
+/// turn. It only removes assertions, so it cannot change a result.
+pub(super) fn live_read_check_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    cfg!(debug_assertions)
+        && *ENABLED.get_or_init(|| std::env::var_os("VERA20K_SKIP_LIVE_READ_CHECK").is_none())
+}
+
+/// Every cell's skips at once: O(entities). Tests, and the debug-build check
+/// of the live reads.
+#[cfg(any(test, debug_assertions))]
 pub(super) fn build_live_building_entry_skip_map(
     entities: &crate::sim::entity_store::EntityStore,
     mover_id: u64,
     interner: &crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> LiveBuildingEntrySkipMap {
-    let Some(rules) = rules else {
-        return LiveBuildingEntrySkipMap::new();
-    };
-    let Some(mover) = entities.get(mover_id) else {
-        return LiveBuildingEntrySkipMap::new();
-    };
-    let vehicle_row_helpers = mover.category == EntityCategory::Unit;
-    let gate_helpers = matches!(
-        mover.category,
-        EntityCategory::Unit | EntityCategory::Infantry
-    );
-    if !vehicle_row_helpers && !gate_helpers {
-        return LiveBuildingEntrySkipMap::new();
-    }
-
     let mut skips = LiveBuildingEntrySkipMap::new();
+    let (Some(rules), Some(mover)) = (rules, entities.get(mover_id)) else {
+        return skips;
+    };
+    let Some(mover) = MoverBuildingEntryFacts::new(mover, Some(rules)) else {
+        return skips;
+    };
     for building in entities.values() {
-        // A Dying building corpse no longer offers gate/bunker/bib entry cells.
-        if building.dying || !building.lifecycle.cell_marked {
-            continue;
-        }
-        if building.category != EntityCategory::Structure {
-            continue;
-        }
-        let Some(obj) = rules.object(interner.resolve(building.type_ref())) else {
-            continue;
-        };
-        let gate_skip = gate_helpers
-            && obj.gate
-            && building
-                .building_gate
-                .is_some_and(|state| state.can_garrison_passable());
-        let infantry_entry_target = mover.category == EntityCategory::Infantry
-            && (mover.capture_target == Some(building.stable_id())
-                || mover
-                    .c4_plant
-                    .is_some_and(|plant| plant.target_building_id == building.stable_id()));
-        let has_contact = vehicle_row_helpers && mover.has_live_contact_with(building.stable_id());
-        let has_vehicle_exception =
-            vehicle_row_helpers && (has_contact || obj.unit_repair || obj.bunker || obj.bib);
-        if !has_vehicle_exception && !gate_skip && !infantry_entry_target {
-            continue;
-        }
-        let is_bunker_occupied = obj.bunker
-            && (building.bunker_occupant.is_some()
-                || building
-                    .passenger_role
-                    .cargo()
-                    .is_some_and(|cargo| cargo.count() > 0));
-        let foundation_cells = crate::sim::production::building_base_foundation_cells(
-            building.position.rx,
-            building.position.ry,
-            &obj.foundation,
-        );
-        let foundation_cell_set: BTreeSet<(u16, u16)> = foundation_cells.iter().copied().collect();
-        for (cx, cy) in foundation_cells {
-            let (contact_skip, second_callsite_skip) = if vehicle_row_helpers {
-                let input = LiveVehicleBuildingEntry {
-                    mover_category: mover.category,
-                    branch: VehicleBuildingEntryBranch::RadioContact {
-                        mover_has_contact: has_contact,
-                    },
-                    checked_building_id: building.stable_id(),
-                    candidate_building_id: Some(building.stable_id()),
-                    candidate_x: cx,
-                    building_origin_x: building.position.rx,
-                    number_impassable_rows: obj.number_impassable_rows,
-                    is_unit_repair: obj.unit_repair,
-                    is_bunker: obj.bunker,
-                    bunker_occupied: is_bunker_occupied,
-                };
-                (
-                    cell_entry::decide_live_vehicle_building_entry(input),
-                    cell_entry::decide_live_vehicle_building_entry(LiveVehicleBuildingEntry {
-                        branch: VehicleBuildingEntryBranch::UnitRepairOrBunker,
-                        ..input
-                    }),
-                )
-            } else {
-                (
-                    BuildingOccupantEntryDecision::KeepBlocker,
-                    BuildingOccupantEntryDecision::KeepBlocker,
-                )
-            };
-            let bib_skip = vehicle_row_helpers
-                && obj.bib
-                && cx
-                    .checked_add(1)
-                    .is_some_and(|east_x| !foundation_cell_set.contains(&(east_x, cy)));
-            if matches!(contact_skip, BuildingOccupantEntryDecision::SkipBlocker)
-                || matches!(
-                    second_callsite_skip,
-                    BuildingOccupantEntryDecision::SkipBlocker
-                )
-                || bib_skip
-                || gate_skip
-                || infantry_entry_target
-            {
-                skips
-                    .entry((cx, cy))
-                    .or_default()
-                    .insert(building.stable_id());
-            }
+        for cell in building_entry_skip_cells(&mover, building, rules, interner) {
+            skips.entry(cell).or_default().insert(building.stable_id());
         }
     }
     skips
@@ -493,7 +626,10 @@ fn bridge_marker_context_with_peers<'a>(
     context: crate::sim::movement::path_markers::BridgeMarkerContext<'a>,
     peers: &'a crate::sim::movement::path_markers::BridgeMarkerPeerSnapshot,
 ) -> crate::sim::movement::path_markers::BridgeMarkerContext<'a> {
-    crate::sim::movement::path_markers::BridgeMarkerContext { peers, ..context }
+    crate::sim::movement::path_markers::BridgeMarkerContext {
+        peers: crate::sim::movement::path_markers::BridgeMarkerPeers::Snapshot(peers),
+        ..context
+    }
 }
 
 /// Handle the deferred occupancy check — runs outside the mutable entity borrow
@@ -514,7 +650,7 @@ pub(super) fn handle_deferred_occupancy(
     occupancy: &mut OccupancyGrid,
     cell_occupation: &mut CellOccupationGrid,
     raw_cell_occupation: &RawCellOccupationGrid,
-    live_building_entry_skips: &LiveBuildingEntrySkipMap,
+    live_building_entry_skips: DeferredBuildingEntrySkips<'_>,
     alliances: &HouseAllianceMap,
     path_grid: Option<&PathGrid>,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
@@ -526,7 +662,7 @@ pub(super) fn handle_deferred_occupancy(
     sim_tick: u64,
     interner: &crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    marker_context: Option<crate::sim::movement::path_markers::BridgeMarkerContext<'_>>,
+    deferred_marker: Option<crate::sim::movement::path_markers::DeferredBridgeMarker<'_>>,
     slave_bindings: Option<&std::collections::BTreeMap<u64, Vec<u64>>>,
 ) -> (Vec<(u32, DebugEventKind)>, bool) {
     let mut debug_events: Vec<(u32, DebugEventKind)> = Vec::new();
@@ -569,6 +705,12 @@ pub(super) fn handle_deferred_occupancy(
                 interner,
             },
         );
+    // Buildings are never the mover, so the whole store reads the same as the
+    // store with the mover lifted out.
+    let ignored_buildings = live_building_entry_skips
+        .reading(crate::sim::entity_store::OtherEntities::whole(entities))
+        .skips_at((nx, ny), occupancy)
+        .map(std::borrow::Cow::into_owned);
     let entry_result = cell_entry::classify_occupied_cell_with_occupation_and_slave_query(
         (nx, ny),
         layer_context,
@@ -577,7 +719,7 @@ pub(super) fn handle_deferred_occupancy(
         interner.resolve(snap.owner),
         mover_loco_kind,
         snap.bypass_grid,
-        live_building_entry_skips.get(&(nx, ny)),
+        ignored_buildings.as_ref(),
         occupancy,
         cell_occupation,
         raw_cell_occupation,
@@ -664,7 +806,10 @@ pub(super) fn handle_deferred_occupancy(
             // Native code 3 is a soft blocked result for allied gate/building
             // contact. The opener request has already been issued above; the
             // mover must wait/repath instead of entering this occupied cell.
-            if let Some(entity) = entities.get_mut(entity_id) {
+            if let Some(mut turn) = entities.take_turn(entity_id) {
+                let (entity, others) = turn.split();
+                let marker_context =
+                    deferred_marker.map(|marker| marker.reading(others, raw_cell_occupation));
                 if mover_loco_kind != LocomotorKind::Walk {
                     snap_motion_to_cell_center(&mut entity.position);
                 }
@@ -853,7 +998,10 @@ pub(super) fn handle_deferred_occupancy(
             }
             // Mover waits — blocker is walking away. If scatter failed,
             // fall through to handle_blocked_tick for repath.
-            if let Some(entity) = entities.get_mut(entity_id) {
+            if let Some(mut turn) = entities.take_turn(entity_id) {
+                let (entity, others) = turn.split();
+                let marker_context =
+                    deferred_marker.map(|marker| marker.reading(others, raw_cell_occupation));
                 if mover_loco_kind != LocomotorKind::Walk {
                     snap_motion_to_cell_center(&mut entity.position);
                 }
@@ -1044,7 +1192,10 @@ pub(super) fn handle_deferred_occupancy(
                 if !finished_entities.contains(&entity_id) {
                     finished_entities.push(entity_id);
                 }
-            } else if let Some(entity) = entities.get_mut(entity_id) {
+            } else if let Some(mut turn) = entities.take_turn(entity_id) {
+                let (entity, others) = turn.split();
+                let marker_context =
+                    deferred_marker.map(|marker| marker.reading(others, raw_cell_occupation));
                 if mover_loco_kind != LocomotorKind::Walk {
                     snap_motion_to_cell_center(&mut entity.position);
                 }
@@ -1157,9 +1308,11 @@ pub(super) fn handle_deferred_occupancy(
                 //
                 // Walk ProcessMovement 0x75B8A0..0x75B9F9 (code 2) only waits and
                 // repaths, and so - now - does Drive.
-                let effective_marker_context = marker_context;
-                // Re-borrow the mover: the classification above released it.
-                if let Some(entity) = entities.get_mut(entity_id) {
+                // Lift the mover out again: the classification above released it.
+                if let Some(mut turn) = entities.take_turn(entity_id) {
+                    let (entity, others) = turn.split();
+                    let effective_marker_context =
+                        deferred_marker.map(|marker| marker.reading(others, raw_cell_occupation));
                     let cur_pos = (entity.position.rx, entity.position.ry);
                     let body_facing = entity.body_facing;
                     if let Some(ref mut target) = entity.movement_target {
@@ -1206,7 +1359,10 @@ pub(super) fn handle_deferred_occupancy(
         | CellEntryResult::EnemyWall
         | CellEntryResult::Impassable => {
             // Shouldn't reach here from NeedsBlockerCheck, but handle gracefully.
-            if let Some(entity) = entities.get_mut(entity_id) {
+            if let Some(mut turn) = entities.take_turn(entity_id) {
+                let (entity, others) = turn.split();
+                let marker_context =
+                    deferred_marker.map(|marker| marker.reading(others, raw_cell_occupation));
                 if mover_loco_kind != LocomotorKind::Walk {
                     snap_motion_to_cell_center(&mut entity.position);
                 }
@@ -1263,6 +1419,54 @@ mod tests {
     use crate::sim::intern::test_interner;
     use crate::sim::occupancy::{CellListInsertion, RawCellOccupationGrid};
 
+    /// The production lookup asked about every cell of a window, which must be
+    /// the whole-world map exactly: same cells, same ids, and never an empty
+    /// set (`cell_entry` branches on `ignored_blockers.is_some()`).
+    fn live_skip_map(
+        entities: &EntityStore,
+        mover_id: u64,
+        interner: &crate::sim::intern::StringInterner,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> LiveBuildingEntrySkipMap {
+        // Construction copies the type's `Foundation=` onto the entity
+        // (`world/construction.rs`), and that copy is what marks the cells. The
+        // fixtures build their structures by hand, so do the same for them.
+        let mut entities = entities.clone();
+        for structure in entities.values_mut() {
+            if let Some(object) = rules.object(interner.resolve(structure.type_ref())) {
+                structure.foundation = object.foundation.clone();
+            }
+        }
+        let entities = &entities;
+        let occupancy = OccupancyGrid::rebuild(entities);
+        let mover = entities
+            .get(mover_id)
+            .and_then(|mover| MoverBuildingEntryFacts::new(mover, Some(rules)));
+        let live = DeferredBuildingEntrySkips {
+            mover: mover.as_ref(),
+            rules: Some(rules),
+            interner,
+            #[cfg(debug_assertions)]
+            check: None,
+        }
+        .reading(crate::sim::entity_store::OtherEntities::whole(entities));
+        let mut map = LiveBuildingEntrySkipMap::new();
+        for x in 0..48 {
+            for y in 0..48 {
+                if let Some(ids) = live.skips_at((x, y), &occupancy) {
+                    assert!(!ids.is_empty(), "an empty skip set at {:?}", (x, y));
+                    map.insert((x, y), ids.into_owned());
+                }
+            }
+        }
+        assert_eq!(
+            map,
+            build_live_building_entry_skip_map(entities, mover_id, interner, Some(rules)),
+            "the per-cell lookup and the whole-world map disagree"
+        );
+        map
+    }
+
     #[test]
     fn gsi_04_12_marker_deferred_repath_refreshes_same_tick_scatter_path() {
         let ini = crate::rules::ini_parser::IniFile::from_str(
@@ -1314,7 +1518,7 @@ mod tests {
         );
         let stale_context = crate::sim::movement::path_markers::BridgeMarkerContext {
             enabled: true,
-            peers: &stale_peers,
+            peers: crate::sim::movement::path_markers::BridgeMarkerPeers::Snapshot(&stale_peers),
             raw_occupation: &raw_occupation,
             grid: &grid,
             terrain: None,
@@ -1657,7 +1861,7 @@ mod tests {
         entities.insert(refinery);
         let interner = crate::sim::intern::test_interner();
 
-        let skips = build_live_building_entry_skip_map(&entities, 1, &interner, Some(&rules));
+        let skips = live_skip_map(&entities, 1, &interner, &rules);
 
         assert!(skips.get(&(13, 11)).is_some_and(|ids| ids.contains(&100)));
         assert!(!skips.get(&(12, 11)).is_some_and(|ids| ids.contains(&100)));
@@ -1688,7 +1892,7 @@ mod tests {
         entities.insert(refinery);
         let interner = crate::sim::intern::test_interner();
 
-        let skips = build_live_building_entry_skip_map(&entities, 1, &interner, Some(&rules));
+        let skips = live_skip_map(&entities, 1, &interner, &rules);
 
         assert!(skips.get(&(13, 11)).is_some_and(|ids| ids.contains(&100)));
         assert!(!skips.get(&(12, 11)).is_some_and(|ids| ids.contains(&100)));
@@ -1724,7 +1928,7 @@ mod tests {
         entities.insert(gate);
         let interner = crate::sim::intern::test_interner();
 
-        let skips = build_live_building_entry_skip_map(&entities, 1, &interner, Some(&rules));
+        let skips = live_skip_map(&entities, 1, &interner, &rules);
         assert!(skips.get(&(10, 10)).is_some_and(|ids| ids.contains(&100)));
         assert!(skips.get(&(11, 10)).is_some_and(|ids| ids.contains(&100)));
         assert!(skips.get(&(12, 10)).is_some_and(|ids| ids.contains(&100)));
@@ -1734,7 +1938,7 @@ mod tests {
             phase: BuildingGatePhase::Opening,
             ..Default::default()
         });
-        let skips = build_live_building_entry_skip_map(&entities, 1, &interner, Some(&rules));
+        let skips = live_skip_map(&entities, 1, &interner, &rules);
         assert!(!skips.get(&(10, 10)).is_some_and(|ids| ids.contains(&100)));
 
         entities.get_mut(100).unwrap().building_gate = Some(BuildingGateRuntime {
@@ -1742,7 +1946,7 @@ mod tests {
             phase: BuildingGatePhase::OpenStable,
             ..Default::default()
         });
-        let skips = build_live_building_entry_skip_map(&entities, 1, &interner, Some(&rules));
+        let skips = live_skip_map(&entities, 1, &interner, &rules);
         assert!(!skips.get(&(10, 10)).is_some_and(|ids| ids.contains(&100)));
     }
 
@@ -1775,7 +1979,7 @@ mod tests {
         entities.insert(gate);
         let interner = crate::sim::intern::test_interner();
 
-        let skips = build_live_building_entry_skip_map(&entities, 1, &interner, Some(&rules));
+        let skips = live_skip_map(&entities, 1, &interner, &rules);
 
         assert!(skips.get(&(10, 10)).is_some_and(|ids| ids.contains(&100)));
     }
@@ -1806,7 +2010,7 @@ mod tests {
 
         // Empty bunker: the footprint cell is row-exempt (vehicle exception),
         // so a vehicle may path through it.
-        let skips = build_live_building_entry_skip_map(&entities, 1, &interner, Some(&rules));
+        let skips = live_skip_map(&entities, 1, &interner, &rules);
         assert!(
             skips.get(&(10, 10)).is_some_and(|ids| ids.contains(&100)),
             "empty bunker footprint is passable"
@@ -1815,7 +2019,7 @@ mod tests {
         // Occupied bunker: the gate that was previously dead (bunker_occupant
         // read-but-never-set) is now live — the footprint blocks again.
         entities.get_mut(100).unwrap().bunker_occupant = Some(1);
-        let skips = build_live_building_entry_skip_map(&entities, 1, &interner, Some(&rules));
+        let skips = live_skip_map(&entities, 1, &interner, &rules);
         assert!(
             !skips.get(&(10, 10)).is_some_and(|ids| ids.contains(&100)),
             "occupied bunker footprint blocks"

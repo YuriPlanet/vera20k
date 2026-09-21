@@ -44,11 +44,12 @@ use super::drive_locomotion;
 use super::locomotor::{GroundMovePhase, MovementLayer};
 use super::movement_bridge::{BRIDGE_Z_OFFSET, apply_pending_bridge_render_state};
 use super::movement_occupancy::{
-    DeferredCellCheck, build_live_building_entry_skip_map, handle_deferred_occupancy,
+    DeferredBuildingEntrySkips, DeferredCellCheck, MoverBuildingEntryFacts,
+    handle_deferred_occupancy,
 };
 use super::movement_path::{find_move_path, supports_layered_bridge_pathing};
 use super::movement_step;
-use super::path_markers::{BridgeMarkerContext, snapshot_bridge_marker_peers};
+use super::path_markers::{DeferredBridgeMarker, bridge_marker_peer};
 use super::tube_movement;
 use super::{
     MIN_BRAKE_FRACTION, MovementConfig, MovementTickStats, MoverSnapshot, PATH_STUCK_INIT,
@@ -699,11 +700,14 @@ fn handle_deferred_drive_selection_block(
     stats: &mut MovementTickStats,
     finished_entities: &mut Vec<u64>,
     sim_tick: u64,
-    marker_context: Option<crate::sim::movement::path_markers::BridgeMarkerContext<'_>>,
+    deferred_marker: Option<DeferredBridgeMarker<'_>>,
+    raw_cell_occupation: &RawCellOccupationGrid,
 ) -> Vec<(u32, DebugEventKind)> {
-    let Some(entity) = entities.get_mut(entity_id) else {
+    let Some(mut turn) = entities.take_turn(entity_id) else {
         return Vec::new();
     };
+    let (entity, others) = turn.split();
+    let marker_context = deferred_marker.map(|marker| marker.reading(others, raw_cell_occupation));
     let cur_pos = (entity.position.rx, entity.position.ry);
     let body_facing = entity.body_facing;
     let Some(ref mut target) = entity.movement_target else {
@@ -768,7 +772,7 @@ pub(super) fn classify_track_entry(
     cell_occupation: &CellOccupationGrid,
     raw_cell_occupation: &RawCellOccupationGrid,
     current_frame: u32,
-    live_building_entry_skips: &super::movement_occupancy::LiveBuildingEntrySkipMap,
+    live_building_entry_skips: &impl super::movement_occupancy::BuildingEntrySkipLookup,
     entities: &EntityStore,
     alliances: &HouseAllianceMap,
     interner: &crate::sim::intern::StringInterner,
@@ -833,7 +837,9 @@ pub(super) fn classify_track_entry(
         interner.resolve(snap.owner),
         mover_loco_kind,
         snap.bypass_grid,
-        live_building_entry_skips.get(&query.target_cell),
+        live_building_entry_skips
+            .skips_at(query.target_cell, occupancy)
+            .as_deref(),
         occupancy,
         cell_occupation,
         raw_cell_occupation,
@@ -1200,12 +1206,45 @@ fn advance_ordinary_mover(
         .get(&snap.owner)
         .map(|(b, m)| (Some(b), Some(m)))
         .unwrap_or((None, None));
-    let live_building_entry_skips =
-        build_live_building_entry_skip_map(entities, entity_id, interner, rules);
+    // The mover's side of the building-entry exceptions as its turn begins; the
+    // buildings are read live from each queried cell's object list.
+    let mover_building_entry_facts = entities
+        .get(entity_id)
+        .and_then(|mover| MoverBuildingEntryFacts::new(mover, rules));
+    #[cfg(debug_assertions)]
+    let building_entry_skip_check =
+        super::movement_occupancy::live_read_check_enabled().then(|| {
+            super::movement_occupancy::build_live_building_entry_skip_map(
+                entities, entity_id, interner, rules,
+            )
+        });
+    let deferred_entry_skips = DeferredBuildingEntrySkips {
+        mover: mover_building_entry_facts.as_ref(),
+        rules,
+        interner,
+        #[cfg(debug_assertions)]
+        check: building_entry_skip_check.as_ref(),
+    };
 
-    let marker_peers = snapshot_bridge_marker_peers(entities, rules, interner);
+    // The mover's own marker-peer facts as its turn begins; every other peer is
+    // read live from the store while the mover is lifted out of it.
+    let mover_marker_peer = bridge_marker_peer(entities, entity_id, rules, interner);
+    #[cfg(debug_assertions)]
+    let marker_peer_check = super::movement_occupancy::live_read_check_enabled()
+        .then(|| super::path_markers::snapshot_bridge_marker_peers(entities, rules, interner));
+    let deferred_marker = path_grid.map(|grid| DeferredBridgeMarker {
+        mover_id: entity_id,
+        mover: mover_marker_peer.as_ref(),
+        rules,
+        interner,
+        #[cfg(debug_assertions)]
+        check: marker_peer_check.as_ref(),
+        grid,
+        terrain: resolved_terrain,
+        playfield_bounds,
+        native_frame,
+    });
 
-    let marker_context;
     let mut aborted_for_stuck: bool = false;
     let mut active_layer: MovementLayer;
     let mut debug_events: Vec<(u32, DebugEventKind)> = Vec::new();
@@ -1218,14 +1257,16 @@ fn advance_ordinary_mover(
     let mut deferred_drive_selection_block: Option<movement_step::DriveSelectionRefusal> = None;
     let mut already_finished: bool = false;
 
-    // Scoped mutable borrow of the entity — released at block end so the
-    // vehicle crush/bump check below can do immutable EntityStore lookups.
+    // The mover is lifted out of the store for each scope below, so it can be
+    // mutated while the other entities are read live. The scopes end before the
+    // deferred handlers, which need the whole store mutably.
     let marker_body_facing = entities.get(entity_id).and_then(|e| e.body_facing);
     'mover: {
         {
-            let Some(entity) = entities.get_mut(entity_id) else {
+            let Some(mut turn) = entities.take_turn(entity_id) else {
                 return;
             };
+            let (entity, others) = turn.split();
             // S4a (Option B): the per-object mission dispatch (`+0xC4` tick
             // counter + `derived_mission` commit) was relocated to the object-AI
             // host stage (pre-movement, LogicVector order), so it no longer
@@ -1356,15 +1397,8 @@ fn advance_ordinary_mover(
                     && l.step_head().is_none()
             }) {
                 let before = entity.position.clone();
-                let admission_context = path_grid.map(|grid| BridgeMarkerContext {
-                    enabled: true,
-                    peers: &marker_peers,
-                    raw_occupation: raw_cell_occupation,
-                    grid,
-                    terrain: resolved_terrain,
-                    playfield_bounds,
-                    native_frame,
-                });
+                let admission_context =
+                    deferred_marker.map(|marker| marker.reading(others, raw_cell_occupation));
                 let admission = movement_step::process_cell_crossings(
                     &mut entity.foot_occupation_enabled,
                     &mut entity.navigation.path_replay,
@@ -1387,7 +1421,7 @@ fn advance_ordinary_mover(
                     entity_cost_grid,
                     mover_entity_blocks,
                     mover_entity_block_map,
-                    &live_building_entry_skips,
+                    &deferred_entry_skips.reading(others),
                     occupancy,
                     cell_occupation,
                     &mut entity.occupancy_enter_order,
@@ -1411,15 +1445,6 @@ fn advance_ordinary_mover(
                     aborted_for_stuck = admission.aborted_for_stuck;
                     debug_events.extend(admission.debug_events);
                     if deferred_cell_check.is_none() {
-                        marker_context = path_grid.map(|grid| BridgeMarkerContext {
-                            enabled: true,
-                            peers: &marker_peers,
-                            raw_occupation: raw_cell_occupation,
-                            grid,
-                            terrain: resolved_terrain,
-                            playfield_bounds,
-                            native_frame,
-                        });
                         break 'mover;
                     }
                 }
@@ -1429,15 +1454,7 @@ fn advance_ordinary_mover(
             // CanEnter's ordered object receiver executes after releasing the
             // mutable mover borrow. Clear resumes this same invocation at
             // head selection, without repeating preparation/admission/RNG.
-            let admission_marker = path_grid.map(|grid| BridgeMarkerContext {
-                enabled: true,
-                peers: &marker_peers,
-                raw_occupation: raw_cell_occupation,
-                grid,
-                terrain: resolved_terrain,
-                playfield_bounds,
-                native_frame,
-            });
+            let admission_marker = deferred_marker;
             let (events, accepted) = handle_deferred_occupancy(
                 entities,
                 check,
@@ -1452,7 +1469,7 @@ fn advance_ordinary_mover(
                 occupancy,
                 cell_occupation,
                 raw_cell_occupation,
-                &live_building_entry_skips,
+                deferred_entry_skips,
                 alliances,
                 path_grid,
                 resolved_terrain,
@@ -1469,15 +1486,6 @@ fn advance_ordinary_mover(
             );
             debug_events.extend(events);
             if !accepted {
-                marker_context = path_grid.map(|grid| BridgeMarkerContext {
-                    enabled: true,
-                    peers: &marker_peers,
-                    raw_occupation: raw_cell_occupation,
-                    grid,
-                    terrain: resolved_terrain,
-                    playfield_bounds,
-                    native_frame,
-                });
                 break 'mover;
             }
         }
@@ -1510,25 +1518,16 @@ fn advance_ordinary_mover(
             return;
         }
         {
-            let Some(entity) = entities.get_mut(entity_id) else {
+            let Some(mut turn) = entities.take_turn(entity_id) else {
                 return;
             };
+            let (entity, others) = turn.split();
             let head_on_mover = movement_step::MoverHeadOnContext::from_entity(entity);
             let Some(target) = entity.movement_target.as_mut() else {
                 return;
             };
-            marker_context = path_grid.map(|grid| BridgeMarkerContext {
-                // PathfinderClass+0x03 is initialized to one by the
-                // process-static constructor and has no active writer that
-                // clears it.
-                enabled: true,
-                peers: &marker_peers,
-                raw_occupation: raw_cell_occupation,
-                grid,
-                terrain: resolved_terrain,
-                playfield_bounds,
-                native_frame,
-            });
+            let marker_context =
+                deferred_marker.map(|marker| marker.reading(others, raw_cell_occupation));
 
             // Steering / rotation. Hover steers continuously toward the current
             // waypoint (facing-lagged curves, turn-stall braking) and never
@@ -1953,7 +1952,7 @@ fn advance_ordinary_mover(
                     entity_cost_grid,
                     mover_entity_blocks,
                     mover_entity_block_map,
-                    &live_building_entry_skips,
+                    &deferred_entry_skips.reading(others),
                     occupancy,
                     cell_occupation,
                     &mut entity.occupancy_enter_order,
@@ -2106,7 +2105,8 @@ fn advance_ordinary_mover(
                 stats,
                 finished_entities,
                 sim_tick,
-                marker_context,
+                deferred_marker,
+                raw_cell_occupation,
             );
             debug_events.extend(evts);
         }
@@ -2165,7 +2165,7 @@ fn advance_ordinary_mover(
             occupancy,
             cell_occupation,
             raw_cell_occupation,
-            &live_building_entry_skips,
+            deferred_entry_skips,
             alliances,
             path_grid,
             resolved_terrain,
@@ -2177,7 +2177,7 @@ fn advance_ordinary_mover(
             sim_tick,
             interner,
             rules,
-            marker_context,
+            deferred_marker,
             None,
         );
         debug_events.extend(occ_evts);
@@ -2322,7 +2322,7 @@ impl MovementPassCache {
         match self.blocker.as_ref() {
             Some(entry) if entry.key == key => {
                 debug_assert!(
-                    entry.plane == build(),
+                    !super::movement_occupancy::live_read_check_enabled() || entry.plane == build(),
                     "cached blocker plane diverged from a fresh build under the same key"
                 );
             }

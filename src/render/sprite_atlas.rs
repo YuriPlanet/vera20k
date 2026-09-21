@@ -239,30 +239,39 @@ pub struct SpriteAtlas {
     rendered_cache: Vec<RenderedShpSprite>,
 }
 
-#[cfg(test)]
 fn push_effect_name(effect_names: &mut Vec<String>, name: &str) {
     if !effect_names.iter().any(|n| n.eq_ignore_ascii_case(name)) {
         effect_names.push(name.to_string());
     }
 }
 
-#[cfg(test)]
+/// Every world-effect SHP the atlas preloads under the effect palette
+/// (`anim.pal`), in first-mention order. Names come from the loaded rules,
+/// never from a hand-written list.
 fn collect_effect_names(rules: &RuleSet) -> Vec<String> {
     let mut effect_names: Vec<String> = Vec::new();
     push_effect_name(&mut effect_names, &rules.general.warp_in.name);
     push_effect_name(&mut effect_names, &rules.general.warp_out.name);
     push_effect_name(&mut effect_names, &rules.general.warp_away.name);
+    // [General] Wake= (WAKE1): an AnimClass spawned behind ships.
+    // Stock art sets no AltPalette= and its Theater= line is commented
+    // out, so it is an anim.pal draw like every other AnimType; left
+    // out of this set it fell through to unit.pal and drew green.
+    push_effect_name(&mut effect_names, &rules.general.wake.name);
+    // Damage fire types (FIRE01, FIRE02, FIRE03 by default).
     for fire_ref in &rules.general.damage_fire_types {
         push_effect_name(&mut effect_names, &fire_ref.name);
     }
     for anim_name in rules.art_registry.scheduler_anim_types() {
         push_effect_name(&mut effect_names, anim_name);
     }
+    // Explosion animations from every warhead's AnimList=.
     for wh in rules.warheads_iter() {
         for anim_name in &wh.anim_list {
             push_effect_name(&mut effect_names, anim_name);
         }
     }
+    // Weapon Anim=, OccupantAnim= and visible projectile images.
     for weapon in rules.weapons_iter() {
         for anim_name in &weapon.anim {
             push_effect_name(&mut effect_names, anim_name);
@@ -270,7 +279,18 @@ fn collect_effect_names(rules: &RuleSet) -> Vec<String> {
         if let Some(ref anim_name) = weapon.occupant_anim {
             push_effect_name(&mut effect_names, anim_name);
         }
+        if let Some(projectile) = weapon
+            .projectile
+            .as_deref()
+            .and_then(|id| rules.projectile(id))
+            && !projectile.inviso
+            && let Some(image) = projectile.image.as_deref()
+        {
+            push_effect_name(&mut effect_names, image);
+        }
     }
+    // Particle SHPs: ParticleType.Image= goes through the ObjectTypeClass
+    // Image= path -> anim.pal palette. Register every distinct name.
     for pt in rules.particle_types_iter() {
         if let Some(image) = pt.image.as_deref() {
             push_effect_name(&mut effect_names, image);
@@ -908,84 +928,7 @@ pub fn build_sprite_atlas(
     // so step 2 can pick the correct palette.
     let mut effect_type_ids: HashSet<String> = HashSet::new();
     {
-        let mut effect_names: Vec<String> = Vec::new();
-        if let Some(r) = rules {
-            effect_names.push(r.general.warp_in.name.clone());
-            effect_names.push(r.general.warp_out.name.clone());
-            effect_names.push(r.general.warp_away.name.clone());
-            // [General] Wake= (WAKE1): an AnimClass spawned behind ships.
-            // Stock art sets no AltPalette= and its Theater= line is commented
-            // out, so it is an anim.pal draw like every other AnimType; left
-            // out of this set it fell through to unit.pal and drew green.
-            effect_names.push(r.general.wake.name.clone());
-            // Add damage fire types (FIRE01, FIRE02, FIRE03 by default).
-            for fire_ref in &r.general.damage_fire_types {
-                if !effect_names
-                    .iter()
-                    .any(|n| n.eq_ignore_ascii_case(&fire_ref.name))
-                {
-                    effect_names.push(fire_ref.name.clone());
-                }
-            }
-            for anim_name in r.art_registry.scheduler_anim_types() {
-                if !effect_names
-                    .iter()
-                    .any(|name| name.eq_ignore_ascii_case(anim_name))
-                {
-                    effect_names.push(anim_name.clone());
-                }
-            }
-            // Collect explosion animation names from all warhead AnimList= fields.
-            for wh in r.warheads_iter() {
-                for anim_name in &wh.anim_list {
-                    if !effect_names
-                        .iter()
-                        .any(|n| n.eq_ignore_ascii_case(anim_name))
-                    {
-                        effect_names.push(anim_name.clone());
-                    }
-                }
-            }
-            // Collect weapon Anim= and OccupantAnim names from weapons.
-            for weapon in r.weapons_iter() {
-                for anim_name in &weapon.anim {
-                    if !effect_names
-                        .iter()
-                        .any(|n| n.eq_ignore_ascii_case(anim_name))
-                    {
-                        effect_names.push(anim_name.clone());
-                    }
-                }
-                if let Some(ref anim_name) = weapon.occupant_anim {
-                    if !effect_names
-                        .iter()
-                        .any(|n| n.eq_ignore_ascii_case(anim_name))
-                    {
-                        effect_names.push(anim_name.clone());
-                    }
-                }
-                if let Some(projectile_id) = weapon.projectile.as_deref() {
-                    if let Some(projectile) = r.projectile(projectile_id) {
-                        if !projectile.inviso {
-                            if let Some(image) = projectile.image.as_deref() {
-                                if !effect_names.iter().any(|n| n.eq_ignore_ascii_case(image)) {
-                                    effect_names.push(image.to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            // Particle SHPs: ParticleType.Image= goes through the ObjectTypeClass
-            // Image= path → anim.pal palette. Register every distinct name.
-            for pt in r.particle_types_iter() {
-                if let Some(image) = pt.image.as_deref() {
-                    if !effect_names.iter().any(|n| n.eq_ignore_ascii_case(image)) {
-                        effect_names.push(image.to_string());
-                    }
-                }
-            }
-        }
+        let effect_names = rules.map(collect_effect_names).unwrap_or_default();
         for name in &effect_names {
             // Use the same resolved Image= and Theater=/NewTheater= filename
             // authority as scheduler binding. Stock cell-drawer rows such as

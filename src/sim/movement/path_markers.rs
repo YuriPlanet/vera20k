@@ -15,6 +15,7 @@
 //! as an owned [`SearchMarkerOverlay`], so persistent map state is never
 //! mutated and cleanup is automatic when the search returns.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use crate::map::entities::EntityCategory;
@@ -22,7 +23,7 @@ use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::cell_rect::{PlayfieldBounds, cell_is_in_playfield_height_aware};
 use crate::sim::components::FootPathQueue;
-use crate::sim::entity_store::EntityStore;
+use crate::sim::entity_store::{EntityStore, OtherEntities};
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::movement::FacingClass;
 use crate::sim::movement::locomotor::MovementLayer;
@@ -33,8 +34,8 @@ use crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
 
 const PEER_MARKER_REPLAY_LIMIT: usize = 24;
 
-#[derive(Debug, Clone)]
-struct BridgeMarkerPeer {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct BridgeMarkerPeer {
     category: EntityCategory,
     foot_derived: bool,
     locomotor_kind: Option<LocomotorKind>,
@@ -49,13 +50,91 @@ struct BridgeMarkerPeer {
     current_height_leptons: i32,
 }
 
-/// Read-only entity facts needed while a mover itself is mutably borrowed.
+/// Every entity's peer facts at one moment. Production reads peers live
+/// ([`LiveBridgeMarkerPeers`]); this whole-world form is what tests build by
+/// hand and what debug builds compare the live reads against.
 ///
 /// Object-list order remains authoritative in [`OccupancyGrid`]; this map is
 /// only an ID-to-facts lookup and therefore cannot reorder a native list.
 #[derive(Debug, Clone, Default)]
 pub(super) struct BridgeMarkerPeerSnapshot {
     peers: BTreeMap<u64, BridgeMarkerPeer>,
+}
+
+/// ID-to-facts lookup behind `UpdateBridgePassability`'s object-list walks.
+pub(super) trait BridgeMarkerPeerLookup {
+    fn peer(&self, entity_id: u64) -> Option<Cow<'_, BridgeMarkerPeer>>;
+}
+
+impl BridgeMarkerPeerLookup for BridgeMarkerPeerSnapshot {
+    fn peer(&self, entity_id: u64) -> Option<Cow<'_, BridgeMarkerPeer>> {
+        self.peers.get(&entity_id).map(Cow::Borrowed)
+    }
+}
+
+/// Peer facts read from the entities themselves, as the native walk reads the
+/// objects on a cell's list. The mover is the exception: it is mutated during
+/// its own turn, and the facts that count are the ones it had when the turn
+/// began, so those are captured once ([`bridge_marker_peer`]) and answered
+/// from here whether or not the mover is lifted out of `others`.
+#[derive(Clone, Copy)]
+pub(super) struct LiveBridgeMarkerPeers<'a> {
+    pub mover_id: u64,
+    pub mover: Option<&'a BridgeMarkerPeer>,
+    pub others: OtherEntities<'a>,
+    pub rules: Option<&'a crate::rules::ruleset::RuleSet>,
+    pub interner: &'a StringInterner,
+    /// Debug builds: the whole-world snapshot taken at the same moment as
+    /// `mover`. Every live read must equal its entry.
+    #[cfg(debug_assertions)]
+    pub check: Option<&'a BridgeMarkerPeerSnapshot>,
+}
+
+impl std::fmt::Debug for LiveBridgeMarkerPeers<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LiveBridgeMarkerPeers")
+            .field("mover_id", &self.mover_id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl BridgeMarkerPeerLookup for LiveBridgeMarkerPeers<'_> {
+    fn peer(&self, entity_id: u64) -> Option<Cow<'_, BridgeMarkerPeer>> {
+        let peer = if entity_id == self.mover_id {
+            self.mover.map(Cow::Borrowed)
+        } else {
+            self.others
+                .get(entity_id)
+                .map(|entity| Cow::Owned(peer_from_entity(entity, self.rules, self.interner)))
+        };
+        #[cfg(debug_assertions)]
+        if let Some(check) = self.check {
+            debug_assert_eq!(
+                peer.as_deref(),
+                check.peers.get(&entity_id),
+                "live marker peer {entity_id} diverged from the turn-start snapshot"
+            );
+        }
+        peer
+    }
+}
+
+/// Where a marker search finds its peers.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum BridgeMarkerPeers<'a> {
+    Live(LiveBridgeMarkerPeers<'a>),
+    #[cfg(test)]
+    Snapshot(&'a BridgeMarkerPeerSnapshot),
+}
+
+impl BridgeMarkerPeerLookup for BridgeMarkerPeers<'_> {
+    fn peer(&self, entity_id: u64) -> Option<Cow<'_, BridgeMarkerPeer>> {
+        match self {
+            Self::Live(live) => live.peer(entity_id),
+            #[cfg(test)]
+            Self::Snapshot(snapshot) => snapshot.peer(entity_id),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -81,12 +160,59 @@ pub(super) struct BridgeMarkerSearch {
 #[derive(Debug, Clone, Copy)]
 pub(super) struct BridgeMarkerContext<'a> {
     pub enabled: bool,
-    pub peers: &'a BridgeMarkerPeerSnapshot,
+    pub peers: BridgeMarkerPeers<'a>,
     pub raw_occupation: &'a RawCellOccupationGrid,
     pub grid: &'a PathGrid,
     pub terrain: Option<&'a ResolvedTerrainGrid>,
     pub playfield_bounds: Option<PlayfieldBounds>,
     pub native_frame: u32,
+}
+
+/// A marker context still missing its view of the other entities. The mover's
+/// turn builds one at its start; each user attaches the entities it can read at
+/// that point ([`Self::reading`]): the rest of the store while the mover is
+/// lifted out of it, or the whole store when it is not. The raw occupation
+/// plane arrives there too, because the turn mutates it between uses.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct DeferredBridgeMarker<'a> {
+    pub mover_id: u64,
+    pub mover: Option<&'a BridgeMarkerPeer>,
+    pub rules: Option<&'a crate::rules::ruleset::RuleSet>,
+    pub interner: &'a StringInterner,
+    #[cfg(debug_assertions)]
+    pub check: Option<&'a BridgeMarkerPeerSnapshot>,
+    pub grid: &'a PathGrid,
+    pub terrain: Option<&'a ResolvedTerrainGrid>,
+    pub playfield_bounds: Option<PlayfieldBounds>,
+    pub native_frame: u32,
+}
+
+impl<'a> DeferredBridgeMarker<'a> {
+    pub fn reading(
+        self,
+        others: OtherEntities<'a>,
+        raw_occupation: &'a RawCellOccupationGrid,
+    ) -> BridgeMarkerContext<'a> {
+        BridgeMarkerContext {
+            // PathfinderClass+0x03 is initialized to one by the process-static
+            // constructor and has no active writer that clears it.
+            enabled: true,
+            peers: BridgeMarkerPeers::Live(LiveBridgeMarkerPeers {
+                mover_id: self.mover_id,
+                mover: self.mover,
+                others,
+                rules: self.rules,
+                interner: self.interner,
+                #[cfg(debug_assertions)]
+                check: self.check,
+            }),
+            raw_occupation,
+            grid: self.grid,
+            terrain: self.terrain,
+            playfield_bounds: self.playfield_bounds,
+            native_frame: self.native_frame,
+        }
+    }
 }
 
 impl BridgeMarkerContext<'_> {
@@ -100,7 +226,7 @@ impl BridgeMarkerContext<'_> {
         on_bridge: bool,
         requested_urgency: u8,
     ) -> BridgeMarkerSearch {
-        let Some(mover) = self.peers.peers.get(&entity_id) else {
+        let Some(mover) = self.peers.peer(entity_id) else {
             return BridgeMarkerSearch {
                 effective_urgency: requested_urgency,
                 ..BridgeMarkerSearch::default()
@@ -108,7 +234,7 @@ impl BridgeMarkerContext<'_> {
         };
         build_bridge_passability_search(
             self.enabled,
-            self.peers,
+            &self.peers,
             occupancy,
             self.raw_occupation,
             self.grid,
@@ -224,6 +350,52 @@ fn is_at_coord_cells(
     (handoff, head, Some(query.head_z()))
 }
 
+fn peer_from_entity(
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    interner: &StringInterner,
+) -> BridgeMarkerPeer {
+    let (path_start, path_directions) = remaining_path_from_entity(entity);
+    let (is_at_coord_track_cell, is_at_coord_head_cell, is_at_coord_head_z) =
+        is_at_coord_cells(entity);
+    let current_height_leptons = super::foot_coordinate::current_coordinate(entity).z;
+    let speed = rules
+        .and_then(|rules| rules.object(interner.resolve(entity.type_ref())))
+        .map_or(0, |object| object.speed);
+    let foot_derived = matches!(
+        entity.category,
+        EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+    );
+    BridgeMarkerPeer {
+        category: entity.category,
+        foot_derived,
+        locomotor_kind: entity.locomotor.as_ref().map(|locomotor| locomotor.kind),
+        type_ref: entity.type_ref(),
+        speed,
+        path_start,
+        path_directions,
+        is_at_coord_track_cell,
+        is_at_coord_head_cell,
+        is_at_coord_head_z,
+        current_height_leptons,
+    }
+}
+
+/// One entity's peer facts as they stand now: the mover's own entry, taken
+/// before its turn mutates it.
+pub(super) fn bridge_marker_peer(
+    entities: &EntityStore,
+    entity_id: u64,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    interner: &StringInterner,
+) -> Option<BridgeMarkerPeer> {
+    entities
+        .get(entity_id)
+        .map(|entity| peer_from_entity(entity, rules, interner))
+}
+
+/// O(entities). Tests, and the debug-build check of the live reads.
+#[cfg(any(test, debug_assertions))]
 pub(super) fn snapshot_bridge_marker_peers(
     entities: &EntityStore,
     rules: Option<&crate::rules::ruleset::RuleSet>,
@@ -232,32 +404,9 @@ pub(super) fn snapshot_bridge_marker_peers(
     let peers = entities
         .values()
         .map(|entity| {
-            let (path_start, path_directions) = remaining_path_from_entity(entity);
-            let (is_at_coord_track_cell, is_at_coord_head_cell, is_at_coord_head_z) =
-                is_at_coord_cells(entity);
-            let current_height_leptons = super::foot_coordinate::current_coordinate(entity).z;
-            let speed = rules
-                .and_then(|rules| rules.object(interner.resolve(entity.type_ref())))
-                .map_or(0, |object| object.speed);
-            let foot_derived = matches!(
-                entity.category,
-                EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-            );
             (
                 entity.stable_id(),
-                BridgeMarkerPeer {
-                    category: entity.category,
-                    foot_derived,
-                    locomotor_kind: entity.locomotor.as_ref().map(|locomotor| locomotor.kind),
-                    type_ref: entity.type_ref(),
-                    speed,
-                    path_start,
-                    path_directions,
-                    is_at_coord_track_cell,
-                    is_at_coord_head_cell,
-                    is_at_coord_head_z,
-                    current_height_leptons,
-                },
+                peer_from_entity(entity, rules, interner),
             )
         })
         .collect();
@@ -301,7 +450,7 @@ fn list_ids(occupancy: &OccupancyGrid, cell: (i16, i16), layer: MovementLayer) -
 }
 
 fn find_nearby_bridge_peer_suffix(
-    peers: &BridgeMarkerPeerSnapshot,
+    peers: &impl BridgeMarkerPeerLookup,
     occupancy: &OccupancyGrid,
     grid: &PathGrid,
     probe: (i16, i16),
@@ -323,7 +472,7 @@ fn find_nearby_bridge_peer_suffix(
             };
             let list = list_ids(occupancy, candidate, layer);
             for (index, entity_id) in list.iter().copied().enumerate() {
-                let Some(peer) = peers.peers.get(&entity_id) else {
+                let Some(peer) = peers.peer(entity_id) else {
                     continue;
                 };
                 if !peer.foot_derived
@@ -384,7 +533,7 @@ fn replay_peer_path(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn build_bridge_passability_search(
     enabled: bool,
-    peers: &BridgeMarkerPeerSnapshot,
+    peers: &impl BridgeMarkerPeerLookup,
     occupancy: &OccupancyGrid,
     raw_occupation: &RawCellOccupationGrid,
     grid: &PathGrid,
@@ -428,7 +577,7 @@ pub(super) fn build_bridge_passability_search(
     let mut overlay = SearchMarkerOverlay::new();
     let mut processed_peer_path = false;
     for entity_id in selected_list {
-        let Some(peer) = peers.peers.get(&entity_id) else {
+        let Some(peer) = peers.peer(entity_id) else {
             continue;
         };
         if !peer.foot_derived
@@ -460,7 +609,7 @@ pub(super) fn build_bridge_passability_search(
             continue;
         }
         processed_peer_path = true;
-        replay_peer_path(&mut overlay, peer, terrain);
+        replay_peer_path(&mut overlay, &peer, terrain);
     }
 
     if requested_urgency == 1 && !processed_peer_path {
@@ -676,6 +825,72 @@ mod tests {
         );
         assert!(search.overlay.contains((6, 4)), "accepted peer replayed");
         assert!(search.overlay.contains((5, 6)), "same-list suffix replayed");
+    }
+
+    #[test]
+    fn live_peers_read_the_others_now_and_the_mover_as_its_turn_began() {
+        let interner = StringInterner::new();
+        let mut entities = EntityStore::new();
+        for id in [1, 2] {
+            let mut entity =
+                crate::sim::game_entity::GameEntity::test_default(id, "UNIT", "Americans", 4, 4);
+            entity.navigation.path_replay.reference_cell = Some((4, 4));
+            entity.navigation.path_replay.directions = vec![2, 2];
+            entities.insert(entity);
+        }
+        let snapshot = snapshot_bridge_marker_peers(&entities, None, &interner);
+        let mover = bridge_marker_peer(&entities, 1, None, &interner).expect("mover is stored");
+        let live = |entities: &EntityStore, check| {
+            [1, 2, 3].map(|id| {
+                LiveBridgeMarkerPeers {
+                    mover_id: 1,
+                    mover: Some(&mover),
+                    others: OtherEntities::whole(entities),
+                    rules: None,
+                    interner: &interner,
+                    #[cfg(debug_assertions)]
+                    check,
+                }
+                .peer(id)
+                .map(Cow::into_owned)
+            })
+        };
+
+        // Untouched world: every live read is the whole-world snapshot's entry,
+        // which the debug check asserts as well.
+        let read = live(&entities, Some(&snapshot));
+        assert_eq!(read[0].as_ref(), snapshot.peers.get(&1));
+        assert_eq!(read[1].as_ref(), snapshot.peers.get(&2));
+        assert_eq!(read[2], None);
+
+        // Both entities change. The peer is read as it is now; the mover keeps
+        // the facts captured when its turn began.
+        for id in [1, 2] {
+            entities
+                .get_mut(id)
+                .unwrap()
+                .navigation
+                .path_replay
+                .directions = vec![6, 6, 6];
+        }
+        let read = live(&entities, None);
+        assert_eq!(read[0].as_ref().unwrap().path_directions, [2, 2]);
+        assert_eq!(read[1].as_ref().unwrap().path_directions, [6, 6, 6]);
+
+        // Lifted out of the store, the mover is still answered from its capture.
+        let mut turn = entities.take_turn(1).expect("mover is stored");
+        let (_, others) = turn.split();
+        let lifted = LiveBridgeMarkerPeers {
+            mover_id: 1,
+            mover: Some(&mover),
+            others,
+            rules: None,
+            interner: &interner,
+            #[cfg(debug_assertions)]
+            check: None,
+        };
+        assert_eq!(lifted.peer(1).unwrap().path_directions, [2, 2]);
+        assert_eq!(lifted.peer(2).unwrap().path_directions, [6, 6, 6]);
     }
 
     #[test]

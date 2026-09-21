@@ -4495,6 +4495,9 @@ fn retail_high_bridge_inventory() {
 /// Scale instrument, not a parity test: N tanks on `Hills.mmx` all ordered
 /// across the valley, per-frame wall time of the whole simulation frame.
 /// `VERA20K_SCALE_MOVERS` overrides the count (default 400).
+/// `VERA20K_SKIP_LIVE_READ_CHECK=1` drops the debug cross-checks of the pass's
+/// derived inputs (live reads, cached blocker plane), which otherwise rebuild
+/// their whole-world forms every turn.
 #[test]
 #[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
 fn scale_benchmark_many_movers_on_hills() {
@@ -4588,9 +4591,10 @@ fn scale_benchmark_many_movers_on_hills() {
         })
         .count();
     println!(
-        "SCALE movers={} live_objects={live_objects} frames={frames} avg_ms={:.2} worst_ms={:.2} moved={moved}",
+        "SCALE movers={} live_objects={live_objects} frames={frames} avg_ms={:.2} worst_ms={:.2} moved={moved} entity_bytes={}",
         ids.len(),
         total.as_secs_f64() * 1000.0 / frames as f64,
         worst.as_secs_f64() * 1000.0,
+        std::mem::size_of::<crate::sim::game_entity::GameEntity>(),
     );
 }

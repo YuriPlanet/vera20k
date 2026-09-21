@@ -9,6 +9,7 @@
 //! - Cross-entity reads during mutation: read target first (clone needed data),
 //!   then get_mut on the other entity
 //! - Batch iteration with mutation: collect `keys_sorted()`, loop with `get_mut()`
+//! - One entity mutated while it reads the others live: `store.take_turn(id)`
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends only on sim/game_entity.
@@ -21,6 +22,53 @@ use crate::sim::game_entity::GameEntity;
 /// Only this module can authorize a live indexed-owner write.
 /// Payload consumers can read owner identity but cannot construct this capability.
 pub(crate) struct OwnerChangeAuthority(());
+
+/// One entity held out of the store for its turn; see [`EntityStore::take_turn`].
+pub(crate) struct EntityTurn<'a> {
+    store: &'a mut EntityStore,
+    entity: Option<Box<GameEntity>>,
+}
+
+impl EntityTurn<'_> {
+    /// The entity whose turn it is, and everyone else.
+    pub(crate) fn split(&mut self) -> (&mut GameEntity, OtherEntities<'_>) {
+        let entity = self.entity.as_mut().expect("held until drop");
+        (
+            entity,
+            OtherEntities {
+                store: &*self.store,
+            },
+        )
+    }
+}
+
+impl Drop for EntityTurn<'_> {
+    fn drop(&mut self) {
+        if let Some(entity) = self.entity.take() {
+            self.store.entities.insert(entity.stable_id(), entity);
+        }
+    }
+}
+
+/// Read access to the entities other than the one taking its turn. Lookup by
+/// id only: the owner and type indexes still list the absent entity, so they
+/// are not offered here.
+#[derive(Clone, Copy)]
+pub(crate) struct OtherEntities<'a> {
+    store: &'a EntityStore,
+}
+
+impl<'a> OtherEntities<'a> {
+    /// A store nobody is lifted out of. The reader must not expect to find the
+    /// acting entity's own turn-start facts here; callers supply those apart.
+    pub(crate) fn whole(store: &'a EntityStore) -> Self {
+        Self { store }
+    }
+
+    pub(crate) fn get(&self, stable_id: u64) -> Option<&'a GameEntity> {
+        self.store.entities.get(&stable_id).map(Box::as_ref)
+    }
+}
 
 /// Container for all game entities, keyed by stable_id.
 ///
@@ -36,8 +84,11 @@ pub(crate) struct OwnerChangeAuthority(());
 /// deserialize finalizer (the primary map is bulk-loaded, bypassing `insert`).
 #[derive(Debug, Clone)]
 pub struct EntityStore {
-    /// Primary storage: stable_id -> GameEntity.
-    entities: BTreeMap<u64, GameEntity>,
+    /// Primary storage: stable_id -> GameEntity. Boxed: an entity is about 3 KB,
+    /// and map nodes that hold pointers keep insert, remove and `take_turn` from
+    /// moving entities around. serde writes a `Box<T>` as its `T`, so the saved
+    /// form is unchanged.
+    entities: BTreeMap<u64, Box<GameEntity>>,
     /// Derived InfantryClass registry, in monotonic construction-ID order.
     /// Uninit retains an entry; remove compacts it. Class/category is immutable
     /// while stored, like indexed identity (replace through remove/insert).
@@ -98,7 +149,7 @@ impl EntityStore {
         let owner = entity.owner();
         let type_ref = entity.type_ref();
         let infantry = entity.category == crate::map::entities::EntityCategory::Infantry;
-        if let Some(old) = self.entities.insert(id, entity) {
+        if let Some(old) = self.entities.insert(id, Box::new(entity)) {
             self.index_remove(old.owner(), id);
             self.type_count_remove(old.owner(), old.type_ref());
         }
@@ -117,7 +168,7 @@ impl EntityStore {
     /// Remove an entity by stable_id. Returns the removed entity if it existed.
     /// Maintains the `by_owner` index.
     pub fn remove(&mut self, stable_id: u64) -> Option<GameEntity> {
-        let removed = self.entities.remove(&stable_id);
+        let removed = self.entities.remove(&stable_id).map(|entity| *entity);
         if let Some(ref e) = removed {
             self.index_remove(e.owner(), stable_id);
             self.type_count_remove(e.owner(), e.type_ref());
@@ -169,7 +220,7 @@ impl EntityStore {
 
     /// Look up an entity by stable_id (immutable).
     pub fn get(&self, stable_id: u64) -> Option<&GameEntity> {
-        self.entities.get(&stable_id)
+        self.entities.get(&stable_id).map(Box::as_ref)
     }
 
     /// Mutate ordinary entity payload. Indexed identity is read through accessors;
@@ -177,7 +228,20 @@ impl EntityStore {
     /// Replacing a stored entity wholesale is unsupported: remove/insert through
     /// the owning lifecycle instead so its indexes and registrations are updated.
     pub fn get_mut(&mut self, stable_id: u64) -> Option<&mut GameEntity> {
-        self.entities.get_mut(&stable_id)
+        self.entities.get_mut(&stable_id).map(Box::as_mut)
+    }
+
+    /// Lift one entity out of the store for its own turn, so it can be mutated
+    /// while every other entity stays readable. The entity returns to the map
+    /// when the guard drops, on every exit path. Its indexed identity (owner,
+    /// type, infantry registry) never leaves the indexes, which is sound because
+    /// payload access cannot change it, exactly as with `get_mut`.
+    pub(crate) fn take_turn(&mut self, stable_id: u64) -> Option<EntityTurn<'_>> {
+        let entity = self.entities.remove(&stable_id)?;
+        Some(EntityTurn {
+            store: self,
+            entity: Some(entity),
+        })
     }
 
     /// Check if an entity exists.
@@ -223,24 +287,24 @@ impl EntityStore {
 
     /// Iterate all entities in deterministic stable_id order (immutable).
     pub fn iter_sorted(&self) -> impl Iterator<Item = (u64, &GameEntity)> {
-        self.entities.iter().map(|(&k, v)| (k, v))
+        self.entities.iter().map(|(&k, v)| (k, v.as_ref()))
     }
 
     /// Iterate all entity values in deterministic stable_id order (immutable).
     pub fn values_sorted(&self) -> impl Iterator<Item = &GameEntity> {
-        self.entities.values()
+        self.entities.values().map(Box::as_ref)
     }
 
     /// Iterate all entities in stable_id order (immutable).
     /// With BTreeMap, this is always deterministic.
     pub fn values(&self) -> impl Iterator<Item = &GameEntity> {
-        self.entities.values()
+        self.entities.values().map(Box::as_ref)
     }
 
     /// Iterate all entities mutably in stable_id order.
     /// With BTreeMap, this is always deterministic.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut GameEntity> {
-        self.entities.values_mut()
+        self.entities.values_mut().map(Box::as_mut)
     }
 
     /// Stable IDs owned by the given owner, in sorted order.
@@ -340,7 +404,7 @@ impl serde::Serialize for EntityStore {
 
 impl<'de> serde::Deserialize<'de> for EntityStore {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let entities = BTreeMap::<u64, GameEntity>::deserialize(deserializer)?;
+        let entities = BTreeMap::<u64, Box<GameEntity>>::deserialize(deserializer)?;
         let mut store = Self {
             entities,
             infantry_registry: Vec::new(),
@@ -366,6 +430,41 @@ mod tests {
 
     fn make_entity(id: u64) -> GameEntity {
         GameEntity::test_default(id, "HTNK", "Americans", 10, 10)
+    }
+
+    #[test]
+    fn a_turn_lifts_one_entity_out_and_returns_it_on_every_exit() {
+        let mut store = EntityStore::new();
+        for id in [1, 2, 3] {
+            store.insert(make_entity(id));
+        }
+        let owner = store.get(2).unwrap().owner();
+        let type_ref = store.get(2).unwrap().type_ref();
+        {
+            let mut turn = store.take_turn(2).expect("entity 2 is stored");
+            let (entity, others) = turn.split();
+            // The others are readable while the mover is mutated; the mover
+            // itself is not among them.
+            entity.position.rx = others.get(1).unwrap().position.rx + 7;
+            assert!(others.get(2).is_none());
+            assert!(others.get(3).is_some());
+        }
+        assert_eq!(store.get(2).unwrap().position.rx, 17);
+        assert_eq!(store.len(), 3);
+        // Indexed identity never left the indexes.
+        assert_eq!(store.ids_for_owner(owner), [1, 2, 3]);
+        assert_eq!(store.count_owned_of_type(owner, type_ref), 3);
+
+        fn leaves_early(store: &mut EntityStore) -> Option<()> {
+            let mut turn = store.take_turn(3)?;
+            let (entity, _) = turn.split();
+            entity.position.ry = 99;
+            None
+        }
+        assert!(leaves_early(&mut store).is_none());
+        assert_eq!(store.get(3).unwrap().position.ry, 99);
+        assert!(store.take_turn(42).is_none());
+        assert_eq!(store.keys_sorted(), [1, 2, 3]);
     }
 
     #[test]

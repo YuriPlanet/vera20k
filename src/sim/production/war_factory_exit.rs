@@ -2,7 +2,7 @@
 //!
 //! A newborn land vehicle from a war factory holds a live radio contact with its
 //! producer so it can drive across the factory footprint (the NumberImpassableRows
-//! row-skip read in `build_live_building_entry_skip_map`). The producer reproduces
+//! row-skip read in `movement_occupancy::building_entry_skip_cells`). The producer reproduces
 //! gamemd by breaking that contact the moment the vehicle's per-cell process finds
 //! no building under its current cell (footprint cleared). Despawn / limbo cleanup
 //! (`clear_radio_contacts_for`) remains the safety net. sim/ only — depends on

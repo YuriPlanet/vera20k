@@ -1,12 +1,12 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `11b3b487b6f4ca1c5e2abf19c25584ea52d2a343` (2026-09-21), cargo-modules 0.26.0.
+Generated snapshot: `3ee1f555086350867d93e050d5fa3532208868b3` (2026-09-21), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
 External crates and the sysroot are excluded from the dependency graph.
-Contains **835 modules plus the crate root**, and **5270 distinct
+Contains **835 modules plus the crate root**, and **5273 distinct
 cross-module dependency edges**. Check this source commit against your checkout.
 <!-- module-map:provenance:end -->
 
@@ -600,7 +600,7 @@ sim::movement::locomotor_ready -> -
 sim::movement::movement_blocked -> rules::locomotor_type; sim::components; sim::debug_event_log; sim::movement; sim::movement::locomotor; sim::movement::movement_path; sim::movement::path_markers; sim::occupancy; sim::pathfinding::core; sim::pathfinding::terrain_cost; sim::rng; util::fixed_math
 sim::movement::movement_bridge -> sim::components; sim::movement::locomotor; sim::pathfinding::core; util::fixed_math
 sim::movement::movement_commands -> map::entities; map::resolved_terrain; rules::locomotor_type; rules::ruleset; sim::components; sim::entity_store; sim::game_entity; sim::movement; sim::movement::movement_path; sim::movement::teleport_movement; sim::occupancy; sim::pathfinding::core; sim::pathfinding::terrain_cost; sim::pathfinding::zone_map; util::fixed_math
-sim::movement::movement_occupancy -> map::entities; map::houses; map::resolved_terrain; rules::locomotor_type; sim::combat; sim::components; sim::debug_event_log; sim::entity_store; sim::intern; sim::movement; sim::movement::bump_crush; sim::movement::locomotor; sim::movement::movement_blocked; sim::movement::movement_bridge; sim::occupancy; sim::pathfinding::cell_entry; sim::pathfinding::core; sim::pathfinding::terrain_cost; sim::rng
+sim::movement::movement_occupancy -> map::entities; map::houses; map::resolved_terrain; rules::locomotor_type; rules::ruleset; sim::combat; sim::components; sim::debug_event_log; sim::entity_store; sim::game_entity; sim::intern; sim::movement; sim::movement::bump_crush; sim::movement::locomotor; sim::movement::movement_blocked; sim::movement::movement_bridge; sim::occupancy; sim::pathfinding::cell_entry; sim::pathfinding::core; sim::pathfinding::terrain_cost; sim::radio::contacts; sim::rng
 sim::movement::movement_path -> map::resolved_terrain; rules::locomotor_type; sim::components; sim::find_nearby_cell; sim::movement; sim::movement::locomotor; sim::pathfinding::core; sim::pathfinding::path_smooth; sim::pathfinding::terrain_cost; sim::pathfinding::zone_map; sim::pathfinding::zone_search; sim::rng; util::fixed_math
 sim::movement::movement_step -> map::entities; map::resolved_terrain; rules::locomotor_type; sim::components; sim::debug_event_log; sim::game_entity; sim::intern; sim::movement; sim::movement::bump_crush; sim::movement::cell_arrival; sim::movement::drive_track; sim::movement::locomotor; sim::movement::movement_blocked; sim::movement::movement_bridge; sim::movement::movement_occupancy; sim::movement::track_process; sim::occupancy; sim::pathfinding::core; sim::pathfinding::terrain_cost; sim::rng; sim::world::substrate; util::fixed_math
 sim::movement::movement_tick -> map::entities; map::houses; map::playfield; map::resolved_terrain; rules::locomotor_type; sim::components; sim::debug_event_log; sim::entity_store; sim::game_entity; sim::infantry; sim::intern; sim::lifecycle_request; sim::movement; sim::movement::bump_crush; sim::movement::drive_locomotion; sim::movement::locomotor; sim::movement::movement_blocked; sim::movement::movement_bridge; sim::movement::movement_commands; sim::movement::movement_occupancy; sim::movement::movement_path; sim::movement::movement_step; sim::movement::path_markers; sim::movement::tube_movement; sim::occupancy; sim::pathfinding::cell_entry; sim::pathfinding::core; sim::pathfinding::terrain_cost; sim::pathfinding::terrain_speed; sim::pathfinding::zone_map; sim::rng; sim::type_handle_table; sim::world::substrate; util::fixed_math

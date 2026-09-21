@@ -1860,14 +1860,12 @@ impl MapLoadInitial {
         let mode_override_ini = asset_manager
             .get_ref(&match_launch_descriptor.session().mode.override_file)
             .and_then(|bytes| IniFile::from_bytes(bytes).ok());
-        let (mut rules, rules_ini, _native_type_construction_trace, art_ini) =
-            load_rules_with_merged_ini(
-                asset_manager,
-                mode_override_ini.as_ref(),
-                Some(&map_data.ini),
-            )
-            .expect("retail generated-map rules")
-            .into_parts();
+        let (mut rules, rules_ini, art_ini) = load_rules_with_merged_ini(
+            asset_manager,
+            mode_override_ini.as_ref(),
+            Some(&map_data.ini),
+        )
+        .expect("retail generated-map rules");
         let mut art = ArtRegistry::from_ini(&art_ini);
         art.apply_anim_type_read_states(&rules.anim_type_art_read_states);
         rules.merge_art_data(&mut art);
