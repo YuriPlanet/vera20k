@@ -231,7 +231,9 @@ probe; it is not a second implementation to publish.
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
 Branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Current validated source: `9d3be1105c1ed7beaa73ebf11a40c594d5be5fec`: admitted
+Current validated source: `f241211c`: native FindFireLocation corpus, deterministic
+geometry comparisons and removal of the incorrect unused search model. Last
+production behavior source: `9d3be1105c1ed7beaa73ebf11a40c594d5be5fec`: admitted
 Aircraft state4 releases now run through shared production emission, synchronous
 burst control, pending ammo and native success state/readiness/raw-delay writes.
 The call-local request preserves AttackTarget and rearm. Retained `WeaponBurst`
@@ -855,6 +857,66 @@ fixed the fixture, with no registry/load-policy change.
 No critic, PR or release retail load has run for this branch. Required rules-load
 and review checks still precede merge. Owned compile/native processes are terminal.
 
+### FindFireLocation evidence and obsolete search removal (sourcef241211c)
+
+Acceptance for the next production chain: state1 must use native search inputs,
+preserve the returned Target-versus-Cell identity through AssignDestination,
+publish the actual NavCom and Fly destination, and schedule the native mission
+delay. Validate candidate generation, ranking, visibility/reservations and RNG
+against original calls, then exercise state1 through production and save/restore.
+This section establishes prerequisites; it does not claim that acceptance passes.
+
+`tools/spatial_oracle/aircraft_fire_location.py` now executes51 full original
+4197C0 calls with no substituted instructions/calls. Original7012C0/70E140,
+41B7F0,578460/5657A0,419B00/47C3D0, trig/sqrt/ftol and Scenario RNG run against
+supplied flat-map/object state. The corpus records896 candidate coordinates,
+565 ranked distances, returned identity, conditional RNG and its next draw.
+Cases include native tier fallback, short/odd ranges, direct strafe Target,
+target NavCom ranking, visibility+12C bit10 versus bit8, Techno+3D4/game-mode
+bypasses, self/physical/NavCom reservations, marked/limbo gates, Carryall,
+AirportBound and Spawned beside a ground-list Techno with SpawnManager/Spawned.
+The concrete target/destination receivers here are Units; Building/Cell receiver
+variants, OpenTopped passenger range reduction and lifecycle producers are not
+covered by these supplied-state calls. No full Mission_Attack claim.
+
+The unused `runtime_contract::find_fire_location` and `FireLocationSearch` are
+removed: they searched around the aircraft, used swapped host sin/cos axes,
+ranked a true second-nearest candidate and ignored native admission. Only their
+own tests called them. The retained production math already matches native
+candidate coordinates and ranked distances in the corpus; the new
+`util::native_trig::tests::aircraft_fire_location_candidates_and_distances_match_native`
+compares that geometry directly. The search must reuse those owners, not add
+another float-based implementation. Its mission caller is still absent.
+
+Ghidra4197C0 renamed from misleading `Find_Approach_Cell` to `FindFireLocation`:
+auxiliary+18 may return the original non-Cell Target pointer. Comments at
+4197EF,41988E,419A40 and419C13 saved/read back. The opposite-side native case
+selects previous record minimum[69,62] for RNG83; the true second-nearest is
+[69,66], demonstrating why the old ranking was wrong.
+
+Destination trace: Aircraft vtable7E22A4+480 ->41AA80, then Foot4D94B0 and
+Fly4CCC80. Aircraft handles invalid Target+54, Enter/building radio and current
+cell docking interactions before Foot. Foot clears NavComAux before refusal
+gates; stores the live NavCom at4D9510; gets requester-dependent target+4C
+coordinates and calls locomotor MoveTo. A null Aircraft destination while
+current/queued Attack and Target non-null skips Stop at4D9672..4D969C, but still
+writes Foot timer epilogue. Current `issue_air_cell_destination`/Fly adapter
+only builds a cell MovementTarget and does not preserve these effects.
+FindFireLocation itself uses target+48, not navigation+4C: Unit/Aircraft5F65A0;
+Building vtable7E3EBC+48 ->447AC0 adds foundation center offsets. Type+5E4 is
+OpenTopped (7143BD/7143CA, literal843CCC read back), so7012C0's cargo-minimum
+range arm must use that existing rule and passenger owner.
+
+Validationf241211c: `python -m tools.spatial_oracle.aircraft_fire_location --check`
+passes; `cargo test -p vera20k --lib aircraft` passes **93 tests,0 failures**,
+0.09s after3m32s compilation (`.local/aircraft-fire-location-final-tests.log`).
+The first48-case geometry probe also passed before adding Spawned cases and
+explicit candidate indexes. Existing math bodies and production behavior were
+not changed; no snapshot/hash version changed. No full-suite/Clippy repetition
+was needed for this fixture and dead-code cleanup. The previous full runtime
+validation is9d3be110 above. No critic, PR or retail release load has run yet.
+All owned Cargo/native sessions are terminal; keep the existing target cache.
+
 ### Next safe implementation
 
 Finish FindFireLocation/NavCom/state1/state10 and native cadence dependencies;
@@ -862,6 +924,9 @@ preserve the validated range correction and now-connected release caller. Trace
 the class-specific error transitions and payload/launch/reveal arms listed above.
 The pending consumers, burst position and+6D2 owner are in place; do not recreate
 the retired final-release tail or target-owned remaining-shot count.
+Use the new native search corpus. Complete the destination owner and retained
+Techno+3D4 producers before wiring state1; do not flatten returned entity targets
+to cells or install the removed test-only search as a production shortcut.
 
 Migrate retained Fly destination state and the remaining Aircraft facing writers/
 readers, then native phase callbacks with their Mark/Display transaction. The
