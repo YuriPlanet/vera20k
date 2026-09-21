@@ -539,6 +539,7 @@ mod tests {
             accelerates: true,
             passive: false,
             slowdown_distance: 512,
+            flight_level: -1,
             sight: 5,
             tech_level: -1,
             build_time_multiplier: 1.0,

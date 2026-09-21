@@ -60,6 +60,8 @@ These generators now default to **read-only checks**, also spelled `--check`:
 | `tools.spatial_oracle.walk_paid_step` | 40 original paid Walk steps through the coordinate branch, including facing equality, zero speed, cell boundaries and five chained Slice6 production steps; movement-speed integer supplied | `src/sim/movement/walk_step_tests.rs`; production `walk_step.rs`, Slice6 frame assertions and move-to-fire/save-restore regression |
 | `tools.spatial_oracle.walk_direction_table` | All 65,536 heading words: original sine/cosine indexes and table bits, plus the complete retail table bytes | `src/util/native_trig.rs::tests::every_walk_heading_uses_the_original_trig_entries`; full-heading paid Walk displacement |
 | `tools.spatial_oracle.crate_speed_effect` | 23 original speed-crate recipient loops followed by live Foot speed queries; class/owner/factor gates, native 3-D distance and announcement flag | Native evidence for the open pickup/Foot speed dependency; no Rust production parity claim |
+| `tools.spatial_oracle.flight_level` | 30 original type FlightLevel reads and effective-height queries, including the exact -1 fallback | `rules/object_type.rs`; Fly construction, attack recovery and paradrop carrier initialization use the resolved type value |
+| `tools.spatial_oracle.fly_height` | 136 bounded original vertical steps with real GetHeight/SetHeight, Aircraft interface and type getter | Reference for the pending Fly controller migration; no Rust parity claim, excludes Process admission, crash, descent drift and phase/Display transactions |
 
 Run them as modules (`python -m ...`). Imports do not emulate or write files;
 `--help` works without retail configuration. `--output <path>` selects another

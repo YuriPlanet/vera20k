@@ -345,13 +345,9 @@ pub fn tick_aircraft_missions(
                     if let Some(entity) = sim.substrate.entities.get(snap.id) {
                         let type_str = sim.interner.resolve(entity.type_ref());
                         if let Some(obj) = rules.object(type_str) {
-                            let cruise =
-                                crate::sim::movement::locomotor::LocomotorState::from_object_type(
-                                    obj,
-                                    rules.general.flight_level,
-                                    sim.session.binary_frame,
-                                )
-                                .target_altitude;
+                            let cruise = SimFixed::saturating_from_num(
+                                obj.flight_level(rules.general.flight_level),
+                            );
                             m.set_target_altitude = Some(cruise);
                         }
                     }

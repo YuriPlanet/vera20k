@@ -162,6 +162,7 @@ fn make_obj(locomotor: LocomotorKind, category: ObjectCategory) -> ObjectType {
         accelerates: true,
         passive: false,
         slowdown_distance: 512,
+        flight_level: -1,
         sight: 5,
         tech_level: -1,
         build_time_multiplier: 1.0,
@@ -503,6 +504,27 @@ fn test_fly_locomotor_air_layer() {
     assert!(state.is_air_mover());
     assert_eq!(state.target_altitude, SimFixed::from_num(1500));
     assert_eq!(state.climb_rate, FLY_CLIMB_RATE);
+}
+
+#[test]
+fn fly_target_uses_type_flight_level_without_changing_other_locomotors() {
+    let mut obj = make_obj(LocomotorKind::Fly, ObjectCategory::Aircraft);
+    for (configured, expected) in [(-1, 1500), (0, 0), (-2, -2), (2200, 2200)] {
+        obj.flight_level = configured;
+        let state = LocomotorState::from_object_type(&obj, 1500, 0);
+        assert_eq!(state.target_altitude.to_num::<i32>(), expected);
+    }
+    obj.flight_level = 2200;
+    for kind in [LocomotorKind::Rocket, LocomotorKind::Jumpjet] {
+        obj.locomotor = kind;
+        let state = LocomotorState::from_object_type(&obj, 1500, 0);
+        let expected = if kind == LocomotorKind::Rocket {
+            1500
+        } else {
+            obj.jumpjet_params.height
+        };
+        assert_eq!(state.target_altitude.to_num::<i32>(), expected);
+    }
 }
 
 #[test]

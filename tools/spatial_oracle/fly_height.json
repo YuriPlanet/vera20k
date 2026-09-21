@@ -1,0 +1,1552 @@
+[
+  {
+    "height": 20,
+    "input": {
+      "loaded": false,
+      "name": "ordinary_False_0",
+      "target": 1500,
+      "z": 0
+    },
+    "on_bridge": false,
+    "z": 20
+  },
+  {
+    "height": 21,
+    "input": {
+      "loaded": false,
+      "name": "ordinary_False_1",
+      "target": 1500,
+      "z": 1
+    },
+    "on_bridge": false,
+    "z": 21
+  },
+  {
+    "height": 30,
+    "input": {
+      "loaded": false,
+      "name": "ordinary_False_10",
+      "target": 1500,
+      "z": 10
+    },
+    "on_bridge": false,
+    "z": 30
+  },
+  {
+    "height": 1500,
+    "input": {
+      "loaded": false,
+      "name": "ordinary_False_1480",
+      "target": 1500,
+      "z": 1480
+    },
+    "on_bridge": false,
+    "z": 1500
+  },
+  {
+    "height": 1500,
+    "input": {
+      "loaded": false,
+      "name": "ordinary_False_1489",
+      "target": 1500,
+      "z": 1489
+    },
+    "on_bridge": false,
+    "z": 1500
+  },
+  {
+    "height": 1500,
+    "input": {
+      "loaded": false,
+      "name": "ordinary_False_1490",
+      "target": 1500,
+      "z": 1490
+    },
+    "on_bridge": false,
+    "z": 1500
+  },
+  {
+    "height": 1500,
+    "input": {
+      "loaded": false,
+      "name": "ordinary_False_1499",
+      "target": 1500,
+      "z": 1499
+    },
+    "on_bridge": false,
+    "z": 1500
+  },
+  {
+    "height": 1500,
+    "input": {
+      "loaded": false,
+      "name": "ordinary_False_1500",
+      "target": 1500,
+      "z": 1500
+    },
+    "on_bridge": false,
+    "z": 1500
+  },
+  {
+    "height": 1481,
+    "input": {
+      "loaded": false,
+      "name": "ordinary_False_1501",
+      "target": 1500,
+      "z": 1501
+    },
+    "on_bridge": false,
+    "z": 1481
+  },
+  {
+    "height": 1499,
+    "input": {
+      "loaded": false,
+      "name": "ordinary_False_1519",
+      "target": 1500,
+      "z": 1519
+    },
+    "on_bridge": false,
+    "z": 1499
+  },
+  {
+    "height": 1500,
+    "input": {
+      "loaded": false,
+      "name": "ordinary_False_1520",
+      "target": 1500,
+      "z": 1520
+    },
+    "on_bridge": false,
+    "z": 1500
+  },
+  {
+    "height": 1880,
+    "input": {
+      "loaded": false,
+      "name": "ordinary_False_1900",
+      "target": 1500,
+      "z": 1900
+    },
+    "on_bridge": false,
+    "z": 1880
+  },
+  {
+    "height": 2450,
+    "input": {
+      "loaded": false,
+      "name": "ordinary_False_2500",
+      "target": 1500,
+      "z": 2500
+    },
+    "on_bridge": false,
+    "z": 2450
+  },
+  {
+    "height": 10,
+    "input": {
+      "loaded": true,
+      "name": "ordinary_True_0",
+      "target": 1500,
+      "z": 0
+    },
+    "on_bridge": false,
+    "z": 10
+  },
+  {
+    "height": 11,
+    "input": {
+      "loaded": true,
+      "name": "ordinary_True_1",
+      "target": 1500,
+      "z": 1
+    },
+    "on_bridge": false,
+    "z": 11
+  },
+  {
+    "height": 20,
+    "input": {
+      "loaded": true,
+      "name": "ordinary_True_10",
+      "target": 1500,
+      "z": 10
+    },
+    "on_bridge": false,
+    "z": 20
+  },
+  {
+    "height": 1490,
+    "input": {
+      "loaded": true,
+      "name": "ordinary_True_1480",
+      "target": 1500,
+      "z": 1480
+    },
+    "on_bridge": false,
+    "z": 1490
+  },
+  {
+    "height": 1499,
+    "input": {
+      "loaded": true,
+      "name": "ordinary_True_1489",
+      "target": 1500,
+      "z": 1489
+    },
+    "on_bridge": false,
+    "z": 1499
+  },
+  {
+    "height": 1500,
+    "input": {
+      "loaded": true,
+      "name": "ordinary_True_1490",
+      "target": 1500,
+      "z": 1490
+    },
+    "on_bridge": false,
+    "z": 1500
+  },
+  {
+    "height": 1500,
+    "input": {
+      "loaded": true,
+      "name": "ordinary_True_1499",
+      "target": 1500,
+      "z": 1499
+    },
+    "on_bridge": false,
+    "z": 1500
+  },
+  {
+    "height": 1500,
+    "input": {
+      "loaded": true,
+      "name": "ordinary_True_1500",
+      "target": 1500,
+      "z": 1500
+    },
+    "on_bridge": false,
+    "z": 1500
+  },
+  {
+    "height": 1481,
+    "input": {
+      "loaded": true,
+      "name": "ordinary_True_1501",
+      "target": 1500,
+      "z": 1501
+    },
+    "on_bridge": false,
+    "z": 1481
+  },
+  {
+    "height": 1499,
+    "input": {
+      "loaded": true,
+      "name": "ordinary_True_1519",
+      "target": 1500,
+      "z": 1519
+    },
+    "on_bridge": false,
+    "z": 1499
+  },
+  {
+    "height": 1500,
+    "input": {
+      "loaded": true,
+      "name": "ordinary_True_1520",
+      "target": 1500,
+      "z": 1520
+    },
+    "on_bridge": false,
+    "z": 1500
+  },
+  {
+    "height": 1880,
+    "input": {
+      "loaded": true,
+      "name": "ordinary_True_1900",
+      "target": 1500,
+      "z": 1900
+    },
+    "on_bridge": false,
+    "z": 1880
+  },
+  {
+    "height": 2450,
+    "input": {
+      "loaded": true,
+      "name": "ordinary_True_2500",
+      "target": 1500,
+      "z": 2500
+    },
+    "on_bridge": false,
+    "z": 2450
+  },
+  {
+    "height": 0,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_0_0",
+      "target": 0,
+      "z": 0
+    },
+    "on_bridge": false,
+    "z": 0
+  },
+  {
+    "height": 16,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_0_1500",
+      "target": 1500,
+      "z": 0
+    },
+    "on_bridge": false,
+    "z": 16
+  },
+  {
+    "height": 0,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_1_0",
+      "target": 0,
+      "z": 1
+    },
+    "on_bridge": false,
+    "z": 0
+  },
+  {
+    "height": 17,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_1_1500",
+      "target": 1500,
+      "z": 1
+    },
+    "on_bridge": false,
+    "z": 17
+  },
+  {
+    "height": 0,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_6_0",
+      "target": 0,
+      "z": 6
+    },
+    "on_bridge": false,
+    "z": 0
+  },
+  {
+    "height": 22,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_6_1500",
+      "target": 1500,
+      "z": 6
+    },
+    "on_bridge": false,
+    "z": 22
+  },
+  {
+    "height": 10,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_16_0",
+      "target": 0,
+      "z": 16
+    },
+    "on_bridge": false,
+    "z": 10
+  },
+  {
+    "height": 32,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_16_1500",
+      "target": 1500,
+      "z": 16
+    },
+    "on_bridge": false,
+    "z": 32
+  },
+  {
+    "height": 13,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_19_0",
+      "target": 0,
+      "z": 19
+    },
+    "on_bridge": false,
+    "z": 13
+  },
+  {
+    "height": 35,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_19_1500",
+      "target": 1500,
+      "z": 19
+    },
+    "on_bridge": false,
+    "z": 35
+  },
+  {
+    "height": 14,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_20_0",
+      "target": 0,
+      "z": 20
+    },
+    "on_bridge": false,
+    "z": 14
+  },
+  {
+    "height": 36,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_20_1500",
+      "target": 1500,
+      "z": 20
+    },
+    "on_bridge": false,
+    "z": 36
+  },
+  {
+    "height": 43,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_49_0",
+      "target": 0,
+      "z": 49
+    },
+    "on_bridge": false,
+    "z": 43
+  },
+  {
+    "height": 65,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_49_1500",
+      "target": 1500,
+      "z": 49
+    },
+    "on_bridge": false,
+    "z": 65
+  },
+  {
+    "height": 44,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_50_0",
+      "target": 0,
+      "z": 50
+    },
+    "on_bridge": false,
+    "z": 44
+  },
+  {
+    "height": 66,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_50_1500",
+      "target": 1500,
+      "z": 50
+    },
+    "on_bridge": false,
+    "z": 66
+  },
+  {
+    "height": 193,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_199_0",
+      "target": 0,
+      "z": 199
+    },
+    "on_bridge": false,
+    "z": 193
+  },
+  {
+    "height": 215,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_199_1500",
+      "target": 1500,
+      "z": 199
+    },
+    "on_bridge": false,
+    "z": 215
+  },
+  {
+    "height": 194,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_200_0",
+      "target": 0,
+      "z": 200
+    },
+    "on_bridge": false,
+    "z": 194
+  },
+  {
+    "height": 216,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_200_1500",
+      "target": 1500,
+      "z": 200
+    },
+    "on_bridge": false,
+    "z": 216
+  },
+  {
+    "height": 753,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_759_0",
+      "target": 0,
+      "z": 759
+    },
+    "on_bridge": false,
+    "z": 753
+  },
+  {
+    "height": 775,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_759_1500",
+      "target": 1500,
+      "z": 759
+    },
+    "on_bridge": false,
+    "z": 775
+  },
+  {
+    "height": 754,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_760_0",
+      "target": 0,
+      "z": 760
+    },
+    "on_bridge": false,
+    "z": 754
+  },
+  {
+    "height": 776,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_760_1500",
+      "target": 1500,
+      "z": 760
+    },
+    "on_bridge": false,
+    "z": 776
+  },
+  {
+    "height": 1494,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_1500_0",
+      "target": 0,
+      "z": 1500
+    },
+    "on_bridge": false,
+    "z": 1494
+  },
+  {
+    "height": 1500,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_1500_1500",
+      "target": 1500,
+      "z": 1500
+    },
+    "on_bridge": false,
+    "z": 1500
+  },
+  {
+    "height": 1495,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_1501_0",
+      "target": 0,
+      "z": 1501
+    },
+    "on_bridge": false,
+    "z": 1495
+  },
+  {
+    "height": 1485,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_1501_1500",
+      "target": 1500,
+      "z": 1501
+    },
+    "on_bridge": false,
+    "z": 1485
+  },
+  {
+    "height": 1509,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_1515_0",
+      "target": 0,
+      "z": 1515
+    },
+    "on_bridge": false,
+    "z": 1509
+  },
+  {
+    "height": 1499,
+    "input": {
+      "dropship": true,
+      "landing": false,
+      "name": "dropship_False_1515_1500",
+      "target": 1500,
+      "z": 1515
+    },
+    "on_bridge": false,
+    "z": 1499
+  },
+  {
+    "height": 0,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_0_0",
+      "target": 0,
+      "z": 0
+    },
+    "on_bridge": false,
+    "z": 0
+  },
+  {
+    "height": 16,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_0_1500",
+      "target": 1500,
+      "z": 0
+    },
+    "on_bridge": false,
+    "z": 16
+  },
+  {
+    "height": 0,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_1_0",
+      "target": 0,
+      "z": 1
+    },
+    "on_bridge": false,
+    "z": 0
+  },
+  {
+    "height": 17,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_1_1500",
+      "target": 1500,
+      "z": 1
+    },
+    "on_bridge": false,
+    "z": 17
+  },
+  {
+    "height": 0,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_6_0",
+      "target": 0,
+      "z": 6
+    },
+    "on_bridge": false,
+    "z": 0
+  },
+  {
+    "height": 22,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_6_1500",
+      "target": 1500,
+      "z": 6
+    },
+    "on_bridge": false,
+    "z": 22
+  },
+  {
+    "height": 6,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_16_0",
+      "target": 0,
+      "z": 16
+    },
+    "on_bridge": false,
+    "z": 6
+  },
+  {
+    "height": 32,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_16_1500",
+      "target": 1500,
+      "z": 16
+    },
+    "on_bridge": false,
+    "z": 32
+  },
+  {
+    "height": 9,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_19_0",
+      "target": 0,
+      "z": 19
+    },
+    "on_bridge": false,
+    "z": 9
+  },
+  {
+    "height": 35,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_19_1500",
+      "target": 1500,
+      "z": 19
+    },
+    "on_bridge": false,
+    "z": 35
+  },
+  {
+    "height": 9,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_20_0",
+      "target": 0,
+      "z": 20
+    },
+    "on_bridge": false,
+    "z": 9
+  },
+  {
+    "height": 36,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_20_1500",
+      "target": 1500,
+      "z": 20
+    },
+    "on_bridge": false,
+    "z": 36
+  },
+  {
+    "height": 37,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_49_0",
+      "target": 0,
+      "z": 49
+    },
+    "on_bridge": false,
+    "z": 37
+  },
+  {
+    "height": 65,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_49_1500",
+      "target": 1500,
+      "z": 49
+    },
+    "on_bridge": false,
+    "z": 65
+  },
+  {
+    "height": 38,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_50_0",
+      "target": 0,
+      "z": 50
+    },
+    "on_bridge": false,
+    "z": 38
+  },
+  {
+    "height": 66,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_50_1500",
+      "target": 1500,
+      "z": 50
+    },
+    "on_bridge": false,
+    "z": 66
+  },
+  {
+    "height": 180,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_199_0",
+      "target": 0,
+      "z": 199
+    },
+    "on_bridge": false,
+    "z": 180
+  },
+  {
+    "height": 215,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_199_1500",
+      "target": 1500,
+      "z": 199
+    },
+    "on_bridge": false,
+    "z": 215
+  },
+  {
+    "height": 180,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_200_0",
+      "target": 0,
+      "z": 200
+    },
+    "on_bridge": false,
+    "z": 180
+  },
+  {
+    "height": 216,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_200_1500",
+      "target": 1500,
+      "z": 200
+    },
+    "on_bridge": false,
+    "z": 216
+  },
+  {
+    "height": 712,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_759_0",
+      "target": 0,
+      "z": 759
+    },
+    "on_bridge": false,
+    "z": 712
+  },
+  {
+    "height": 775,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_759_1500",
+      "target": 1500,
+      "z": 759
+    },
+    "on_bridge": false,
+    "z": 775
+  },
+  {
+    "height": 712,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_760_0",
+      "target": 0,
+      "z": 760
+    },
+    "on_bridge": false,
+    "z": 712
+  },
+  {
+    "height": 776,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_760_1500",
+      "target": 1500,
+      "z": 760
+    },
+    "on_bridge": false,
+    "z": 776
+  },
+  {
+    "height": 1452,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_1500_0",
+      "target": 0,
+      "z": 1500
+    },
+    "on_bridge": false,
+    "z": 1452
+  },
+  {
+    "height": 1500,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_1500_1500",
+      "target": 1500,
+      "z": 1500
+    },
+    "on_bridge": false,
+    "z": 1500
+  },
+  {
+    "height": 1453,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_1501_0",
+      "target": 0,
+      "z": 1501
+    },
+    "on_bridge": false,
+    "z": 1453
+  },
+  {
+    "height": 1500,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_1501_1500",
+      "target": 1500,
+      "z": 1501
+    },
+    "on_bridge": false,
+    "z": 1500
+  },
+  {
+    "height": 1467,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_1515_0",
+      "target": 0,
+      "z": 1515
+    },
+    "on_bridge": false,
+    "z": 1467
+  },
+  {
+    "height": 1505,
+    "input": {
+      "dropship": true,
+      "landing": true,
+      "name": "dropship_True_1515_1500",
+      "target": 1500,
+      "z": 1515
+    },
+    "on_bridge": false,
+    "z": 1505
+  },
+  {
+    "height": 0,
+    "input": {
+      "name": "ordinary_land_0",
+      "target": 0,
+      "z": 0
+    },
+    "on_bridge": false,
+    "z": 0
+  },
+  {
+    "height": 0,
+    "input": {
+      "bridge": true,
+      "name": "bridge_land_0",
+      "target": 0,
+      "z": 0
+    },
+    "on_bridge": false,
+    "z": 0
+  },
+  {
+    "height": 0,
+    "input": {
+      "name": "ordinary_land_1",
+      "target": 0,
+      "z": 1
+    },
+    "on_bridge": false,
+    "z": 0
+  },
+  {
+    "height": 0,
+    "input": {
+      "bridge": true,
+      "name": "bridge_land_1",
+      "target": 0,
+      "z": 1
+    },
+    "on_bridge": false,
+    "z": 0
+  },
+  {
+    "height": 0,
+    "input": {
+      "name": "ordinary_land_19",
+      "target": 0,
+      "z": 19
+    },
+    "on_bridge": false,
+    "z": 0
+  },
+  {
+    "height": 0,
+    "input": {
+      "bridge": true,
+      "name": "bridge_land_19",
+      "target": 0,
+      "z": 19
+    },
+    "on_bridge": false,
+    "z": 0
+  },
+  {
+    "height": 0,
+    "input": {
+      "name": "ordinary_land_20",
+      "target": 0,
+      "z": 20
+    },
+    "on_bridge": false,
+    "z": 0
+  },
+  {
+    "height": 0,
+    "input": {
+      "bridge": true,
+      "name": "bridge_land_20",
+      "target": 0,
+      "z": 20
+    },
+    "on_bridge": false,
+    "z": 0
+  },
+  {
+    "height": 29,
+    "input": {
+      "name": "ordinary_land_49",
+      "target": 0,
+      "z": 49
+    },
+    "on_bridge": false,
+    "z": 29
+  },
+  {
+    "height": 29,
+    "input": {
+      "bridge": true,
+      "name": "bridge_land_49",
+      "target": 0,
+      "z": 49
+    },
+    "on_bridge": false,
+    "z": 29
+  },
+  {
+    "height": 30,
+    "input": {
+      "name": "ordinary_land_50",
+      "target": 0,
+      "z": 50
+    },
+    "on_bridge": false,
+    "z": 30
+  },
+  {
+    "height": 30,
+    "input": {
+      "bridge": true,
+      "name": "bridge_land_50",
+      "target": 0,
+      "z": 50
+    },
+    "on_bridge": false,
+    "z": 30
+  },
+  {
+    "height": 79,
+    "input": {
+      "name": "ordinary_land_99",
+      "target": 0,
+      "z": 99
+    },
+    "on_bridge": false,
+    "z": 79
+  },
+  {
+    "height": 79,
+    "input": {
+      "bridge": true,
+      "name": "bridge_land_99",
+      "target": 0,
+      "z": 99
+    },
+    "on_bridge": false,
+    "z": 79
+  },
+  {
+    "height": 80,
+    "input": {
+      "name": "ordinary_land_100",
+      "target": 0,
+      "z": 100
+    },
+    "on_bridge": false,
+    "z": 80
+  },
+  {
+    "height": 80,
+    "input": {
+      "bridge": true,
+      "name": "bridge_land_100",
+      "target": 0,
+      "z": 100
+    },
+    "on_bridge": false,
+    "z": 80
+  },
+  {
+    "height": 395,
+    "input": {
+      "name": "ordinary_land_415",
+      "target": 0,
+      "z": 415
+    },
+    "on_bridge": false,
+    "z": 395
+  },
+  {
+    "height": 395,
+    "input": {
+      "bridge": true,
+      "name": "bridge_land_415",
+      "target": 0,
+      "z": 415
+    },
+    "on_bridge": false,
+    "z": 395
+  },
+  {
+    "height": 396,
+    "input": {
+      "name": "ordinary_land_416",
+      "target": 0,
+      "z": 416
+    },
+    "on_bridge": false,
+    "z": 396
+  },
+  {
+    "height": 396,
+    "input": {
+      "bridge": true,
+      "name": "bridge_land_416",
+      "target": 0,
+      "z": 416
+    },
+    "on_bridge": false,
+    "z": 396
+  },
+  {
+    "height": 397,
+    "input": {
+      "name": "ordinary_land_417",
+      "target": 0,
+      "z": 417
+    },
+    "on_bridge": false,
+    "z": 397
+  },
+  {
+    "height": 397,
+    "input": {
+      "bridge": true,
+      "name": "bridge_land_417",
+      "target": 0,
+      "z": 417
+    },
+    "on_bridge": false,
+    "z": 397
+  },
+  {
+    "height": 414,
+    "input": {
+      "name": "ordinary_land_435",
+      "target": 0,
+      "z": 435
+    },
+    "on_bridge": false,
+    "z": 414
+  },
+  {
+    "height": 414,
+    "input": {
+      "bridge": true,
+      "name": "bridge_land_435",
+      "target": 0,
+      "z": 435
+    },
+    "on_bridge": false,
+    "z": 414
+  },
+  {
+    "height": 415,
+    "input": {
+      "name": "ordinary_land_436",
+      "target": 0,
+      "z": 436
+    },
+    "on_bridge": false,
+    "z": 415
+  },
+  {
+    "height": 415,
+    "input": {
+      "bridge": true,
+      "name": "bridge_land_436",
+      "target": 0,
+      "z": 436
+    },
+    "on_bridge": false,
+    "z": 415
+  },
+  {
+    "height": 443,
+    "input": {
+      "name": "ordinary_land_466",
+      "target": 0,
+      "z": 466
+    },
+    "on_bridge": false,
+    "z": 443
+  },
+  {
+    "height": 443,
+    "input": {
+      "bridge": true,
+      "name": "bridge_land_466",
+      "target": 0,
+      "z": 466
+    },
+    "on_bridge": false,
+    "z": 443
+  },
+  {
+    "height": 1866,
+    "input": {
+      "name": "ordinary_land_1916",
+      "target": 0,
+      "z": 1916
+    },
+    "on_bridge": false,
+    "z": 1866
+  },
+  {
+    "height": 1866,
+    "input": {
+      "bridge": true,
+      "name": "bridge_land_1916",
+      "target": 0,
+      "z": 1916
+    },
+    "on_bridge": false,
+    "z": 1866
+  },
+  {
+    "height": 436,
+    "input": {
+      "bridge": true,
+      "name": "bridge_takeoff",
+      "on_bridge": true,
+      "target": 1500,
+      "z": 416
+    },
+    "on_bridge": false,
+    "z": 436
+  },
+  {
+    "height": 426,
+    "input": {
+      "bridge": true,
+      "loaded": true,
+      "name": "bridge_loaded_takeoff",
+      "on_bridge": true,
+      "target": 1500,
+      "z": 416
+    },
+    "on_bridge": false,
+    "z": 426
+  },
+  {
+    "height": 0,
+    "input": {
+      "bridge": true,
+      "name": "bridge_already_attached_descent",
+      "on_bridge": true,
+      "target": 0,
+      "z": 417
+    },
+    "on_bridge": true,
+    "z": 416
+  },
+  {
+    "height": 280,
+    "input": {
+      "level": 2,
+      "name": "slope_climb",
+      "slope": 1,
+      "target": 1500,
+      "z": 260
+    },
+    "on_bridge": false,
+    "z": 280
+  },
+  {
+    "height": 241,
+    "input": {
+      "level": 2,
+      "name": "slope_land",
+      "slope": 1,
+      "target": 0,
+      "z": 261
+    },
+    "on_bridge": false,
+    "z": 241
+  },
+  {
+    "height": 20,
+    "input": {
+      "kind": "unit",
+      "loaded": true,
+      "name": "unit_no_aircraft_interface",
+      "target": 1500,
+      "z": 0
+    },
+    "on_bridge": false,
+    "z": 20
+  },
+  {
+    "height": 1584,
+    "input": {
+      "dropship": true,
+      "flight_level": 1500,
+      "name": "dropship_type_override",
+      "target": 1500,
+      "z": 1600
+    },
+    "on_bridge": false,
+    "z": 1584
+  },
+  {
+    "height": 1594,
+    "input": {
+      "dropship": true,
+      "flight_level": 2200,
+      "name": "dropship_distinct_type_override",
+      "target": 1500,
+      "z": 1600
+    },
+    "on_bridge": false,
+    "z": 1594
+  },
+  {
+    "height": 1,
+    "input": {
+      "health": 0,
+      "name": "health_0_0",
+      "target": 1500,
+      "z": 0
+    },
+    "on_bridge": false,
+    "z": 1
+  },
+  {
+    "height": 1,
+    "input": {
+      "health": 0,
+      "name": "health_0_1",
+      "target": 1500,
+      "z": 1
+    },
+    "on_bridge": false,
+    "z": 1
+  },
+  {
+    "height": 1,
+    "input": {
+      "health": 0,
+      "name": "health_0_19",
+      "target": 1500,
+      "z": 19
+    },
+    "on_bridge": false,
+    "z": 1
+  },
+  {
+    "height": 1,
+    "input": {
+      "health": 0,
+      "name": "health_0_20",
+      "target": 1500,
+      "z": 20
+    },
+    "on_bridge": false,
+    "z": 1
+  },
+  {
+    "height": 30,
+    "input": {
+      "health": 0,
+      "name": "health_0_50",
+      "target": 1500,
+      "z": 50
+    },
+    "on_bridge": false,
+    "z": 30
+  },
+  {
+    "height": 1480,
+    "input": {
+      "health": 0,
+      "name": "health_0_1500",
+      "target": 1500,
+      "z": 1500
+    },
+    "on_bridge": false,
+    "z": 1480
+  },
+  {
+    "height": 0,
+    "input": {
+      "health": -1,
+      "name": "health_-1_0",
+      "target": 1500,
+      "z": 0
+    },
+    "on_bridge": false,
+    "z": 0
+  },
+  {
+    "height": 1,
+    "input": {
+      "health": -1,
+      "name": "health_-1_1",
+      "target": 1500,
+      "z": 1
+    },
+    "on_bridge": false,
+    "z": 1
+  },
+  {
+    "height": 19,
+    "input": {
+      "health": -1,
+      "name": "health_-1_19",
+      "target": 1500,
+      "z": 19
+    },
+    "on_bridge": false,
+    "z": 19
+  },
+  {
+    "height": 20,
+    "input": {
+      "health": -1,
+      "name": "health_-1_20",
+      "target": 1500,
+      "z": 20
+    },
+    "on_bridge": false,
+    "z": 20
+  },
+  {
+    "height": 50,
+    "input": {
+      "health": -1,
+      "name": "health_-1_50",
+      "target": 1500,
+      "z": 50
+    },
+    "on_bridge": false,
+    "z": 50
+  },
+  {
+    "height": 1500,
+    "input": {
+      "health": -1,
+      "name": "health_-1_1500",
+      "target": 1500,
+      "z": 1500
+    },
+    "on_bridge": false,
+    "z": 1500
+  }
+]

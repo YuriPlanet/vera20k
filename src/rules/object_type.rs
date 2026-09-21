@@ -348,6 +348,9 @@ pub struct ObjectType {
     /// Lepton distance from destination at which braking begins (SlowdownDistance=).
     /// Default 512 (~2 cells). Original engine default is 500.
     pub slowdown_distance: i32,
+    /// TechnoType+618: constructor711050 seeds -1; ReadINI712336 reads
+    /// `FlightLevel`. Getter717800 uses General.FlightLevel only for -1.
+    pub(crate) flight_level: i32,
     /// Vision range in cells.
     pub sight: i32,
     /// Technology level required (-1 = unbuildable by player).
@@ -1469,6 +1472,16 @@ fn native_minutes_to_ticks(value: f32) -> u32 {
 }
 
 impl ObjectType {
+    /// Native TechnoType virtual+BC (717800), used by Fly takeoff4CF9F2
+    /// and Aircraft Unlimbo414383. Zero and other negatives are literal.
+    pub fn flight_level(&self, general_flight_level: i32) -> i32 {
+        if self.flight_level == -1 {
+            general_flight_level
+        } else {
+            self.flight_level
+        }
+    }
+
     /// Building43BCBD..43BCD0 allocates at least one radio contact even when
     /// the signed type count is nonpositive. This is not the coordinate-query count.
     pub fn dock_contact_capacity(&self) -> u32 {
@@ -1727,6 +1740,7 @@ impl ObjectType {
             accelerates: section.get_bool("Accelerates").unwrap_or(true),
             passive: section.get_bool("Passive").unwrap_or(false),
             slowdown_distance: section.get_i32("SlowdownDistance").unwrap_or(500),
+            flight_level: section.get_i32("FlightLevel").unwrap_or(-1),
             sight: section.get_i32("Sight").unwrap_or(0),
             // TechnoTypeClass ctor @ gamemd.exe 0x00711082 initializes
             // +0x634 to 255; ReadINI preserves that current value when the
@@ -2457,6 +2471,39 @@ fn parse_exit_coord(value: Option<&str>) -> Option<(i32, i32, i32)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn flight_level_reader_and_fallback_match_original_executable() {
+        #[derive(serde::Deserialize)]
+        struct Row {
+            raw: Option<String>,
+            general: i32,
+            stored: i32,
+            effective: i32,
+        }
+        let rows: Vec<Row> =
+            serde_json::from_str(include_str!("../../tools/spatial_oracle/flight_level.json"))
+                .unwrap();
+        assert_eq!(rows.len(), 30);
+        for row in rows {
+            let mut ini = IniFile::from_str("[PLANE]\nStrength=100\n");
+            if let Some(raw) = &row.raw {
+                ini.projection_section_mut("PLANE").set("FlightLevel", raw);
+            }
+            let obj = ObjectType::from_ini_section(
+                "PLANE",
+                ini.section("PLANE").unwrap(),
+                ObjectCategory::Aircraft,
+            );
+            assert_eq!(obj.flight_level, row.stored, "{:?}", row.raw);
+            assert_eq!(
+                obj.flight_level(row.general),
+                row.effective,
+                "{:?}",
+                row.raw
+            );
+        }
+    }
+
     #[test]
     fn signed_dock_count_is_distinct_from_contact_capacity() {
         #[derive(serde::Deserialize)]

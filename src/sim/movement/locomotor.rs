@@ -173,7 +173,7 @@ pub struct LocomotorState {
     /// Jumpjets use their own `jumpjet_current_speed` instead.
     pub fly_current_speed: SimFixed,
     /// Current altitude in leptons (0 = on the ground).
-    /// Fly units cruise at `GeneralRules.flight_level`; Jumpjets hover at JumpjetHeight.
+    /// Fly units use their type's resolved FlightLevel; Jumpjets use JumpjetHeight.
     pub altitude: SimFixed,
     /// Target altitude — what the unit is ascending/descending toward.
     pub target_altitude: SimFixed,
@@ -254,9 +254,9 @@ pub struct LocomotorState {
 impl LocomotorState {
     /// Create a LocomotorState from an ObjectType's parsed rules.ini data.
     ///
-    /// `flight_level` is the cruise altitude in leptons from `[General] FlightLevel=`
-    /// (typically `rules.general.flight_level`). Fly/Rocket locomotors use this
-    /// as their target altitude.
+    /// `flight_level` supplies `[General] FlightLevel`; Fly resolves the
+    /// type's override through TechnoType getter717800. Rocket retains its
+    /// separate controller policy and Jumpjet uses its linked parameter block.
     pub fn from_object_type(obj: &ObjectType, flight_level: i32, binary_frame: u32) -> Self {
         let kind: LocomotorKind = obj.locomotor;
         let sim_one: SimFixed = SimFixed::from_num(1);
@@ -287,8 +287,13 @@ impl LocomotorState {
         };
 
         // Extract jumpjet params for altitude and wobble.
+        let resolved_flight_level = if kind == LocomotorKind::Fly {
+            obj.flight_level(flight_level)
+        } else {
+            flight_level
+        };
         let (target_alt, climb, jj_speed) =
-            Self::air_params_from_object(kind, &obj.jumpjet_params, flight_level);
+            Self::air_params_from_object(kind, &obj.jumpjet_params, resolved_flight_level);
 
         // gamemd-derived: every `TechnoType` carries the `+0xD70`..`+0xD90`
         // jumpjet block, but only the Jumpjet locomotor ever copies it out —
@@ -369,7 +374,10 @@ impl LocomotorState {
     ) -> (SimFixed, SimFixed, SimFixed) {
         match kind {
             LocomotorKind::Fly | LocomotorKind::Rocket => {
-                let alt = SimFixed::from_num(flight_level);
+                // Legacy controller storage is I16F16. Keep the rules getter
+                // signed/exact and saturate only this adapter for out-of-range
+                // mod values; native integer-height storage remains to be ported.
+                let alt = SimFixed::saturating_from_num(flight_level);
                 (alt, FLY_CLIMB_RATE, SIM_ZERO)
             }
             LocomotorKind::Jumpjet => {
