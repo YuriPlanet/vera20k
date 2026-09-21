@@ -1,12 +1,12 @@
 # Module dependency map
 
 <!-- module-map:provenance:begin -->
-Generated snapshot: `e8e12fb2c5a618e530a371acbf2b0aeea9408249` (2026-09-21), cargo-modules 0.26.0.
+Generated snapshot: `3aee9c655f4e7c9a24be60425ca6ccc7adec8250` (2026-09-21), cargo-modules 0.26.0.
 
 Scope: `vera20k` library, default features, `x86_64-pc-windows-msvc`, no depth limit.
 Test-only, binary-specific and inactive conditional modules are excluded.
 External crates and the sysroot are excluded from the dependency graph.
-Contains **842 modules plus the crate root**, and **5311 distinct
+Contains **842 modules plus the crate root**, and **5315 distinct
 cross-module dependency edges**. Check this source commit against your checkout.
 <!-- module-map:provenance:end -->
 
@@ -752,7 +752,7 @@ sim::world::building_anim -> rules::art_data; rules::ruleset; sim::intern; sim::
 sim::world::command_schedule -> map::entities; rules::locomotor_type; rules::ruleset; sim::combat; sim::command; sim::intern; sim::movement; sim::movement::group_destination; sim::movement::locomotor; sim::pathfinding::core; sim::pathfinding::zone_map; sim::world
 sim::world::damage_consequences -> map::entities; rules::overlay_types; rules::ruleset; sim::combat; sim::intern; sim::pathfinding::core; sim::production; sim::world
 sim::world::display_layers -> -
-sim::world::display_registry -> map::entities; map::resolved_terrain; rules::locomotor_type; rules::ruleset; sim::game_entity; sim::movement::ground_pose; sim::world; sim::world::display_layers
+sim::world::display_registry -> map::entities; map::resolved_terrain; rules::locomotor_type; rules::ruleset; sim::entity_store; sim::game_entity; sim::intern; sim::movement::ground_pose; sim::particles; sim::world; sim::world::display_layers
 sim::world::edge_cell -> map::playfield; map::resolved_terrain; sim::cell_rect; sim::pathfinding::core; sim::rng
 sim::world::frame_error -> -
 sim::world::gap_generator -> map::entities; rules::ruleset; sim::intern; sim::power_system; sim::vision; sim::world
@@ -760,7 +760,7 @@ sim::world::hash_schema -> -
 sim::world::house_base -> map::actions; map::entities; map::events; map::houses; map::overlay; map::playfield; map::resolved_terrain; map::trigger_graph; map::triggers; rules::locomotor_type; rules::object_type; rules::ruleset; sim::ai; sim::animation; sim::bridge_state; sim::combat; sim::combat::combat_weapon; sim::command; sim::components; sim::docking::aircraft_dock; sim::docking::building_dock; sim::entity_store; sim::find_nearby_cell; sim::house_state; sim::house_strategy; sim::intern; sim::lifecycle_request; sim::movement; sim::movement::drop_pod_movement; sim::movement::locomotor; sim::movement::rocket_movement; sim::movement::teleport_movement; sim::movement::tunnel_movement; sim::movement::turret; sim::occupancy; sim::overlay_grid; sim::passenger; sim::pathfinding::core; sim::pathfinding::terrain_cost; sim::pathfinding::terrain_speed; sim::pathfinding::zone_incremental; sim::pathfinding::zone_map; sim::power_system; sim::production; sim::production::production_types; sim::projectile; sim::radar; sim::rng; sim::scenario_session; sim::team_script_vm; sim::tiberium; sim::trigger_runtime; sim::vision; sim::world; sim::world::authored_load_host; sim::world::bridge_hut_scatter; sim::world::bridge_orchestrator; sim::world::building_anim; sim::world::command_schedule; sim::world::damage_consequences; sim::world::display_layers; sim::world::display_registry; sim::world::edge_cell; sim::world::frame_error; sim::world::gap_generator; sim::world::hash_schema; sim::world::infantry_terminal; sim::world::jumpjet_cruise; sim::world::lifecycle; sim::world::load_object_lifecycle; sim::world::logic_vector; sim::world::move_cell_input; sim::world::navigation; sim::world::object_turn; sim::world::projectile_collision; sim::world::shroud_refresh; sim::world::substrate; sim::world::techno_ai; sim::world::techno_ai::mission_handlers; sim::world::techno_ai_cloak; sim::world::track_cell_recalc; sim::world::unit_post; sim::world::world_commands; sim::world::world_hash; sim::world::world_orders; sim::world::world_spawn; util::fixed_math; util::native_x87
 sim::world::infantry_terminal -> map::entities; rules::animation_sequence; rules::ruleset; sim::animation; sim::combat; sim::components; sim::world
 sim::world::jumpjet_cruise -> map::cell_index; map::entities; map::resolved_terrain; map::retail_trig; rules::locomotor_type; rules::ruleset; sim::components; sim::entity_store; sim::game_entity; sim::intern; sim::movement::air_movement; sim::movement::ground_pose; sim::movement::jumpjet_flight; sim::movement::jumpjet_movement; sim::movement::locomotor; sim::occupancy; sim::rng; sim::world; util::fixed_math; util::lepton
-sim::world::lifecycle -> map::entities; rules::ruleset; sim::cell_rect; sim::combat; sim::components; sim::game_entity; sim::intern; sim::lifecycle_request; sim::movement::locomotor; sim::occupancy; sim::passenger; sim::projectile; sim::world; sim::world::substrate; util::fixed_math; util::lepton
+sim::world::lifecycle -> map::entities; rules::ruleset; sim::cell_rect; sim::combat; sim::components; sim::game_entity; sim::intern; sim::lifecycle_request; sim::movement::locomotor; sim::occupancy; sim::passenger; sim::projectile; sim::world; sim::world::display_layers; sim::world::substrate; util::fixed_math; util::lepton
 sim::world::load_object_lifecycle -> -
 sim::world::logic_vector -> -
 sim::world::move_cell_input -> map::cell_index; map::playfield; map::resolved_terrain; rules::locomotor_type; sim::cell_rect; sim::components; sim::find_nearby_cell; sim::movement::ground_pose; sim::occupancy; sim::pathfinding::zone_map; sim::world

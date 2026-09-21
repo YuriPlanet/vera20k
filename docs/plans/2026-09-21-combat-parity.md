@@ -231,128 +231,134 @@ probe; it is not a second implementation to publish.
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
 Branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Selection/removal prerequisites: `8c8e0f8e`; live speed: `d2a45ba4`;
-display ownership source HEAD: `e8e12fb2` (snapshot182).
-Module map refreshed from that commit:842 modules,5,311 dependency edges.
-No PR or critic pass for this branch. Production pickup remains unfinished.
-The primary checkout and `.local/` data are excluded from publication.
+Source increment: `3aee9c65`; the preceding source HEAD was `e43e06d5`.
+No PR or critic pass for this branch. Production pickup and the complete display
+migration remain unfinished. Preserve the primary checkout and untracked `.local/`.
+The prompt-writing request is finished; continue this active implementation goal.
 
 Acceptance remains movement pickup through native selection, eligibility,
 trigger, removal/replacement, effect and subsequent movement/combat, with matching
-RNG, returns and save/restore. The display prerequisite must preserve registration,
-resubmission, removal and single-pass Ground ordering through all actual consumers.
-Neither the isolated effects nor an entity-only list complete pickup.
+RNG, returns and save/restore. Display must preserve registration, resubmission,
+removal and single-pass Ground ordering through actual consumers. An entity-only
+list or isolated crate effect does not complete pickup.
 
-### Retained speed work
+### Implemented dependency state
 
-`FootSpeedState` owns binary64 +580, initialized exactly1.0. The effect writes
-this owner; the entity speed resolver consumes it before FASTER, retaining the
-separate native truncations. Drive/Ship and paid Walk regressions cover live
-changes without another move order; Walk attack survives production save/load.
-Hover and tube exit use the live getter. These tests do not walk through a crate.
-Snapshot181 introduced the factor; current work advances the schema to182.
+`FootSpeedState` owns binary64 +580, initialized to 1.0, and the speed resolver consumes
+it before FASTER with separate native truncations. Drive/Ship, paid Walk, Hover
+and tube exit use the live getter. Walk attack survives production save/load.
+These regressions do not walk through a crate. Native `crate_speed_effect` has 23
+recipient loops plus subsequent Foot queries; `crate_pickup` has 28 dispatch cases;
+`track_speed_native` has 75 getters and 116 Drive/Ship prefixes. Selection/removal
+helpers still lack their production movement caller.
 
-`crate_speed_effect` has23 original recipient loops plus subsequent Foot queries;
-`crate_pickup` has28 entry-to-return/dispatch cases; `track_speed_native` has75 full
-getters and116 Drive/Ship prefixes. Exact input bit strings prevent the JSON
-decoder from rounding a neighbor of1.0 into an eligible factor. Stock
-VeteranSpeed1.2 produces10/15/17 ->11/17/20, or13/20/23 after crate1.2.
-The previous committed candidate passed9,099 library tests,134 ignored, and
-library Clippy (1,032 warnings). Logs remain under `.local/crate-speed-live-*`.
+`world/display_layers.rs` owns five private ordered vectors and a rebuilt lookup
+index. Submit 4A9720 removes prior membership, queries the layer, inserts Ground
+before the first strictly greater GetYSort and appends other layers. Remove 4A9770
+preserves order. MainTick 55DBC8 performs one adjacent Ground sort 551A30 before
+Logic 55DC9E. Entity Reveal/Conceal and Jumpjet Process use this authority; Jumpjet
+compares live layer queries before/after Process, not cached membership.
 
-### Display owner under implementation
+Snapshot 183 now retains non-animation display membership too: terrain and particle
+systems on Ground, Flat bullets on Surface, other bullets/voxel debris/waves on
+Air. Mixed sort queries borrow live stores, including shared Building coordinate
+adjustments; they do not copy another set of keys. Production particle/terrain
+admission supplies Rules for peer comparisons. Common non-entity retirement removes
+Display before deferred storage deletion. FireAt and shrapnel pass the projectile's
+Flat value into admission; membership remains with the display owner.
 
-`world/display_layers.rs` owns five private ordered vectors. The ID-to-layer
-index is derived, never iterated for gameplay, and rebuilt on load. Submit4A9720
-removes old membership, queries the layer and inserts Ground before the first
-strictly greater GetYSort; equal keys remain ahead. Other layers append. Remove
-4A9770 preserves order and has a fallback scan for a wrong cached layer.
-MainTick55DBC8 runs one adjacent Ground sort551A30 before Logic55DC9E, including
-its trigger work. Snapshot182 preserves the vectors and rejects null/duplicate
-or missing identities. Hashing folds their order independently of Logic.
+Native BulletType ReadINI 46BEE0 reads the current pass's Image with empty default
+and capacity 25 at 46C1E8. Only a nonempty result reaches ART Flat at 46C28D; the prior
++2F7 byte is the default and constructor 46BCE0 initializes false. The existing
+per-pass rules processor now retains that value across registry handoffs and feeds
+ProjectileType through the shared RuleSet constructor. Trailer uses the same raw
+Image gate. Flat has no type-ID fallback or ART Image redirect. The effective Flat
+value joins the simulation config hash, including save compatibility checks.
+`merge_art_data` continues to own the distinct inherited ObjectRead Voxel binding.
+This does not claim complete per-pass fidelity for the remaining projectile ART
+fields or the flattened rendering Image string; audit those separately against
+their readers. The Flat corpus excludes INI pointer-cache alias histories.
 
-Entity Reveal submits at its existing display boundary before the separate
-Logic gate; Conceal removes display before Logic. Ground sorting runs at the
-pre-Logic frame rung. Jumpjet Process captures its live layer query on entry,
-then the alive tail resubmits only if its new query differs (54AECB/54AED1 and
-54B16F..54B18E). It does not compare with cached Object+94. Speed effects now
-read the owner's Ground slice rather than accepting an arbitrary supplied list.
-The building render-coordinate/Y-sort adjustment is shared with presentation
-through `ground_pose`, replacing that duplicated math.
+Global JumpjetControls CruiseHeight is already ported: constructor 665C3A defaults to 400,
+reader 67447E consumes the signed key, retail RULESMD sets 500. Object 5F4260 uses this
+global field while Jumpjet 54B8D0 uses linked locomotor+2C. Both this reader and the
+new Flat binding require a release-build retail map-load check before merge.
 
-`display_entity_layer` executes88 original query cases with real Unit/Building
-vtables and constructed Walk/Drive/Fly/Jumpjet instances. Physical GetHeight,
-marked-on-map, structural bridge, falling, slope and distinct linked/global
-heights are covered. No calls are substituted; supplied lifecycle/type/map state
-and excluded Process cadence are declared in the sidecar. All88 Rust comparisons
-passed the first run. `crate_ground_membership` preserves six actual registration,
-removal and single-pass-sort sequences; its Rust comparisons also passed.
-Both corpora and `crate_speed_effect --check` reproduce their saved native outputs.
+### Evidence and validation
 
-The independent [JumpjetControls] CruiseHeight reader supplies Rules+420:
-constructor665C3A defaults400; ReadJumpjet67446D/67447E reads the signed key.
-Object5F4260 uses it, while Jumpjet54B8D0 uses linked locomotor+2C.
-Retail RULESMD sets500. The Rust reader also handles an absent General section.
-Rules changed, so a release retail map-load check is still required before merge.
+Full `cargo test -p vera20k --lib`: **9,109 passed, 0 failed, 134 ignored**.
+Log: `.local/display-flat-tests.log`. Existing replay pins remain unchanged.
+`cargo clippy -p vera20k --lib` passed with 1,034 warnings in 1m 28s.
+Log: `.local/display-flat-clippy.log`. No owned build remains from these checks.
+Module map refreshed from `3aee9c65`: 842 modules and 5,315 dependency edges.
+Retail release load is still pending.
 
-First full Rust run:9,099 passed,4 failed,134 ignored. New owner/query/save tests
-passed. Three failures were current replay pins; old pre181 projections and RNG
-checks still passed. New pre182 projections now require the exact previous whole
-fixture hashes before accepting the new pins. The fourth failure exposed a
-cloaking fixture that erased a displayed entity directly from storage; it now
-calls Conceal before erase. Jumpjet's initial cached-layer comparison was also
-replaced with the native before/after query comparison, with a regression for
-stale cached membership, missing registration and the alive gate.
-Final full library validation passes:9,105 passed,0failed,134 ignored, logged
-in `.local/display-owner-tests-final.log`. The pre182 projections reproduce all
-three former full-state pins; only the added display fold changes their current
-hashes. The production lifecycle/effect test changes the displayed non-Logic
-recipient and leaves concealed/unrevealed peers unchanged. A display-only sort
-changes the current hash while preserving its pre182 projection.
-No critic, Clippy or release loader run for this unfinished candidate.
+`python -m tools.projectile_oracle.flat_art --check` reproduces 38 original reader
+and layer queries: retained defaults, native boolean spelling, missing Image,
+missing ART/type-ID fallback and 25-byte truncation. Rust consumes all 38 outputs
+through ordered rules processing and runtime ProjectileType. Registry handoff/reset
+and config-hash/save incompatibility have additional regressions. The fire test
+exercises combat emission, real projectile admission, snapshot restoration and
+retirement for both Surface and Air.
+
+`display_non_entity --check` reproduces 9 original mixed display sequences; the
+Rust lifecycle test checks all five vectors after every operation, tie/overflow
+ordering, one-pass sorting, save/hash restoration and removal. The production death
+debris regression checks Air registration and removal during actual AI deletion.
+Earlier `display_entity_layer` (88) and `crate_ground_membership` (6) comparisons remain.
+
+`display_anim_owner --check` reproduces 24 six-step histories using original
+SetOwner 424B50, expiry 425150, GetCoords 422BE0, GetYSort 422BC0, Mark and Display
+calls with real vtables and no substituted calls. **Rust animation integration
+is not implemented.** Instance+104 is copied from type+340 at construction and
+adds to owner-resolved coordinates, not raw stored coordinates or the current type.
+Attach submits Ground even if initially unmarked. Normal detach gates Remove/Submit
+on +74; owner expiry unconditionally removes display and leaves stored relative
+coordinates unchanged while clearing+CC and setting+19B. Current Rust expiry
+incorrectly uses normal detach and converts to absolute coordinates.
+
+Ghidra annotations are saved/read back at 46C1EF, 46C292 and 679B49; ctor table 7E4948
+slot+64 proves ReadTypeData's live BulletType caller. Earlier annotations include
+55DBC8, 67447E, 54B17F and the corrected Fly ILoco_Process 4CCB40 (real Layer 4CFCF0).
+Non-entity GetLayer labels were corrected at 468B90, 62FE80, 75F890, 74A960. False
+AnimClass__ProcessCloakMode at 4238B0 is now AnimClass__Mark, with owner-sort/expiry
+comments at 422BC3/42517A. These are label/comment changes only, without binary,
+signature or function-boundary edits.
 
 ### Required continuation
 
-1. Complete non-entity display dispatch and lifecycle (anims including owner
-   attach/expiry, terrain, voxel debris, projectiles, particles and waves).
-   The current sort dispatcher deliberately expects entity identities; extend
-   it before admitting another registry. Do not substitute Logic membership.
+1. Port animation display admission, marking, retained instance YSortAdjust,
+   owner attach/live detach/expiry and deletion. Extend the mixed Ground query
+   dispatcher before registering animations. Use the saved 24 native histories;
+   remove stale claims that tactical rebuilding replaces native membership.
+   Split owner-expiry behavior from normal SetOwner detachment and keep feedback
+   animations' sync-exempt policy explicit. Existing production attach callers
+   have Rules available; thread the actual context rather than a second type owner.
 2. Complete Fly, falling/DropIn and other explicit resubmission writers. Fly
-   cannot use a generic layer/cache refresh:4CD4E7 submits in its ascent/descent
-   wrapper before Mark(PUT), and4CD75A/4CD792 surround relocation. The current
-   integration does not claim these producers. Aircraft special-type +54
-   overrides and invalid/headless-only locomotor combinations also need their
-   actual receiver when they become reachable. No-terrain query fallback remains
-   a headless adapter, not native parity evidence.
-3. Migrate presentation/input from `tactical_registration_order()` (still Logic)
-   and full sorting to the actual display owner. Its entity fallback currently
-   appends store objects. Do not expose the partial display migration as complete.
-4. Finish movement pickup. Selection/removal helpers remain uncalled. Preserve
-   passive guards, Tag49/Scenario+34BE, free-MCV preemption, multiplayer eligibility,
-   water fallback, removal and replacement-before-effect order, and returns.
-   Reuse `combat_weapon::is_armed` for701120. House `owned_unit_count` combines
-   non-building families; per-type counts also have a limbo-window mismatch.
-   Trace native Unit+2E8/Infantry+2F4 producers before using those counts.
-   Port all selected effect arms through their downstream owners.
+   submits at 4CD4E7 before Mark(PUT);4CD75A/4CD792 surround relocation. Generic
+   cache refresh is not equivalent. DropIn 5F400E/5F4196 and Jumpjet touchdown 54CC0D
+   remain open. Resolve Aircraft special-type overrides and reachable receiver
+   combinations from their actual native objects.
+3. Migrate presentation/input from Logic-based `tactical_registration_order()`
+   and full sorting to Display. The current entity fallback appends store objects;
+   do not expose the partial display migration as complete.
+4. Finish production movement pickup: passive guards, Tag 49/Scenario+34BE,
+   free-MCV preemption, multiplayer eligibility, water fallback, removal and
+   replacement-before-effect order and returns. Reuse `combat_weapon::is_armed`
+   for 701120. Trace native Unit+2E8/Infantry+2F4 producers before relying on current
+   house counts (combined categories/limbo windows differ). Port every selected
+   effect through its downstream owner.
+5. Run release retail load validation for the rules changes, then the one fresh
+   critic only after coherent implementation and validation before the PR.
 
-HouseType speed multipliers+128/+12C/+130 remain absent. Unit+6CC carries a CTF
-flag, initialized-1;740DF0/740E20 attach/detach, Limbo/destruction return it.
-Creation4FC060 has caller688C02 gated by Scenario[0]&0x10. Retail disabled flags
-alone do not prove unreachability; trace the scenario producer. SimFixed's public
-speed range also does not certify arbitrary large non-retail crate multipliers.
+HouseType speed factors+128/+12C/+130 remain absent. Unit+6CC CTF state is initialized to
+-1;740DF0/740E20 attach/detach; Limbo/destruction return it. Creation 4FC060 has caller
+688C02 gated by Scenario[0]&0x10. Disabled retail flags alone do not prove the chain
+unreachable. Trace its producer. SimFixed's normal speed range also does not prove
+arbitrary large non-retail crate multipliers.
 
-The broader goal remains open: vehicle Active_Click_With+6E0, shared cursor/click
-resolution, NavCom/action/fire legality, launch FLH slope/scatter/homing, special
-warheads, visibility and the final whole-combat audit. Prior accepted PR439/440
-critic passes are complete; do not repeat them. This branch needs its one fresh
-pre-PR critic only after coherent production integration and validation.
-
-Ghidra annotations are saved/read back at55DBC8 (pre-Logic adjacent sort),67447E
-(global CruiseHeight),54B17F (live before/after query). Corrected the false
-FlyLocomotionClass__Layer name at4CCB40 to FlyLocomotionClass__ILoco_Process:
-constructor4CCA12 installs table7E89F4, slot+40 ->4CCB40; active FootAI4DA877
-calls it through Foot+674. Slot+74 ->4CFCF0 is the real layer getter. This is a
-label/comment correction only, with no signature, boundary or byte changes.
-Earlier crate/getter annotations remain saved. Preserve these unfinished
-production migrations; a passed owner test or committed dependency does not
-complete the mechanism or the combat goal.
+Broader combat remains open: vehicle Active_Click_With+6E0, shared cursor/click,
+NavCom/action/fire legality, launch FLH slope/scatter/homing, special warheads,
+visibility and the final whole-combat audit. PR439/440 critic passes are complete;
+do not repeat them. A committed dependency or a passed suite does not finish the
+display migration, production pickup or the combat goal.
