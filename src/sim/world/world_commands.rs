@@ -2587,12 +2587,7 @@ impl Simulation {
             self.production.airfield_docks.release(entity_id);
             // Clear to Idle — the command handler will set the appropriate mission.
             entity.aircraft_mission = Some(crate::sim::aircraft::AircraftMission::Idle);
-            // Trigger takeoff.
-            if let Some(ref mut loco) = entity.locomotor {
-                if loco.air_phase == crate::sim::movement::locomotor::AirMovePhase::Landed {
-                    loco.air_phase = crate::sim::movement::locomotor::AirMovePhase::Ascending;
-                }
-            }
+            // The following accepted Fly MoveTo owns the takeoff transition.
         }
     }
 
@@ -2971,7 +2966,6 @@ mod tests {
         );
         entity.locomotor = Some(LocomotorState::from_object_type(
             obj,
-            rules.general.flight_level,
             sim.session.binary_frame,
         ));
         entity.regular_crusher = obj.crusher;

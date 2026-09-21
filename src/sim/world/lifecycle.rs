@@ -1796,6 +1796,7 @@ impl Simulation {
                 &[stable_id],
                 self.session.tick,
                 self.resolved_terrain.as_ref(),
+                rules.map(|r| (r, &self.interner)),
             ),
         };
 

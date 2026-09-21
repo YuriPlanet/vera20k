@@ -706,7 +706,7 @@ mod tests {
             let mut sim = Simulation::new();
             let rules = drop_test_rules();
             insert_loaded_paradrop_pair(&mut sim, 1, 2);
-            let mut loco = LocomotorState::from_object_type(rules.object("E1").unwrap(), 0, 0);
+            let mut loco = LocomotorState::from_object_type(rules.object("E1").unwrap(), 0);
             loco.layer = MovementLayer::Bridge;
             {
                 let passenger = sim.substrate.entities.get_mut(2).unwrap();

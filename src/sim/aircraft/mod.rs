@@ -23,7 +23,6 @@ use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::AttackTarget;
 use crate::sim::mission::MissionTimer;
-use crate::sim::movement::air_movement;
 use crate::sim::movement::locomotor::AirMovePhase;
 use crate::sim::production::foundation_dimensions;
 use crate::sim::world::Simulation;
@@ -192,7 +191,6 @@ pub fn tick_aircraft_missions(
         move_to: Option<(u16, u16)>,
         self_destruct: bool,
         set_speed_fraction: Option<SimFixed>,
-        set_target_altitude: Option<SimFixed>,
         // Paradrop-specific apply-phase signals.
         paradrop_fire_fog_reveal: bool,
         paradrop_play_chute_sound: bool,
@@ -216,7 +214,6 @@ pub fn tick_aircraft_missions(
             move_to: None,
             self_destruct: false,
             set_speed_fraction: None,
-            set_target_altitude: None,
             paradrop_fire_fog_reveal: false,
             paradrop_play_chute_sound: false,
             paradrop_chute_sound_at: None,
@@ -331,26 +328,12 @@ pub fn tick_aircraft_missions(
                     }
                 }
 
-                // Dive bombing: when in attack states 3-4, lower altitude to 1/3 cruise.
-                if matches!(*sub_state, 3 | 4) {
-                    if let Some(entity) = sim.substrate.entities.get(snap.id) {
-                        if let Some(loco) = &entity.locomotor {
-                            let cruise = loco.target_altitude;
-                            let dive_alt = cruise / SimFixed::from_num(3);
-                            m.set_target_altitude = Some(dive_alt);
-                        }
-                    }
-                } else if *sub_state == 10 {
-                    // Restore cruise altitude on RTB.
-                    if let Some(entity) = sim.substrate.entities.get(snap.id) {
-                        let type_str = sim.interner.resolve(entity.type_ref());
-                        if let Some(obj) = rules.object(type_str) {
-                            let cruise = SimFixed::saturating_from_num(
-                                obj.flight_level(rules.general.flight_level),
-                            );
-                            m.set_target_altitude = Some(cruise);
-                        }
-                    }
+                // Fly owns height targets. Native4CF3D4..4CF4CF selects
+                // destination-relative height, IsDropship approach height or
+                // Type FlightLevel. Repeated attack mission visits must not
+                // divide the mutable target by3. The horizontal target-selection
+                // transaction remains part of the Fly migration.
+                if *sub_state == 10 {
                     m.set_speed_fraction = Some(SIM_ONE);
                 }
 
@@ -493,7 +476,10 @@ pub fn tick_aircraft_missions(
                     Some(e) => e,
                     None => continue,
                 };
-                let air_phase = entity.locomotor.as_ref().map(|l| l.air_phase);
+                let air_phase = crate::sim::movement::air_movement::fly_mission_phase(
+                    entity,
+                    sim.resolved_terrain.as_ref(),
+                );
                 let ammo = entity.aircraft_ammo.as_ref();
                 let ammo_current = ammo.map_or(0, |a| a.current);
                 let ammo_max = ammo.map_or(0, |a| a.max);
@@ -742,28 +728,22 @@ pub fn tick_aircraft_missions(
                 }
             }
 
-            if let Some(target_alt) = m.set_target_altitude {
-                if let Some(ref mut loco) = entity.locomotor {
-                    loco.target_altitude = target_alt;
-                    if loco.altitude > target_alt {
-                        loco.air_phase = AirMovePhase::Descending;
-                    } else if loco.altitude < target_alt {
-                        loco.air_phase = AirMovePhase::Ascending;
-                    }
-                }
-            }
-
             // Docking sub_state 1: set air phase to Descending.
             if let AircraftMission::Docking { sub_state: 1, .. } = &m.new_mission {
                 if let Some(ref mut loco) = entity.locomotor {
-                    loco.air_phase = AirMovePhase::Descending;
+                    loco.begin_fly_landing();
                 }
                 entity.movement_target = None;
             }
             // Docking sub_state 3: set air phase to Ascending (launch).
             if let AircraftMission::Docking { sub_state: 3, .. } = &m.new_mission {
-                if let Some(ref mut loco) = entity.locomotor {
-                    loco.air_phase = AirMovePhase::Ascending;
+                let level = rules
+                    .object(sim.interner.resolve(entity.type_ref()))
+                    .map_or(rules.general.flight_level, |o| {
+                        o.flight_level(rules.general.flight_level)
+                    });
+                if let Some(loco) = entity.locomotor.as_mut() {
+                    loco.begin_fly_takeoff(level);
                 }
             }
         }
@@ -790,16 +770,7 @@ pub fn tick_aircraft_missions(
                 ))
             })
             .unwrap_or(SimFixed::from_num(8));
-        air_movement::issue_air_move_command(
-            &mut sim.substrate.entities,
-            id,
-            (rx, ry),
-            speed,
-            crate::sim::movement::DestinationTiming::from_rules(
-                sim.session.binary_frame,
-                rules.into(),
-            ),
-        );
+        sim.issue_air_cell_destination(id, (rx, ry), speed, Some(rules));
     }
 
     // Fire commands: set attack_target so combat system fires this tick.

@@ -237,16 +237,36 @@ fn missing_foot_receiver_is_an_error_and_tube_does_not_hide_missing_descriptor()
 
 #[test]
 fn flight_queries_follow_live_altitude_producers_and_keep_jumpjet_exact_z() {
-    use crate::sim::movement::locomotor::AirMovePhase;
     use crate::sim::movement::{air_movement, rocket_movement};
     let mut sim = Simulation::new();
     sim.interner = crate::sim::intern::test_interner();
     let base = DriveCoord::cell(8, 6, 104);
+    // Fly reads GetHeight against actual terrain. Rocket still owns its
+    // independent displacement controller and receives the same starting Z.
+    let terrain = crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
+        16,
+        16,
+        (0..16)
+            .flat_map(|ry| {
+                (0..16).map(move |rx| {
+                    crate::sim::world::common_raw_test_terrain_cell(rx, ry, 1, false)
+                })
+            })
+            .collect(),
+    );
+    assert_eq!(
+        super::super::ground_pose::ground_surface_z_at(
+            [base.x, base.y],
+            false,
+            Some(&terrain),
+            None,
+        ),
+        Some(104)
+    );
     let mut fly = entity(1, LocomotorKind::Fly, base, NULL_COORD);
     let loco = fly.locomotor.as_mut().unwrap();
-    loco.air_phase = AirMovePhase::Ascending;
-    loco.climb_rate = SimFixed::from_num(125);
-    loco.target_altitude = SimFixed::from_num(1000);
+
+    loco.set_fly_target_height(1000);
     sim.substrate.entities.insert(fly);
     sim.substrate
         .entities
@@ -266,7 +286,7 @@ fn flight_queries_follow_live_altitude_producers_and_keep_jumpjet_exact_z() {
         .as_mut()
         .unwrap()
         .phase = rocket_movement::RocketPhase::Ascent;
-    air_movement::tick_air_movement(&mut sim.substrate.entities, &[1], 1, None);
+    air_movement::tick_air_movement(&mut sim.substrate.entities, &[1], 1, Some(&terrain), None);
     rocket_movement::tick_rocket_movement(&mut sim.substrate.entities, &[2], 1);
     for id in [1, 2] {
         let e = sim.substrate.entities.get(id).unwrap();

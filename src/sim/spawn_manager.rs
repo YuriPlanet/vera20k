@@ -1040,13 +1040,7 @@ fn hold_child_over_owner(
             *mission = crate::sim::aircraft::AircraftMission::Move { sub_state: 0 };
         }
     }
-    crate::sim::movement::air_movement::issue_air_move_command(
-        &mut sim.substrate.entities,
-        child_id,
-        (rx, ry),
-        speed,
-        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, rules.into()),
-    );
+    sim.issue_air_cell_destination(child_id, (rx, ry), speed, Some(rules));
 }
 
 /// The eight-direction cell step native uses for the owner-relative hold cell.
@@ -1102,13 +1096,7 @@ fn recall_child_to_owner(sim: &mut Simulation, rules: &RuleSet, owner_id: u64, c
             *mission = crate::sim::aircraft::AircraftMission::Move { sub_state: 0 };
         }
     }
-    crate::sim::movement::air_movement::issue_air_move_command(
-        &mut sim.substrate.entities,
-        child_id,
-        (rx, ry),
-        speed,
-        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, rules.into()),
-    );
+    sim.issue_air_cell_destination(child_id, (rx, ry), speed, Some(rules));
 }
 
 /// Hand a launched missile child to the rocket locomotor with the impact

@@ -204,6 +204,15 @@ impl crate::sim::world::Simulation {
                     .is_some()
         });
         if !is_jumpjet_infantry {
+            let flight_level = rules.map_or(500, |rules| {
+                self.substrate
+                    .entities
+                    .get(id)
+                    .and_then(|e| rules.object(self.interner.resolve(e.type_ref())))
+                    .map_or(rules.general.flight_level, |o| {
+                        o.flight_level(rules.general.flight_level)
+                    })
+            });
             return super::air_movement::issue_air_move_command(
                 &mut self.substrate.entities,
                 id,
@@ -213,6 +222,7 @@ impl crate::sim::world::Simulation {
                     self.session.binary_frame,
                     rules.into(),
                 ),
+                flight_level,
             );
         }
         let Some(terrain) = self.resolved_terrain.as_ref() else {

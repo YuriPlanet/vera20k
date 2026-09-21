@@ -205,9 +205,8 @@ mod tests {
             let mut entity = sim.substrate.entities.get(id).unwrap().clone();
             let mut object = rules.object("HORNET").unwrap().clone();
             object.locomotor = kind;
-            entity.locomotor = Some(
-                crate::sim::movement::locomotor::LocomotorState::from_object_type(&object, 0, 0),
-            );
+            entity.locomotor =
+                Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(&object, 0));
             // A shared dummy cannot satisfy mode0's all-real projection proof.
             let probe = |sim: &mut Simulation| {
                 aircraft_effect_quotient(
@@ -265,7 +264,7 @@ mod tests {
             entity.locomotor = kind.map(|kind| {
                 let mut object = rules.object("HORNET").unwrap().clone();
                 object.locomotor = kind;
-                crate::sim::movement::locomotor::LocomotorState::from_object_type(&object, 0, 0)
+                crate::sim::movement::locomotor::LocomotorState::from_object_type(&object, 0)
             });
             let result = aircraft_effect_quotient(
                 &LivePublication {

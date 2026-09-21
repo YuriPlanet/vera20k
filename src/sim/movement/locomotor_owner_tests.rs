@@ -43,7 +43,6 @@ fn fixture() -> (Simulation, RuleSet) {
     );
     entity.locomotor = Some(LocomotorState::from_object_type(
         rules.object("CMIN").expect("CMIN type"),
-        rules.general.flight_level,
         0,
     ));
     entity.lifecycle.in_limbo = false;

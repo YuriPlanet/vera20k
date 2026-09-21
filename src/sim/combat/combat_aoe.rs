@@ -1509,7 +1509,6 @@ mod tests {
             air.health.current = 1000;
             let mut locomotor = crate::sim::movement::locomotor::LocomotorState::from_object_type(
                 rules.object(type_id).unwrap(),
-                rules.general.flight_level,
                 0,
             );
             locomotor.layer = MovementLayer::Air;
@@ -1983,7 +1982,6 @@ mod tests {
                 let mut air_locomotor =
                     crate::sim::movement::locomotor::LocomotorState::from_object_type(
                         rules.object("AIRBOMB").unwrap(),
-                        rules.general.flight_level,
                         0,
                     );
                 air_locomotor.layer = MovementLayer::Air;
@@ -3421,7 +3419,6 @@ mod tests {
             victim.locomotor = Some(
                 crate::sim::movement::locomotor::LocomotorState::from_object_type(
                     rules.object("E1").expect("E1 type"),
-                    rules.general.flight_level,
                     0,
                 ),
             );
@@ -3699,7 +3696,6 @@ mod tests {
         air.position.sub_y = CELL_CENTER_LEPTON;
         let mut air_locomotor = crate::sim::movement::locomotor::LocomotorState::from_object_type(
             rules.object("AIR").expect("air type"),
-            rules.general.flight_level,
             0,
         );
         air_locomotor.layer = MovementLayer::Air;

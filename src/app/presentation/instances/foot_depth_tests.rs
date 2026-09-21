@@ -185,7 +185,7 @@ fn shp_uses_exact_height_and_category_while_raw_unit_depth_keeps_foot() {
     assert_eq!(unit_z_adjust_in_runtime(Some(&runtime), &tank, true), 19);
 
     let mut locomotor =
-        LocomotorState::from_object_type(runtime.resources.rules.object("TANK").unwrap(), 1500, 0);
+        LocomotorState::from_object_type(runtime.resources.rules.object("TANK").unwrap(), 0);
     locomotor.kind = LocomotorKind::Jumpjet;
     locomotor.layer = MovementLayer::Air;
     locomotor.altitude = SimFixed::from_num(0);

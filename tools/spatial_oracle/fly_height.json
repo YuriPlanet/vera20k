@@ -1205,7 +1205,7 @@
     "z": 396
   },
   {
-    "height": 396,
+    "height": 416,
     "input": {
       "bridge": true,
       "name": "bridge_land_416",
@@ -1213,7 +1213,7 @@
       "z": 416
     },
     "on_bridge": false,
-    "z": 396
+    "z": 416
   },
   {
     "height": 397,
@@ -1226,15 +1226,15 @@
     "z": 397
   },
   {
-    "height": 397,
+    "height": 0,
     "input": {
       "bridge": true,
       "name": "bridge_land_417",
       "target": 0,
       "z": 417
     },
-    "on_bridge": false,
-    "z": 397
+    "on_bridge": true,
+    "z": 416
   },
   {
     "height": 414,
@@ -1247,15 +1247,15 @@
     "z": 414
   },
   {
-    "height": 414,
+    "height": 0,
     "input": {
       "bridge": true,
       "name": "bridge_land_435",
       "target": 0,
       "z": 435
     },
-    "on_bridge": false,
-    "z": 414
+    "on_bridge": true,
+    "z": 416
   },
   {
     "height": 415,
@@ -1268,15 +1268,15 @@
     "z": 415
   },
   {
-    "height": 415,
+    "height": 0,
     "input": {
       "bridge": true,
       "name": "bridge_land_436",
       "target": 0,
       "z": 436
     },
-    "on_bridge": false,
-    "z": 415
+    "on_bridge": true,
+    "z": 416
   },
   {
     "height": 443,
@@ -1289,7 +1289,7 @@
     "z": 443
   },
   {
-    "height": 443,
+    "height": 446,
     "input": {
       "bridge": true,
       "name": "bridge_land_466",
@@ -1297,7 +1297,7 @@
       "z": 466
     },
     "on_bridge": false,
-    "z": 443
+    "z": 446
   },
   {
     "height": 1866,
@@ -1358,7 +1358,7 @@
     "z": 416
   },
   {
-    "height": 280,
+    "height": 20,
     "input": {
       "level": 2,
       "name": "slope_climb",
@@ -1370,7 +1370,7 @@
     "z": 280
   },
   {
-    "height": 241,
+    "height": 0,
     "input": {
       "level": 2,
       "name": "slope_land",
@@ -1379,7 +1379,7 @@
       "z": 261
     },
     "on_bridge": false,
-    "z": 241
+    "z": 260
   },
   {
     "height": 20,
@@ -1548,5 +1548,85 @@
     },
     "on_bridge": false,
     "z": 1500
+  },
+  {
+    "height": 40000,
+    "input": {
+      "name": "wide_39980_40000",
+      "target": 40000,
+      "z": 39980
+    },
+    "on_bridge": false,
+    "z": 40000
+  },
+  {
+    "height": 40000,
+    "input": {
+      "name": "wide_39981_40000",
+      "target": 40000,
+      "z": 39981
+    },
+    "on_bridge": false,
+    "z": 40000
+  },
+  {
+    "height": 39981,
+    "input": {
+      "name": "wide_40001_40000",
+      "target": 40000,
+      "z": 40001
+    },
+    "on_bridge": false,
+    "z": 39981
+  },
+  {
+    "height": 60020,
+    "input": {
+      "name": "wide_60000_65536",
+      "target": 65536,
+      "z": 60000
+    },
+    "on_bridge": false,
+    "z": 60020
+  },
+  {
+    "height": -80,
+    "input": {
+      "name": "wide_-100_-2",
+      "target": -2,
+      "z": -100
+    },
+    "on_bridge": false,
+    "z": -80
+  },
+  {
+    "height": 0,
+    "input": {
+      "name": "wide_0_-2",
+      "target": -2,
+      "z": 0
+    },
+    "on_bridge": false,
+    "z": 0
+  },
+  {
+    "height": 65536,
+    "input": {
+      "name": "wide_65536_65536",
+      "target": 65536,
+      "z": 65536
+    },
+    "on_bridge": false,
+    "z": 65536
+  },
+  {
+    "height": 69950,
+    "input": {
+      "name": "wide_70000_65536",
+      "target": 65536,
+      "z": 70000
+    },
+    "on_bridge": false,
+    "z": 69950
   }
 ]

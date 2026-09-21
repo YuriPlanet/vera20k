@@ -4147,9 +4147,7 @@ fn test_blocked_repath_uses_final_goal_not_segment_end() {
 /// mover has a Drive/Walk/Mech locomotor; `test_default` leaves locomotor=None.
 fn make_drive_loco_for_test() -> crate::sim::movement::locomotor::LocomotorState {
     use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
-    use crate::sim::movement::locomotor::{
-        AirMovePhase, GroundMovePhase, LocomotorState, MovementLayer,
-    };
+    use crate::sim::movement::locomotor::{GroundMovePhase, LocomotorState, MovementLayer};
     use crate::util::fixed_math::SIM_ONE;
     LocomotorState {
         kind: LocomotorKind::Drive,
@@ -4162,13 +4160,12 @@ fn make_drive_loco_for_test() -> crate::sim::movement::locomotor::LocomotorState
         ),
         layer: MovementLayer::Ground,
         phase: GroundMovePhase::Idle,
-        air_phase: AirMovePhase::Landed,
+
         speed_multiplier: SIM_ONE,
         speed_fraction: SIM_ONE,
         fly_current_speed: SIM_ZERO,
         altitude: SIM_ZERO,
-        target_altitude: SIM_ZERO,
-        climb_rate: SIM_ZERO,
+
         jumpjet_speed: SIM_ZERO,
         jumpjet_accel: SIM_ZERO,
         jumpjet_current_speed: SIM_ZERO,
@@ -4883,7 +4880,7 @@ fn test_segment_exhaustion_repath_avoids_friendly_building_footprint() {
 use crate::map::houses::HouseAllianceMap;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
 use crate::sim::components::BridgeOccupancy;
-use crate::sim::movement::locomotor::{AirMovePhase, GroundMovePhase, LocomotorState};
+use crate::sim::movement::locomotor::{GroundMovePhase, LocomotorState};
 use crate::sim::movement::tick_movement_with_grid;
 use crate::sim::pathfinding::{PathGrid, terrain_cost::TerrainCostGrid};
 use std::collections::BTreeMap;
@@ -4900,13 +4897,12 @@ fn make_drive_loco(layer: MovementLayer) -> LocomotorState {
         ),
         layer,
         phase: GroundMovePhase::Idle,
-        air_phase: AirMovePhase::Landed,
+
         speed_multiplier: SIM_ONE,
         speed_fraction: SIM_ONE,
         fly_current_speed: SIM_ZERO,
         altitude: SIM_ZERO,
-        target_altitude: SIM_ZERO,
-        climb_rate: SIM_ZERO,
+
         jumpjet_speed: SIM_ZERO,
         jumpjet_accel: SIM_ZERO,
         jumpjet_current_speed: SIM_ZERO,

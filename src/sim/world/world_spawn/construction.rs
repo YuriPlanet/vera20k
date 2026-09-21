@@ -152,7 +152,6 @@ impl Simulation {
         if should_construct_locomotor(category, obj) {
             ge.locomotor = Some(LocomotorState::from_object_type(
                 obj,
-                rules.map_or(1500, |rules| rules.general.flight_level),
                 self.session.binary_frame,
             ));
             if matches!(origin, ComponentOrigin::Runtime)

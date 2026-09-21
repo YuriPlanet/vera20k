@@ -362,7 +362,7 @@ fn paradrop_type_flight_level_reaches_spawned_carrier_and_survives_restore() {
         for world in [&sim, &restored] {
             let plane = world.substrate.entities.get(id).unwrap();
             let loco = plane.locomotor.as_ref().unwrap();
-            assert_eq!(loco.target_altitude.to_num::<i32>(), expected);
+            assert_eq!(loco.fly_target_height(), expected);
             assert_eq!(loco.altitude.to_num::<i32>(), expected);
             assert_eq!(world.foot_navigation_coordinate(id).unwrap().z, expected);
             assert_eq!(plane.passenger_role.cargo().unwrap().count(), 4);

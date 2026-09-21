@@ -60,7 +60,7 @@ fn insert(sim: &mut Simulation, id: u64, owner: InternedId, name: &str, x: u16, 
         let mut loco = LocomotorState::for_test_kind(LocomotorKind::Jumpjet);
         loco.layer = MovementLayer::Air;
         loco.altitude = crate::util::fixed_math::SimFixed::from_num(208);
-        loco.target_altitude = loco.altitude;
+
         // The kernel target height is left unset on purpose: the corpus outcome
         // below holds only while the kernel is not holding the unit at 208.
         loco.jumpjet_runtime_mut().expect("jumpjet runtime").phase =

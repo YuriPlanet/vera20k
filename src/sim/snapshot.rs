@@ -544,7 +544,9 @@ use crate::sim::world::Simulation;
 // waves and voxel debris. Prior snapshots cannot recover their registration history.
 // 183 -> 184: animation display membership, retained instance YSortAdjust and
 // Object+74 marking. Prior snapshots cannot reconstruct attachment history.
-const SNAPSHOT_VERSION: u32 = 184;
+// 184 -> 185: Fly owns its integer height target and native takeoff/landing
+// flags; the shared synthetic air phase, target and climb-rate fields are gone.
+const SNAPSHOT_VERSION: u32 = 185;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3437,7 +3439,8 @@ mod tests {
         // 173 -> 174: ProductionState drops the resource node map.
         // 174 -> 175: bridge collapse explosions join the AnimStore.
         // 180 -> 181: Foot+580 crate multiplier survives save/restore.
-        assert_eq!(super::SNAPSHOT_VERSION, 184);
+        // 184 -> 185: Fly owns its integer height target and takeoff/landing flags.
+        assert_eq!(super::SNAPSHOT_VERSION, 185);
     }
 
     #[test]

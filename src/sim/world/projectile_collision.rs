@@ -786,7 +786,7 @@ mod tests {
                             crate::rules::locomotor_type::LocomotorKind::Fly,
                         );
                     locomotor.altitude = SimFixed::from_num(100);
-                    locomotor.air_phase = crate::sim::movement::locomotor::AirMovePhase::Cruising;
+
                     victim.locomotor = Some(locomotor);
                 }
                 assert!(matches!(sim.reveal(source), RevealOutcome::Revealed { .. }));

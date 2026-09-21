@@ -16,8 +16,6 @@
 use crate::rules::ruleset::RuleSet;
 use crate::sim::aircraft::AircraftMission;
 use crate::sim::intern::InternedId;
-use crate::sim::movement::air_movement;
-use crate::sim::movement::locomotor::AirMovePhase;
 use crate::sim::passenger::PassengerRole;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::world::edge_cell::{Edge, find_paradrop_edge_cell};
@@ -174,17 +172,14 @@ fn spawn_pdplane(
     // Aircraft Unlimbo414383 uses Type virtual+BC, including a per-type
     // override. Resolve the rule itself rather than copying mutable flight
     // controller state (whose target can also represent a dive or landing).
-    let flight_level = SimFixed::saturating_from_num(
-        rules
-            .object(&pdplane_type)
-            .expect("constructed paradrop carrier has a rules type")
-            .flight_level(rules.general.flight_level),
-    );
+    let flight_level = rules
+        .object(&pdplane_type)
+        .expect("constructed paradrop carrier has a rules type")
+        .flight_level(rules.general.flight_level);
     if let Some(entity) = sim.substrate.entities.get_mut(pdplane_id) {
         if let Some(loco) = entity.locomotor.as_mut() {
-            loco.altitude = flight_level;
-            loco.target_altitude = flight_level;
-            loco.air_phase = AirMovePhase::Cruising;
+            loco.altitude = SimFixed::saturating_from_num(flight_level);
+            loco.set_fly_target_height(flight_level);
         }
         if !entity.passenger_role.is_transport() {
             entity.passenger_role = PassengerRole::Transport {
@@ -208,13 +203,7 @@ fn spawn_pdplane(
         .object(&pdplane_type)
         .map(|o| ra2_speed_to_leptons_per_second(o.speed.max(1)))
         .unwrap_or(SimFixed::from_num(8));
-    air_movement::issue_air_move_command(
-        &mut sim.substrate.entities,
-        pdplane_id,
-        (target_rx, target_ry),
-        speed,
-        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, rules.into()),
-    );
+    sim.issue_air_cell_destination(pdplane_id, (target_rx, target_ry), speed, Some(rules));
 
     // Criterion 4 intentionally chooses the first cell just outside the
     // isometric playfield. AircraftClass Unlimbo accepts that map-edge spawn;

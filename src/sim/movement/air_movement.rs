@@ -1,28 +1,9 @@
-//! Air movement system — moves Fly and Jumpjet entities each tick.
+//! Fly movement transaction: legacy horizontal steering followed by native
+//! integer height stepping. Jumpjet, Rocket and Parachute have separate owners.
 //!
-//! Air units differ from ground movers in several key ways:
-//! - Fly units use **facing-based** movement: they fly in the direction they
-//!   face, gradually turning toward the goal via ROT. This produces curved
-//!   approach paths matching the original FlyLocomotionClass.
-//! - They have altitude state machines (ascending, cruising, descending).
-//! - They don't block ground cells (air layer is separate from ground).
-//! - Jumpjets hover at a fixed altitude with optional wobble.
-//!
-//! ## How it works
-//! 1. When an air unit receives a Move command, `issue_air_move_command()`
-//!    stores the final_goal and attaches a MovementTarget.
-//! 2. Each tick, `tick_air_movement()` processes air-layer entities:
-//!    - Manages altitude transitions (ascend/descend).
-//!    - Turns facing toward the goal by ROT per tick.
-//!    - Computes approach speed zones based on distance to goal.
-//!    - Moves in the entity's facing direction (not directly toward the goal).
-//!    - Ramps `fly_current_speed` toward `speed_fraction` (target) by 0.1/tick.
-//!    - Detects arrival when close AND speed is near zero.
-//!    - Updates screen coordinates from iso position + altitude offset.
-//!
-//! ## Dependency rules
-//! - Part of sim/ — depends on sim/components, sim/locomotor, map/terrain.
-//! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
+//! The vertical range is compared against original instructions in `fly_height`.
+//! Horizontal approach zones, arrival handling and landing callbacks still need
+//! their native migration; they are not covered by that height comparison.
 
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::components::MovementTarget;
@@ -84,7 +65,7 @@ fn ramp_fly_speed(loco: &mut LocomotorState) {
     }
 }
 
-/// Distance-based approach speed zones matching original Horizontal_Step.
+/// Legacy distance-based approach zones; native4CE145 uses continuous slowdown.
 /// Returns the target speed fraction for the given distance in leptons.
 ///
 /// | Distance          | TargetSpeed |
@@ -126,7 +107,8 @@ fn turn_facing_toward(current: u8, desired: u8, rot: i32) -> u8 {
 
 /// Issue a move command for an air unit.
 ///
-/// Returns true if the command was accepted. Air units always accept moves
+/// Returns true if the command was accepted through the available disable gates.
+/// Aircraft ignore ordinary terrain blocking
 /// (no terrain blocking check needed — they fly over everything).
 ///
 /// For Fly units, no Bresenham path is generated — movement direction comes
@@ -139,13 +121,21 @@ pub fn issue_air_move_command(
     target: (u16, u16),
     speed: SimFixed,
     timing: super::DestinationTiming,
+    flight_level: i32,
 ) -> bool {
     let Some(entity) = entities.get(entity_id) else {
         return false;
     };
-    if (entity.position.rx, entity.position.ry) == target {
-        timing.accept(entities.get_mut(entity_id).expect("accepted aircraft"));
-        return true;
+    // MoveTo4CCCEE..4CCD3A admits through owner warp/disable and power gates.
+    // EMP+504 and the Foot+6A0 timer still need their missing native producers;
+    // see world/techno_ai_cloak.rs. Do not substitute deploy_state for either.
+    if entity.locomotor.as_ref().is_some_and(|l| !l.powered)
+        || entity
+            .teleport_state
+            .as_ref()
+            .is_some_and(|t| t.warp_in_active() || t.warp_out_active())
+    {
+        return false;
     }
 
     // Minimal MovementTarget — only final_goal matters for Fly units.
@@ -165,14 +155,16 @@ pub fn issue_air_move_command(
     timing.accept(entity);
     entity.movement_target = Some(movement);
 
-    // Trigger takeoff if on the ground. A vehicle Jumpjet's order comes through
-    // here too (`jumpjet_movement`), but its phase is its own state field and
-    // `AirMovePhase` is not its to write.
-    if let Some(ref mut loco) = entity.locomotor
-        && loco.kind != LocomotorKind::Jumpjet
-        && loco.air_phase == AirMovePhase::Landed
-    {
-        loco.air_phase = AirMovePhase::Ascending;
+    if let Some(loco) = entity.locomotor.as_mut() {
+        let height = loco.altitude.to_num::<i32>();
+        // Aircraft auxiliary+0C has a Carryall/radio base-height arm which
+        // remains to be integrated. Ordinary retail flight uses base zero.
+        if loco
+            .fly_runtime()
+            .is_some_and(|state| state.should_begin_takeoff(entity.health.current, height, 0))
+        {
+            loco.begin_fly_takeoff(flight_level);
+        }
     }
     true
 }
@@ -186,7 +178,7 @@ pub struct AirMovementTickStats {
     pub arrivals: u32,
 }
 
-/// Advance all air-layer entities (Fly/Jumpjet) one tick.
+/// Advance live Fly entities one tick.
 ///
 /// Handles altitude changes and horizontal movement. Air units move in
 /// straight lines at their speed, ignoring terrain and ground occupancy.
@@ -195,6 +187,10 @@ pub fn tick_air_movement(
     live_order: &[u64],
     sim_tick: u64,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    rules_context: Option<(
+        &crate::rules::ruleset::RuleSet,
+        &crate::sim::intern::StringInterner,
+    )>,
 ) -> AirMovementTickStats {
     let mut stats = AirMovementTickStats::default();
     let dt = native_movement_frame_fraction();
@@ -220,9 +216,7 @@ pub fn tick_air_movement(
                         // This adapter must not touch them, or the two
                         // authorities fight (an idle one used to cycle takeoff
                         // and landing every 102 frames).
-                        loco.layer == MovementLayer::Air
-                            && loco.kind != LocomotorKind::Rocket
-                            && loco.kind != LocomotorKind::Jumpjet
+                        loco.layer == MovementLayer::Air && loco.kind == LocomotorKind::Fly
                     })
                 })
             })
@@ -242,10 +236,11 @@ pub fn tick_air_movement(
         let has_movement: bool = entity.movement_target.is_some();
 
         if has_movement {
-            let can_move: bool = entity.locomotor.as_ref().is_some_and(|l| {
-                l.altitude
-                    >= checked_mul_log(l.target_altitude, SIM_HALF, "target_alt*0.5", entity_id)
-            });
+            let height = current_fly_height(entity, terrain);
+            let can_move: bool = entity
+                .locomotor
+                .as_ref()
+                .is_some_and(|l| height >= l.fly_target_height() / 2);
 
             if can_move {
                 let final_goal = entity
@@ -377,144 +372,117 @@ pub fn tick_air_movement(
             }
         }
 
-        // --- Altitude state machine ---
-        let Some(ref mut loco) = entity.locomotor else {
-            continue;
-        };
-
-        // Fly4CDD07 commits XY before GetHeight4CDD1A and the conditional
-        // SetHeight4CDE9D/4CDFB6. Exact Object Z stays authoritative; refresh
-        // the controller's relative height from the destination surface.
-        // Preserve the existing fixed-point rate policy (integer feedback,
-        // saturated only for heights outside the controller's I16F16 range).
-        if let Some(surface) = super::ground_pose::ground_surface_z_at(
-            super::ground_pose::position_world_xy(&entity.position),
-            entity.on_bridge,
-            terrain,
-            None,
-        ) {
-            if let Some(z) = entity.position.exact_z_leptons {
-                loco.altitude = SimFixed::saturating_from_num(z.wrapping_sub(surface));
-            } else {
-                entity.position.exact_z_leptons =
-                    Some(surface.wrapping_add(loco.altitude.to_num::<i32>()));
-            }
-        }
-        let air_phase_before = loco.air_phase;
-        let altitude_before = loco.altitude;
-        tick_altitude(loco, dt);
-        super::foot_coordinate::publish_altitude_change(
-            &mut entity.position,
-            altitude_before,
-            loco.altitude,
-        );
-        let air_phase_after = loco.air_phase;
-        if air_phase_after != air_phase_before {
-            let from = format!("{:?}", air_phase_before);
-            let to = format!("{:?}", air_phase_after);
-            let _ = loco;
+        // Original vertical controller follows the committed XY. Object Z
+        // remains authoritative; loco.altitude is a bounded read cache only.
+        let phase_before = fly_mission_phase(entity, terrain);
+        update_fly_height(entity, terrain, rules_context);
+        let phase_after = fly_mission_phase(entity, terrain);
+        if phase_before != phase_after {
             entity.push_debug_event(
                 sim_tick as u32,
                 DebugEventKind::PhaseChange {
-                    from,
-                    to,
-                    reason: "altitude change".into(),
+                    from: format!("{phase_before:?}"),
+                    to: format!("{phase_after:?}"),
+                    reason: "height target projection".into(),
                 },
             );
         }
 
         // Speed ramping for Fly aircraft (after altitude and movement).
-        if let Some(ref mut loco) = entity.locomotor {
+        if entity.health.current > 0
+            && let Some(ref mut loco) = entity.locomotor
+        {
             ramp_fly_speed(loco);
         }
     }
 
-    // Remove MovementTarget from arrived air units and update air phase.
-    for &entity_id in &finished {
-        let Some(entity) = entities.get_mut(entity_id) else {
-            continue;
-        };
-        entity.movement_target = None;
-        // Start descending for Fly units; Jumpjets hover or land based on BalloonHover.
-        if let Some(ref mut loco) = entity.locomotor {
-            let phase_before = loco.air_phase;
-            match loco.kind {
-                LocomotorKind::Fly => {
-                    // Fly units stay at altitude until given another order.
-                    loco.air_phase = AirMovePhase::Cruising;
-                }
-                _ => {}
-            }
-            let phase_after = loco.air_phase;
-            if phase_after != phase_before {
-                let from = format!("{:?}", phase_before);
-                let to = format!("{:?}", phase_after);
-                let _ = loco;
-                entity.push_debug_event(
-                    sim_tick as u32,
-                    DebugEventKind::PhaseChange {
-                        from,
-                        to,
-                        reason: "arrival phase transition".into(),
-                    },
-                );
-            }
+    for id in finished {
+        if let Some(entity) = entities.get_mut(id) {
+            entity.movement_target = None;
         }
     }
-
     stats
 }
 
-/// Advance the altitude state machine for one air entity.
-fn tick_altitude(loco: &mut LocomotorState, dt: SimFixed) {
-    match loco.air_phase {
-        AirMovePhase::Ascending => {
-            loco.altitude = loco.altitude.saturating_add(loco.climb_rate * dt);
-            if loco.altitude >= loco.target_altitude {
-                loco.altitude = loco.target_altitude;
-                loco.air_phase = AirMovePhase::Cruising;
-            }
-        }
-        AirMovePhase::Descending => {
-            let before = loco.altitude;
-            loco.altitude = loco.altitude.saturating_sub(loco.climb_rate * dt);
-            // Partial descent (dive bombing): if we crossed target_altitude from above,
-            // stop there instead of going to ground.
-            if loco.target_altitude > SIM_ZERO
-                && before > loco.target_altitude
-                && loco.altitude <= loco.target_altitude
-            {
-                loco.altitude = loco.target_altitude;
-                loco.air_phase = AirMovePhase::Cruising;
-            } else if loco.altitude <= SIM_ZERO {
-                loco.altitude = SIM_ZERO;
-                loco.air_phase = AirMovePhase::Landed;
-            }
-        }
-        AirMovePhase::Cruising => {
-            // If target altitude changed (dive bombing or recovery), adjust.
-            let tolerance = SimFixed::from_num(10);
-            if loco.altitude > loco.target_altitude + tolerance {
-                // Descend toward new lower target.
-                loco.altitude = loco.altitude.saturating_sub(loco.climb_rate * dt);
-                if loco.altitude <= loco.target_altitude {
-                    loco.altitude = loco.target_altitude;
-                }
-            } else if loco.altitude < loco.target_altitude - tolerance {
-                // Ascend toward new higher target (restoring from dive).
-                loco.altitude = loco.altitude.saturating_add(loco.climb_rate * dt);
-                if loco.altitude >= loco.target_altitude {
-                    loco.altitude = loco.target_altitude;
-                }
-            } else {
-                loco.altitude = loco.target_altitude;
-            }
-        }
-        AirMovePhase::Landed => {
-            // On the ground — nothing to do.
-            loco.altitude = SIM_ZERO;
-        }
-    }
+/// Object5F5F40 evaluated from retained Z and the current ground/bridge surface.
+/// Only pre-migration fixtures without an exact coordinate read the cache.
+fn current_fly_height(
+    entity: &crate::sim::game_entity::GameEntity,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+) -> i32 {
+    let Some(z) = entity.position.exact_z_leptons else {
+        return entity
+            .locomotor
+            .as_ref()
+            .map_or(0, |l| l.altitude.to_num::<i32>());
+    };
+    let xy = super::ground_pose::position_world_xy(&entity.position);
+    let ground = super::ground_pose::ground_surface_z_at(xy, false, terrain, None).unwrap_or(0);
+    z.wrapping_sub(ground)
+        .wrapping_sub(if entity.on_bridge { 416 } else { 0 })
+}
+
+/// Derived compatibility view for aircraft missions; the integer physical
+/// height avoids a false never-cruising state above the altitude cache's range.
+pub(crate) fn fly_mission_phase(
+    entity: &crate::sim::game_entity::GameEntity,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+) -> Option<AirMovePhase> {
+    let state = entity.locomotor.as_ref()?.fly_runtime()?;
+    Some(state.mission_phase(current_fly_height(entity, terrain)))
+}
+
+fn update_fly_height(
+    entity: &mut crate::sim::game_entity::GameEntity,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    rules_context: Option<(
+        &crate::rules::ruleset::RuleSet,
+        &crate::sim::intern::StringInterner,
+    )>,
+) {
+    let xy = super::ground_pose::position_world_xy(&entity.position);
+    let ground_z = super::ground_pose::ground_surface_z_at(xy, false, terrain, None).unwrap_or(0);
+    let structural_bridge = terrain.is_some_and(|grid| {
+        let cell = grid.native_cell_identity(((xy[0] / 256) as i16, (xy[1] / 256) as i16));
+        grid.native_cell_flags(cell) & 0x100 != 0
+    });
+    let object = rules_context
+        .and_then(|(rules, interner)| rules.object(interner.resolve(entity.type_ref())));
+    let flight_level = rules_context.map_or(500, |(rules, _)| {
+        object.map_or(rules.general.flight_level, |o| {
+            o.flight_level(rules.general.flight_level)
+        })
+    });
+    let has_passenger = entity.category == crate::map::entities::EntityCategory::Aircraft
+        && entity
+            .passenger_role
+            .cargo()
+            .is_some_and(|cargo| cargo.count() != 0);
+    let loco = entity
+        .locomotor
+        .as_mut()
+        .expect("Fly process owns a locomotor");
+    let world_z = entity.position.exact_z_leptons.unwrap_or_else(|| {
+        ground_z
+            .wrapping_add(if entity.on_bridge { 416 } else { 0 })
+            .wrapping_add(loco.altitude.to_num::<i32>())
+    });
+    let output = loco
+        .fly_runtime()
+        .expect("Fly process owns Fly state")
+        .step_height(super::fly_height::HeightInput {
+            world_z,
+            ground_z,
+            on_bridge: entity.on_bridge,
+            structural_bridge,
+            health: entity.health.current,
+            has_passenger,
+            is_dropship: object.is_some_and(|o| o.is_dropship),
+            flight_level,
+        });
+    entity.position.exact_z_leptons = Some(output.world_z);
+    entity.on_bridge = output.on_bridge;
+    loco.altitude = SimFixed::saturating_from_num(output.height);
 }
 
 #[cfg(test)]
@@ -522,38 +490,6 @@ mod tests {
     use super::*;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::locomotion::LocomotorSlot;
-    use crate::util::fixed_math::sim_from_f32;
-
-    #[test]
-    fn test_altitude_ascending() {
-        let mut loco = make_fly_loco();
-        loco.air_phase = AirMovePhase::Ascending;
-        loco.target_altitude = SimFixed::from_num(600);
-        loco.climb_rate = SimFixed::from_num(300);
-        loco.altitude = SIM_ZERO;
-
-        // After 1 second, should be at 300 leptons.
-        tick_altitude(&mut loco, SIM_ONE);
-        assert_eq!(loco.altitude, SimFixed::from_num(300));
-        assert_eq!(loco.air_phase, AirMovePhase::Ascending);
-
-        // After another 1 second, should reach 600 and transition to Cruising.
-        tick_altitude(&mut loco, SIM_ONE);
-        assert_eq!(loco.altitude, SimFixed::from_num(600));
-        assert_eq!(loco.air_phase, AirMovePhase::Cruising);
-    }
-
-    #[test]
-    fn test_altitude_descending() {
-        let mut loco = make_fly_loco();
-        loco.air_phase = AirMovePhase::Descending;
-        loco.altitude = SimFixed::from_num(300);
-        loco.climb_rate = SimFixed::from_num(300);
-
-        tick_altitude(&mut loco, SIM_ONE);
-        assert_eq!(loco.altitude, SIM_ZERO);
-        assert_eq!(loco.air_phase, AirMovePhase::Landed);
-    }
 
     #[test]
     fn test_issue_air_move_command() {
@@ -568,6 +504,7 @@ mod tests {
             (20, 15),
             SimFixed::from_num(10),
             crate::sim::movement::DestinationTiming::new(0, 60),
+            1500,
         );
         assert!(ok);
 
@@ -581,7 +518,7 @@ mod tests {
 
         // Should trigger ascending.
         let loco = e.locomotor.as_ref().expect("has loco");
-        assert_eq!(loco.air_phase, AirMovePhase::Ascending);
+        assert_eq!(loco.air_phase(), AirMovePhase::Ascending);
     }
 
     /// A vehicle Jumpjet's order is accepted through this function too, but
@@ -599,12 +536,13 @@ mod tests {
             (20, 15),
             SimFixed::from_num(10),
             crate::sim::movement::DestinationTiming::new(0, 60),
+            1500
         ));
 
         let e = entities.get(1).expect("has entity");
         assert!(e.movement_target.is_some(), "the order itself is accepted");
         assert_eq!(
-            e.locomotor.as_ref().unwrap().air_phase,
+            e.locomotor.as_ref().unwrap().air_phase(),
             AirMovePhase::Landed
         );
     }
@@ -622,11 +560,12 @@ mod tests {
             (10, 10),
             SimFixed::from_num(10),
             crate::sim::movement::DestinationTiming::new(0, 60),
+            1500,
         );
         assert!(ok);
-        // No MovementTarget should be added — already at goal.
+        // Native MoveTo accepts a nonnull destination even at the owner cell.
         let e = entities.get(1).expect("has entity");
-        assert!(e.movement_target.is_none());
+        assert!(e.movement_target.is_some());
     }
 
     #[test]
@@ -636,9 +575,9 @@ mod tests {
             for id in [1, 2] {
                 let mut entity = GameEntity::test_default(id, "ORCA", "Americans", 10, 10);
                 let mut loco = make_fly_loco();
-                loco.air_phase = AirMovePhase::Ascending;
-                loco.target_altitude = SimFixed::from_num(600);
-                loco.climb_rate = SimFixed::from_num(300);
+
+                loco.set_fly_target_height(600);
+
                 entity.locomotor = Some(loco);
                 entities.insert(entity);
             }
@@ -648,8 +587,8 @@ mod tests {
         let mut live_entities = build_entities();
         let mut stable_entities = build_entities();
 
-        let live_stats = tick_air_movement(&mut live_entities, &[2], 0, None);
-        let stable_stats = tick_air_movement(&mut stable_entities, &[], 0, None);
+        let live_stats = tick_air_movement(&mut live_entities, &[2], 0, None, None);
+        let stable_stats = tick_air_movement(&mut stable_entities, &[], 0, None, None);
 
         assert_eq!(
             live_stats.air_movers, 1,
@@ -706,13 +645,12 @@ mod tests {
             ),
             layer: MovementLayer::Air,
             phase: crate::sim::movement::locomotor::GroundMovePhase::Idle,
-            air_phase: AirMovePhase::Landed,
+
             speed_multiplier: SIM_ONE,
             speed_fraction: SIM_ONE,
             fly_current_speed: SIM_ZERO,
             altitude: SIM_ZERO,
-            target_altitude: SimFixed::from_num(1500),
-            climb_rate: SimFixed::from_num(300),
+
             jumpjet_speed: SIM_ZERO,
             jumpjet_accel: SIM_ZERO,
             jumpjet_current_speed: SIM_ZERO,

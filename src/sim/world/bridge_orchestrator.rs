@@ -1928,9 +1928,7 @@ mod tests {
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::test_intern;
     use crate::sim::movement::locomotion::LocomotorSlot;
-    use crate::sim::movement::locomotor::{
-        AirMovePhase, GroundMovePhase, LocomotorState, MovementLayer,
-    };
+    use crate::sim::movement::locomotor::{GroundMovePhase, LocomotorState, MovementLayer};
     use crate::sim::occupancy::CellListInsertion;
     use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 
@@ -2327,13 +2325,12 @@ mod tests {
             ),
             layer: MovementLayer::Bridge,
             phase: GroundMovePhase::Cruising,
-            air_phase: AirMovePhase::Landed,
+
             speed_multiplier: SimFixed::from_num(1),
             speed_fraction: SimFixed::from_num(1),
             fly_current_speed: SIM_ZERO,
             altitude: SIM_ZERO,
-            target_altitude: SIM_ZERO,
-            climb_rate: SIM_ZERO,
+
             jumpjet_speed: SIM_ZERO,
             jumpjet_accel: SIM_ZERO,
             jumpjet_current_speed: SIM_ZERO,

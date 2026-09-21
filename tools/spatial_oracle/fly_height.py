@@ -7,6 +7,7 @@ Supplied native phase bytes are never inferred from VERA's legacy AirMovePhase.
 from pathlib import Path
 import struct
 
+from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_ESI, UC_X86_REG_ESP
 from tools.native_oracle import SCRATCH, RET_MAGIC, run_checked, finish_vectors, provenance
 from tools.spatial_oracle.crate_speed_effect import fixture, CELL, RULES
@@ -20,7 +21,10 @@ def execute(case):
     owner = actors[0]
     object_type = owner + 0x800
     u.mem_write(TABLE, EMPTY_TABLE)
-    u.mem_write(GLOBAL_TABLE, dwords(TABLE))
+    # Both578080 and565730 test Map+140's array length before loading+13C.
+    # Supplying just the pointer silently selected the zero-height Dummy and
+    # invalidated the earlier bridge/slope fixture coverage.
+    u.mem_write(GLOBAL_TABLE, dwords(TABLE, 0x40000))
     u.mem_write(TABLE + (10 * 512 + 10) * 4, dwords(CELL))
     u.mem_write(CELL + 0x11B, bytes([case.get('level', 0), case.get('slope', 0)]))
     u.mem_write(CELL + 0x140, dwords(0x100 if case.get('bridge', False) else 0))
@@ -46,6 +50,16 @@ def execute(case):
     u.mem_write(sp + 0x13, bytes([int(case.get('dropship', False))]))
     u.reg_write(UC_X86_REG_ESI, LOCO)
     u.reg_write(UC_X86_REG_ESP, sp)
+    ground_reads = []
+    def observe(_u, address, _size, _data):
+        if address == 0x47B3A0:
+            cell = u.reg_read(UC_X86_REG_ECX)
+            assert cell == CELL, f'ground query unexpectedly selected {cell:#x}'
+            ground_reads.append(cell)
+        elif address == 0x4CDD5F:
+            cell = u.reg_read(UC_X86_REG_EAX)
+            assert cell == CELL, f'bridge query unexpectedly selected {cell:#x}'
+    u.hook_add(UC_HOOK_CODE, observe)
     run_checked(u, 0x4CDD0D, (0x4CDFBC, 0x4CE145), count=20000,
                 required_addresses=[0x4CDD1A, 0x4CAC40, 0x7C5F00])
     assert u.reg_read(UC_X86_REG_ESP) == sp
@@ -54,6 +68,7 @@ def execute(case):
     u.mem_write(sp, dwords(RET_MAGIC))
     u.reg_write(UC_X86_REG_ECX, owner)
     run_checked(u, 0x5F5F40, RET_MAGIC, count=1000)
+    assert len(ground_reads) >= 2
     height = struct.unpack('<i', dwords(u.reg_read(UC_X86_REG_EAX)))[0]
     return dict(input=case, z=z, on_bridge=on_bridge, height=height)
 
@@ -82,6 +97,10 @@ def generate():
     for health in (0, -1):
         for z in (0, 1, 19, 20, 50, 1500):
             cases.append(dict(name=f'health_{health}_{z}', z=z, target=1500, health=health))
+    cases += [dict(name=f'wide_{z}_{target}', z=z, target=target)
+              for z, target in [(39980, 40000), (39981, 40000), (40001, 40000),
+                                (60000, 65536), (-100, -2), (0, -2),
+                                (65536, 65536), (70000, 65536)]]
     return [execute(case) for case in cases]
 
 
@@ -93,9 +112,9 @@ if __name__ == '__main__':
                       'has_passenger': 0x41B7D0, 'type_flight_level': 0x717800},
         assumptions=['Supplied post-horizontal frame, target height, full-locomotor landing byte+51 and Type.IsDropship at its captured stack+13 location.',
                      'Real Aircraft/Unit vtables and Aircraft auxiliary interface; FirstPassenger is a supplied nonnull/zero link, never dereferenced by the query.',
-                     'Unmarked owner and one real map cell;104/416 terrain scalars and416 Fly bridge adjustment supplied. No render Mark callbacks execute.',
+                     'Unmarked owner and one real map cell with Map+13C table AND Map+140 length initialized. Read-only observers assert ground/bridge queries select that cell, never Dummy;104/416 terrain scalars and416 Fly bridge adjustment supplied. No render Mark callbacks execute.',
                      'Destination XY equals owner XY; original distance calculation runs. PC53/chop ambient state.',
                      'Health0 and negative cases test this bounded range only, not admission or the earlier fall/crash controller.'],
         substitutions=[],
-        scope='136 original vertical steps: unloaded/loaded climb, descent overshoot, IsDropship and landing differences, bridge attachment, ramps, type/global FlightLevel and health. Excludes full Process, preceding XY/crash relocation, following descent drift, speed, phase, sound/animation and Display transactions; no Rust parity claim.',
+        scope='144 original vertical steps, including signed and beyond-I16F16 coordinates: unloaded/loaded climb, descent overshoot, IsDropship and landing differences, bridge attachment, ramps, type/global FlightLevel and health. Excludes full Process, preceding XY/crash relocation, following descent drift, speed, phase, sound/animation and Display transactions; no Rust parity claim.',
     ))

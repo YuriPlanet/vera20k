@@ -872,7 +872,7 @@ mod tests {
     // ------------------------------------------------------------------------
 
     use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
-    use crate::sim::movement::locomotor::{AirMovePhase, GroundMovePhase};
+    use crate::sim::movement::locomotor::GroundMovePhase;
     use crate::util::fixed_math::{SIM_ONE, SIM_ZERO};
 
     /// Build a minimal `LocomotorState` for tests. Lists all fields explicitly
@@ -889,13 +889,12 @@ mod tests {
             ),
             layer,
             phase: GroundMovePhase::Idle,
-            air_phase: AirMovePhase::Landed,
+
             speed_multiplier: SIM_ONE,
             speed_fraction: SIM_ONE,
             fly_current_speed: SIM_ZERO,
             altitude: SIM_ZERO,
-            target_altitude: SIM_ZERO,
-            climb_rate: SIM_ZERO,
+
             jumpjet_speed: SIM_ZERO,
             jumpjet_accel: SIM_ZERO,
             jumpjet_current_speed: SIM_ZERO,

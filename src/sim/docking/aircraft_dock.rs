@@ -390,7 +390,10 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
             if e.aircraft_mission.is_some() {
                 return None;
             }
-            let air_phase = e.locomotor.as_ref().map(|l| l.air_phase);
+            let air_phase = crate::sim::movement::air_movement::fly_mission_phase(
+                e,
+                sim.resolved_terrain.as_ref(),
+            );
             Some(AircraftSnap {
                 id: e.stable_id(),
                 owner: e.owner(),
@@ -634,8 +637,17 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
                 entity.attack_target = None;
             }
             if let Some(phase) = m.set_air_phase {
-                if let Some(ref mut loco) = entity.locomotor {
-                    loco.air_phase = phase;
+                let level = rules
+                    .object(sim.interner.resolve(entity.type_ref()))
+                    .map_or(rules.general.flight_level, |o| {
+                        o.flight_level(rules.general.flight_level)
+                    });
+                if let Some(loco) = entity.locomotor.as_mut() {
+                    match phase {
+                        AirMovePhase::Ascending => loco.begin_fly_takeoff(level),
+                        AirMovePhase::Descending => loco.begin_fly_landing(),
+                        _ => unreachable!("docking only requests takeoff or landing"),
+                    }
                 }
             }
             if m.clear_movement {
@@ -664,16 +676,7 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
                 ))
             })
             .unwrap_or(crate::util::fixed_math::SimFixed::from_num(8));
-        crate::sim::movement::air_movement::issue_air_move_command(
-            &mut sim.substrate.entities,
-            id,
-            (rx, ry),
-            speed,
-            crate::sim::movement::DestinationTiming::from_rules(
-                sim.session.binary_frame,
-                rules.into(),
-            ),
-        );
+        sim.issue_air_cell_destination(id, (rx, ry), speed, Some(rules));
     }
 }
 

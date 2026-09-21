@@ -2044,6 +2044,7 @@ fn jumpjet_stop_command_keeps_native_moving_and_selected_coordinate() {
         &[id],
         sim.session.tick,
         sim.resolved_terrain.as_ref(),
+        Some((&rules, &sim.interner)),
     );
     let before = sim
         .substrate

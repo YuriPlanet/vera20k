@@ -31,7 +31,7 @@ use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
 use crate::util::fixed_math::SimFixed;
 
 use super::super::drop_pod_movement::DropPodState;
-use super::super::locomotor::{AirMovePhase, GroundMovePhase, LocomotorState, MovementLayer};
+use super::super::locomotor::{GroundMovePhase, LocomotorState, MovementLayer};
 use super::super::rocket_movement::RocketState;
 use super::super::slope_transition::SlopeTransitionState;
 use super::super::teleport_movement::TeleportState;
@@ -43,13 +43,10 @@ use super::super::tunnel_movement::TunnelState;
 pub struct LocomotorCommonRuntime {
     pub powered: bool,
     pub phase: GroundMovePhase,
-    pub air_phase: AirMovePhase,
     pub speed_multiplier: SimFixed,
     pub speed_fraction: SimFixed,
     pub fly_current_speed: SimFixed,
     pub altitude: SimFixed,
-    pub target_altitude: SimFixed,
-    pub climb_rate: SimFixed,
     pub jumpjet_speed: SimFixed,
     pub jumpjet_accel: SimFixed,
     pub jumpjet_current_speed: SimFixed,
@@ -100,7 +97,7 @@ pub enum LocomotorRuntimePayload {
     Hover(Option<crate::sim::components::DriveCoord>),
     Mech,
     Ship(SlopeTransitionState),
-    Fly,
+    Fly(super::super::fly_height::FlyRuntime),
     Jumpjet(super::super::jumpjet_movement::JumpjetRuntime),
     Parachute,
 }
@@ -119,7 +116,7 @@ impl LocomotorRuntimePayload {
             LocomotorKind::Hover => Self::Hover(None),
             LocomotorKind::Mech => Self::Mech,
             LocomotorKind::Ship => Self::Ship(SlopeTransitionState::at_binary_frame(binary_frame)),
-            LocomotorKind::Fly => Self::Fly,
+            LocomotorKind::Fly => Self::Fly(Default::default()),
             LocomotorKind::Jumpjet => Self::Jumpjet(Default::default()),
             LocomotorKind::Parachute => Self::Parachute,
         }
@@ -146,13 +143,10 @@ impl LocomotorRuntime {
             common: LocomotorCommonRuntime {
                 powered: state.powered,
                 phase: state.phase,
-                air_phase: state.air_phase,
                 speed_multiplier: state.speed_multiplier,
                 speed_fraction: state.speed_fraction,
                 fly_current_speed: state.fly_current_speed,
                 altitude: state.altitude,
-                target_altitude: state.target_altitude,
-                climb_rate: state.climb_rate,
                 jumpjet_speed: state.jumpjet_speed,
                 jumpjet_accel: state.jumpjet_accel,
                 jumpjet_current_speed: state.jumpjet_current_speed,
@@ -183,7 +177,7 @@ impl LocomotorRuntime {
     /// then `Link_To_Object(owner)` and nothing else — so the temporary starts
     /// default-initialised and the displaced locomotor keeps all of its state
     /// untouched in the stash. This clones the displaced runtime and resets only
-    /// `phase`, `air_phase` and `payload`, so the temporary inherits
+    /// `phase` and `payload`, so the temporary inherits
     /// `altitude`, the hover throttle/speed/bob fields, `subcell_dest`, the two
     /// speed fractions, `fly_current_speed`, the jumpjet fields **and
     /// `powered`** — and [`install_into`] copies `powered` back on restore, so a
@@ -206,7 +200,6 @@ impl LocomotorRuntime {
         runtime.kind = kind;
         runtime.layer = layer;
         runtime.common.phase = GroundMovePhase::Idle;
-        runtime.common.air_phase = AirMovePhase::Landed;
         runtime.payload = LocomotorRuntimePayload::for_kind(kind, binary_frame);
         runtime
     }
@@ -216,13 +209,10 @@ impl LocomotorRuntime {
         state.layer = self.layer;
         state.powered = self.common.powered;
         state.phase = self.common.phase;
-        state.air_phase = self.common.air_phase;
         state.speed_multiplier = self.common.speed_multiplier;
         state.speed_fraction = self.common.speed_fraction;
         state.fly_current_speed = self.common.fly_current_speed;
         state.altitude = self.common.altitude;
-        state.target_altitude = self.common.target_altitude;
-        state.climb_rate = self.common.climb_rate;
         state.jumpjet_speed = self.common.jumpjet_speed;
         state.jumpjet_accel = self.common.jumpjet_accel;
         state.jumpjet_current_speed = self.common.jumpjet_current_speed;
@@ -402,11 +392,8 @@ pub fn is_ok_to_end(state: &LocomotorState, context: EndGateContext) -> bool {
                 && !context.owner_teleporting
                 && !context.owner_deploying
         }
-        LocomotorKind::Fly | LocomotorKind::Parachute => {
-            state.air_phase == AirMovePhase::Landed
-                && !context.owner_teleporting
-                && !context.owner_deploying
-        }
+        // Neither native class exposes IPiggyback; it cannot finish a stash.
+        LocomotorKind::Fly | LocomotorKind::Parachute => false,
         // `TeleportLocomotionClass::Is_Ok_To_End` is a real six-clause
         // predicate, not a constant false: the locomotor's own warp-active byte
         // must be clear, a runtime must be stashed, the owner's chrono-warp

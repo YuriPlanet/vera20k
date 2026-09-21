@@ -351,6 +351,9 @@ pub struct ObjectType {
     /// TechnoType+618: constructor711050 seeds -1; ReadINI712336 reads
     /// `FlightLevel`. Getter717800 uses General.FlightLevel only for -1.
     pub(crate) flight_level: i32,
+    /// TechnoType+C95: ctor7113B9=false, ReadINI712350..712373 reads
+    /// IsDropship; Fly4CDA28 selects its distinct vertical motion.
+    pub(crate) is_dropship: bool,
     /// Vision range in cells.
     pub sight: i32,
     /// Technology level required (-1 = unbuildable by player).
@@ -1741,6 +1744,7 @@ impl ObjectType {
             passive: section.get_bool("Passive").unwrap_or(false),
             slowdown_distance: section.get_i32("SlowdownDistance").unwrap_or(500),
             flight_level: section.get_i32("FlightLevel").unwrap_or(-1),
+            is_dropship: section.get_bool("IsDropship").unwrap_or(false),
             sight: section.get_i32("Sight").unwrap_or(0),
             // TechnoTypeClass ctor @ gamemd.exe 0x00711082 initializes
             // +0x634 to 255; ReadINI preserves that current value when the

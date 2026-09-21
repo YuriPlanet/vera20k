@@ -1007,11 +1007,7 @@ fn install_fly_aircraft(sim: &mut Simulation, stable_id: u64, altitude: SimFixed
     insert_entity(sim, stable_id, EntityCategory::Aircraft);
     let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Fly);
     locomotor.altitude = altitude;
-    locomotor.air_phase = if altitude <= SimFixed::from_num(0) {
-        AirMovePhase::Landed
-    } else {
-        AirMovePhase::Cruising
-    };
+    locomotor.set_fly_target_height(altitude.to_num::<i32>());
     sim.substrate
         .entities
         .get_mut(stable_id)
@@ -1536,9 +1532,8 @@ fn gsi_04_12_object_raw_occupation_production_fly_tick_unmarks_takeoff_and_marks
             .locomotor
             .as_mut()
             .unwrap();
-        locomotor.air_phase = AirMovePhase::Ascending;
-        locomotor.target_altitude = SimFixed::from_num(600);
-        locomotor.climb_rate = SimFixed::from_num(1500);
+
+        locomotor.set_fly_target_height(600);
     }
     sim.tick_air_movement_with_cell_lists_one(1, None);
 
@@ -1560,10 +1555,9 @@ fn gsi_04_12_object_raw_occupation_production_fly_tick_unmarks_takeoff_and_marks
             .locomotor
             .as_mut()
             .unwrap();
-        locomotor.air_phase = AirMovePhase::Descending;
+        locomotor.begin_fly_landing();
         locomotor.altitude = SimFixed::from_num(1);
-        locomotor.target_altitude = SimFixed::from_num(0);
-        locomotor.climb_rate = SimFixed::from_num(1500);
+        locomotor.set_fly_target_height(0);
     }
     // Supply the matching physical state for this independent landing visit.
     // Changing cached controller height cannot move an exact Object coordinate.
@@ -1607,9 +1601,8 @@ fn gsi_05_05_fly_takeoff_commits_absolute_z_after_remove_process() {
             .locomotor
             .as_mut()
             .unwrap();
-        locomotor.air_phase = AirMovePhase::Ascending;
-        locomotor.target_altitude = SimFixed::from_num(600);
-        locomotor.climb_rate = SimFixed::from_num(1500);
+
+        locomotor.set_fly_target_height(600);
     }
     sim.tick_air_movement_with_cell_lists_one(1, None);
 
@@ -1646,9 +1639,8 @@ fn gsi_05_05_fly_landing_on_bridge_uses_absolute_z_for_deck_put() {
             .locomotor
             .as_mut()
             .unwrap();
-        locomotor.air_phase = AirMovePhase::Descending;
-        locomotor.target_altitude = SimFixed::from_num(0);
-        locomotor.climb_rate = SimFixed::from_num(1500);
+        locomotor.begin_fly_landing();
+        locomotor.set_fly_target_height(0);
     }
     sim.tick_air_movement_with_cell_lists_one(1, None);
 
@@ -1719,7 +1711,11 @@ fn gsi_05_05_mapless_fly_uses_dummy_ground_then_bridge_height() {
     {
         let aircraft = sim.substrate.entities.get_mut(1).unwrap();
         aircraft.on_bridge = true;
-        aircraft.locomotor.as_mut().unwrap().target_altitude = SimFixed::from_num(100);
+        aircraft
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .set_fly_target_height(100);
     }
     let _ = sim.try_reveal_entity(1, common_raw_request(3, 4, 2, 128, 128));
 
@@ -7619,12 +7615,15 @@ fn production_air_wrapper_keeps_fly_exact_producer_and_reads_live_dummy_for_lega
         e.position.z = 99;
         e.position.exact_z_leptons = exact;
         e.on_bridge = true;
-        e.locomotor.as_mut().unwrap().target_altitude = SimFixed::from_num(125);
+        e.locomotor.as_mut().unwrap().set_fly_target_height(125);
         let xy = crate::sim::movement::ground_pose::position_world_xy(&e.position);
         let ground = crate::util::lepton::ground_height_leptons(3, 1, xy[0], xy[1]).unwrap();
         let expected = exact.unwrap_or(ground + 416 + 125);
         // Keep the physical height steady despite the stale controller cache.
-        e.locomotor.as_mut().unwrap().target_altitude = SimFixed::from_num(expected - ground - 416);
+        e.locomotor
+            .as_mut()
+            .unwrap()
+            .set_fly_target_height((SimFixed::from_num(expected - ground - 416)).to_num::<i32>());
         sim.tick_air_movement_with_cell_lists_one(1, None);
         let e = sim.substrate.entities.get(1).unwrap();
         assert_eq!(e.position.exact_z_leptons, Some(expected));
@@ -7728,9 +7727,8 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
         entity.facing = 0;
         let loco = entity.locomotor.as_mut().unwrap();
         loco.altitude = SimFixed::from_num(600);
-        loco.target_altitude = SimFixed::from_num(600);
-        loco.climb_rate = SimFixed::from_num(300);
-        loco.air_phase = AirMovePhase::Cruising;
+        loco.set_fly_target_height(600);
+
         loco.fly_current_speed = SIM_ONE;
         loco.speed_fraction = SIM_ONE;
         loco.rot = 0;
@@ -7740,6 +7738,7 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
             (2, 2),
             SimFixed::from_num(3840),
             DestinationTiming::new(0, 60),
+            1500
         ));
         sim.tick_air_movement_with_cell_lists_one(1, None);
         let entity = sim.substrate.entities.get_mut(1).unwrap();
@@ -7755,8 +7754,8 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
         );
         entity.movement_target = None;
         let loco = entity.locomotor.as_mut().unwrap();
-        loco.air_phase = AirMovePhase::Descending;
-        loco.target_altitude = SimFixed::from_num(0);
+        loco.begin_fly_landing();
+        loco.set_fly_target_height(0);
 
         let map_terrain = sim.resolved_terrain.as_ref().unwrap().clone();
         // In-scenario load reconstructs Scenario RNG from Seed0.
@@ -7776,7 +7775,7 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
             }
             assert_eq!(restored.state_hash(), sim.state_hash());
             let entity = sim.substrate.entities.get(1).unwrap();
-            if entity.locomotor.as_ref().unwrap().air_phase == AirMovePhase::Landed {
+            if entity.locomotor.as_ref().unwrap().air_phase() == AirMovePhase::Landed {
                 assert_eq!(entity.position.exact_z_leptons, Some(destination_ground));
                 assert_eq!(
                     sim.foot_navigation_coordinate(1).unwrap().z,

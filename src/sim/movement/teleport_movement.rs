@@ -540,6 +540,7 @@ mod tests {
             passive: false,
             slowdown_distance: 512,
             flight_level: -1,
+            is_dropship: false,
             sight: 5,
             tech_level: -1,
             build_time_multiplier: 1.0,
@@ -1070,7 +1071,7 @@ mod tests {
     fn test_teleport_with_piggyback_restores_drive() {
         let mut entities = EntityStore::new();
         let obj = make_drive_obj();
-        let loco = LocomotorState::from_object_type(&obj, 1500, 0);
+        let loco = LocomotorState::from_object_type(&obj, 0);
         let mut e = GameEntity::test_default(1, "CMIN", "Americans", 5, 5);
         e.locomotor = Some(loco);
         entities.insert(e);
@@ -1110,7 +1111,7 @@ mod tests {
     fn teleporter_empty_destination_starts_teleport_without_drive_override() {
         let mut entities = EntityStore::new();
         let obj = make_teleport_harvester_obj();
-        let loco = LocomotorState::from_object_type(&obj, 1500, 0);
+        let loco = LocomotorState::from_object_type(&obj, 0);
         let mut e = GameEntity::test_default(1, "CMIN", "Americans", 5, 5);
         e.locomotor = Some(loco);
         entities.insert(e);
@@ -1149,7 +1150,7 @@ mod tests {
     fn teleporter_building_destination_activates_drive_piggyback() {
         let mut entities = EntityStore::new();
         let obj = make_teleport_harvester_obj();
-        let loco = LocomotorState::from_object_type(&obj, 1500, 0);
+        let loco = LocomotorState::from_object_type(&obj, 0);
         let mut e = GameEntity::test_default(1, "CMIN", "Americans", 5, 5);
         e.locomotor = Some(loco);
         entities.insert(e);
@@ -1270,7 +1271,7 @@ mod tests {
     fn test_harvester_relocate_cleans_up_in_one_tick() {
         let mut entities = EntityStore::new();
         let obj = make_drive_obj();
-        let loco = LocomotorState::from_object_type(&obj, 1500, 0);
+        let loco = LocomotorState::from_object_type(&obj, 0);
         let mut e = GameEntity::test_default(1, "CMIN", "Americans", 5, 5);
         e.locomotor = Some(loco);
         entities.insert(e);

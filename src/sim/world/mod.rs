@@ -62,6 +62,8 @@ mod damage_consequence_tests;
 #[cfg(test)]
 mod eva_dispatch_tests;
 #[cfg(test)]
+mod fly_height_tests;
+#[cfg(test)]
 pub(crate) mod gap_generator_tests;
 #[cfg(test)]
 mod gsi_04_18_tests;

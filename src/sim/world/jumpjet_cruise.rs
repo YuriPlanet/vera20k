@@ -767,7 +767,7 @@ mod tests {
             runtime.flight.target_height = 500;
         }
         locomotor.altitude = SimFixed::from_num(500);
-        locomotor.target_altitude = SimFixed::from_num(500);
+
         entity.locomotor = Some(locomotor);
         entity.movement_target = Some(MovementTarget {
             path: vec![(16, 10)],

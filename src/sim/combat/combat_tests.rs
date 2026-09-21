@@ -5864,7 +5864,7 @@ fn crusher_driveover_destroys_wall_but_noncrusher_does_not() {
         veh.regular_crusher = obj.crusher;
         veh.omni_crusher = obj.omni_crusher;
         veh.locomotor =
-            Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(obj, 0, 0));
+            Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(obj, 0));
         veh.health = Health { current: 300 };
         sim.substrate.entities.insert(veh);
         sim.substrate.entities.rebuild_owner_index();
@@ -5962,7 +5962,7 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
         veh.type_ref = veh_type_id;
         veh.regular_crusher = obj.crusher;
         veh.locomotor =
-            Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(obj, 0, 0));
+            Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(obj, 0));
         sim.substrate.entities.insert(veh);
         sim.substrate.entities.rebuild_owner_index();
         sim
@@ -8939,18 +8939,20 @@ fn gsi_08_08_kirov_vertical_bomb_falls_and_detonates() {
     kirov.category = EntityCategory::Aircraft;
     let zep_object = rules.object("ZEP").expect("ZEP object type");
     let mut locomotor =
-        crate::sim::movement::locomotor::LocomotorState::from_object_type(zep_object, 0, 0);
+        crate::sim::movement::locomotor::LocomotorState::from_object_type(zep_object, 0);
     // The hover altitude is NOT hand-set: `JumpjetHeight=750` has to arrive
-    // through `LocomotorState::air_params_from_object` as the hover target, and
+    // through the native Jumpjet Link_To_Object copy as the hover target, and
     // the airship is then placed at the top of its climb. Assert the rules hop
     // at its source so a broken parse fails here rather than downstream.
     assert_eq!(
-        locomotor.target_altitude,
-        crate::util::fixed_math::SimFixed::from_num(750),
+        locomotor.jumpjet_runtime().unwrap().params.height,
+        750,
         "`JumpjetHeight=750` must reach the locomotor's hover target; a 500 here \
          means the rules->locomotor hop is broken, not the flight model"
     );
-    locomotor.altitude = locomotor.target_altitude;
+    locomotor.altitude = crate::util::fixed_math::SimFixed::from_num(
+        locomotor.jumpjet_runtime().unwrap().params.height,
+    );
     kirov.locomotor = Some(locomotor);
     store.insert(kirov);
     let _ = test_intern("HTNK");
@@ -9590,7 +9592,7 @@ fn a_drive_crusher_without_crusherall_leaves_a_plain_wall_standing() {
         veh.type_ref = veh_type_id;
         veh.regular_crusher = obj.crusher;
         veh.locomotor =
-            Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(obj, 0, 0));
+            Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(obj, 0));
         sim.substrate.entities.insert(veh);
         sim.substrate.entities.rebuild_owner_index();
         sim

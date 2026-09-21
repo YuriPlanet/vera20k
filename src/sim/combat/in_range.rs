@@ -930,9 +930,7 @@ mod tests {
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::test_interner;
     use crate::sim::movement::locomotion::LocomotorSlot;
-    use crate::sim::movement::locomotor::{
-        AirMovePhase, GroundMovePhase, LocomotorState, MovementLayer,
-    };
+    use crate::sim::movement::locomotor::{GroundMovePhase, LocomotorState, MovementLayer};
     use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
     use crate::util::lepton::LEPTONS_PER_LEVEL;
 
@@ -957,13 +955,12 @@ mod tests {
             ),
             layer: MovementLayer::Air,
             phase: GroundMovePhase::Idle,
-            air_phase: AirMovePhase::Cruising,
+
             speed_multiplier: SIM_ONE,
             speed_fraction: SIM_ONE,
             fly_current_speed: SIM_ZERO,
             altitude: SimFixed::from_num(altitude_lep as i32),
-            target_altitude: SimFixed::from_num(altitude_lep as i32),
-            climb_rate: SIM_ZERO,
+
             jumpjet_speed: SIM_ZERO,
             jumpjet_accel: SIM_ZERO,
             jumpjet_current_speed: SIM_ZERO,

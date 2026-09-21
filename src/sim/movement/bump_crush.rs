@@ -2699,7 +2699,6 @@ mod tests {
             crate::sim::movement::locomotor::LocomotorState::from_object_type(
                 rules.object("E1").unwrap(),
                 0,
-                0,
             ),
         );
         let mut rng = SimRng::new(42);
