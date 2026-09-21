@@ -23,6 +23,9 @@ use crate::sim::projectile::ProjectileDetonationReason;
 use crate::sim::rng::SimRng;
 use crate::sim::vision::FogState;
 
+#[path = "infantry_fire_facing_tests.rs"]
+mod infantry_fire_facing_tests;
+
 /// Establish the supplied fixture's Cell lists through shared Mark, in
 /// ascending fixture ID order. Acquisition no longer synthesizes these lists.
 fn mark_fixture_entities(store: &mut EntityStore) -> OccupancyGrid {

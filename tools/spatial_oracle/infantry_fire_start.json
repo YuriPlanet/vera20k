@@ -1,0 +1,2165 @@
+[
+  {
+    "action": 4,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 0,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "standing_0",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 0,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      1409,
+      749
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 4,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 8315,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "standing_1",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 8315,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2177,
+      749
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 4,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "standing_2",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 4,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 24451,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "standing_3",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 24451,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2177,
+      2285
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 4,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 32767,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "standing_4",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 32767,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      1409,
+      2285
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 4,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 41082,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "standing_5",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 41082,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      641,
+      2285
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 4,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 49153,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "standing_6",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 49153,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      641,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 4,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 57221,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "standing_7",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 57221,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      641,
+      749
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 4,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 11853,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "standing_8",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 11853,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2026,
+      1228
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 4,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "standing_9",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      1409,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 8,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 0,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "prone_0",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 0,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      1409,
+      749
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 8,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 8315,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "prone_1",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 8315,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2177,
+      749
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 8,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "prone_2",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 8,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 24451,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "prone_3",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 24451,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2177,
+      2285
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 8,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 32767,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "prone_4",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 32767,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      1409,
+      2285
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 8,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 41082,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "prone_5",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 41082,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      641,
+      2285
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 8,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 49153,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "prone_6",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 49153,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      641,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 8,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 57221,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "prone_7",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 57221,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      641,
+      749
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 8,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 11853,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "prone_8",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 11853,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2026,
+      1228
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 8,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "prone_9",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      1409,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 29,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": true,
+    "duration": 0,
+    "facing": 0,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "deployed_0",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 0,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      1409,
+      749
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 29,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": true,
+    "duration": 0,
+    "facing": 8315,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "deployed_1",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 8315,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2177,
+      749
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 29,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": true,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "deployed_2",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 29,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": true,
+    "duration": 0,
+    "facing": 24451,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "deployed_3",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 24451,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2177,
+      2285
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 29,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": true,
+    "duration": 0,
+    "facing": 32767,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "deployed_4",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 32767,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      1409,
+      2285
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 29,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": true,
+    "duration": 0,
+    "facing": 41082,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "deployed_5",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 41082,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      641,
+      2285
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 29,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": true,
+    "duration": 0,
+    "facing": 49153,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "deployed_6",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 49153,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      641,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 29,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": true,
+    "duration": 0,
+    "facing": 57221,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "deployed_7",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 57221,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      641,
+      749
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 29,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": true,
+    "duration": 0,
+    "facing": 11853,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "deployed_8",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 11853,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2026,
+      1228
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 29,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": true,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "deployed_9",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      1409,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 40,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 0,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_0",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 0,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      1409,
+      749
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 40,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 8315,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_1",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 8315,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2177,
+      749
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 40,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_2",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 40,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 24451,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_3",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 24451,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2177,
+      2285
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 40,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 32767,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_4",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 32767,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      1409,
+      2285
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 40,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 41082,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_5",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 41082,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      641,
+      2285
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 40,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 49153,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_6",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 49153,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      641,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 40,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 57221,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_7",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 57221,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      641,
+      749
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 40,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 11853,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_8",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 11853,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2026,
+      1228
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 40,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_9",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      1409,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 41,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 0,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_prone_0",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 0,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      1409,
+      749
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 41,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 8315,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_prone_1",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 8315,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2177,
+      749
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 41,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_prone_2",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 41,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 24451,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_prone_3",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 24451,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2177,
+      2285
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 41,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 32767,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_prone_4",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 32767,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      1409,
+      2285
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 41,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 41082,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_prone_5",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 41082,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      641,
+      2285
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 41,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 49153,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_prone_6",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 49153,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      641,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 41,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 57221,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_prone_7",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 57221,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      641,
+      749
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 41,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 11853,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_prone_8",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 11853,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      2026,
+      1228
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 41,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "secondary_prone_9",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 1,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      1409,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 0,
+    "calls": [
+      "select_weapon",
+      "get_fire_error"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 33059,
+    "fire_error": 1,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "refused_1",
+    "pending": 0,
+    "pending_after": 0,
+    "previous": 33059,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 4294967295,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 0,
+    "calls": [
+      "select_weapon",
+      "get_fire_error"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 33059,
+    "fire_error": 2,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "refused_2",
+    "pending": 0,
+    "pending_after": 0,
+    "previous": 33059,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 4294967295,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 0,
+    "calls": [
+      "select_weapon",
+      "get_fire_error"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 33059,
+    "fire_error": 6,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "refused_6",
+    "pending": 0,
+    "pending_after": 0,
+    "previous": 33059,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 4294967295,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 0,
+    "calls": [
+      "select_weapon",
+      "get_fire_error"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 33059,
+    "fire_error": 8,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "refused_8",
+    "pending": 0,
+    "pending_after": 0,
+    "previous": 33059,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 4294967295,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 0,
+    "calls": [
+      "select_weapon"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 33059,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "already_pending",
+    "pending": 1,
+    "pending_after": 1,
+    "previous": 33059,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 4294967295,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 0,
+    "calls": [],
+    "deployed": false,
+    "duration": 0,
+    "facing": 33059,
+    "fire_error": 0,
+    "has_target": false,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "no_target",
+    "pending": 1,
+    "pending_after": 0,
+    "previous": 33059,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 4294967295,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 4,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 1,
+    "initial_facing": 16383,
+    "initial_previous": 0,
+    "initial_start": 100,
+    "name": "rotating_heading_already_matches",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 0,
+    "prone": 0,
+    "raw_rot": 8192,
+    "rot": 32,
+    "source": [
+      1409,
+      1517
+    ],
+    "start": 100,
+    "target": [
+      1409,
+      749
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 4,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "building_get_coords",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 19119,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "building_foundation_center",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 19119,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1408,
+      1408
+    ],
+    "start": 100,
+    "target": [
+      2176,
+      1408
+    ],
+    "target_kind": "building",
+    "weapon_slot": 0
+  },
+  {
+    "action": 4,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "cell_get_coords",
+      "update_facing"
+    ],
+    "deployed": false,
+    "duration": 0,
+    "facing": 14866,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_start": 4294967295,
+    "name": "ground_cell_center",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 14866,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1447,
+      1531
+    ],
+    "start": 100,
+    "target": [
+      8,
+      5
+    ],
+    "target_kind": "cell",
+    "weapon_slot": 0
+  }
+]

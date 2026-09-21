@@ -1108,8 +1108,8 @@ pub(crate) fn pursuit_in_range(
 
 /// Issue an attack command: make `attacker` fire at `target`.
 ///
-/// Replaces any existing AttackTarget on the attacker. Also updates the
-/// attacker's facing to point toward the target.
+/// Replaces any existing AttackTarget. Infantry and vehicles turn through their
+/// firing/movement owners, not through target assignment.
 pub fn issue_attack_command(
     entities: &mut EntityStore,
     attacker_id: u64,
@@ -1153,18 +1153,10 @@ pub fn issue_attack_command(
     // `ROT=` (`FacingClass::Set(+0x388)` at `0x00737004`) only once the fire
     // gate refuses the shot for facing, and only while it is stationary.
     //
-    // RESIDUAL (GSI-08.04) — infantry (and the aircraft/structure fallthrough)
-    // keep the order-time snap. Native snaps infantry `+0x388` with
-    // `FacingClass::UpdateFacing` at `0x0052091F`, inside
-    // `InfantryClass::Fire_At_Target @ 0x005206B0`, at the moment the FIRE
-    // sequence starts — not at order time, and with no angle gate either way.
-    // - Trigger: ordering any infantryman to attack.
-    // - Player effect: he turns to face while still walking in, instead of
-    //   snapping round as he opens fire.
-    // - Frequency: every infantry attack order.
-    // - Downstream risk: none to the fire decision — infantry are not
-    //   angle-gated at all — but the rendered approach facing differs.
-    if !has_turret && category != EntityCategory::Unit {
+    // Infantry likewise snap only when their fire action starts (00520925),
+    // now owned by world_receiver::resolve_attacker_fire. The legacy body-only
+    // aircraft/structure order behavior remains for its class-specific audit.
+    if !has_turret && !matches!(category, EntityCategory::Unit | EntityCategory::Infantry) {
         let dx: i32 = trx as i32 - arx as i32;
         let dy: i32 = try_ as i32 - ary as i32;
         attacker.facing = crate::sim::movement::facing_from_delta(dx, dy);
@@ -1291,9 +1283,8 @@ pub fn issue_attack_cell_command(
         None => return false,
     };
 
-    // See `issue_attack_command` — a turretless VEHICLE turns through
-    // `Fire_At_Target` case 2, not at order time.
-    if !has_turret && category != EntityCategory::Unit {
+    // As with entity targets, Infantry/Unit facing belongs to Fire_At_Target.
+    if !has_turret && !matches!(category, EntityCategory::Unit | EntityCategory::Infantry) {
         let dx: i32 = trx as i32 - arx as i32;
         let dy: i32 = try_ as i32 - ary as i32;
         attacker.facing = crate::sim::movement::facing_from_delta(dx, dy);

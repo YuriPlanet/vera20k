@@ -52,6 +52,9 @@ pub(crate) struct FireSource {
     pub level: u8,
     pub exact_z_leptons: Option<i32>,
     pub facing: u8,
+    /// Retained body heading. Infantry's native fire-facing virtual +2A8
+    /// (004E0150) reads FacingClass +388; consumers quantize when required.
+    pub hull_facing: Option<crate::sim::movement::FacingClass>,
     pub barrel_facing: Option<crate::sim::movement::FacingClass>,
     pub veterancy: u16,
     /// The firing occupant's port, when an occupied building fires.
@@ -70,6 +73,7 @@ impl From<&AttackerSnapshot> for FireSource {
             level: snap.pos_z,
             exact_z_leptons: snap.pos_exact_z_leptons,
             facing: snap.facing,
+            hull_facing: snap.hull_facing,
             barrel_facing: snap.barrel_facing,
             veterancy: snap.veterancy,
             garrison_fire_index: snap.garrison.as_ref().map(|garrison| garrison.fire_index),
@@ -132,7 +136,10 @@ pub(crate) fn fire_coordinate(
     let source_x = (i32::from(snap.rx) * 256 + snap.sub_x.to_num::<i32>()).wrapping_sub(base_shift);
     let source_y = (i32::from(snap.ry) * 256 + snap.sub_y.to_num::<i32>()).wrapping_sub(base_shift);
 
-    let body_facing16 = crate::sim::movement::turret::body_facing_to_turret(snap.facing);
+    let body_facing16 = snap.hull_facing.as_ref().map_or_else(
+        || crate::sim::movement::turret::body_facing_to_turret(snap.facing),
+        |body| body.current(binary_frame),
+    );
     let aim_facing16 = snap
         .barrel_facing
         .as_ref()
@@ -309,6 +316,7 @@ mod tests {
             level: 2,
             exact_z_leptons: None,
             facing: 0,
+            hull_facing: None,
             barrel_facing: None,
             veterancy: 0,
             garrison_fire_index: None,
