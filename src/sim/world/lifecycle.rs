@@ -23,6 +23,7 @@ use crate::util::fixed_math::SimFixed;
 use crate::util::lepton::{LEPTONS_PER_LEVEL, ground_height_leptons};
 
 use super::Simulation;
+use super::display_layers::DisplayLayer;
 use super::substrate::ObjectKind;
 
 /// The control value `DispatchPointerExpiredCleanup @ 0x007258D0` forwards to
@@ -752,7 +753,7 @@ impl Simulation {
             };
         }
         if self.substrate.particle_systems.contains_key(stable_id) {
-            let registered = self.reveal_particle_system(stable_id);
+            let registered = self.reveal_particle_system(stable_id, None);
             return RevealOutcome::Revealed {
                 logic_registered: registered,
             };
@@ -1751,7 +1752,7 @@ impl Simulation {
     pub(crate) fn tick_air_movement_with_cell_lists_one(
         &mut self,
         stable_id: u64,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: Option<&RuleSet>,
     ) -> crate::sim::movement::air_movement::AirMovementTickStats {
         use crate::rules::locomotor_type::LocomotorKind;
         use crate::sim::movement::locomotor::MovementLayer;
@@ -1998,37 +1999,74 @@ impl Simulation {
         if !self.substrate.voxel_anims.contains_key(stable_id) {
             return false;
         }
+        // VoxelAnim VT7F6318+78 ->74A960: always Air.
+        self.submit_object_display(stable_id, DisplayLayer::AIR, None);
         self.register_logic_object(stable_id)
     }
 
-    pub(crate) fn reveal_particle_system(&mut self, stable_id: u64) -> bool {
+    pub(crate) fn reveal_particle_system(
+        &mut self,
+        stable_id: u64,
+        rules: Option<&RuleSet>,
+    ) -> bool {
         if !self.substrate.particle_systems.contains_key(stable_id) {
             return false;
         }
+        // ParticleSystem VT7EFB9C+78 ->62FE80: always Ground. Rules resolve
+        // the existing Building peers' GetYSort adjustments during insertion.
+        self.submit_object_display(stable_id, DisplayLayer::GROUND, rules);
         self.register_logic_object(stable_id)
     }
 
     pub(crate) fn conceal_particle_system(&mut self, stable_id: u64) -> bool {
+        self.substrate.display.remove(stable_id);
         self.unregister_logic_object(stable_id)
     }
 
-    pub(crate) fn register_terrain_object(&mut self, stable_id: u64) -> bool {
-        self.production
+    pub(crate) fn register_terrain_object(
+        &mut self,
+        stable_id: u64,
+        rules: Option<&RuleSet>,
+    ) -> bool {
+        if !self
+            .production
             .terrain_objects
             .get(&stable_id)
             .is_some_and(|terrain| terrain.is_live())
-            && self.register_logic_object(stable_id)
+        {
+            return false;
+        }
+        // Terrain ctor71BC76 reveals at cell center/Z=0; Object5F4260 is
+        // Ground for this stationary surface object, including elevated cells.
+        self.submit_object_display(stable_id, DisplayLayer::GROUND, rules);
+        self.register_logic_object(stable_id)
     }
 
-    pub(crate) fn register_projectile(&mut self, stable_id: u64) -> bool {
-        self.projectiles.get(stable_id).is_some() && self.register_logic_object(stable_id)
+    pub(crate) fn register_projectile(&mut self, stable_id: u64, flat: bool) -> bool {
+        if self.projectiles.get(stable_id).is_none() {
+            return false;
+        }
+        // Bullet Fire468B6D ->Submit; GetLayer468B90 reads type+2F7.
+        let layer = if flat {
+            DisplayLayer::SURFACE
+        } else {
+            DisplayLayer::AIR
+        };
+        self.submit_object_display(stable_id, layer, None);
+        self.register_logic_object(stable_id)
     }
 
     pub(crate) fn register_wave(&mut self, stable_id: u64) -> bool {
-        self.waves.get(stable_id).is_some() && self.register_logic_object(stable_id)
+        if self.waves.get(stable_id).is_none() {
+            return false;
+        }
+        // Wave VT7F6BF4+78 ->75F890: always Air; Submit at75F952.
+        self.submit_object_display(stable_id, DisplayLayer::AIR, None);
+        self.register_logic_object(stable_id)
     }
 
     pub(crate) fn unregister_non_entity_object(&mut self, stable_id: u64) -> bool {
+        self.substrate.display.remove(stable_id);
         self.unregister_logic_object(stable_id)
     }
 
@@ -2045,7 +2083,7 @@ impl Simulation {
         if !represented {
             return false;
         }
-        let _ = self.unregister_logic_object(stable_id);
+        let _ = self.unregister_non_entity_object(stable_id);
         self.substrate.pending_delete.push(stable_id);
         #[cfg(test)]
         self.trace_lifecycle_for_test(LifecycleTestEvent::PendingDeleteQueued { stable_id });

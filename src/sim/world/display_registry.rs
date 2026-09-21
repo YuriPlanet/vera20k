@@ -1,6 +1,7 @@
-//! Entity DisplayClass lifecycle dispatch. The vectors belong to ObjectSubstrate.
-//! Non-entity registration and the presentation migration remain open; this
-//! module must grow those dispatch arms rather than create another list owner.
+//! DisplayClass lifecycle queries. The vectors belong to ObjectSubstrate;
+//! queries borrow the object stores without copying coordinates or sort keys.
+//! Animation lifecycle and presentation migration remain open.
+//! Native query/membership comparisons: tools/spatial_oracle/display_non_entity.json.
 
 use super::Simulation;
 use super::display_layers::DisplayLayer;
@@ -99,7 +100,61 @@ fn entity_sort_key(
     coord.x.wrapping_add(coord.y).wrapping_add(adjust)
 }
 
+/// Ground comparisons read the live receiver each time (5F6220), independently
+/// of Logic membership. Air/Surface/Top insertions never call GetYSort.
+struct GroundSortView<'a> {
+    entities: &'a crate::sim::entity_store::EntityStore,
+    particles: &'a crate::sim::particles::ParticleSystemStore,
+    terrain: &'a std::collections::BTreeMap<u64, crate::sim::terrain_object::TerrainObjectState>,
+    interner: &'a crate::sim::intern::StringInterner,
+    rules: Option<&'a RuleSet>,
+}
+
+impl GroundSortView<'_> {
+    fn key(&self, id: u64) -> i32 {
+        if let Some(entity) = self.entities.get(id) {
+            return entity_sort_key(
+                entity,
+                self.rules
+                    .and_then(|r| r.object(self.interner.resolve(entity.type_ref()))),
+            );
+        }
+        if let Some(system) = self.particles.get(id) {
+            // ParticleSystem VT7EFB9C: +AC ->41BE00 ->+48 ->5F65A0,
+            // +B8 ->5F6BD0. Attachment updates coords in its AI, not here.
+            return system.coords.x.wrapping_add(system.coords.y);
+        }
+        if let Some(terrain) = self.terrain.get(&id) {
+            // Terrain ctor71BC4A..71BC76 sign-extends the cell coordinates,
+            // centers them and passes Z=0 to Unlimbo. VT7F522C inherits
+            // Object GetYSort5F6BD0; terrain has no runtime relocation writer.
+            let x = i32::from(terrain.rx as i16) * 256 + 128;
+            let y = i32::from(terrain.ry as i16) * 256 + 128;
+            return x.wrapping_add(y);
+        }
+        panic!("unrepresented Ground display identity {id}");
+    }
+}
+
 impl Simulation {
+    pub(crate) fn submit_object_display(
+        &mut self,
+        id: u64,
+        layer: DisplayLayer,
+        rules: Option<&RuleSet>,
+    ) {
+        let view = GroundSortView {
+            entities: &self.substrate.entities,
+            particles: &self.substrate.particle_systems,
+            terrain: &self.production.terrain_objects,
+            interner: &self.interner,
+            rules,
+        };
+        self.substrate
+            .display
+            .submit(id, Some(layer), |id| view.key(id));
+    }
+
     pub(super) fn submit_entity_display(
         &mut self,
         id: u64,
@@ -110,15 +165,7 @@ impl Simulation {
             return;
         };
         let layer = entity_layer(entity, terrain.or(self.resolved_terrain.as_ref()), rules);
-        let entities = &self.substrate.entities;
-        let interner = &self.interner;
-        self.substrate.display.submit(id, Some(layer), |id| {
-            let entity = entities.get(id).expect("entity display identity");
-            entity_sort_key(
-                entity,
-                rules.and_then(|r| r.object(interner.resolve(entity.type_ref()))),
-            )
-        });
+        self.submit_object_display(id, layer, rules);
     }
 
     pub(super) fn entity_display_layer(
@@ -153,15 +200,14 @@ impl Simulation {
     }
 
     pub(super) fn sort_display_ground(&mut self, rules: Option<&RuleSet>) {
-        let entities = &self.substrate.entities;
-        let interner = &self.interner;
-        self.substrate.display.sort_ground_pass(|id| {
-            let entity = entities.get(id).expect("entity display identity");
-            entity_sort_key(
-                entity,
-                rules.and_then(|r| r.object(interner.resolve(entity.type_ref()))),
-            )
-        });
+        let view = GroundSortView {
+            entities: &self.substrate.entities,
+            particles: &self.substrate.particle_systems,
+            terrain: &self.production.terrain_objects,
+            interner: &self.interner,
+            rules,
+        };
+        self.substrate.display.sort_ground_pass(|id| view.key(id));
     }
 }
 

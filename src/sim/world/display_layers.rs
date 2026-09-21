@@ -15,6 +15,7 @@ use std::hash::{Hash, Hasher};
 pub(crate) struct DisplayLayer(u8);
 
 impl DisplayLayer {
+    pub(crate) const SURFACE: Self = Self(1);
     pub(crate) const GROUND: Self = Self(2);
     pub(crate) const AIR: Self = Self(3);
     pub(crate) const TOP: Self = Self(4);

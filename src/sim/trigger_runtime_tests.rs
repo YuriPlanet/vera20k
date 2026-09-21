@@ -735,6 +735,7 @@ fn master_frame_save_load_continues_trigger_projectile_and_delete_state() {
     original.admit_projectile(
         projectile_id,
         ProjectileSpawn {
+            flat: false,
             source_id: crate::sim::combat::RAD_NO_ATTACKER,
             origin: ProjectileCoord::new(0, 0, 0),
             target: ProjectileTarget::Cell { rx: 4, ry: 0 },

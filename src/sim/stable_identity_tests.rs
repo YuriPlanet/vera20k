@@ -35,6 +35,7 @@ fn terrain(stable_id: u64) -> TerrainObjectState {
 
 fn projectile(source_id: u64) -> ProjectileSpawn {
     ProjectileSpawn {
+        flat: false,
         source_id,
         origin: ProjectileCoord::new(0, 0, 0),
         target: ProjectileTarget::Cell { rx: 2, ry: 0 },

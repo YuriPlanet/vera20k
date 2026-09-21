@@ -2052,7 +2052,7 @@ fn particle_logic_membership_uses_the_object_local_guard_and_rebuilds_it() {
     let mut sim = Simulation::new();
     insert_particle_system(&mut sim, 7);
 
-    assert!(sim.reveal_particle_system(7));
+    assert!(sim.reveal_particle_system(7, None));
     assert!(
         sim.substrate
             .particle_systems
@@ -2062,7 +2062,7 @@ fn particle_logic_membership_uses_the_object_local_guard_and_rebuilds_it() {
     );
     assert_eq!(sim.live_object_order_snapshot(), vec![7]);
 
-    assert!(sim.reveal_particle_system(7));
+    assert!(sim.reveal_particle_system(7, None));
     assert_eq!(sim.live_object_order_snapshot(), vec![7]);
 
     sim.substrate
@@ -4051,6 +4051,7 @@ fn lifecycle_authority_set_logic_order_for_test_synchronizes_all_membership_flag
 
 pub(super) fn gsi_05_02_projectile(source_id: u64, fuse_frames: Option<u16>) -> ProjectileSpawn {
     ProjectileSpawn {
+        flat: false,
         source_id,
         origin: ProjectileCoord::new(0, 0, 0),
         target: ProjectileTarget::Cell { rx: 16, ry: 0 },
@@ -4424,7 +4425,7 @@ fn gsi_05_02_mixed_fixture() -> (Simulation, [u64; 6]) {
             lifecycle: TerrainObjectLifecycle::Live,
         },
     );
-    assert!(sim.register_terrain_object(terrain_id));
+    assert!(sim.register_terrain_object(terrain_id, None));
 
     let projectile_id = sim.allocate_stable_id();
     sim.admit_projectile(projectile_id, gsi_05_02_projectile(entity_id, None));
@@ -4729,7 +4730,7 @@ fn gsi_05_02_lethal_terrain_unregisters_and_inactive_slot_cannot_roundtrip() {
     sim.production
         .terrain_object_cells
         .insert((5, 6), terrain_id);
-    assert!(sim.register_terrain_object(terrain_id));
+    assert!(sim.register_terrain_object(terrain_id, None));
 
     sim.commit_noncombat_aoe_receivers(
         &rules,
@@ -4805,7 +4806,7 @@ fn gsi_05_03_terminal_non_entities_remain_resolvable_until_common_drain() {
     sim.production
         .terrain_object_cells
         .insert((5, 6), terrain_id);
-    assert!(sim.register_terrain_object(terrain_id));
+    assert!(sim.register_terrain_object(terrain_id, None));
     sim.commit_noncombat_aoe_receivers(
         &rules,
         None,
@@ -7852,6 +7853,193 @@ fn display_lifecycle_is_independent_of_logic_and_survives_production_save() {
         restored.restore_after_snapshot_load(),
         Err(SnapshotRestoreError::MissingDisplayIdentity { object_id: 999 })
     ));
+}
+
+#[test]
+fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
+    use super::display_layers::DisplayLayer;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+    use crate::rules::voxel_anim_type::{VoxelAnimType, VoxelAnimTypeId};
+    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/display_non_entity.json"
+    ))
+    .unwrap();
+    assert_eq!(rows.len(), 9);
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=TEST\n[TEST]\nStrength=100\nTurretAnimIsVoxel=yes\n",
+    ))
+    .unwrap();
+    let voxel_type = VoxelAnimType::from_ini_section(
+        "TIRE",
+        IniFile::from_str("[TIRE]\nDuration=150\n")
+            .section("TIRE")
+            .unwrap(),
+    );
+    for row in rows {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let actors = input["actors"].as_array().unwrap();
+        let mut sim = Simulation::new();
+        // Native Scenario Load reseeds Random(0). These display operations
+        // consume no Scenario draws, so the complete saved hash can match.
+        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        for (index, actor) in actors.iter().enumerate() {
+            let id = sim.allocate_stable_id();
+            assert_eq!(id, index as u64 + 1);
+            let xyz: [i32; 3] = std::array::from_fn(|i| actor["xyz"][i].as_i64().unwrap() as i32);
+            match actor["kind"].as_str().unwrap() {
+                "unit" | "building" => {
+                    let category = if actor["kind"] == "unit" {
+                        EntityCategory::Unit
+                    } else {
+                        EntityCategory::Structure
+                    };
+                    insert_entity(&mut sim, id, category);
+                    let entity = sim.substrate.entities.get_mut(id).unwrap();
+                    entity.position.rx = (xyz[0] / 256) as u16;
+                    entity.position.ry = (xyz[1] / 256) as u16;
+                    entity.position.sub_x = SimFixed::from_num(xyz[0] % 256);
+                    entity.position.sub_y = SimFixed::from_num(xyz[1] % 256);
+                    entity.position.exact_z_leptons = Some(xyz[2]);
+                }
+                "particle" => {
+                    insert_particle_system(&mut sim, id);
+                    sim.substrate.particle_systems.get_mut(id).unwrap().coords =
+                        IVec3::from_array(xyz);
+                }
+                "terrain" => {
+                    let terrain = TerrainObjectState {
+                        stable_id: id,
+                        native_unique_id: None,
+                        in_logic_vector: false,
+                        type_ref: sim.interner.intern("TREE"),
+                        rx: (xyz[0] / 256) as u16,
+                        ry: (xyz[1] / 256) as u16,
+                        health: 10,
+                        max_health: 10,
+                        occupation_bits: 0,
+                        lifecycle: TerrainObjectLifecycle::Live,
+                    };
+                    sim.production
+                        .terrain_object_cells
+                        .insert(terrain.cell(), id);
+                    sim.production.terrain_objects.insert(id, terrain);
+                }
+                "bullet" => {
+                    let mut shot = gsi_05_02_projectile(0, None);
+                    shot.flat = actor["flat"].as_bool().unwrap();
+                    shot.origin = ProjectileCoord::new(xyz[0], xyz[1], xyz[2]);
+                    sim.admit_projectile(id, shot);
+                }
+                "wave" => {
+                    sim.admit_wave(
+                        id,
+                        Wave::new(
+                            3,
+                            ProjectileCoord::new(xyz[0], xyz[1], xyz[2]),
+                            ProjectileCoord::new(xyz[0] + 256, xyz[1], xyz[2]),
+                        ),
+                    );
+                }
+                "voxel" => {
+                    let debris = crate::sim::voxel_anim::spawn_debris_piece(
+                        id,
+                        VoxelAnimTypeId(0),
+                        &voxel_type,
+                        None,
+                        IVec3::from_array(xyz),
+                        &mut crate::sim::rng::SimRng::new(1),
+                    )
+                    .unwrap();
+                    sim.substrate.voxel_anims.insert(debris);
+                }
+                kind => panic!("unexpected {kind}"),
+            }
+        }
+        for (step, expected) in input["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(row["after_steps"].as_array().unwrap())
+        {
+            let id = step["actor"].as_u64().map_or(0, |i| i + 1);
+            match step["op"].as_str().unwrap() {
+                "submit" => match actors[id as usize - 1]["kind"].as_str().unwrap() {
+                    "unit" | "building" => sim.submit_entity_display(id, Some(&rules), None),
+                    "particle" => {
+                        sim.reveal_particle_system(id, Some(&rules));
+                    }
+                    "terrain" => {
+                        sim.register_terrain_object(id, Some(&rules));
+                    }
+                    "bullet" => {
+                        sim.register_projectile(
+                            id,
+                            actors[id as usize - 1]["flat"].as_bool().unwrap(),
+                        );
+                    }
+                    "wave" => {
+                        sim.register_wave(id);
+                    }
+                    "voxel" => {
+                        sim.reveal_voxel_anim(id);
+                    }
+                    _ => unreachable!(),
+                },
+                "remove" => {
+                    sim.substrate.display.remove(id);
+                }
+                "sort" => sim.sort_display_ground(Some(&rules)),
+                "coordinates" => {
+                    let xyz: [i32; 3] =
+                        std::array::from_fn(|i| step["xyz"][i].as_i64().unwrap() as i32);
+                    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+                        entity.position.rx = (xyz[0] / 256) as u16;
+                        entity.position.ry = (xyz[1] / 256) as u16;
+                        entity.position.sub_x = SimFixed::from_num(xyz[0] % 256);
+                        entity.position.sub_y = SimFixed::from_num(xyz[1] % 256);
+                    } else {
+                        sim.substrate.particle_systems.get_mut(id).unwrap().coords =
+                            IVec3::from_array(xyz);
+                    }
+                }
+                _ => unreachable!(),
+            }
+            for layer in 0..5 {
+                let expected: Vec<u64> = expected[layer]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|i| i.as_u64().unwrap() + 1)
+                    .collect();
+                assert_eq!(
+                    sim.substrate
+                        .display
+                        .members(DisplayLayer::from_index(layer as u8).unwrap()),
+                    expected,
+                    "{name}: {step}"
+                );
+            }
+        }
+        let bytes = GameSnapshot::save(&sim, 0, 0, "mixed-display", 0);
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        assert_eq!(restored.state_hash(), sim.state_hash(), "{name}");
+        sim.sort_display_ground(Some(&rules));
+        restored.sort_display_ground(Some(&rules));
+        assert_eq!(restored.state_hash(), sim.state_hash(), "{name}: next sort");
+        for id in 1..=actors.len() as u64 {
+            if restored.substrate.entities.contains(id) {
+                // Corpus entities were submitted directly, independently of
+                // Reveal/Logic; their production Conceal is tested separately.
+                restored.substrate.display.remove(id);
+            } else {
+                restored.unregister_non_entity_object(id);
+            }
+            assert_eq!(restored.substrate.display.layer_of(id), None);
+        }
+    }
 }
 
 #[test]

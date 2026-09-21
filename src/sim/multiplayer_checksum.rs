@@ -430,6 +430,7 @@ mod tests {
 
     fn test_projectile(origin: ProjectileCoord) -> ProjectileSpawn {
         ProjectileSpawn {
+            flat: false,
             source_id: 0,
             origin,
             target: ProjectileTarget::Cell { rx: 0, ry: 0 },

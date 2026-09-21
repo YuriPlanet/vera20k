@@ -3715,7 +3715,7 @@ mod particle_hash_tests {
         let id = sim.allocate_stable_id();
         system.stable_id = id;
         sim.particle_systems_mut().insert(system);
-        sim.reveal_particle_system(id);
+        sim.reveal_particle_system(id, None);
         id
     }
 

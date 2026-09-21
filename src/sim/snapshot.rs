@@ -540,7 +540,9 @@ use crate::sim::world::Simulation;
 // including across locomotor replacement. It is serialized and hashed.
 // 181 -> 182: persistent DisplayClass layer membership and order. Its lookup
 // cache is rebuilt, but history cannot be recovered from current coordinates.
-const SNAPSHOT_VERSION: u32 = 182;
+// 182 -> 183: display vectors now include terrain, particle systems, bullets,
+// waves and voxel debris. Prior snapshots cannot recover their registration history.
+const SNAPSHOT_VERSION: u32 = 183;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3437,7 +3439,7 @@ mod tests {
         // 173 -> 174: ProductionState drops the resource node map.
         // 174 -> 175: bridge collapse explosions join the AnimStore.
         // 180 -> 181: Foot+580 crate multiplier survives save/restore.
-        assert_eq!(super::SNAPSHOT_VERSION, 182);
+        assert_eq!(super::SNAPSHOT_VERSION, 183);
     }
 
     #[test]
@@ -6398,6 +6400,7 @@ mod tests {
         };
 
         ProjectileSpawn {
+            flat: false,
             source_id,
             origin: ProjectileCoord::new(0, 0, 0),
             target,
@@ -7564,7 +7567,7 @@ mod tests {
             sim.production
                 .terrain_objects
                 .insert(terrain.stable_id, terrain.clone());
-            assert!(sim.register_terrain_object(terrain.stable_id));
+            assert!(sim.register_terrain_object(terrain.stable_id, None));
             sim.production
                 .terrain_object_cells
                 .insert(terrain.cell(), terrain.stable_id);

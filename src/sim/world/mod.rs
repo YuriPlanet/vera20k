@@ -3733,7 +3733,7 @@ impl Simulation {
     ) -> u64 {
         self.projectiles
             .spawn_at(stable_id, self.session.binary_frame, spawn);
-        let registered = self.register_projectile(stable_id);
+        let registered = self.register_projectile(stable_id, spawn.flat);
         debug_assert!(registered);
         stable_id
     }

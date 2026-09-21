@@ -340,7 +340,7 @@ fn particle_frame_boundary_fixture(frame_count: u16) -> (Simulation, RuleSet) {
         owner_house: None,
         done_spawning: true,
     });
-    assert!(sim.reveal_particle_system(stable_id));
+    assert!(sim.reveal_particle_system(stable_id, None));
     (sim, rules)
 }
 
@@ -10065,6 +10065,12 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
     assert_eq!(sim.substrate.voxel_anims.len(), 3);
     let ids: Vec<u64> = sim.substrate.voxel_anims.ids();
     assert_eq!(
+        sim.substrate
+            .display
+            .members(super::display_layers::DisplayLayer::AIR),
+        ids
+    );
+    assert_eq!(
         sim.live_object_order_snapshot(),
         ids,
         "each piece is revealed into the live order in spawn order"
@@ -10125,6 +10131,11 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
     assert!(
         !sim.live_object_order_snapshot().contains(&first),
         "Delete leaves the LogicVector"
+    );
+    assert_eq!(
+        sim.substrate.display.layer_of(first),
+        None,
+        "Delete leaves Display too"
     );
     sim.debug_assert_logic_membership_consistent();
 }

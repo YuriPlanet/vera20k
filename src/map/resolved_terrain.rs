@@ -6745,6 +6745,7 @@ mod tests {
             sim.admit_projectile(
                 100,
                 ProjectileSpawn {
+                    flat: false,
                     source_id: 999,
                     origin: ProjectileCoord::new(896, 896, 500),
                     target: ProjectileTarget::None,

@@ -2901,6 +2901,7 @@ fn emit_projectile_shrapnel(
             }
         };
         out.projectile_spawns.push(ProjectileSpawn {
+            flat: child_projectile.flat,
             source_id: detonation.source_id,
             origin: detonation.impact,
             target,

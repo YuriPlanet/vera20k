@@ -3050,6 +3050,7 @@ pub(super) fn resolve_attacker_fire(
                 })
                 .unwrap_or_else(|| ProjectileVisualState::new(0, 0, 0));
             out.projectile_spawns.push(ProjectileSpawn {
+                flat: projectile_type.is_some_and(|projectile| projectile.flat),
                 source_id: snap.stable_id,
                 origin,
                 target,

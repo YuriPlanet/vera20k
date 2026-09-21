@@ -6467,6 +6467,69 @@ fn persistent_projectile_rules() -> RuleSet {
 }
 
 #[test]
+fn fire_admission_preserves_flat_projectile_layer_through_save_and_retirement() {
+    use crate::sim::world::display_layers::DisplayLayer;
+    for flat in [false, true] {
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str("[VehicleTypes]\n0=SHOOTER\n1=TARGET\n\
+                [SHOOTER]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=GUN\n\
+                [TARGET]\nStrength=500\nArmor=heavy\nSpeed=6\n\
+                [GUN]\nDamage=10\nROF=20\nRange=10\nSpeed=128\nProjectile=TESTPROJ\nWarhead=TESTWH\n\
+                [TESTPROJ]\nImage=SHOT\nROT=0\nArcing=yes\n\
+                [TESTWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"),
+            &IniFile::from_str(&format!("[SHOT]\nFlat={}\n", if flat { "yes" } else { "no" })),
+        ).unwrap();
+        assert_eq!(rules.projectile("TESTPROJ").unwrap().flat, flat);
+        let mut entities = EntityStore::new();
+        entities.insert(make_entity(1, "SHOOTER", 5, 5, 300));
+        entities.insert(make_entity(2, "TARGET", 8, 5, 500));
+        let mut interner = test_interner();
+        issue_attack_command(&mut entities, 1, 2, None, &interner);
+        align_attackers_to_targets(&mut entities, &rules, &interner);
+        let fire = tick_combat(
+            &mut entities,
+            &mut OccupancyGrid::new(),
+            &rules,
+            &mut interner,
+            0,
+            100,
+            0,
+            &mut SimRng::new(1),
+        );
+        assert_eq!(fire.projectile_spawns.len(), 1);
+        assert_eq!(fire.projectile_spawns[0].flat, flat);
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.interner = interner;
+        // Preserve the real firer and target identities across the save.
+        assert_eq!(sim.allocate_stable_id(), 1);
+        assert_eq!(sim.allocate_stable_id(), 2);
+        sim.substrate.entities = entities;
+        let id = sim.allocate_stable_id();
+        sim.admit_projectile(id, fire.projectile_spawns[0]);
+        let layer = if flat {
+            DisplayLayer::SURFACE
+        } else {
+            DisplayLayer::AIR
+        };
+        assert_eq!(sim.substrate.display.members(layer), [id]);
+        let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "flat-shot", 0);
+        let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+            .unwrap()
+            .sim;
+        restored.restore_after_snapshot_load().unwrap();
+        assert_eq!(restored.substrate.display.members(layer), [id]);
+        assert!(restored.retire_non_entity_object(id));
+        assert_eq!(restored.substrate.display.layer_of(id), None);
+        assert!(
+            restored.projectiles.get(id).is_some(),
+            "display removal precedes deferred free"
+        );
+        restored.process_pending_delete();
+        assert!(restored.projectiles.get(id).is_none());
+    }
+}
+
+#[test]
 fn gsi_04_11_persistent_projectile_keeps_exact_lepton_z() {
     let rules = persistent_projectile_rules();
     let mut entities = EntityStore::new();
