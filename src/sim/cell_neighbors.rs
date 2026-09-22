@@ -13,6 +13,14 @@ pub struct FootNeighborState {
     cell: (i16, i16),
 }
 
+impl FootNeighborState {
+    /// Foot+55C: the last map cell recorded by Unlimbo/PerCell, unchanged
+    /// while the object is in limbo (a LimboLaunch firer's launch cell).
+    pub(crate) fn cell(&self) -> (i16, i16) {
+        self.cell
+    }
+}
+
 /// Derived bounded journal for movement's cached sum. Readers that fall behind
 /// rebuild from the retained plane; no simulation decision reads this journal.
 #[derive(Debug, Default, Clone)]

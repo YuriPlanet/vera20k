@@ -53,6 +53,7 @@ mod techno_ai;
 #[cfg(test)]
 pub(crate) use techno_ai::ObjectAiCtx;
 pub(crate) use techno_ai::harvester_enter_idle_mode_selector;
+pub(crate) use techno_ai::queue_foot_enter_idle_mode;
 mod command_schedule;
 pub(crate) mod techno_ai_cloak;
 pub(crate) mod unit_post;

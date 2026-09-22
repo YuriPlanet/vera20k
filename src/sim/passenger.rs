@@ -277,6 +277,11 @@ pub fn can_enter_transport(
         if passenger.owner() != transport.owner() {
             return false;
         }
+        // UnitClass::Receive_Radio 0x0F 0x007375FC..0x0073760A: a Foot a
+        // parasite is eating may not load.
+        if passenger.parasite_eating_me.is_some() {
+            return false;
+        }
     }
     // Size check
     cargo.can_accept(passenger_obj.size)

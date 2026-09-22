@@ -19,10 +19,10 @@
 //!   consumers fall back to coarser conditions.
 //! - Frequency: every gattling engagement; the cursor and EVA arms are
 //!   whenever the player targets something illegal.
-//! - Downstream risk: two gates the same native step applies are also absent
-//!   and recorded at their call site in `combat/mod.rs` —
-//!   `TechnoClass::IsOnBridge_ForFiring @ 0x00703B10` and the vtable `+0x380`
-//!   test, both yielding error 6. Introducing codes means routing every early
+//! - Downstream risk: `TechnoClass::IsOnBridge_ForFiring @ 0x00703B10` (error
+//!   6), which the same native step applies, is also absent and recorded at
+//!   its call site in `combat/world_receiver.rs`; the step's vtable `+0x380`
+//!   paralysis test is modelled there. Introducing codes means routing every early
 //!   return through one function, which is a refactor of the whole fire path
 //!   rather than an addition to it.
 //!

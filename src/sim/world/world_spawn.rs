@@ -1472,6 +1472,16 @@ impl Simulation {
         if source.dying || source.lifecycle.in_limbo {
             return false;
         }
+        // Deploy asks CanDeploySlashUnload (vslot +0x314, 0x00700D50) first
+        // (0x007393CC); its DeploysInto arm refuses a unit a parasite is
+        // eating (0x00700EB4..0x00700EBC), and that refusal clears Unit+0x68C
+        // (0x00739AA7). The predicate's other arms are not represented here.
+        if source.parasite_eating_me.is_some() {
+            if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+                entity.mcv_deploy_pending = false;
+            }
+            return false;
+        }
         if source.navigation.nav_com.is_some()
             || crate::sim::movement::ready_producer::is_moving_for_unit_shp_draw(source)
         {

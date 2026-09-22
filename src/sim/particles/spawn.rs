@@ -118,7 +118,7 @@ impl Simulation {
     /// `CRElectricBolt` shot. It does NOT cover shrapnel bolts, which reach
     /// `CreateElectricBolt` through a different seam — see the residual below.
     ///
-    /// RESIDUAL (GSI-05.13) — the shrapnel seam and four other native
+    /// RESIDUAL (GSI-05.13) — the shrapnel seam and three other native
     /// producers are not wired. Their reachability is settled rather than
     /// assumed:
     /// - `BulletClass::SpawnShrapnel @ 0x0046A310` calls `CreateElectricBolt`
@@ -142,16 +142,14 @@ impl Simulation {
     /// - `CaptureManagerClass::Update @ 0x00471C15`, mind-control overload past
     ///   the first `OverloadCount` tier. REACHABLE in any Yuri match; five
     ///   iterations, each taking two `RandomRanged(-200, 200)` draws first.
-    /// - `WarpAttachClass::UpdateAttack @ 0x0062A103`, Chrono Legionnaire
-    ///   erasure. REACHABLE.
     /// - `UnitClass::AI @ 0x007361A4`, mid-deploy, gated on `Techno+0x1C8` and
     ///   a coordinate/frame modulo. REACHABLE but rare — a few frames per MCV
     ///   or Slave Miner deploy, taking two `RandomRanged(-100, 100)` draws.
     ///
     /// - Trigger: an elite Tesla shot, repairing with an IFV, overloading a
-    ///   mind-controller, erasing with a Chrono Legionnaire, or deploying an
-    ///   MCV.
-    /// - Player effect: those four throw no sparks. The IFV repair arm is the
+    ///   mind-controller, or deploying an MCV. (The parasite bite's
+    ///   `DefaultSparkSystem` at `0x0062A103` is wired in `combat/parasite.rs`.)
+    /// - Player effect: none of those throws sparks. The IFV repair arm is the
     ///   one a player watches — a repair beam with no welding shower.
     /// - Frequency: the shrapnel arm is the common one — it follows every
     ///   elite Tesla Tank and elite Tesla Coil discharge, and veterancy makes

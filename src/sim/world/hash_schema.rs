@@ -94,6 +94,7 @@ pub(super) enum HashFeature {
     FootNeighborHistory = 190,
     FlyCruiseMode = 191,
     FlyLanding = 192,
+    Parasite = 193,
 }
 
 impl HashSchema {
@@ -116,6 +117,7 @@ impl HashSchema {
                     | HashFeature::FootNeighborHistory
                     | HashFeature::FlyCruiseMode
                     | HashFeature::FlyLanding
+                    | HashFeature::Parasite
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

@@ -35,6 +35,10 @@ deferred Drive/Ship path request is parked, not landed, on `wip/track-order-defe
 (`5966799c`; 31 failing tests, triage in the review's `wip.md`). After landing, choose
 mechanisms by player-visible combat gaps; one PR and one critic pass per mechanism.
 
+Checkpoint (2026-09-23): the landing PR merged as #444 (`9bab8fba`). Parasite (attack dogs,
+Terror Drones) is the first post-landing mechanism, on `feature/combat-parasite`. Next: the
+Techno death-branch Stun (see open work), then aircraft GetFireError with Mission_Attack 5..9.
+
 ## Landed mechanisms
 
 Merged to main:
@@ -125,6 +129,29 @@ evidence-only increments ran only their native checks):
   `map::triggers` fixes token4/difficulty polarity (`7273B9..72749B`). Evidence: `trigger_type_flags` 64;
   evidence only: `trigger_event_records` 54, `tag_lifecycle` 49, `team_creation` 39, `fly_map_edge` 78.
 
+Parasite (`feature/combat-parasite`, snapshot/hash 193), owner `sim/combat/parasite.rs`:
+- Allocation `6F40FC..6F414E` (weapon-0 Parasite warhead, non-buildings); LimboLaunch in Fire
+  `6FF749..6FF872` (reselect memo, Limbo, Foot+698 lock `6FF81F`); detonation arm `4693D3` ->
+  AttachTo `62A980` (CanInfect `62A8E0`, Force_Track, Foot+694 link; refusal returns the owner
+  to its Foot+55C cell). Bites: ParasiteClass AI `629FD0` at the victim's FootClass::AI tail
+  `4DAEE1` (ROF cadence, Paralyzes, Infantry take Health ignoring defenses, others sparks, anim,
+  one Scenario draw, weapon Damage). Release: PointerExpired `62A260` via the victim's forward
+  `4D99AA` (GetReleaseCoords `62AC30`, CanPlaceAtVictim `62AB40`; suppressed owner dies with the
+  host) and ExitUnit `62A4A0` (placement 90 degrees off the host, 3xROF paralysis; suppressed
+  non-Naval owner dies).
+- Forced releases: FootClass::ReceiveDamage prefix `4D7330` (Sonic eject + source target clear,
+  `2*dmg-threshold` suppression, heal eject), repair Radio 0x1C `6F4D70`, FootClass::IronCurtain
+  `4DEAE0` (also C4-kills Organic Units/Aircraft), Teleport warp `7195BF`.
+- Restrictions: GetFireError CanInfect (5), launch lock and Iron Curtain (refuse this frame),
+  transport load `737602`, bunker `70FBB9` (command and radio), DeploysInto `700EB4` (clears
+  Unit+68C), retaliation `708ABD`. IsParalyzed `4DE770` feeds GetFireError `6FC623`/`6FCCD5` and
+  both cloak gates.
+- Tests `combat::parasite::tests` (12, flat-map production frames): dog kill/release, drone
+  cadence (50 every 60 frames) and release, suppression death, heal, Sonic eject (facing 64,
+  paralysis 180), Iron Curtain (drone killed, dolphin C4), teleport eject, lost-host return,
+  one parasite per host, load/bunker/deploy refusals, save/load mid-infection. Rust regression
+  only; no native executable comparison.
+
 ## Native evidence inventory
 
 Run `python -m tools.spatial_oracle.<stem> --check` (`flat_art`: `tools/projectile_oracle`).
@@ -166,7 +193,7 @@ vhp_scan 498, distributed_fire 151, foot_attack_move 638, estimated_damage 1066,
 
 ## Ghidra annotations
 
-All saved and read back; no byte, prototype or boundary edits.
+All saved and read back; no byte or prototype edits. One boundary repair (below, Parasite).
 
 - `005F3DB0` ObjectClass__DirectionToTarget (+ plate); `005206B0` InfantryClass__Fire_At_Target plate
 - `0051DF70` raw-byte writer label (clears +68D); `004E0150` body-facing getter label
@@ -196,6 +223,13 @@ All saved and read back; no byte, prototype or boundary edits.
 - Comments, attack: `41810F`, `418037`, `41B849`, `41505E`, `41403A`, `4143FC`, `41840E`, `6FF27F`,
   `6FCF5B`, `4197EF`, `41988E`, `419A40`, `419C13`, `4184BD`, `41801B`, `418175`, `418229`,
   `4CF659`, `6F3BCA`, `418087`
+- Parasite (plates): `62A980` ParasiteClass__AttachTo, `62A8E0` __CanInfect, `62A4A0` __ExitUnit
+  (was WarpAttachClass__Detach), `62A260` __PointerExpired (function created), `629FD0` __AI (was
+  WarpAttachClass__UpdateAttack), `6297F0` __UpdateSquidGrapple (was TemporalClass__AI), `62AC30`
+  __GetReleaseCoords, `62AB40` __CanPlaceAtVictim, `4DE770` FootClass__IsParalyzed (was
+  TechnoClass__Fire), `4DEAE0` FootClass__IronCurtain (boundary repaired: was FUN_004deae0 +
+  TechnoClass__StartFidget at `4DEAE4`). Comments `4D734F`, `4D7374`, `4D73D4`, `4D998C`,
+  `4D99AA`, `4D99C9`, `6F4D70`, `6FC623`, `6FCAAD`, `6FCCD5`, `708ABD`, `70FBB9`, `737602`, `7195BF`.
 - Comments, other: `4143EB`, `65E6BE`, `692766`, `41CD6E`, `4CDBE1`, `4CDC37`, `4CDCFB`, `566332`,
   `6EA089`, `6EC300`, `6E53A0`, `726C9C`, `71F4E0`, `55AFB0`, `481670`, `518C56`, `51D200`,
   `51D212`, Teleport `718080`, Foot `4DDC60` (EOL; no function), Foot `4DB800`
@@ -296,8 +330,20 @@ Team, Tag, Trigger (owners `TeamScriptVm`, `TriggerRuntime`):
   materialize Tag/CellTag/object attachments. Preserve `6E52A0` reuse, prepended instances,
   reset `726400` before gates, `689670`/`689910` resets, poll `55AFB0` order and compaction.
 
+Techno death Stun (next mechanism): TechnoClass::ReceiveDamage's death branch calls Stun
+(`702210` -> FootClass `4D5660` -> Techno `6FCD40`: Assign_Target/Destination NULL, `+280(3)`,
+spawn kill, Detach_All(1) unless Foot+6AD, deselect). VERA broadcasts PointerExpired only at
+UnInit, so every listener sees a dying object late (dogs reappear after the infantry death
+sequence, ~15 frames in the parasite fixture). Needs a consumer census before it lands.
+
+Parasite residuals (recorded in `combat/parasite.rs`): squid grapple `6297F0` (squids do not
+LimboLaunch); paralysis in Drive/Ship/Fly/Hover/Teleport movers and player-control +0xA0
+(Drive/Ship owner); grinder `73A13E`, ChronoWarp `6CC763` and Magnetron `710026` releases wait
+for those mechanisms; Team membership memo `6FF7A3`; Sonic may target allied infected Foot
+`700377` (squid). Follow-up spawned: full CanEnterBunker (`70FB50` Turret and +67C gates).
+
 Whole-combat gaps (plan list plus review coverage top 10):
-- Special warheads: all 11 bodies no-op (`projectile.rs:856`); Parasite suppresses damage (dogs).
+- Special warheads: 10 bodies no-op (`projectile.rs:856`); Parasite ported (squid residual).
 - Destruction: building `4415F0` effects, vehicle/building survivors, VoxelAnim debris, death specials.
 - Homing launch/steering non-native; host cos/sin/atan/hypot in Flak, cluster, shrapnel and homing tables.
 - Gattling stage pinned 0 (`combat_weapon.rs:1070`); Prism forwarding absent; Tesla overpower.
@@ -316,3 +362,5 @@ on `3df1f957` merged with main `ef3bf17f` in the landing worktree.
 Landing PR candidate: `cargo test -p vera20k --lib` 9201 passed, 0 failed, 135 ignored
 (two new regressions: dock cycle, Display expiry); `cargo clippy -p vera20k --lib` pass,
 1022 warnings. No replay pin moved. No retail/rendered launch or Linux/macOS execution.
+Parasite candidate: `cargo test -p vera20k --lib` 9213 passed, 0 failed, 135 ignored (12 new);
+Clippy pass; no replay pin moved (the v193 fold adds only parasite/paralysis state).

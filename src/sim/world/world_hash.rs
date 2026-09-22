@@ -1548,6 +1548,27 @@ impl Simulation {
                 entity.drain_target.hash(hasher);
                 entity.draining_me.hash(hasher);
             }
+            if schema.includes(HashFeature::Parasite) {
+                // ParasiteClass (Foot+69C) of dogs and drones, the victim's
+                // Foot+694/+698 links, and Foot+6A0 once it has been armed.
+                if let Some(parasite) = entity.parasite.as_deref() {
+                    b"parasite-v193".hash(hasher);
+                    parasite.hash(hasher);
+                }
+                if entity.parasite_eating_me.is_some()
+                    || entity.parasite_launch_lock != 0
+                    || entity.limbo_reselect
+                {
+                    b"parasite-victim-v193".hash(hasher);
+                    entity.parasite_eating_me.hash(hasher);
+                    entity.parasite_launch_lock.hash(hasher);
+                    entity.limbo_reselect.hash(hasher);
+                }
+                if entity.paralysis_timer.duration() != 0 {
+                    0x6a0_u32.hash(hasher);
+                    entity.paralysis_timer.hash(hasher);
+                }
+            }
             if schema.includes(HashFeature::TechnoConstructor)
                 && (entity.techno_ctor_random_word != 0 || entity.structure_upgrade_link.is_some())
             {

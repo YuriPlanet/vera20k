@@ -553,6 +553,8 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
         strength: i32,
         repair_complete: bool,
         deduct_credits: i32,
+        /// A paid Techno `Receive_Radio 0x1C` step ran.
+        repaired: bool,
         clear_dock: bool,
         clear_movement: bool,
     }
@@ -569,6 +571,7 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
             strength: snap.strength,
             repair_complete: false,
             deduct_credits: 0,
+            repaired: false,
             clear_dock: false,
             clear_movement: false,
         };
@@ -684,6 +687,7 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
                             RepairResponse::Roger { heal, cost } => {
                                 m.heal_amount = heal;
                                 m.deduct_credits = cost;
+                                m.repaired = true;
                                 m.new_no_funds = Some(0);
                                 // Radio6F4DE5..6F4E21 completes on this same
                                 // repair response and resets both health values.
@@ -776,6 +780,19 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
             ) {
                 house.economy.credits = (house.economy.credits - m.deduct_credits).max(0);
             }
+        }
+
+        // Radio 0x1C `0x006F4D61..0x006F4DA6`: after the paid step, a Foot
+        // with a parasite forces it off (suppression 50, then ExitUnit), so
+        // the depot deletes a Terror Drone on its first repair step.
+        if m.repaired
+            && let Some(eater) = entity.parasite_eating_me
+        {
+            sim.parasite_force_release(
+                eater,
+                crate::sim::combat::parasite::FORCED_RELEASE_SUPPRESSION_FRAMES,
+                rules,
+            );
         }
     }
 }

@@ -557,7 +557,9 @@ use crate::sim::world::Simulation;
 // 191 -> 192: Fly moving+34, the landing-effect latch +52, the linked
 // AirportBound+18 and Techno+2E8 flight attitude are saved and hashed. A 191
 // save cannot recover an in-progress landing effect or approach pitch.
-const SNAPSHOT_VERSION: u32 = 192;
+// 192 -> 193: ParasiteClass (Foot+69C) and the victim's Foot+694 link,
+// Foot+698 launch lock and Foot+6A0 paralysis timer are saved and hashed.
+const SNAPSHOT_VERSION: u32 = 193;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3457,7 +3459,8 @@ mod tests {
         // 189 -> 190: Foot neighbor history and retained live counters.
         // 190 -> 191: Fly cruise mode survives save and locomotor suspension.
         // 191 -> 192: Fly moving/landing latch/AirportBound and flight attitude.
-        assert_eq!(super::SNAPSHOT_VERSION, 192);
+        // 192 -> 193: ParasiteClass and the victim's parasite/paralysis fields.
+        assert_eq!(super::SNAPSHOT_VERSION, 193);
     }
 
     #[test]

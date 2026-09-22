@@ -393,6 +393,17 @@ pub(crate) fn commit_entities(
             }
             BuildingReceivePrelude::Continue => {}
         }
+        // FootClass::ReceiveDamage 0x004D7330..0x004D7413 runs its parasite
+        // prefix on the raw damage before TechnoClass::ReceiveDamage.
+        if event.distance_leptons.is_some() {
+            world.foot_receive_damage_parasite_prefix(
+                target_id,
+                (attacker_id != RAD_NO_ATTACKER).then_some(attacker_id),
+                event.damage,
+                event.warhead_ref,
+                rules,
+            );
+        }
         // ReceiveDamage carries sourceHouse separately from the source object.
         // Area records snapshot it at detonation; legacy precomputed records
         // retain the former live-source lookup. Periodic radiation supplies
@@ -1579,6 +1590,29 @@ fn emit_one_projectile_detonation(
                 }
             }
         }
+        SpecialDetonationAction::Parasite => {
+            // 0x004693DD..0x0046941E: no bullet Owner (+0xB0) -> nothing;
+            // otherwise Owner->ParasiteImUsing->AttachTo(Target if FootClass).
+            // The impact point is not consulted.
+            if world.substrate.entities.contains(detonation.source_id) {
+                let victim = match detonation.target {
+                    ProjectileTarget::Entity(id)
+                        if world.substrate.entities.get(id).is_some_and(|target| {
+                            matches!(
+                                target.category,
+                                EntityCategory::Unit
+                                    | EntityCategory::Infantry
+                                    | EntityCategory::Aircraft
+                            )
+                        }) =>
+                    {
+                        Some(id)
+                    }
+                    _ => None,
+                };
+                world.parasite_attach(detonation.source_id, victim, rules);
+            }
+        }
         claimed => {
             log::debug!(
                 "Projectile {} claimed by unimplemented special detonation {:?}; \
@@ -2076,6 +2110,33 @@ fn admit_attacker_fire<'r>(
     // and that return precedes every shot/cooldown/report/current-weapon side
     // effect owned below. Type-3's local effect check is not this gate.
     if weapon.is_sonic && has_active_wave {
+        return None;
+    }
+    // GetFireError 0x006FCAC5..0x006FCB21: the frame-dependent Parasite gates,
+    // a target launch-locked by another jump (Foot+698) or Iron-Curtained,
+    // refuse this frame without dropping the target.
+    if selected.warhead.parasite
+        && let TargetKind::Entity(target_id) = snap.target
+        && world.substrate.entities.get(target_id).is_some_and(|target| {
+            binary_frame < target.parasite_launch_lock
+                || crate::sim::superweapon::invulnerability::is_invulnerable(
+                    target.invulnerability.as_ref(),
+                    binary_frame,
+                )
+        })
+    {
+        return None;
+    }
+    // GetFireError, FootClass::IsParalyzed `0x004DE770`: a paralyzed firer
+    // cannot launch a Spawner weapon (`0x006FC61F..0x006FC62B`, CANT) and an
+    // Organic one cannot fire at all (`0x006FCCBD..0x006FCCDD`, ILLEGAL).
+    if (weapon.spawner || obj.organic)
+        && world
+            .substrate
+            .entities
+            .get(snap.stable_id)
+            .is_some_and(|firer| firer.is_paralyzed(binary_frame))
+    {
         return None;
     }
     if delayed_building_slot.is_none() {
@@ -2796,8 +2857,8 @@ fn emit_admitted_fire(
     //      above the sim boundary and `sim/` must never depend on `app/`, so
     //      wiring it here means moving the predicate down to `map/bridge_facts`
     //      first and having both callers read it there.
-    //   2. `this->vtable+0x380` non-zero → error 6. **NOT MODELLED**; the slot's
-    //      identity is UNCHECKED.
+    //   2. `this->vtable+0x380` (FootClass::IsParalyzed `0x004DE770`) → error
+    //      6. MODELLED in `admit_attacker_fire`.
     //   3. `SpawnManagerClass::CountAliveSpawns == 0` → error 3. MODELLED below.
     if weapon.spawner {
         let alive = world
@@ -3382,6 +3443,12 @@ fn emit_admitted_fire(
     // Track garrison buildings that fired for round-robin advancement.
     if is_garrison {
         out.garrison_advance.push(snap.stable_id);
+    }
+
+    // `TechnoClass::Fire @ 0x006FF749..0x006FF872` runs after the bullet
+    // launch, rearm, Report and weapon Anim.
+    if weapon.limbo_launch {
+        world.parasite_limbo_launch(snap.stable_id, snap.target, weapon, rules);
     }
 }
 

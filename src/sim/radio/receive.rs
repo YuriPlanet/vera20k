@@ -253,9 +253,15 @@ fn bunker_receive(
 /// Sim-state admission gate (no rules): own-owner, alive, not occupied, idle.
 /// The rules-gated Bunkerable+weapon check runs at command time (EnterBunker).
 fn bunker_admits(sim: &Simulation, bld: u64, unit: u64) -> bool {
-    let Some(unit_owner) = sim.substrate.entities.get(unit).map(|u| u.owner()) else {
+    let Some(unit) = sim.substrate.entities.get(unit) else {
         return false;
     };
+    // CanEnterBunker 0x0070FBAF..0x0070FBC3, called from this receiver at
+    // 0x0043C512: a unit infected on its way in is refused at the door.
+    if unit.parasite_eating_me.is_some() {
+        return false;
+    }
+    let unit_owner = unit.owner();
     let Some(b) = sim.substrate.entities.get(bld) else {
         return false;
     };

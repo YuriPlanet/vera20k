@@ -893,25 +893,62 @@ pub(super) fn foot_enter_idle_mode_queue(
     rules: &RuleSet,
     input: MissionHandlerInput,
 ) -> Option<MissionType> {
+    foot_enter_idle_mode_selection(
+        rules,
+        input.category,
+        input.mission,
+        input.has_destination,
+        input.effective_mission,
+    )
+}
+
+/// The Foot Enter_Idle_Mode(0,1) selection on exactly the fields it reads,
+/// applied as a deferred Queue_Mission. Used by release paths outside the
+/// mission dispatcher (a parasite owner leaving its victim, `0x0062A7A3`).
+pub(crate) fn queue_foot_enter_idle_mode(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    let selection = foot_enter_idle_mode_selection(
+        rules,
+        entity.category,
+        entity.mission.current().known(),
+        entity.navigation.nav_com.is_some(),
+        entity.mission.effective().known(),
+    );
+    if let Some(mission) = selection
+        && let Some(entity) = sim.substrate.entities.get_mut(id)
+    {
+        crate::sim::mission::authority::queue_entity_mission_deferred(
+            entity,
+            MissionId::from_known(mission),
+        );
+    }
+}
+
+fn foot_enter_idle_mode_selection(
+    rules: &RuleSet,
+    category: EntityCategory,
+    mission: Option<MissionType>,
+    has_destination: bool,
+    effective_mission: Option<MissionType>,
+) -> Option<MissionType> {
     // The tail gate, evaluated on the committed selector.
     let committed_blocks_assign = matches!(
-        input.mission,
+        mission,
         Some(MissionType::Patrol) | Some(MissionType::AreaGuard)
-    ) || (input.category == EntityCategory::Unit
-        && matches!(
-            input.mission,
-            Some(MissionType::Unload) | Some(MissionType::Eaten)
-        ));
+    ) || (category == EntityCategory::Unit
+        && matches!(mission, Some(MissionType::Unload) | Some(MissionType::Eaten)));
     if committed_blocks_assign {
         return None;
     }
 
-    if input.has_destination {
+    if has_destination {
         return Some(MissionType::Move);
     }
 
     if matches!(
-        input.effective_mission,
+        effective_mission,
         Some(MissionType::Guard) | Some(MissionType::AreaGuard)
     ) {
         return None;
@@ -933,7 +970,7 @@ pub(super) fn foot_enter_idle_mode_queue(
     // would inherit both. (Curiosity for whoever ports it: with a current of -1
     // and only a queued mission, native indexes `MissionControl[-1]` — an
     // out-of-bounds read one entry below the array.)
-    let frozen = input.effective_mission.is_some_and(|mission| {
+    let frozen = effective_mission.is_some_and(|mission| {
         rules
             .mission_control
             .entry(mission)

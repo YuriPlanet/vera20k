@@ -132,7 +132,9 @@ pub struct WeaponType {
     pub is_sonic: bool,
     /// Weapon spawns aircraft (like aircraft carriers) (+0x131).
     pub spawner: bool,
-    /// Weapon can fire from limbo (e.g., paradrop weapons) (+0x132).
+    /// `LimboLaunch=` (+0x132, ReadINI `0x00772114`): TechnoClass::Fire
+    /// `0x006FF751` puts the FIRER in limbo after launching the bullet, which
+    /// carries it (attack dog, Terror Drone and Giant Squid jumps).
     pub limbo_launch: bool,
     /// Unit must decloak before firing this weapon (+0x133).
     pub decloak_to_fire: bool,
