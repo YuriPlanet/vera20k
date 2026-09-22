@@ -3375,6 +3375,7 @@ mod tests {
             destination: Option<(u16, u16)>,
             queued_mission: MissionId,
             rng_changed: bool,
+            rng_indices: serde_json::Value,
         }
 
         #[derive(Default)]
@@ -3385,6 +3386,7 @@ mod tests {
             all_bridges: bool,
             head: Option<crate::sim::components::DriveCoord>,
             outside: bool,
+            entry_case: Option<serde_json::Value>,
         }
 
         fn run(
@@ -3433,7 +3435,7 @@ mod tests {
                  [Attack]\nScatter=no\n\
                  [E1]\nStrength=125\nArmor=none\nSpeed=4\nFraidycat={fraidycat}\n\
                  Locomotor={{4A582744-9839-11d1-B709-00A024DDAFD1}}\n\
-                 MovementZone=Infantry\n\
+                 MovementZone=Infantry\nSpeedType=Foot\n\
                  [ATTACKER]\nStrength=100\nArmor=none\n\
                  [WH]\nCellSpread=0\nPercentAtMax=1\n\
                  Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
@@ -3466,6 +3468,11 @@ mod tests {
             victim.animation = fixture.animation.map(crate::sim::animation::Animation::new);
             victim.health.current = health;
             victim.sub_cell = Some(2);
+            victim.on_bridge = fixture
+                .entry_case
+                .as_ref()
+                .and_then(|case| case["on_bridge"].as_bool())
+                .unwrap_or(false);
             victim.infantry = Some(crate::sim::game_entity::InfantryRuntime::new());
             if nav {
                 victim.navigation.nav_com = Some(crate::sim::components::NavTargetRef::cell(8, 8));
@@ -3501,7 +3508,13 @@ mod tests {
                 CellListInsertion::PrependNonBuilding,
             );
             let cells = (0..10)
-                .flat_map(|ry| (0..10).map(move |rx| test_terrain_cell(rx, ry)))
+                .flat_map(|ry| {
+                    (0..10).map(move |rx| {
+                        let mut cell = test_terrain_cell(rx, ry);
+                        cell.speed_costs.foot = Some(100);
+                        cell
+                    })
+                })
                 .collect();
             let mut terrain = ResolvedTerrainGrid::from_cells(10, 10, cells);
             if fixture.first_bridge {
@@ -3514,6 +3527,36 @@ mod tests {
                         .unwrap()
                         .bridge_facts
                         .raw_flags = 0x100;
+                }
+            }
+            let mut raw = crate::sim::occupancy::RawCellOccupationGrid::new();
+            if let Some(case) = fixture.entry_case.as_ref() {
+                // Translate the native witness from (10,10) to this damage
+                // receiver fixture's (5,5); source heading and neighbours agree.
+                let xy = |v: &serde_json::Value| {
+                    (
+                        (v[0].as_u64().unwrap() - 5) as u16,
+                        (v[1].as_u64().unwrap() - 5) as u16,
+                    )
+                };
+                for cell in case["cells"].as_array().into_iter().flatten() {
+                    let (x, y) = xy(cell);
+                    let out = terrain.cell_mut(x, y).unwrap();
+                    out.level = cell[2].as_i64().unwrap() as u8;
+                    out.bridge_facts.raw_flags = cell[3].as_u64().unwrap() as u32;
+                }
+                for cell in case["slopes"].as_array().into_iter().flatten() {
+                    let (x, y) = xy(cell);
+                    terrain.cell_mut(x, y).unwrap().slope_type = cell[2].as_u64().unwrap() as u8;
+                }
+                for cell in case["blocked_terrain"].as_array().into_iter().flatten() {
+                    let (x, y) = xy(cell);
+                    terrain.cell_mut(x, y).unwrap().speed_costs.foot = Some(0);
+                }
+                for cell in case["raw"].as_array().into_iter().flatten() {
+                    let (x, y) = xy(cell);
+                    raw.mark_ground(x, y, cell[2].as_u64().unwrap() as u8);
+                    raw.mark_deck(x, y, cell[3].as_u64().unwrap() as u8);
                 }
             }
             let event = EntityDamageEvent::area(
@@ -3531,6 +3574,7 @@ mod tests {
             let mut world = crate::sim::world::Simulation::new();
             world.substrate.entities = entities;
             world.substrate.occupancy = occupancy;
+            world.substrate.raw_cell_occupation = raw;
             world.interner = interner;
             world.resolved_terrain = Some(terrain);
             world.playfield_bounds = Some(
@@ -3587,6 +3631,10 @@ mod tests {
                     .map(|movement| *movement.path.last().expect("direct move has destination")),
                 queued_mission: victim.mission.queued(),
                 rng_changed: world.scenario_rng.state() != before_rng,
+                rng_indices: {
+                    let state = world.scenario_rng.logical_state();
+                    serde_json::json!([state.index_a, state.index_b])
+                },
             }
         }
 
@@ -3606,6 +3654,40 @@ mod tests {
             doing: -1,
             ..Default::default()
         };
+        // These witnesses execute original Scatter51D0D0 and Infantry51BF90
+        // together. Exercise the production damage receiver, including HP,
+        // queue/destination writes and fear, with the same entry prestates.
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/infantry_scatter_entry.json"
+        ))
+        .unwrap();
+        assert_eq!(corpus.as_array().unwrap().len(), 14);
+        for row in corpus.as_array().unwrap() {
+            let output = run_scene(ScatterFixture {
+                entry_case: Some(row["input"].clone()),
+                ..fixture()
+            });
+            let expected = row["destination"].as_array().map(|xy| {
+                (
+                    (xy[0].as_u64().unwrap() - 5) as u16,
+                    (xy[1].as_u64().unwrap() - 5) as u16,
+                )
+            });
+            assert_eq!(output.destination, expected, "{}", row["input"]);
+            assert_eq!(
+                output.rng_indices, row["random_indices"],
+                "{}",
+                row["input"]
+            );
+            assert_eq!(output.health, 115);
+            assert_eq!(output.fear, 300);
+            assert_eq!(
+                output.queued_mission,
+                expected.map_or(MissionId::NONE, |_| {
+                    MissionId::from_known(MissionType::Move)
+                })
+            );
+        }
         let displayed_death = run_scene(ScatterFixture {
             animation: Some(crate::sim::animation::SequenceKind::Die1),
             ..fixture()

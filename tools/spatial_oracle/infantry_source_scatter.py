@@ -2,9 +2,9 @@
 
 Runs the real entry, house/mission/ability/Walk readers, heading math, Scenario
 RNG, Foot navigation coordinate, map lookup/playfield, height and projection.
-Can_Enter_Cell answers and QueueMission/SetDestination effects are observable
-seams. This proves selection and call order, not the supplied entry answers or
-the destination receiver/locomotor continuation.
+Default Can_Enter_Cell answers and QueueMission/SetDestination effects are
+observable seams. The companion infantry_scatter_entry corpus selects the real
++1AC body instead. Neither corpus proves the destination/locomotor continuation.
 """
 from pathlib import Path
 import struct
@@ -45,6 +45,24 @@ def query(case):
             level, flags = overrides.get((x, y), (0, 0))
             u.mem_write(ptr + 0x11B, bytes([level & 255, 0]))
             u.mem_write(ptr + 0x140, dwords(flags))
+    if case.get('live_entry'):
+        # Declared empty lists/overlays/raw owners. The real +1AC body reads
+        # Cell land rows and raw occupation independently of object lists.
+        for y in range(32):
+            for x in range(32):
+                ptr = CELLS + (y * 32 + x) * 0x200
+                u.mem_write(ptr + 0x44, dwords(-1))
+                u.mem_write(ptr + 0x54, dwords(-1, -1))
+        for x, y, ground, deck in case.get('raw', []):
+            ptr = CELLS + (y * 32 + x) * 0x200
+            u.mem_write(ptr + 0x124, dwords(ground, deck))
+        for x, y in case.get('blocked_terrain', []):
+            ptr = CELLS + (y * 32 + x) * 0x200
+            u.mem_write(ptr + 0xEC, dwords(1))
+        for x, y, slope in case.get('slopes', []):
+            ptr = CELLS + (y * 32 + x) * 0x200
+            u.mem_write(ptr + 0x11C, bytes([slope]))
+        u.mem_write(0x89EA40, struct.pack('<18f', *([1.0] * 9 + [0.0] * 9)))
     u.mem_write(TABLE, bytes(table))
     u.mem_write(MAP + 0x13C, dwords(TABLE, 0x40000))
     bounds = case.get('bounds', BOUNDS)
@@ -54,8 +72,10 @@ def query(case):
     u.mem_write(DUMMY + 0x140, dwords(0))
     u.mem_write(DUMMY + 0x24, packed(123, -234))
     u.mem_write(VT, bytes(u.mem_read(0x7EB058, 0x600)))
+    assert struct.unpack('<I', u.mem_read(VT + 0x1AC, 4))[0] == 0x51BF90
     for offset, pointer in [(0x1AC, ENTRY), (0x1E8, QUEUE), (0x480, SET)]:
-        u.mem_write(VT + offset, dwords(pointer))
+        if offset != 0x1AC or not case.get('live_entry'):
+            u.mem_write(VT + offset, dwords(pointer))
     u.mem_write(ACTOR, dwords(VT))
     u.mem_write(ACTOR + 0x6C0, dwords(TYPE))
     u.mem_write(ACTOR + 0x6C4, dwords(case.get('doing', -1)))
@@ -91,18 +111,26 @@ def query(case):
     checks = []
     destination = None
     start_direction = None
+    pending_entry = None
 
     def observe(_u, address, _size, _data):
-        nonlocal destination, start_direction
+        nonlocal destination, start_direction, pending_entry
         sp = u.reg_read(UC_X86_REG_ESP)
         if address == 0x51D487:
             start_direction = read32(sp + 0x1C) & 7
         elif address == 0x65C7E0:
             events.append('random')
-        elif address == ENTRY:
+        elif address == 0x51D5AE and pending_entry is not None:
+            checks.append([*pending_entry, u.reg_read(UC_X86_REG_EAX)])
+            pending_entry = None
+        elif address == ENTRY or (case.get('live_entry') and address == 0x51BF90):
             args = [read32(sp + 4 + i * 4) for i in range(5)]
             coord = list(struct.unpack('<hh', u.mem_read(args[0] + 0x24, 4)))
             assert args[3:] == [0, 1]
+            if case.get('live_entry'):
+                pending_entry = [coord, args[1], struct.unpack('<i', dwords(args[2]))[0]]
+                events.append('entry')
+                return
             code = case.get('answers', [0] * 8)[args[1]]
             checks.append([coord, args[1], struct.unpack('<i', dwords(args[2]))[0], code])
             events.append('entry')
@@ -130,6 +158,9 @@ def query(case):
     call(0x49F2F0, 0, [])  # native startup populates the neighbour table
     call(0x65C6D0, SCENARIO + 0x218, [case.get('seed', 1)])
     call(0x51D0D0, ACTOR, [SOURCE, case.get('force', False), False])
+    assert pending_entry is None
+    if case.get('live_entry'):
+        assert checks, 'live-entry witnesses must reach the original body'
     return dict(input=case, destination=destination, checks=checks, events=events,
                 start_direction=start_direction,
                 random_indices=[read32(SCENARIO + 0x21C), read32(SCENARIO + 0x220)])

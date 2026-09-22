@@ -63,7 +63,7 @@ fn source_selection_matches_original_execution() {
                     "{input}"
                 );
                 events.push("random");
-                select_neighbor(seed, start, |candidate, direction| {
+                select_neighbor::<std::convert::Infallible>(seed, start, |candidate, direction| {
                     let cells = NativeCellQuery::canonical(&terrain);
                     let cell = cells.lookup(candidate);
                     if !cell_is_in_playfield_height_aware(
@@ -71,13 +71,14 @@ fn source_selection_matches_original_execution() {
                         Some(bounds),
                         Some(&terrain),
                     ) {
-                        return None;
+                        return Ok(None);
                     }
                     let code = input["answers"][direction as usize].as_i64().unwrap_or(0);
                     checks.push((cells.coord(cell), direction, code));
                     events.push("entry");
-                    (code == 0).then(|| preferred_surface(&terrain, candidate))
+                    Ok((code == 0).then(|| preferred_surface(&terrain, candidate)))
                 })
+                .unwrap()
             } else {
                 None
             };

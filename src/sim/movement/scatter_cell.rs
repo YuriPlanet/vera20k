@@ -24,11 +24,11 @@ pub(super) fn source_start_direction(
 
 /// `None` refuses entry, `Some(false)` retains a fallback, `Some(true)` selects
 /// immediately. Native NullCell is (0,0), so a legal zero cell is not a result.
-pub(super) fn select_neighbor(
+pub(super) fn select_neighbor<E>(
     seed: (i16, i16),
     start_direction: i32,
-    mut inspect: impl FnMut((i16, i16), i32) -> Option<bool>,
-) -> Option<(i16, i16)> {
+    mut inspect: impl FnMut((i16, i16), i32) -> Result<Option<bool>, E>,
+) -> Result<Option<(i16, i16)>, E> {
     let mut fallback = (0, 0);
     for offset in 0..8 {
         let direction = (start_direction + offset) & 7;
@@ -37,19 +37,19 @@ pub(super) fn select_neighbor(
             seed.0.wrapping_add(dx as i16),
             seed.1.wrapping_add(dy as i16),
         );
-        let Some(preferred) = inspect(candidate, direction) else {
+        let Some(preferred) = inspect(candidate, direction)? else {
             continue;
         };
         if fallback == (0, 0) {
             fallback = candidate;
         }
         if preferred {
-            return (candidate != (0, 0))
+            return Ok((candidate != (0, 0))
                 .then_some(candidate)
-                .or((fallback != (0, 0)).then_some(fallback));
+                .or((fallback != (0, 0)).then_some(fallback)));
         }
     }
-    (fallback != (0, 0)).then_some(fallback)
+    Ok((fallback != (0, 0)).then_some(fallback))
 }
 
 /// Scatter51D62A uses the same 6D6410 projection as FNPC. Input Z is ignored

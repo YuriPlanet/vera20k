@@ -670,21 +670,11 @@ pub(crate) fn commit_entities(
                 });
             let scatter = if surviving_infantry_result {
                 attacker_coord.and_then(|attacker_coord| {
-                    let target = world.substrate.entities.get(target_id)?;
-                    crate::sim::movement::bump_crush::select_infantry_damage_scatter(
-                        target,
-                        attacker_coord,
-                        world.resolved_terrain.as_ref(),
-                        world.playfield_bounds,
-                        &world.substrate.occupancy,
-                        rules,
-                        world.houses.get(&target.owner()).is_some_and(|house| {
-                            house.is_controlled_by_human(world.session.game_mode_nonzero)
-                        }),
-                        &world.team_script_vm,
-                        &mut world.scenario_rng,
-                        &world.interner,
-                    )
+                    world.select_infantry_damage_scatter(
+                        target_id, attacker_coord, rules, overlay_registry,
+                    ).unwrap_or_else(|cause| {
+                        panic!("damage Scatter requires valid live infantry entry state for {target_id}: {cause}")
+                    })
                 })
             } else {
                 None

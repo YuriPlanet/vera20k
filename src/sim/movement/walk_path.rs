@@ -349,7 +349,7 @@ impl Simulation {
         let cell = cells.lookup(coord_cell(coord));
         //0x5F5F00 (ECX = this Infantry, 0x51DB78): the current cell's signed
         //level byte (+11B via vtable +1BC) plus four when OnBridge (+8C).
-        let height = i32::from(cells.ground_fields(cell).0 as i8) + if on_bridge { 4 } else { 0 };
+        let height = ground_pose::query_object_cell_height(&cells, coord, on_bridge);
         let answer = self.infantry_can_enter(
             id,
             cell,

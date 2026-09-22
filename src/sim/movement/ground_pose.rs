@@ -24,6 +24,19 @@ pub(crate) fn query_ground_height(
         .map_err(|error| format!("native ground query: {error:?}"))
 }
 
+/// Object5F5F00: signed current-cell level plus four for OnBridge. Its
+/// Object+1BC receiver5F6960 performs two map lookups from physical Object+9C;
+/// preserve their position in callers that retain the shared dummy Cell.
+pub(crate) fn query_object_cell_height(
+    cells: &NativeCellQuery<'_>,
+    physical: DriveCoord,
+    on_bridge: bool,
+) -> i32 {
+    let _ = cells.lookup_world(physical.x, physical.y);
+    let cell = cells.lookup_world(physical.x, physical.y);
+    i32::from(cells.ground_fields(cell).0 as i8) + if on_bridge { 4 } else { 0 }
+}
+
 /// Foot+BC4DDC40(false) -> Object5F6A70. The navigation coordinate can be a
 /// paid head; source bridge selection is independent of the cached path layer.
 /// Both ground samples precede the conditional structural-cell lookup.

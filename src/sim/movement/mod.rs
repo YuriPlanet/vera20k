@@ -61,6 +61,7 @@ mod foot_mark;
 mod foot_speed;
 pub(crate) mod ground_pose;
 pub(crate) mod infantry_entry;
+mod infantry_scatter;
 pub(crate) mod locomotor_owner;
 pub(crate) mod locomotor_ready;
 mod movement_blocked;
