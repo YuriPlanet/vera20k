@@ -321,6 +321,14 @@ pub fn dir_to_cell_delta(facing: u8) -> (i32, i32) {
 // RA2 speed conversion
 // ---------------------------------------------------------------------------
 
+/// TechnoType ReadINI71465F..71469F: clamp authored Speed to0..100,
+/// multiply by256/100 and cap at255 whole leptons per native frame.
+/// A missing/-1 override retains native type initialization; callers here
+/// resolve that to their existing zero default before conversion.
+pub(crate) fn ra2_speed_to_leptons_per_frame(raw_speed: i32) -> i32 {
+    (raw_speed.clamp(0, 100) * 256 / 100).min(255)
+}
+
 /// Convert a rules.ini `Speed=` value to cells per second using the authentic
 /// RA2 formula.
 ///
@@ -336,12 +344,7 @@ pub fn dir_to_cell_delta(facing: u8) -> (i32, i32) {
 /// Speed=11 (E1) → ~1.641, Speed=100 → ~14.941. Speed=0 → 0 (immobile).
 #[cfg(test)]
 pub fn ra2_speed_to_cells_per_second(raw_speed: i32) -> SimFixed {
-    if raw_speed <= 0 {
-        return SIM_ZERO;
-    }
-    // Uses the same formula as ra2_speed_to_leptons_per_second, then /256.
-    let capped: i32 = raw_speed.min(100);
-    let leptons_per_tick: i32 = (capped * 256 / 100).min(255);
+    let leptons_per_tick = ra2_speed_to_leptons_per_frame(raw_speed);
     SimFixed::from_num(leptons_per_tick * 15) / SimFixed::from_num(256)
 }
 
@@ -355,13 +358,9 @@ pub fn ra2_speed_to_cells_per_second(raw_speed: i32) -> SimFixed {
 /// Examples: Speed=4 (HARV) → ~150 lep/sec, Speed=11 (E1) → ~420 lep/sec,
 /// Speed=100 → ~3825 lep/sec. Speed=0 → 0 (immobile).
 pub fn ra2_speed_to_leptons_per_second(raw_speed: i32) -> SimFixed {
-    if raw_speed <= 0 {
-        return SIM_ZERO;
-    }
     // Conversion: leptons_per_tick = speed * 256 / 100, capped at 255.
     // leptons_per_second = leptons_per_tick * 15 (baseline = gamemd Slowest).
-    let capped: i32 = raw_speed.min(100);
-    let leptons_per_tick: i32 = (capped * 256 / 100).min(255);
+    let leptons_per_tick = ra2_speed_to_leptons_per_frame(raw_speed);
     SimFixed::from_num(leptons_per_tick * 15)
 }
 

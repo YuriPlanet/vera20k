@@ -231,9 +231,10 @@ probe; it is not a second implementation to publish.
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
 Branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Current increment atop `a1537be19db4420300f4dc7fe3cdbbf3eb314f42`: pure Fly
-takeoff callback, its Mark/Display transaction and existing FacingClass consumers;
-see the takeoff section below for current validation and residuals. Snapshot188
+Current increment atop published `16b609e1ab7ac7d2c9daba3c1668ffb02cb287e4`:
+paid Fly motion uses full Primary facing and the live type-speed authority.
+That preceding commit connects pure takeoff's callback and Mark/Display
+transaction. See the sections below for validation and residuals. Snapshot188
 retains Fly destination XYZ in active and stashed runtime. `f241211c` preserves
 the native FindFireLocation corpus, deterministic geometry comparisons and removal
 of the incorrect unused search model. Production source
@@ -248,7 +249,7 @@ remain unfinished.** See the release integration section for exact coverage and
 required residuals; this is not whole-combat parity.
 Previous source `4a32f4c3` extracted the shared emitter; preceding checkpoint
 `1e069d75`. Range source `d7c15550` remains intact, including native
-0x0 foundations. This takeoff increment is validated and ready for publication;
+0x0 foundations. The paid-motion increment passed native, full lib and Clippy checks;
 `.local/` remains untracked and must not be staged.
 The dependency map is retired by user instruction: do not use or refresh it,
 regardless of the older branch contract text. Facing source `be8e2d62` and
@@ -1033,6 +1034,74 @@ none was rebaselined. Both native `fly_takeoff --check` (80) and
 `fly_takeoff_phase --check` (75) pass. `cargo clippy -p vera20k --lib` passes
 (23.27s,1032 existing warnings; `.local/fly-takeoff-clippy.log`). All owned Cargo
 processes are terminal. No critic/PR; retain one final review before the coherent PR.
+
+### Paid Fly motion increment (2026-09-22)
+
+Horizontal-step acceptance: compare the original paid Fly
+range4CDA3C..4CDB4C, including actual Primary.Current, interface speed4CFE20
+and original trig. Use full direction words and whole-lepton final-coordinate
+truncation. Production must read live type Speed rather than an adjusted/stale
+MovementTarget cache, preserve XYZ/height order and continue identically after
+restore. Compare signed/fractional speed, active facing histories and cell
+boundaries; explicitly bound earlier IsMoving admission and later map-edge,
+descent/landing/navigation policies. Reuse the existing deterministic trig owner
+if original execution demonstrates equivalence; remove the superseded byte
+heading displacement path. Fly's retained SimFixed speed-fraction precision
+policy remains unchanged by this numeric-step migration.
+
+The original199-case `fly_paid_step` corpus executes4CDA3C..4CDB4C with real
+Fly/Facing constructors, live turning histories, type Speed conversion block,
+Fly interface+84 getter and sine/cosine calls. It stops before candidate
+validation/placement and substitutes no instructions/callees. An initial draft
+read the getter result from an already-reused stack slot; corrected before
+acceptance to observe EAX directly at4CDA78. Regenerated output was reviewed and
+the read-only native check passes. Original Type Speed is clamped0..100, then
+converted to min(raw*256/100,255). Fly multiplies that integer by its retained
+current fraction and truncates once; Foot speed factors are not on this chain.
+
+`fixed_math::ra2_speed_to_leptons_per_frame` is now the shared conversion used
+by existing per-second adapters too. `air_movement::current_fly_speed` uses a
+wide integer product of type speed and the existing Q16 fraction. Fly and Walk
+share `native_trig::facing_step_world_xy`; no new trig table or x87 emulator.
+The legacy byte-heading/per-second displacement and checked saturation helper
+are removed. Production uses the full Primary.Current and live object type
+speed, bypassing a stale order-speed cache. The cache is only a fallback when
+no rules/type is available. Movement consumes the entry current fraction before
+legacy approach slowdown changes it. No saved layout or hash schema changed.
+
+Rust validation passes: all199 numeric candidates,196 in-grid production
+steps with a poisoned speed/heading cache, and restored/uninterrupted continuation
+are covered by `fly_paid_step_matches_native_math_and_production_type_speed`.
+The other three candidates cross the legacy storage boundary; their provisional
+native coordinates are compared, but placement still requires4CDB4C..4CDD07's
+map-shape/owner admission and edge correction. Do not claim their production
+placement is ported. Earlier movement admission, continuous slowdown, current
+fraction precision/ramp differences, descent drift, landing and complete
+navigation remain required. Neither this numeric increment nor its samples
+establish full flight parity. Ghidra4CFE20 is labeled Get_Current_Speed;
+comments4CFE20/4CDA68 are saved/read back with original input ownership and scope.
+
+Validation: `python -m tools.spatial_oracle.fly_paid_step --check` passes199
+original samples. `cargo test -p vera20k --lib` passes **9,143 tests,0 failures,
+135 ignored** (12.37s execution; `.local/fly-paid-step-full-tests.log`); the
+focused compile took3m06s. Whole-fixture hash pins are unchanged and none was
+rebaselined. `cargo clippy -p vera20k --lib` passes (25.57s,1030 warnings;
+`.local/fly-paid-step-clippy.log`). All owned Cargo/native processes are terminal.
+No critic/PR; retain one final review for the coherent branch. The dependency map
+remains retired.
+
+Next map-edge dependency is concrete:4CDB88 calls original568300 (the existing
+`NativeOverlayMapShape::admits` geometry, not allocated-cell membership). An
+out-of-shape candidate calls owner+4DC: Aircraft table7E22A4 ->41B890. That
+predicate reads Target+2B4, raw mission+AC, retained+3D5, mission getter exclusions,
+Team+5D4/6EC300 and the still-missing retained Techno+3D4. Spawned Type+E0B
+bypasses correction. Otherwise565660 converts the packed cell to local coords,
+then the branch nudges X by128 toward the map center and, if needed, repeatedly
+calls49F420(distance64,flag0) until568300 accepts. Each scatter draws Scenario RNG
+via65C780; reuse `combat::inviso_scatter::random_direction_coord` after checking
+its exact bounds/math. Do not create a second geometry/scatter authority or
+replace retained+3D4 with a type inference. This is another production consumer
+of the same prerequisite already required by FindFireLocation.
 
 ### Next safe implementation
 

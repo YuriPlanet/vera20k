@@ -22,12 +22,13 @@ fn fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
     let flag = |name: &str| input[name].as_bool().unwrap_or(false);
     let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[General]\nFlightLevel=1500\n[AircraftTypes]\n0=TEST\n\
-         [TEST]\nStrength=100\nSpeed=10\nLandable=yes\n\
+         [TEST]\nStrength=100\nSpeed={}\nLandable=yes\n\
          Locomotor={{4A582746-9839-11D1-B709-00A024DDAFD1}}\n\
          FlightLevel={}\nIsDropship={}\nCarryall={}\n\
          [BuildingTypes]\n0=PLAIN\n1=REPAIR\n2=HELIPAD\n\
          [PLAIN]\nStrength=100\n[REPAIR]\nStrength=100\nUnitRepair=yes\n\
          [HELIPAD]\nStrength=100\nHelipad=yes\n",
+        integer("speed", 10),
         integer("flight_level", -1),
         if flag("dropship") { "yes" } else { "no" },
         if flag("carryall") { "yes" } else { "no" },
@@ -920,4 +921,120 @@ fn fly_production_tick_uses_primary_current_and_continues_after_restore() {
         }
         assert_eq!(restored.state_hash(), sim.state_hash(), "frame{frame}");
     }
+}
+
+#[test]
+fn fly_paid_step_matches_native_math_and_production_type_speed() {
+    use crate::sim::movement::ground_pose::position_world_coord;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/fly_paid_step.json"
+    ))
+    .unwrap();
+    assert_eq!(rows.len(), 199);
+    let mut production_cases = 0;
+    for row in rows {
+        let input = &row["input"];
+        let integer = |key: &str| input[key].as_i64().unwrap() as i32;
+        let current: [i32; 3] =
+            std::array::from_fn(|axis| input["current"][axis].as_i64().unwrap() as i32);
+        let native_type_speed =
+            crate::util::fixed_math::ra2_speed_to_leptons_per_frame(integer("ini_speed"));
+        assert_eq!(
+            i64::from(native_type_speed),
+            row["type_speed"].as_i64().unwrap(),
+            "{input}"
+        );
+        let fraction = SimFixed::from_bits(integer("fraction_bits"));
+        let speed =
+            crate::sim::movement::air_movement::current_fly_speed(native_type_speed, fraction);
+        assert_eq!(i64::from(speed), row["speed"].as_i64().unwrap(), "{input}");
+        let rot = input["rot"].as_i64().unwrap_or(5) as i32;
+        let mut primary = crate::sim::movement::FacingClass::new(integer("facing") as u16, rot);
+        primary.snap(integer("facing") as u16, 90);
+        if let Some(destination) = input["destination"].as_u64() {
+            primary.set(destination as u16, 90);
+        }
+        let frame = input["frame"].as_u64().unwrap_or(100) as u32;
+        let facing = primary.current(frame);
+        assert_eq!(
+            u64::from(facing),
+            row["facing"].as_u64().unwrap(),
+            "{input}"
+        );
+        let proposed = if speed > 0 {
+            crate::util::native_trig::facing_step_world_xy([current[0], current[1]], facing, speed)
+        } else {
+            [current[0], current[1]]
+        };
+        assert_eq!(
+            serde_json::json!([proposed[0], proposed[1], current[2]]),
+            row["proposed"],
+            "{input}"
+        );
+
+        // The candidate-placement/map-edge correction is a separate open
+        // branch. Every in-grid paid candidate also reaches production here.
+        if [current[0], current[1], proposed[0], proposed[1]]
+            .into_iter()
+            .any(|v| !(0..131072).contains(&v))
+        {
+            continue;
+        }
+        production_cases += 1;
+        let (mut sim, rules) = fixture(&serde_json::json!({"input": {
+            "z":current[2], "target":current[2], "speed":integer("ini_speed"),
+        }}));
+        sim.remove_entity_occupancy(1);
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        entity.position.rx = (current[0] / 256) as u16;
+        entity.position.ry = (current[1] / 256) as u16;
+        entity.position.sub_x = SimFixed::from_num(current[0] % 256);
+        entity.position.sub_y = SimFixed::from_num(current[1] % 256);
+        entity.body_facing = Some(primary);
+        entity.facing = 222; // poison the byte cache
+        entity.veterancy = 2; // Fly's getter bypasses Foot's FASTER path
+        sim.add_entity_occupancy(1);
+        assert!(issue_coordinate(
+            &mut sim,
+            &rules,
+            [current[0] + 5000, current[1] + 5000, 0]
+        ));
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        entity.movement_target.as_mut().unwrap().speed = SimFixed::from_num(3000);
+        entity.locomotor.as_mut().unwrap().fly_current_speed = fraction;
+        sim.session.binary_frame = frame;
+        let mut restored = if input["name"] == "turn_5_100" {
+            sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+            let bytes = GameSnapshot::save(&sim, 0, 0, "Fly paid movement", 0);
+            let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+            restored.retain_in_scenario_process_state_from(&sim);
+            restored.resolved_terrain = sim.resolved_terrain.clone();
+            restored.restore_after_snapshot_load().unwrap();
+            assert_eq!(restored.state_hash(), sim.state_hash());
+            Some(restored)
+        } else {
+            None
+        };
+        let rng = sim.scenario_rng.logical_state();
+        sim.tick_air_movement_with_cell_lists_one(1, Some(&rules));
+        let actual = position_world_coord(&sim.substrate.entities.get(1).unwrap().position);
+        assert_eq!(
+            serde_json::json!([actual.x, actual.y, actual.z]),
+            row["proposed"],
+            "production {input}"
+        );
+        assert_eq!(sim.scenario_rng.logical_state(), rng);
+        if let Some(restored) = restored.as_mut() {
+            restored.tick_air_movement_with_cell_lists_one(1, Some(&rules));
+            assert_eq!(restored.state_hash(), sim.state_hash());
+            for next_frame in frame + 1..frame + 5 {
+                for instance in [&mut sim, &mut *restored] {
+                    instance.session.binary_frame = next_frame;
+                    instance.tick_air_movement_with_cell_lists_one(1, Some(&rules));
+                }
+                assert_eq!(restored.state_hash(), sim.state_hash(), "frame{next_frame}");
+            }
+        }
+    }
+    assert_eq!(production_cases, 196);
 }

@@ -10,31 +10,15 @@ use crate::sim::components::{DriveCoord, MovementTarget};
 use crate::sim::debug_event_log::DebugEventKind;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::movement::locomotor::{AirMovePhase, LocomotorState, MovementLayer};
-use crate::util::fixed_math::{
-    SIM_HALF, SIM_ONE, SIM_ZERO, SimFixed, native_movement_frame_fraction,
-};
+use crate::util::fixed_math::{SIM_HALF, SIM_ONE, SIM_ZERO, SimFixed};
 
-/// Checked SimFixed multiply — logs a warning and saturates on overflow
-/// instead of panicking. Used to diagnose I16F16 overflows in air movement.
-#[inline]
-fn checked_mul_log(a: SimFixed, b: SimFixed, label: &str, entity_id: u64) -> SimFixed {
-    match a.checked_mul(b) {
-        Some(v) => v,
-        None => {
-            log::warn!(
-                "air_movement I16F16 overflow at {}: entity={} a={} b={} (saturating)",
-                label,
-                entity_id,
-                a,
-                b
-            );
-            if (a > SIM_ZERO) == (b > SIM_ZERO) {
-                SimFixed::MAX
-            } else {
-                SimFixed::MIN
-            }
-        }
-    }
+/// Fly interface+84 /4CFE20 reads TYPE Speed, not Foot's adjusted speed.
+/// The retained fraction follows the existing SimFixed policy. Its dyadic
+/// product with the bounded type integer is exact in i64; truncate toward zero
+/// once, before trig. Do not truncate a per-second displacement or multiply
+/// two I16F16 values that can overflow at high authored speed/fraction.
+pub(crate) fn current_fly_speed(type_speed: i32, fraction: SimFixed) -> i32 {
+    (i64::from(type_speed) * i64::from(fraction.to_bits()) / 65536) as i32
 }
 
 /// Per-tick speed ramp step for Fly aircraft (0.1 per tick).
@@ -279,7 +263,6 @@ pub fn tick_air_movement(
     )>,
 ) -> AirMovementTickStats {
     let mut stats = AirMovementTickStats::default();
-    let dt = native_movement_frame_fraction();
 
     // Collect air entity IDs that need processing.
     let air_entity_ids: Vec<u64> = {
@@ -319,8 +302,8 @@ pub fn tick_air_movement(
         };
         ensure_fly_facings(entity);
         // Fly4CDA62 reads Primary.Current before navigation/phase setters.
-        // The legacy XY integrator still quantizes to a byte, but no longer
-        // owns a competing ROT-based turn controller.
+        // This byte is a presentation/legacy projection; displacement below
+        // reads the full retained direction, not this quantized cache.
         entity.facing = (entity.body_facing.unwrap().current(binary_frame) >> 8) as u8;
 
         // --- Horizontal movement (facing-based, only when airborne) ---
@@ -334,6 +317,24 @@ pub fn tick_air_movement(
                 .is_some_and(|l| height >= l.fly_target_height() / 2);
 
             if can_move {
+                let native_type_speed = rules_context
+                    .and_then(|(rules, interner)| rules.object(interner.resolve(entity.type_ref())))
+                    .map(|object| {
+                        crate::util::fixed_math::ra2_speed_to_leptons_per_frame(object.speed)
+                    })
+                    // Mapless/headless compatibility only; production rules
+                    // are authoritative even when an order cache is stale.
+                    .or_else(|| {
+                        entity
+                            .movement_target
+                            .as_ref()
+                            .map(|target| (target.speed / SimFixed::from_num(15)).to_num::<i32>())
+                    })
+                    .unwrap_or(0);
+                let speed = current_fly_speed(
+                    native_type_speed,
+                    entity.locomotor.as_ref().unwrap().fly_current_speed,
+                );
                 let destination = entity
                     .locomotor
                     .as_ref()
@@ -369,7 +370,9 @@ pub fn tick_air_movement(
                 };
                 let dist_i32: i32 = dist.to_num::<i32>();
 
-                // 3. Set approach target speed based on distance.
+                // The native step consumes entry speed BEFORE approach
+                // slowdown. The remaining policy below is still the legacy
+                // adapter, pending the full4CE145/4CEFB0 migration.
                 let approach_speed = approach_target_speed(dist_i32);
                 if let Some(ref mut loco) = entity.locomotor {
                     // Only lower speed_fraction for approach; missions can set it
@@ -380,58 +383,33 @@ pub fn tick_air_movement(
                 // 4. Fine approach deceleration.
                 if dist_i32 < FINE_APPROACH_THRESHOLD {
                     if let Some(ref mut loco) = entity.locomotor {
-                        loco.fly_current_speed = checked_mul_log(
-                            loco.fly_current_speed,
-                            RAPID_DECEL_FACTOR,
-                            "fly_speed*rapid_decel",
-                            entity_id,
-                        );
+                        loco.fly_current_speed *= RAPID_DECEL_FACTOR;
                         if loco.fly_current_speed < MIN_CREEP_SPEED && dist_i32 > 0 {
                             loco.fly_current_speed = MIN_CREEP_SPEED;
                         }
                     }
                 }
 
-                // 5. Move in FACING direction (not toward goal).
-                let fly_speed = entity
-                    .locomotor
-                    .as_ref()
-                    .map_or(SIM_ZERO, |l| l.fly_current_speed);
-                if let Some(ref target) = entity.movement_target {
-                    log::debug!(
-                        "air_move entity={} type={} speed={} fly_speed={} dt={} alt={} dist_lep={} facing={}",
-                        entity_id,
-                        entity.type_ref(),
-                        target.speed,
-                        fly_speed,
-                        dt,
-                        entity
-                            .locomotor
-                            .as_ref()
-                            .map(|l| l.altitude)
-                            .unwrap_or(SIM_ZERO),
-                        dist_i32,
-                        entity.facing
+                //4CDA3C..4CDB4C: full Primary.Current, integer Fly speed and
+                // final world-coordinate truncation using the shared table.
+                if speed > 0 {
+                    let current = super::ground_pose::position_world_xy(&entity.position);
+                    let proposed = crate::util::native_trig::facing_step_world_xy(
+                        current,
+                        entity.body_facing.unwrap().current(binary_frame),
+                        speed,
                     );
-                    let sp_fly =
-                        checked_mul_log(target.speed, fly_speed, "speed*fly_speed", entity_id);
-                    let move_lep = checked_mul_log(sp_fly, dt, "(speed*fly_speed)*dt", entity_id);
-                    if move_lep > SIM_ZERO {
-                        let (step_x, step_y) =
-                            crate::util::facing_table::facing_to_movement(entity.facing, move_lep);
-                        let new_lx = cur_lx + I48F16::from(step_x);
-                        let new_ly = cur_ly + I48F16::from(step_y);
-                        let new_rx = (new_lx / lep256).to_num::<i32>();
-                        let new_ry = (new_ly / lep256).to_num::<i32>();
-                        entity.position.rx = (new_rx.max(0) as u16).min(511);
-                        entity.position.ry = (new_ry.max(0) as u16).min(511);
-                        let sub_x = new_lx - I48F16::from_num(entity.position.rx) * lep256;
-                        let sub_y = new_ly - I48F16::from_num(entity.position.ry) * lep256;
-                        entity.position.sub_x =
-                            SimFixed::from_num(sub_x.to_num::<i32>().max(0).min(255));
-                        entity.position.sub_y =
-                            SimFixed::from_num(sub_y.to_num::<i32>().max(0).min(255));
-                    }
+                    // Existing placement boundary remains a separate residual:
+                    // native4CDB4C..4CDD07 applies map/owner-specific correction.
+                    // Keep the bounded adapter until those gates are migrated.
+                    entity.position.rx = (proposed[0] / 256).clamp(0, 511) as u16;
+                    entity.position.ry = (proposed[1] / 256).clamp(0, 511) as u16;
+                    entity.position.sub_x = SimFixed::from_num(
+                        (proposed[0] - i32::from(entity.position.rx) * 256).clamp(0, 255),
+                    );
+                    entity.position.sub_y = SimFixed::from_num(
+                        (proposed[1] - i32::from(entity.position.ry) * 256).clamp(0, 255),
+                    );
                 }
 
                 // 6. Arrival detection: close enough AND speed near zero.

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "199 original paid Fly steps: full heading words, active facing histories, signed/clamped type speed, Q16 fractions and cell/world boundaries. Includes actual Current and Fly speed getters. Excludes IsMoving admission, map-edge correction, placement, height, descent drift, slowdown, navigation and landing.",
+  "assumptions": [
+    "Real Aircraft and Fly vtables; original Fly and Facing constructors and setters execute.",
+    "Original ReadINI numeric Speed block receives the supplied integer; -1 retains supplied constructor zero. INI text parsing and inheritance excluded.",
+    "Current fraction is supplied as an exact Q16 value, matching the existing SimFixed policy; unrestricted native binary64 fractions and ramping are excluded.",
+    "Entry follows Mark(REMOVE), with original stack/register frame supplied. The first map predicate runs against the supplied zero map geometry and its result is ignored by this range.",
+    "Owner coordinates/facing history must remain unchanged; output is the provisional XYZ before candidate validation and SetCoords."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "paid_step": "0x004CDA3C",
+    "candidate_ready": "0x004CDB4C",
+    "speed": "0x004CFE20",
+    "type_speed_conversion": "0x0071465F",
+    "primary_current": "0x004C93D0",
+    "sin": "0x004CACB0",
+    "cos": "0x004CAD00"
+  },
+  "payload_sha256": "42e555657344644a5bce097ac348950e9007f3d393b2170b0b5b345a6c04d4b4"
+}

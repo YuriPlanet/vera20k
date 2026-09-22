@@ -52,7 +52,7 @@ pub(super) fn advance(
     body.snap(desired, native_frame);
     entity.facing = (body.current(native_frame) >> 8) as u8;
     entity.facing_target = None;
-    let proposed = crate::util::native_trig::walk_step_world_xy(current, desired, speed);
+    let proposed = crate::util::native_trig::facing_step_world_xy(current, desired, speed);
     entity.position.sub_x = SimFixed::from_num(proposed[0] - i32::from(entity.position.rx) * 256);
     entity.position.sub_y = SimFixed::from_num(proposed[1] - i32::from(entity.position.ry) * 256);
     if proposed[0] / 256 == i32::from(entity.position.rx)
