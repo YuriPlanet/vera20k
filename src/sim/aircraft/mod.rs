@@ -18,6 +18,8 @@ pub mod paradrop_mission;
 pub mod runtime_contract;
 
 #[cfg(test)]
+mod dock_cycle_tests;
+#[cfg(test)]
 mod release_tests;
 
 use serde::{Deserialize, Serialize};
@@ -131,119 +133,218 @@ impl AircraftMission {
     }
 }
 
-/// Advance aircraft mission state machines for all Fly-locomotor aircraft.
-///
-/// Called once per tick from `advance_tick()`, after air_movement and before combat.
-/// This is the mission orchestration layer — it decides when aircraft fire,
-/// where they fly, and what they do after completing an attack pass.
-///
-/// `path_grid`: threaded from advance_tick. Paradrop's Drop_Payload uses it for
-/// drop-cell passability checks. Other missions ignore it for now.
+/// Batch driver for fixtures that dispatch every aircraft without the live
+/// object pass. Production dispatches each aircraft in its own LogicVector
+/// slot through [`dispatch_aircraft_mission`].
+#[cfg(test)]
 pub fn tick_aircraft_missions(
     sim: &mut Simulation,
     rules: &RuleSet,
     path_grid: Option<&crate::sim::pathfinding::PathGrid>,
 ) -> std::collections::BTreeSet<u64> {
-    // Search consumes Scenario RNG and commits NavCom reservations immediately.
-    // Their order is the live Logic vector, never EntityStore's stable-ID order.
-    struct MissionSnap {
-        id: u64,
-        mission: AircraftMission,
+    let order = sim.substrate.logic.as_slice().to_vec();
+    order
+        .into_iter()
+        .filter(|&id| dispatch_aircraft_mission(sim, rules, id, path_grid))
+        .collect()
+}
+
+/// One aircraft's mission dispatch inside its own LogicVector slot.
+///
+/// `FootClass::AI @ 0x004DA530` runs TechnoClass AI, and with it the mission
+/// dispatch, before locomotor Process (`+0x40`). Mission_Attack's Scenario RNG
+/// draws (state1 Rate jitter, FindFireLocation) and NavCom reservations
+/// therefore interleave with the other objects' AI in Logic order, ahead of
+/// this aircraft's own Fly Process. Returns whether the combat receiver must
+/// admit a Mission_Attack state4 release for this aircraft this frame.
+/// RESIDUAL: that release still runs in VERA's combat phase after the live
+/// pass, like every other attacker's FireAt, so its draws do not interleave.
+///
+/// `path_grid`: Paradrop's Drop_Payload uses it for drop-cell passability.
+pub(crate) fn dispatch_aircraft_mission(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    path_grid: Option<&crate::sim::pathfinding::PathGrid>,
+) -> bool {
+    let Some(e) = sim.substrate.entities.get(id) else {
+        return false;
+    };
+    // A Dying aircraft corpse must not run its mission (move, fire,
+    // paradrop, reveal fog) for the tick before the end-of-tick drain.
+    if e.dying {
+        return false;
     }
-
-    let snapshots: Vec<MissionSnap> = sim
-        .substrate
-        .logic
-        .as_slice()
-        .iter()
-        .filter_map(|&id| {
-            let e = sim.substrate.entities.get(id)?;
-            // A Dying aircraft corpse must not run its mission (move, fire,
-            // paradrop, reveal fog) for the tick before the end-of-tick drain.
-            if e.dying {
-                return None;
-            }
-            let mission = e.aircraft_mission.as_ref()?;
-            if mission.is_attacking() && !e.mission.dispatch_timer().due(sim.session.binary_frame) {
-                return None;
-            }
-            let loco = e.locomotor.as_ref()?;
-            if loco.kind != LocomotorKind::Fly {
-                return None;
-            }
-            Some(MissionSnap {
-                id: e.stable_id(),
-                mission: mission.clone(),
-            })
-        })
-        .collect();
-
-    if snapshots.is_empty() {
-        return Default::default();
+    let Some(mission) = e.aircraft_mission.clone() else {
+        return false;
+    };
+    if mission.is_attacking() && !e.mission.dispatch_timer().due(sim.session.binary_frame) {
+        return false;
     }
-
-    // Phase 2: Process each aircraft through its mission handler.
-    struct MissionMutation {
-        id: u64,
-        new_mission: AircraftMission,
-        ammo_delta: i32,
-        fire_at: Option<crate::sim::combat::TargetKind>,
-        move_to: Option<(u16, u16)>,
-        self_destruct: bool,
-        set_speed_fraction: Option<SimFixed>,
-        // Paradrop-specific apply-phase signals.
-        paradrop_fire_fog_reveal: bool,
-        paradrop_play_chute_sound: bool,
-        paradrop_chute_sound_at: Option<(u16, u16)>,
-        paradrop_try_drop: bool,
-        paradrop_payload_count_pre: u8,
-        paradrop_silent_despawn: bool,
+    if e.locomotor
+        .as_ref()
+        .is_none_or(|l| l.kind != LocomotorKind::Fly)
+    {
+        return false;
     }
+    match mission_step(sim, rules, id, &mission, path_grid) {
+        Some(m) => apply_mission_mutation(sim, rules, m, path_grid),
+        None => false,
+    }
+}
 
-    let mut mutations: Vec<MissionMutation> = Vec::new();
+/// One mission handler's decision, applied by [`apply_mission_mutation`].
+struct MissionMutation {
+    id: u64,
+    new_mission: AircraftMission,
+    ammo_delta: i32,
+    fire_at: Option<crate::sim::combat::TargetKind>,
+    move_to: Option<(u16, u16)>,
+    self_destruct: bool,
+    set_speed_fraction: Option<SimFixed>,
+    /// Fly BeginLanding4CFA70 through the world owner, after the mission write.
+    begin_landing: bool,
+    /// Fly BeginTakeoff4CF950 through the world owner.
+    begin_takeoff: bool,
+    // Paradrop-specific apply-phase signals.
+    paradrop_chute_sound_at: Option<(u16, u16)>,
+    paradrop_try_drop: bool,
+    paradrop_payload_count_pre: u8,
+    paradrop_silent_despawn: bool,
+}
+
+fn mission_step(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    mission: &AircraftMission,
+    path_grid: Option<&crate::sim::pathfinding::PathGrid>,
+) -> Option<MissionMutation> {
     let now = sim.session.binary_frame;
+    let mut m = MissionMutation {
+        id,
+        new_mission: mission.clone(),
+        ammo_delta: 0,
+        fire_at: None,
+        move_to: None,
+        self_destruct: false,
+        set_speed_fraction: None,
+        begin_landing: false,
+        begin_takeoff: false,
+        paradrop_chute_sound_at: None,
+        paradrop_try_drop: false,
+        paradrop_payload_count_pre: 0,
+        paradrop_silent_despawn: false,
+    };
 
-    for snap in &snapshots {
-        let mut m = MissionMutation {
-            id: snap.id,
-            new_mission: snap.mission.clone(),
-            ammo_delta: 0,
-            fire_at: None,
-            move_to: None,
-            self_destruct: false,
-            set_speed_fraction: None,
-            paradrop_fire_fog_reveal: false,
-            paradrop_play_chute_sound: false,
-            paradrop_chute_sound_at: None,
-            paradrop_try_drop: false,
-            paradrop_payload_count_pre: 0,
-            paradrop_silent_despawn: false,
-        };
+    match mission {
+        AircraftMission::Idle => {
+            let entity = sim.substrate.entities.get(id)?;
+            let type_str = sim.interner.resolve(entity.type_ref());
+            let obj = rules.object(type_str);
+            // Weapon-array slot 0 (`TechnoTypeClass+0x898`) is the armed
+            // test here rather than `combat_weapon::is_armed`
+            // (`TechnoClass::Is_Armed @ 0x00701120`). The two agree on
+            // every stock aircraft: no aircraft section authors
+            // `TurretCount=`, so the single slot `GetCurrentWeapon` would
+            // read is slot 0. UNCHECKED which predicate the native
+            // idle/return-to-airfield path uses; zero stock frequency
+            // either way.
+            let has_weapon = obj.map_or(false, |o| o.primary.is_some());
+            let airport_bound = obj.map_or(false, |o| o.airport_bound);
+            let is_airborne = entity
+                .locomotor
+                .as_ref()
+                .map_or(false, |l| l.altitude > SIM_ZERO);
+            let ammo = entity.aircraft_ammo.as_ref();
 
-        match &snap.mission {
-            AircraftMission::Idle => {
-                let entity = match sim.substrate.entities.get(snap.id) {
-                    Some(e) => e,
-                    None => continue,
-                };
-                let type_str = sim.interner.resolve(entity.type_ref());
-                let obj = rules.object(type_str);
-                // Weapon-array slot 0 (`TechnoTypeClass+0x898`) is the armed
-                // test here rather than `combat_weapon::is_armed`
-                // (`TechnoClass::Is_Armed @ 0x00701120`). The two agree on
-                // every stock aircraft: no aircraft section authors
-                // `TurretCount=`, so the single slot `GetCurrentWeapon` would
-                // read is slot 0. UNCHECKED which predicate the native
-                // idle/return-to-airfield path uses; zero stock frequency
-                // either way.
-                let has_weapon = obj.map_or(false, |o| o.primary.is_some());
-                let airport_bound = obj.map_or(false, |o| o.airport_bound);
-                let is_airborne = entity
-                    .locomotor
-                    .as_ref()
-                    .map_or(false, |l| l.altitude > SIM_ZERO);
-                let ammo = entity.aircraft_ammo.as_ref();
+            let nearest = find_nearest_airfield_for(
+                sim,
+                rules,
+                entity.owner(),
+                entity.type_ref(),
+                (entity.position.rx, entity.position.ry),
+            );
 
+            let input = idle_mode::IdleModeInput {
+                ammo_current: ammo.map_or(-1, |a| a.current),
+                ammo_max: ammo.map_or(-1, |a| a.max),
+                has_weapon,
+                has_target: entity.attack_target.is_some(),
+                airport_bound,
+                is_airborne,
+                nearest_airfield: nearest,
+            };
+
+            match idle_mode::enter_idle_mode(&input) {
+                idle_mode::IdleModeResult::Mission(new_m) => {
+                    m.new_mission = new_m;
+                }
+                idle_mode::IdleModeResult::SelfDestruct => {
+                    m.self_destruct = true;
+                }
+            }
+        }
+
+        AircraftMission::Attack { sub_state } => {
+            if let Some(entity) = sim.substrate.entities.get_mut(id) {
+                attack_mission::enter_attack_state(entity, *sub_state);
+            }
+            let result = if *sub_state == 0 {
+                attack_mission::AttackTickResult::transition(sim.aircraft_begin_attack(id))
+            } else if *sub_state == 1 {
+                attack_mission::AttackTickResult::transition(sim.aircraft_reengage(id, rules))
+            } else if *sub_state == 3 {
+                attack_mission::AttackTickResult::transition(sim.aircraft_approach(id, rules))
+            } else {
+                attack_mission::tick_attack_state(&sim.substrate.entities, id, *sub_state)
+            };
+            m.new_mission = result.new_mission;
+            m.fire_at = result.fire_at;
+
+            // Fly owns height targets. Native4CF3D4..4CF4CF selects
+            // destination-relative height, IsDropship approach height or
+            // Type FlightLevel. Repeated attack mission visits must not
+            // divide the mutable target by3. The horizontal target-selection
+            // transaction remains part of the Fly migration.
+            if *sub_state == 10 {
+                m.set_speed_fraction = Some(SIM_ONE);
+            }
+
+            // Fly Process owns acceleration/approach speed. Mission_Attack
+            // does not write the old cell-distance speed tiers.
+        }
+
+        AircraftMission::Guard => {
+            m.set_speed_fraction = Some(SIM_ONE);
+            let entity = sim.substrate.entities.get(id)?;
+            let ammo = entity.aircraft_ammo.as_ref();
+            let ammo_current = ammo.map_or(-1, |a| a.current);
+            let ammo_max = ammo.map_or(-1, |a| a.max);
+            let has_target = entity.attack_target.is_some();
+
+            // gamemd Mission_Guard RTB decision (default ReturnFire mode):
+            // an in-flight aircraft returns to rearm whenever it has spent
+            // ammo (ammo < maxAmmo) and is not actively engaging a target.
+            // Without the second clause a strike craft whose target dies
+            // mid-sortie with ammo left would hover here indefinitely.
+            // (Mode1 `ammo == 0` / Mode2 `ammo < max/2` are INI-gated
+            // globals not yet mapped to keys — default mode is stock.)
+            let out_of_ammo = ammo_current <= 0 && ammo_max > 0;
+            let spent_and_idle = !has_target && ammo_max > 0 && ammo_current < ammo_max;
+
+            // A spawn-manager child's base is its parent, not an airfield.
+            // Stock HORNET/ASW ship with `Dock=` commented out, so their
+            // rearm is driven entirely by the parent's SpawnManager
+            // (state 3 → 4 → 6). Letting them pick an unrelated helipad
+            // here would fight that recall.
+            let spawn_child = entity.spawn_owner_id.is_some();
+
+            if has_target && ammo_current > 0 {
+                m.new_mission = AircraftMission::Attack { sub_state: 0 };
+            } else if spawn_child {
+                // Hold station; the parent's manager issues the recall.
+            } else if out_of_ammo || spent_and_idle {
                 let nearest = find_nearest_airfield_for(
                     sim,
                     rules,
@@ -251,235 +352,160 @@ pub fn tick_aircraft_missions(
                     entity.type_ref(),
                     (entity.position.rx, entity.position.ry),
                 );
-
-                let input = idle_mode::IdleModeInput {
-                    ammo_current: ammo.map_or(-1, |a| a.current),
-                    ammo_max: ammo.map_or(-1, |a| a.max),
-                    has_weapon,
-                    has_target: entity.attack_target.is_some(),
-                    airport_bound,
-                    is_airborne,
-                    nearest_airfield: nearest,
-                };
-
-                match idle_mode::enter_idle_mode(&input) {
-                    idle_mode::IdleModeResult::Mission(new_m) => {
-                        m.new_mission = new_m;
-                    }
-                    idle_mode::IdleModeResult::SelfDestruct => {
+                if let Some((af_id, af_rx, af_ry)) = nearest {
+                    m.new_mission = AircraftMission::ReturnToBase { airfield_id: af_id };
+                    m.move_to = Some((af_rx, af_ry));
+                } else {
+                    let type_str = sim.interner.resolve(entity.type_ref());
+                    let airport_bound = rules.object(type_str).map_or(false, |o| o.airport_bound);
+                    if airport_bound {
                         m.self_destruct = true;
                     }
                 }
             }
+        }
 
-            AircraftMission::Attack { sub_state } => {
-                if let Some(entity) = sim.substrate.entities.get_mut(snap.id) {
-                    attack_mission::enter_attack_state(entity, *sub_state);
-                }
-                let result = if *sub_state == 0 {
-                    attack_mission::AttackTickResult::transition(sim.aircraft_begin_attack(snap.id))
-                } else if *sub_state == 1 {
-                    attack_mission::AttackTickResult::transition(
-                        sim.aircraft_reengage(snap.id, rules),
-                    )
-                } else if *sub_state == 3 {
-                    attack_mission::AttackTickResult::transition(
-                        sim.aircraft_approach(snap.id, rules),
-                    )
-                } else {
-                    attack_mission::tick_attack_state(&sim.substrate.entities, snap.id, *sub_state)
-                };
-                m.new_mission = result.new_mission;
-                m.fire_at = result.fire_at;
-
-                // Fly owns height targets. Native4CF3D4..4CF4CF selects
-                // destination-relative height, IsDropship approach height or
-                // Type FlightLevel. Repeated attack mission visits must not
-                // divide the mutable target by3. The horizontal target-selection
-                // transaction remains part of the Fly migration.
-                if *sub_state == 10 {
-                    m.set_speed_fraction = Some(SIM_ONE);
-                }
-
-                // Fly Process owns acceleration/approach speed. Mission_Attack
-                // does not write the old cell-distance speed tiers.
+        AircraftMission::ReturnToBase { airfield_id } => {
+            let entity = sim.substrate.entities.get(id)?;
+            let af_ok = sim
+                .substrate
+                .entities
+                .get(*airfield_id)
+                .is_some_and(|af| af.health.current > 0 && !af.dying);
+            if !af_ok {
+                m.new_mission = AircraftMission::Idle;
+                return Some(m);
             }
+            let af = sim.substrate.entities.get(*airfield_id).unwrap();
+            let type_str = sim.interner.resolve(af.type_ref());
+            let (fw, fh) = rules
+                .object(type_str)
+                .map(|o| foundation_dimensions(&o.foundation))
+                .unwrap_or((1, 1));
+            let dock_rx = af.position.rx + fw / 2;
+            let dock_ry = af.position.ry + fh / 2;
 
-            AircraftMission::Guard => {
-                m.set_speed_fraction = Some(SIM_ONE);
-                let entity = match sim.substrate.entities.get(snap.id) {
-                    Some(e) => e,
-                    None => continue,
+            let dx = (entity.position.rx as i32 - dock_rx as i32).abs();
+            let dy = (entity.position.ry as i32 - dock_ry as i32).abs();
+            let dist = dx.max(dy);
+
+            if dist <= 2 {
+                // sub_state 0 = WaitForDock; pad_index will be overwritten
+                // by the reservation once a pad is granted.
+                m.new_mission = AircraftMission::Docking {
+                    airfield_id: *airfield_id,
+                    sub_state: 0,
+                    reload_timer: MissionTimer::default(),
+                    pad_index: 0,
                 };
-                let ammo = entity.aircraft_ammo.as_ref();
-                let ammo_current = ammo.map_or(-1, |a| a.current);
-                let ammo_max = ammo.map_or(-1, |a| a.max);
-                let has_target = entity.attack_target.is_some();
+            } else if entity.movement_target.is_none() {
+                m.move_to = Some((dock_rx, dock_ry));
+            }
+        }
 
-                // gamemd Mission_Guard RTB decision (default ReturnFire mode):
-                // an in-flight aircraft returns to rearm whenever it has spent
-                // ammo (ammo < maxAmmo) and is not actively engaging a target.
-                // Without the second clause a strike craft whose target dies
-                // mid-sortie with ammo left would hover here indefinitely.
-                // (Mode1 `ammo == 0` / Mode2 `ammo < max/2` are INI-gated
-                // globals not yet mapped to keys — default mode is stock.)
-                let out_of_ammo = ammo_current <= 0 && ammo_max > 0;
-                let spent_and_idle = !has_target && ammo_max > 0 && ammo_current < ammo_max;
+        AircraftMission::Docking {
+            airfield_id,
+            sub_state,
+            reload_timer,
+            pad_index,
+        } => {
+            let entity = sim.substrate.entities.get(id)?;
+            let air_phase = crate::sim::movement::air_movement::fly_mission_phase(
+                entity,
+                sim.resolved_terrain.as_ref(),
+            );
+            let landing = entity
+                .locomotor
+                .as_ref()
+                .and_then(|l| l.fly_runtime())
+                .is_some_and(|s| s.landing());
+            let arrived = crate::sim::movement::air_movement::fly_landing_arrival(entity);
+            let af_type_ref = sim
+                .substrate
+                .entities
+                .get(*airfield_id)
+                .map_or(entity.type_ref(), |af| af.type_ref());
+            let ammo = entity.aircraft_ammo.as_ref();
+            let ammo_current = ammo.map_or(0, |a| a.current);
+            let ammo_max = ammo.map_or(0, |a| a.max);
+            let reload_rate = rules.general.reload_rate_ticks;
 
-                // A spawn-manager child's base is its parent, not an airfield.
-                // Stock HORNET/ASW ship with `Dock=` commented out, so their
-                // rearm is driven entirely by the parent's SpawnManager
-                // (state 3 → 4 → 6). Letting them pick an unrelated helipad
-                // here would fight that recall.
-                let spawn_child = entity.spawn_owner_id.is_some();
-
-                if has_target && ammo_current > 0 {
-                    m.new_mission = AircraftMission::Attack { sub_state: 0 };
-                } else if spawn_child {
-                    // Hold station; the parent's manager issues the recall.
-                } else if out_of_ammo || spent_and_idle {
-                    let nearest = find_nearest_airfield_for(
-                        sim,
-                        rules,
-                        entity.owner(),
-                        entity.type_ref(),
-                        (entity.position.rx, entity.position.ry),
-                    );
-                    if let Some((af_id, af_rx, af_ry)) = nearest {
-                        m.new_mission = AircraftMission::ReturnToBase { airfield_id: af_id };
-                        m.move_to = Some((af_rx, af_ry));
-                    } else {
-                        let type_str = sim.interner.resolve(entity.type_ref());
-                        let airport_bound =
-                            rules.object(type_str).map_or(false, |o| o.airport_bound);
-                        if airport_bound {
-                            m.self_destruct = true;
+            match sub_state {
+                0 => {
+                    // Wait for dock slot.
+                    let max_slots = rules
+                        .object(sim.interner.resolve(af_type_ref))
+                        .map(|o| o.dock_contact_capacity())
+                        .unwrap_or(1);
+                    // Native AircraftClass::IsCellOccupied reaches the
+                    // unconditional Winged Cell leaf first; dock ownership
+                    // and first-free pad reservation remain this wrapper's
+                    // meaningful admission gates.
+                    if runtime_contract::aircraft_landing_cell_leaf_clear()
+                        && let Some(reserved_pad) =
+                            sim.reserve_airfield_pad(*airfield_id, id, max_slots)
+                    {
+                        m.new_mission = AircraftMission::Docking {
+                            airfield_id: *airfield_id,
+                            sub_state: 1,
+                            reload_timer: MissionTimer::default(),
+                            pad_index: reserved_pad,
+                        };
+                        // Re-target descent toward the per-pad cell so
+                        // multi-pad airfields visibly spread occupants.
+                        if let Some((px, py)) =
+                            sim.substrate.entities.get(*airfield_id).and_then(|af| {
+                                let obj = sim.object_type(af.type_ref(), rules)?;
+                                let foundation =
+                                    crate::sim::production::foundation_dimensions(&obj.foundation);
+                                obj.pads.get(reserved_pad as usize).map(|pad| {
+                                    crate::sim::docking::pad_geometry::pad_cell_for(
+                                        (af.position.rx, af.position.ry),
+                                        foundation,
+                                        pad,
+                                    )
+                                })
+                            })
+                        {
+                            m.move_to = Some((px, py));
+                        }
+                        // Mirror into AircraftAmmo for downstream consumers.
+                        if let Some(entity) = sim.substrate.entities.get_mut(id)
+                            && let Some(ref mut ammo) = entity.aircraft_ammo
+                        {
+                            ammo.target_pad = Some(reserved_pad);
                         }
                     }
                 }
-            }
-
-            AircraftMission::ReturnToBase { airfield_id } => {
-                let entity = match sim.substrate.entities.get(snap.id) {
-                    Some(e) => e,
-                    None => continue,
-                };
-                let af_ok = sim
-                    .substrate
-                    .entities
-                    .get(*airfield_id)
-                    .is_some_and(|af| af.health.current > 0 && !af.dying);
-                if !af_ok {
-                    m.new_mission = AircraftMission::Idle;
-                    mutations.push(m);
-                    continue;
+                1 => {
+                    // Descend once the pad approach arrives (Fly
+                    // Horizontal_Step4CF520's landing arm distance/speed).
+                    if air_phase == Some(AirMovePhase::Landed) {
+                        m.new_mission = AircraftMission::Docking {
+                            airfield_id: *airfield_id,
+                            sub_state: 2,
+                            reload_timer: MissionTimer::armed(now, reload_rate),
+                            pad_index: *pad_index,
+                        };
+                    } else if !landing && arrived {
+                        m.begin_landing = true;
+                    }
                 }
-                let af = sim.substrate.entities.get(*airfield_id).unwrap();
-                let type_str = sim.interner.resolve(af.type_ref());
-                let (fw, fh) = rules
-                    .object(type_str)
-                    .map(|o| foundation_dimensions(&o.foundation))
-                    .unwrap_or((1, 1));
-                let dock_rx = af.position.rx + fw / 2;
-                let dock_ry = af.position.ry + fh / 2;
-
-                let dx = (entity.position.rx as i32 - dock_rx as i32).abs();
-                let dy = (entity.position.ry as i32 - dock_ry as i32).abs();
-                let dist = dx.max(dy);
-
-                if dist <= 2 {
-                    // sub_state 0 = WaitForDock; pad_index will be overwritten
-                    // by the try_reserve return once a pad is granted.
-                    m.new_mission = AircraftMission::Docking {
-                        airfield_id: *airfield_id,
-                        sub_state: 0,
-                        reload_timer: MissionTimer::default(),
-                        pad_index: 0,
-                    };
-                } else if entity.movement_target.is_none() {
-                    m.move_to = Some((dock_rx, dock_ry));
-                }
-            }
-
-            AircraftMission::Docking {
-                airfield_id,
-                sub_state,
-                reload_timer,
-                pad_index,
-            } => {
-                let entity = match sim.substrate.entities.get(snap.id) {
-                    Some(e) => e,
-                    None => continue,
-                };
-                let air_phase = crate::sim::movement::air_movement::fly_mission_phase(
-                    entity,
-                    sim.resolved_terrain.as_ref(),
-                );
-                let ammo = entity.aircraft_ammo.as_ref();
-                let ammo_current = ammo.map_or(0, |a| a.current);
-                let ammo_max = ammo.map_or(0, |a| a.max);
-                let reload_rate = rules.general.reload_rate_ticks;
-
-                match sub_state {
-                    0 => {
-                        // Wait for dock slot.
-                        let af_type_ref = sim
-                            .substrate
-                            .entities
-                            .get(*airfield_id)
-                            .map_or(entity.type_ref(), |af| af.type_ref());
-                        let type_str = sim.interner.resolve(af_type_ref);
-                        let max_slots = rules
-                            .object(type_str)
-                            .map(|o| o.dock_contact_capacity())
-                            .unwrap_or(1);
-                        // Native AircraftClass::IsCellOccupied reaches the
-                        // unconditional Winged Cell leaf first; dock ownership
-                        // and first-free pad reservation remain this wrapper's
-                        // meaningful admission gates.
-                        if runtime_contract::aircraft_landing_cell_leaf_clear()
-                            && let Some(reserved_pad) = sim.production.airfield_docks.try_reserve(
-                                *airfield_id,
-                                snap.id,
-                                max_slots,
-                            )
-                        {
+                2 => {
+                    // Reloading.
+                    if reload_timer.due(now) {
+                        m.ammo_delta = 1;
+                        if ammo_current + 1 >= ammo_max {
+                            // Fully reloaded → release the pad and launch.
+                            sim.release_airfield_pad(id);
+                            m.begin_takeoff = true;
                             m.new_mission = AircraftMission::Docking {
                                 airfield_id: *airfield_id,
-                                sub_state: 1,
+                                sub_state: 3,
                                 reload_timer: MissionTimer::default(),
-                                pad_index: reserved_pad,
+                                pad_index: *pad_index,
                             };
-                            // Re-target descent toward the per-pad cell so
-                            // multi-pad airfields visibly spread occupants.
-                            if let Some((px, py)) =
-                                sim.substrate.entities.get(*airfield_id).and_then(|af| {
-                                    let obj = sim.object_type(af.type_ref(), rules)?;
-                                    let foundation = crate::sim::production::foundation_dimensions(
-                                        &obj.foundation,
-                                    );
-                                    obj.pads.get(reserved_pad as usize).map(|pad| {
-                                        crate::sim::docking::pad_geometry::pad_cell_for(
-                                            (af.position.rx, af.position.ry),
-                                            foundation,
-                                            pad,
-                                        )
-                                    })
-                                })
-                            {
-                                m.move_to = Some((px, py));
-                            }
-                            // Mirror into AircraftAmmo for downstream consumers.
-                            if let Some(entity) = sim.substrate.entities.get_mut(snap.id)
-                                && let Some(ref mut ammo) = entity.aircraft_ammo
-                            {
-                                ammo.target_pad = Some(reserved_pad);
-                            }
-                        }
-                    }
-                    1 => {
-                        // Descending — wait for Landed.
-                        if air_phase == Some(AirMovePhase::Landed) {
+                        } else {
                             m.new_mission = AircraftMission::Docking {
                                 airfield_id: *airfield_id,
                                 sub_state: 2,
@@ -488,201 +514,152 @@ pub fn tick_aircraft_missions(
                             };
                         }
                     }
-                    2 => {
-                        // Reloading.
-                        if reload_timer.due(now) {
-                            m.ammo_delta = 1;
-                            if ammo_current + 1 >= ammo_max {
-                                // Fully reloaded → launch.
-                                sim.production.airfield_docks.release(snap.id);
-                                m.new_mission = AircraftMission::Docking {
-                                    airfield_id: *airfield_id,
-                                    sub_state: 3,
-                                    reload_timer: MissionTimer::default(),
-                                    pad_index: *pad_index,
-                                };
-                            } else {
-                                m.new_mission = AircraftMission::Docking {
-                                    airfield_id: *airfield_id,
-                                    sub_state: 2,
-                                    reload_timer: MissionTimer::armed(now, reload_rate),
-                                    pad_index: *pad_index,
-                                };
-                            }
-                        } else {
-                            // Carry the same frame-anchored timer (no decrement).
-                            m.new_mission = AircraftMission::Docking {
-                                airfield_id: *airfield_id,
-                                sub_state: 2,
-                                reload_timer: *reload_timer,
-                                pad_index: *pad_index,
-                            };
-                        }
-                    }
-                    3 => {
-                        // Launching — wait for cruising altitude.
-                        if air_phase == Some(AirMovePhase::Cruising) {
-                            m.new_mission = AircraftMission::Idle;
-                            // Clear target_pad now that the dock is released.
-                            if let Some(entity) = sim.substrate.entities.get_mut(snap.id)
-                                && let Some(ref mut ammo) = entity.aircraft_ammo
-                            {
-                                ammo.target_pad = None;
-                            }
-                        }
-                    }
-                    _ => {
+                    // Otherwise the same frame-anchored timer carries over.
+                }
+                3 => {
+                    // Launching — wait for cruising altitude.
+                    if air_phase == Some(AirMovePhase::Cruising) {
                         m.new_mission = AircraftMission::Idle;
+                        // Clear target_pad now that the dock is released.
+                        if let Some(entity) = sim.substrate.entities.get_mut(id)
+                            && let Some(ref mut ammo) = entity.aircraft_ammo
+                        {
+                            ammo.target_pad = None;
+                        }
                     }
                 }
-            }
-
-            AircraftMission::Move { .. } => {
-                let entity = match sim.substrate.entities.get(snap.id) {
-                    Some(e) => e,
-                    None => continue,
-                };
-                if entity.movement_target.is_none() {
+                _ => {
                     m.new_mission = AircraftMission::Idle;
                 }
-            }
-
-            AircraftMission::DockedIdle {
-                airfield_id,
-                pad_index: _,
-            } => {
-                // Check if airfield still alive.
-                let af_ok = sim
-                    .substrate
-                    .entities
-                    .get(*airfield_id)
-                    .is_some_and(|af| af.health.current > 0 && !af.dying);
-                if !af_ok {
-                    // Airfield destroyed — release dock and go to Idle.
-                    // Idle mode will handle AirportBound self-destruct.
-                    sim.production.airfield_docks.release(snap.id);
-                    m.new_mission = AircraftMission::Idle;
-                }
-                // Otherwise: stay parked, do nothing.
-            }
-
-            AircraftMission::ParaDropApproach {
-                target_rx,
-                target_ry,
-                has_revealed_fog,
-            } => {
-                let outcome = paradrop_mission::tick_approach(
-                    sim,
-                    rules,
-                    snap.id,
-                    *target_rx,
-                    *target_ry,
-                    *has_revealed_fog,
-                    path_grid,
-                );
-                m.new_mission = outcome.new_mission;
-                m.move_to = outcome.move_to;
-                m.paradrop_fire_fog_reveal = outcome.fire_fog_reveal;
-                m.paradrop_play_chute_sound = outcome.play_chute_sound;
-                if outcome.play_chute_sound {
-                    m.paradrop_chute_sound_at = Some((*target_rx, *target_ry));
-                }
-            }
-
-            AircraftMission::ParaDropOverfly {
-                exit_rx,
-                exit_ry,
-                drop_cooldown,
-                landing_state,
-                payload_count,
-            } => {
-                let outcome = paradrop_mission::tick_overfly(
-                    sim,
-                    snap.id,
-                    *exit_rx,
-                    *exit_ry,
-                    *drop_cooldown,
-                    *landing_state,
-                    *payload_count,
-                );
-                m.new_mission = outcome.new_mission;
-                m.move_to = outcome.move_to;
-                m.paradrop_try_drop = outcome.try_drop;
-                m.paradrop_payload_count_pre = outcome.payload_count_pre_dec;
-                m.paradrop_silent_despawn = outcome.silent_despawn;
             }
         }
 
-        mutations.push(m);
+        AircraftMission::Move { .. } => {
+            let entity = sim.substrate.entities.get(id)?;
+            if entity.movement_target.is_none() {
+                m.new_mission = AircraftMission::Idle;
+            }
+        }
+
+        AircraftMission::DockedIdle {
+            airfield_id,
+            pad_index: _,
+        } => {
+            // Check if airfield still alive.
+            let af_ok = sim
+                .substrate
+                .entities
+                .get(*airfield_id)
+                .is_some_and(|af| af.health.current > 0 && !af.dying);
+            if !af_ok {
+                // Airfield destroyed — release dock and go to Idle.
+                // Idle mode will handle AirportBound self-destruct.
+                sim.release_airfield_pad(id);
+                m.new_mission = AircraftMission::Idle;
+            }
+            // Otherwise: stay parked, do nothing.
+        }
+
+        AircraftMission::ParaDropApproach {
+            target_rx,
+            target_ry,
+            has_revealed_fog,
+        } => {
+            let outcome = paradrop_mission::tick_approach(
+                sim,
+                rules,
+                id,
+                *target_rx,
+                *target_ry,
+                *has_revealed_fog,
+                path_grid,
+            );
+            m.new_mission = outcome.new_mission;
+            m.move_to = outcome.move_to;
+            if outcome.play_chute_sound {
+                m.paradrop_chute_sound_at = Some((*target_rx, *target_ry));
+            }
+        }
+
+        AircraftMission::ParaDropOverfly {
+            exit_rx,
+            exit_ry,
+            drop_cooldown,
+            landing_state,
+            payload_count,
+        } => {
+            let outcome = paradrop_mission::tick_overfly(
+                sim,
+                id,
+                *exit_rx,
+                *exit_ry,
+                *drop_cooldown,
+                *landing_state,
+                *payload_count,
+            );
+            m.new_mission = outcome.new_mission;
+            m.move_to = outcome.move_to;
+            m.paradrop_try_drop = outcome.try_drop;
+            m.paradrop_payload_count_pre = outcome.payload_count_pre_dec;
+            m.paradrop_silent_despawn = outcome.silent_despawn;
+        }
     }
+    Some(m)
+}
 
-    // Phase 3: Apply mutations.
-    for m in &mutations {
-        // No "Unit lost" here: `AircraftClass::Enter_Idle_Mode @ 0x004176F0`
-        // handles the AirportBound-without-airfield case by calling the
-        // `Crash` slot `+0x3DC` directly (`0x004179FD`, `0x00417B88`; body
-        // `0x004DEBB0`, which runs `RecordKill +0xE0` and the trigger events
-        // but never `Death_Announcement +0x3B8`), and the eventual impact in
-        // `AircraftClass::AI` (`0x00414BB0`, height < -400) is `RecordKill` +
-        // `UnInit` (`0x00414E1F`). Only a damage kill (`AircraftClass::
-        // ReceiveDamage 0x004165C0`, result 4 → `+0x3B8` at `0x00416613`)
-        // announces, and that runs through the combat kill loop.
-        if m.self_destruct {
-            let infantry_terminal = sim.begin_raw_infantry_death(m.id, None);
-            if let Some(entity) = sim.substrate.entities.get_mut(m.id) {
-                if !infantry_terminal {
-                    entity.health.current = 0;
-                    entity.dying = true;
-                }
-                entity.aircraft_mission = None;
-            }
-            continue;
-        }
-
+/// Apply one handler decision. Returns the Mission_Attack fire request.
+fn apply_mission_mutation(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    m: MissionMutation,
+    path_grid: Option<&crate::sim::pathfinding::PathGrid>,
+) -> bool {
+    // No "Unit lost" here: `AircraftClass::Enter_Idle_Mode @ 0x004176F0`
+    // handles the AirportBound-without-airfield case by calling the
+    // `Crash` slot `+0x3DC` directly (`0x004179FD`, `0x00417B88`; body
+    // `0x004DEBB0`, which runs `RecordKill +0xE0` and the trigger events
+    // but never `Death_Announcement +0x3B8`), and the eventual impact in
+    // `AircraftClass::AI` (`0x00414BB0`, height < -400) is `RecordKill` +
+    // `UnInit` (`0x00414E1F`). Only a damage kill (`AircraftClass::
+    // ReceiveDamage 0x004165C0`, result 4 → `+0x3B8` at `0x00416613`)
+    // announces, and that runs through the combat kill loop.
+    if m.self_destruct {
+        let infantry_terminal = sim.begin_raw_infantry_death(m.id, None);
         if let Some(entity) = sim.substrate.entities.get_mut(m.id) {
-            entity.aircraft_mission = Some(m.new_mission.clone());
-
-            if m.ammo_delta != 0 {
-                if let Some(ref mut ammo) = entity.aircraft_ammo {
-                    ammo.current = (ammo.current + m.ammo_delta).max(0).min(ammo.max);
-                }
+            if !infantry_terminal {
+                entity.health.current = 0;
+                entity.dying = true;
             }
+            entity.aircraft_mission = None;
+        }
+        return false;
+    }
 
-            if let Some(speed_frac) = m.set_speed_fraction {
-                if let Some(ref mut loco) = entity.locomotor {
-                    loco.speed_fraction = speed_frac;
-                }
-            }
+    if let Some(entity) = sim.substrate.entities.get_mut(m.id) {
+        entity.aircraft_mission = Some(m.new_mission.clone());
 
-            // Docking sub_state 1: set air phase to Descending.
-            if let AircraftMission::Docking { sub_state: 1, .. } = &m.new_mission {
-                if let Some(ref mut loco) = entity.locomotor {
-                    if loco.fly_runtime().is_some_and(|s| !s.landing()) {
-                        loco.begin_fly_landing();
-                    }
-                }
-                entity.movement_target = None;
+        if m.ammo_delta != 0 {
+            if let Some(ref mut ammo) = entity.aircraft_ammo {
+                ammo.current = (ammo.current + m.ammo_delta).max(0).min(ammo.max);
             }
-            // Docking sub_state 3: set air phase to Ascending (launch).
-            if let AircraftMission::Docking { sub_state: 3, .. } = &m.new_mission {
-                let level = rules
-                    .object(sim.interner.resolve(entity.type_ref()))
-                    .map_or(rules.general.flight_level, |o| {
-                        o.flight_level(rules.general.flight_level)
-                    });
-                if let Some(loco) = entity.locomotor.as_mut() {
-                    loco.begin_fly_takeoff(level);
-                }
+        }
+
+        if let Some(speed_frac) = m.set_speed_fraction {
+            if let Some(ref mut loco) = entity.locomotor {
+                loco.speed_fraction = speed_frac;
             }
         }
     }
+    // The world owners follow the mission write: a refused AirportBound
+    // BeginLanding enters idle mode, which must not be overwritten.
+    if m.begin_landing {
+        sim.begin_fly_landing(m.id, Some(rules));
+    }
+    if m.begin_takeoff {
+        sim.begin_fly_takeoff(m.id, Some(rules));
+    }
 
-    // Phase 4: Issue air move commands and fire commands.
-    let air_moves: Vec<(u64, u16, u16)> = mutations
-        .iter()
-        .filter_map(|m| m.move_to.map(|(rx, ry)| (m.id, rx, ry)))
-        .collect();
-    for (id, rx, ry) in air_moves {
+    if let Some((rx, ry)) = m.move_to {
         // No FASTER stage here: `FlyLocomotionClass` never calls the
         // `FootClass::GetCurrentSpeed` vtable slot (`+0x538`) — see
         // `veterancy::locomotor_consults_current_speed` — so a promoted
@@ -690,7 +667,7 @@ pub fn tick_aircraft_missions(
         let speed = sim
             .substrate
             .entities
-            .get(id)
+            .get(m.id)
             .and_then(|e| {
                 let obj = sim.object_type(e.type_ref(), rules)?;
                 Some(crate::util::fixed_math::ra2_speed_to_leptons_per_second(
@@ -698,41 +675,28 @@ pub fn tick_aircraft_missions(
                 ))
             })
             .unwrap_or(SimFixed::from_num(8));
-        sim.issue_air_cell_destination(id, (rx, ry), speed, Some(rules));
+        sim.issue_air_cell_destination(m.id, (rx, ry), speed, Some(rules));
     }
 
-    // Call-local dispatch receipt. Preserve the live Target and its existing
-    // timing; combat will admit once, emit the burst and commit the suffix.
-    let fire_requests = mutations
-        .iter()
-        .filter(|m| m.fire_at.is_some())
-        .map(|m| m.id)
-        .collect();
-
-    // Phase 5: Paradrop apply phase.
     // Standard Mission_Open is silent at the threshold; this compatibility path
     // remains inert for stock SW carriers unless a mission handler requests it.
-    let chute_sounds: Vec<(u16, u16)> = mutations
-        .iter()
-        .filter_map(|m| m.paradrop_chute_sound_at)
-        .collect();
-    for (rx, ry) in chute_sounds {
+    if let Some((rx, ry)) = m.paradrop_chute_sound_at {
         sim.sound_events
             .push(crate::sim::world::SimSoundEvent::ChuteSound { rx, ry });
     }
 
-    // try_drop attempts. Standard SW cadence is Mission_Rescue returning 5
-    // game frames after one Drop_Payload call; ParaDropWeapon ROF= is not used.
-    let drop_attempts: Vec<(u64, u8)> = mutations
-        .iter()
-        .filter(|m| m.paradrop_try_drop)
-        .map(|m| (m.id, m.paradrop_payload_count_pre))
-        .collect();
-    for (aircraft_id, payload_pre) in drop_attempts {
+    // Standard SW cadence is Mission_Rescue returning 5 game frames after one
+    // Drop_Payload call; ParaDropWeapon ROF= is not used.
+    if m.paradrop_try_drop {
+        let aircraft_id = m.id;
         let drop_interval = drop_payload::PARADROP_DROP_INTERVAL_FRAMES;
-
-        let result = drop_payload::try_drop(sim, rules, aircraft_id, payload_pre, path_grid);
-
+        let result = drop_payload::try_drop(
+            sim,
+            rules,
+            aircraft_id,
+            m.paradrop_payload_count_pre,
+            path_grid,
+        );
         if let Some(entity) = sim.substrate.entities.get_mut(aircraft_id) {
             if let Some(AircraftMission::ParaDropOverfly {
                 exit_rx,
@@ -769,24 +733,24 @@ pub fn tick_aircraft_missions(
         }
     }
 
-    // Silent despawns for carriers that exited the playfield with empty cargo.
+    // Silent despawn for a carrier that exited the playfield with empty cargo.
     // Native is silent too: `AircraftClass::Mission_Rescue @ 0x00415960`
     // never removes the carrier, and the off-playfield removal in
     // `AircraftClass::AI` (`0x00414F93` / `0x00414FD1`) is a bare `UnInit`
     // (`+0xF8`) with no `Death_Announcement` (`+0x3B8`).
-    for m in &mutations {
-        if m.paradrop_silent_despawn {
-            let infantry_terminal = sim.begin_raw_infantry_death(m.id, None);
-            if let Some(entity) = sim.substrate.entities.get_mut(m.id) {
-                if !infantry_terminal {
-                    entity.health.current = 0;
-                    entity.dying = true;
-                }
-                entity.aircraft_mission = None;
+    if m.paradrop_silent_despawn {
+        let infantry_terminal = sim.begin_raw_infantry_death(m.id, None);
+        if let Some(entity) = sim.substrate.entities.get_mut(m.id) {
+            if !infantry_terminal {
+                entity.health.current = 0;
+                entity.dying = true;
             }
+            entity.aircraft_mission = None;
         }
     }
-    fire_requests
+    // Call-local dispatch receipt. Preserve the live Target and its existing
+    // timing; combat will admit once, emit the burst and commit the suffix.
+    m.fire_at.is_some()
 }
 
 /// Find nearest airfield for a given aircraft.

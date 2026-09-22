@@ -323,7 +323,8 @@ pub struct GeneralRules {
     /// Default cruise altitude for Fly-locomotor aircraft (FlightLevel= in [General]).
     /// Fallback 500 leptons matches the engine constructor default; retail
     /// rulesmd.ini always supplies its own (1500), so the fallback only fires
-    /// for a non-retail INI missing the key. Per-type override not yet implemented.
+    /// for a non-retail INI missing the key. A type's own `FlightLevel=`
+    /// overrides it through `ObjectType::flight_level`.
     pub flight_level: i32,
     /// Rules+420, [JumpjetControls] CruiseHeight. Object5F4260 uses this
     /// global threshold; linked Jumpjets instead use their own +2C height.

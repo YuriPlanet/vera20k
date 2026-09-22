@@ -109,17 +109,24 @@ struct GroundSortView<'a> {
     particles: &'a crate::sim::particles::ParticleSystemStore,
     terrain: &'a std::collections::BTreeMap<u64, crate::sim::terrain_object::TerrainObjectState>,
     interner: &'a crate::sim::intern::StringInterner,
+    type_handles: &'a crate::sim::type_handle_table::TypeHandleTable,
     rules: Option<&'a RuleSet>,
 }
 
 impl GroundSortView<'_> {
     fn key(&self, id: u64) -> i32 {
         if let Some(entity) = self.entities.get(id) {
-            return entity_sort_key(
-                entity,
-                self.rules
-                    .and_then(|r| r.object(self.interner.resolve(entity.type_ref()))),
-            );
+            // Only BuildingClass GetYSort reads type terms. Every sort pass
+            // and Ground insert evaluates this; the handle hop never allocates.
+            let object = (entity.category == EntityCategory::Structure)
+                .then(|| {
+                    self.rules.and_then(|rules| {
+                        self.type_handles
+                            .object(self.interner, entity.type_ref(), rules)
+                    })
+                })
+                .flatten();
+            return entity_sort_key(entity, object);
         }
         if let Some(system) = self.particles.get(id) {
             // ParticleSystem VT7EFB9C: +AC ->41BE00 ->+48 ->5F65A0,
@@ -156,6 +163,7 @@ impl Simulation {
             particles: &self.substrate.particle_systems,
             terrain: &self.production.terrain_objects,
             interner: &self.interner,
+            type_handles: &self.type_handles,
             rules,
         };
         self.substrate
@@ -214,6 +222,7 @@ impl Simulation {
             particles: &self.substrate.particle_systems,
             terrain: &self.production.terrain_objects,
             interner: &self.interner,
+            type_handles: &self.type_handles,
             rules,
         };
         self.substrate.display.sort_ground_pass(|id| view.key(id));

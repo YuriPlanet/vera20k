@@ -104,6 +104,9 @@ pub(super) fn fire(
     // Aircraft FireAt415EEE dispatches DropPayload while passengers remain.
     // Its retained payload counter and6C9 admission history still need migration;
     // keep that required carrier arm blocked rather than firing its gun instead.
+    // RESIDUAL: the blocked carrier stays in Attack{4} and re-requests every
+    // due visit. No stock AircraftType has Passengers=, and PDPLANE's cargo
+    // flies ParaDrop, so this arm is unreachable with retail data.
     if world
         .substrate
         .entities

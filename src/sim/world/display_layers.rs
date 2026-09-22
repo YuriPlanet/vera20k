@@ -67,11 +67,10 @@ impl DisplayLayers {
             return false;
         }
         let insert = if layer == DisplayLayer::GROUND {
-            // Compare5F6220 reads new, then existing. GetYSort is pure.
-            members.iter().position(|&old| {
-                let new_key = y_sort(id);
-                y_sort(old) > new_key
-            })
+            // Compare5F6220 reads new, then existing. GetYSort is pure, so
+            // the new object's key is read once for the whole scan.
+            let new_key = y_sort(id);
+            members.iter().position(|&old| y_sort(old) > new_key)
         } else {
             None
         };
@@ -104,10 +103,18 @@ impl DisplayLayers {
     /// left-to-right adjacent pass, not a stable full sort.
     pub(crate) fn sort_ground_pass(&mut self, mut y_sort: impl FnMut(u64) -> i32) {
         let members = &mut self.layers[usize::from(DisplayLayer::GROUND.0)];
+        let Some(&first) = members.first() else {
+            return;
+        };
+        // GetYSort is pure: after a swap the carried member stays on the left
+        // of the next comparison, so its key is reused rather than reread.
+        let mut left_key = y_sort(first);
         for right in 1..members.len() {
             let right_key = y_sort(members[right]);
-            if right_key < y_sort(members[right - 1]) {
+            if right_key < left_key {
                 members.swap(right - 1, right);
+            } else {
+                left_key = right_key;
             }
         }
     }

@@ -50,6 +50,22 @@ impl TypeHandleTable {
         self.by_interned.is_empty()
     }
 
+    /// Resolve a type in one precomputed hop, falling back to the name path
+    /// only while the table is unbuilt (fixtures that skip resolution).
+    #[inline]
+    pub fn object<'r>(
+        &self,
+        interner: &StringInterner,
+        id: InternedId,
+        rules: &'r RuleSet,
+    ) -> Option<&'r crate::rules::object_type::ObjectType> {
+        match self.handle_for(id) {
+            Some(handle) => Some(rules.object_by_handle(handle)),
+            None if self.is_empty() => rules.object(interner.resolve(id)),
+            None => None,
+        }
+    }
+
     /// Count of interned ids that did NOT resolve to an object (orphans).
     #[cfg(test)]
     pub fn orphan_count(&self) -> usize {

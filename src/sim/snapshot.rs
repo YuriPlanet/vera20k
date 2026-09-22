@@ -554,6 +554,9 @@ use crate::sim::world::Simulation;
 // 188 -> 189: retained Techno+3D4 cannot be recovered from live type or cargo.
 // 189 -> 190: Foot+55C history and the combined retained wall/Foot Cell+122 plane.
 // 190 -> 191: Fly retains its native cruise-mode byte through save and piggyback.
+// 191 -> 192: Fly moving+34, the landing-effect latch +52, the linked
+// AirportBound+18 and Techno+2E8 flight attitude are saved and hashed. A 191
+// save cannot recover an in-progress landing effect or approach pitch.
 const SNAPSHOT_VERSION: u32 = 192;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
@@ -3453,6 +3456,7 @@ mod tests {
         // 187 -> 188: retained Fly destination XYZ cannot be recovered from cells.
         // 189 -> 190: Foot neighbor history and retained live counters.
         // 190 -> 191: Fly cruise mode survives save and locomotor suspension.
+        // 191 -> 192: Fly moving/landing latch/AirportBound and flight attitude.
         assert_eq!(super::SNAPSHOT_VERSION, 192);
     }
 

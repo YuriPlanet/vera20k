@@ -552,7 +552,7 @@ fn step_ready_docked(
         child.facing = launch_facing;
     }
     let revealed = matches!(
-        sim.reveal(child_id),
+        sim.reveal_entity_with_rules(child_id, rules),
         crate::sim::world::RevealOutcome::Revealed { .. }
     );
     if !revealed {

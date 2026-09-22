@@ -280,7 +280,6 @@ impl AirfieldDocks {
     }
 
     /// Look up which (airfield, pad_index) this aircraft is parked on.
-    #[cfg(test)]
     pub fn pad_for(&self, aircraft_sid: u64) -> Option<(u64, u32)> {
         self.aircraft_to_pad.get(&aircraft_sid).copied()
     }
@@ -301,6 +300,73 @@ impl AirfieldDocks {
             }
             keep_airfield
         });
+    }
+}
+
+impl Simulation {
+    /// Reserve a pad and publish the matching radio contact. The native dock
+    /// is the airfield's RadioClass contact (`NumberOfDocks` slots): Fly
+    /// BeginLanding4CFA70 and Process_Landing4CE840 admit an AirportBound
+    /// aircraft only while the pad building is in its contacts. The Rust pad
+    /// table remains the pad-index owner; RESIDUAL: native selects the dock
+    /// offset from the contact slot and reserves it through Mission_Enter's
+    /// HELLO, so the two stores must be consolidated with that mission.
+    pub(crate) fn reserve_airfield_pad(
+        &mut self,
+        airfield: u64,
+        aircraft: u64,
+        pads: u32,
+    ) -> Option<u32> {
+        let previous = self
+            .production
+            .airfield_docks
+            .pad_for(aircraft)
+            .map(|(af, _)| af);
+        let pad = self
+            .production
+            .airfield_docks
+            .try_reserve(airfield, aircraft, pads)?;
+        if let Some(previous) = previous.filter(|&af| af != airfield) {
+            self.break_airfield_contact(aircraft, previous);
+        }
+        if let Some(af) = self.substrate.entities.get_mut(airfield) {
+            af.radio_contacts.set_capacity(pads as usize);
+        }
+        crate::sim::radio::transmit(
+            self,
+            aircraft,
+            airfield,
+            crate::sim::radio::RadioMessage::Hello,
+            crate::sim::radio::RadioPayload::default(),
+        );
+        Some(pad)
+    }
+
+    /// Release the pad and BREAK the contact published by
+    /// [`Self::reserve_airfield_pad`].
+    pub(crate) fn release_airfield_pad(&mut self, aircraft: u64) {
+        let Some((airfield, _)) = self.production.airfield_docks.pad_for(aircraft) else {
+            return;
+        };
+        self.production.airfield_docks.release(aircraft);
+        self.break_airfield_contact(aircraft, airfield);
+    }
+
+    fn break_airfield_contact(&mut self, aircraft: u64, airfield: u64) {
+        if self
+            .substrate
+            .entities
+            .get(aircraft)
+            .is_some_and(|e| e.radio_contacts.contains(airfield))
+        {
+            crate::sim::radio::transmit(
+                self,
+                aircraft,
+                airfield,
+                crate::sim::radio::RadioMessage::Break,
+                crate::sim::radio::RadioPayload::default(),
+            );
+        }
     }
 }
 
@@ -419,6 +485,8 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
         rescan_cooldown: u16,
         has_attack_target: bool,
         air_phase: Option<AirMovePhase>,
+        landing: bool,
+        arrived: bool,
         has_movement_target: bool,
     }
 
@@ -460,6 +528,12 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
                 rescan_cooldown: ammo.rescan_cooldown,
                 has_attack_target: e.attack_target.is_some(),
                 air_phase,
+                landing: e
+                    .locomotor
+                    .as_ref()
+                    .and_then(|l| l.fly_runtime())
+                    .is_some_and(|s| s.landing()),
+                arrived: crate::sim::movement::air_movement::fly_landing_arrival(e),
                 has_movement_target: e.movement_target.is_some(),
             })
         })
@@ -480,7 +554,10 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
         new_rescan_cooldown: Option<u16>,
         restore_ammo: i32,
         clear_attack_target: bool,
-        set_air_phase: Option<AirMovePhase>,
+        /// Fly BeginLanding4CFA70 through the world owner.
+        begin_landing: bool,
+        /// Fly BeginTakeoff4CF950 through the world owner.
+        begin_takeoff: bool,
         air_move_to: Option<(u16, u16)>,
         clear_movement: bool,
     }
@@ -498,7 +575,8 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
             new_rescan_cooldown: None,
             restore_ammo: 0,
             clear_attack_target: false,
-            set_air_phase: None,
+            begin_landing: false,
+            begin_takeoff: false,
             air_move_to: None,
             clear_movement: false,
         };
@@ -555,7 +633,7 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
                     }
                     None => {
                         // Airfield destroyed — find another.
-                        sim.production.airfield_docks.release(snap.id);
+                        sim.release_airfield_pad(snap.id);
                         if let Some((af_sid, af_rx, af_ry)) = find_nearest_airfield(
                             sim,
                             rules,
@@ -591,13 +669,9 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
                     .map(|obj| obj.dock_contact_capacity())
                     .unwrap_or(1);
 
-                if let Some(pad_index) = sim
-                    .production
-                    .airfield_docks
-                    .try_reserve(af_sid, snap.id, max_slots)
-                {
+                if let Some(pad_index) = sim.reserve_airfield_pad(af_sid, snap.id, max_slots) {
+                    // Descending lands after this pad approach arrives.
                     m.new_dock_phase = Some(Some(AircraftDockPhase::Descending));
-                    m.set_air_phase = Some(AirMovePhase::Descending);
                     m.clear_movement = true;
                     m.new_target_pad = Some(Some(pad_index));
 
@@ -624,10 +698,13 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
             }
 
             Some(AircraftDockPhase::Descending) => {
-                // Wait for air_movement to bring altitude to 0 (Landed).
+                // Descend once the pad approach arrives (Fly
+                // Horizontal_Step4CF520's landing arm distance/speed).
                 if snap.air_phase == Some(AirMovePhase::Landed) {
                     m.new_dock_phase = Some(Some(AircraftDockPhase::Reloading));
                     m.new_reload_timer = Some(reload_ticks);
+                } else if !snap.landing && snap.arrived {
+                    m.begin_landing = true;
                 }
             }
 
@@ -640,10 +717,10 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
                     if new_ammo >= snap.max_ammo {
                         // Fully reloaded — launch.
                         m.new_dock_phase = Some(Some(AircraftDockPhase::Launching));
-                        m.set_air_phase = Some(AirMovePhase::Ascending);
+                        m.begin_takeoff = true;
                         m.new_target_pad = Some(None); // pad released
                         // Release dock slot.
-                        sim.production.airfield_docks.release(snap.id);
+                        sim.release_airfield_pad(snap.id);
                     } else {
                         m.new_reload_timer = Some(reload_ticks);
                     }
@@ -688,23 +765,15 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
             if m.clear_attack_target {
                 entity.attack_target = None;
             }
-            if let Some(phase) = m.set_air_phase {
-                let level = rules
-                    .object(sim.interner.resolve(entity.type_ref()))
-                    .map_or(rules.general.flight_level, |o| {
-                        o.flight_level(rules.general.flight_level)
-                    });
-                if let Some(loco) = entity.locomotor.as_mut() {
-                    match phase {
-                        AirMovePhase::Ascending => loco.begin_fly_takeoff(level),
-                        AirMovePhase::Descending => loco.begin_fly_landing(),
-                        _ => unreachable!("docking only requests takeoff or landing"),
-                    }
-                }
-            }
             if m.clear_movement {
                 entity.movement_target = None;
             }
+        }
+        if m.begin_landing {
+            sim.begin_fly_landing(m.id, Some(rules));
+        }
+        if m.begin_takeoff {
+            sim.begin_fly_takeoff(m.id, Some(rules));
         }
     }
 

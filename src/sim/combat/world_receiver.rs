@@ -4238,8 +4238,8 @@ pub(crate) fn tick_combat(
         drain_links: _,
     } = emit;
 
-    // Phase 3: apply retargets and burst/cooldown updates.
-    // Auto-retargets only ever produce Entity targets (acquire_best_target
+    // Phase 3: apply retargets. Burst and rearm writes already happened in
+    // each attacker's `commit_fire_bookkeeping` boundary. Auto-retargets only ever produce Entity targets (acquire_best_target
     // scans hostile entities), so this wraps the u64 in TargetKind::Entity.
     for &(attacker_id, new_target_sid) in &retarget_events {
         if let Some(entity) = world.substrate.entities.get_mut(attacker_id) {

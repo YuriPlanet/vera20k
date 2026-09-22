@@ -771,6 +771,27 @@ impl Simulation {
         )
     }
 
+    /// [`Self::reveal`] for an entity, with the rules context the type-reading
+    /// Unlimbo writers need (Aircraft Techno+3D4 retention, Ground sort keys).
+    pub(crate) fn reveal_entity_with_rules(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+    ) -> RevealOutcome {
+        let Some(position) = self.current_reveal_position(stable_id) else {
+            return RevealOutcome::Failed(RevealFailure::MissingObject);
+        };
+        self.try_reveal_entity_with_context(
+            stable_id,
+            RevealRequest {
+                position,
+                placement: PlacementEvidence::MarkSucceeded,
+                logic_eligible: true,
+            },
+            UninitContext::with_rules(rules),
+        )
+    }
+
     /// ObjectClass::Reveal: clear limbo for the attempt, commit coordinates,
     /// Mark(PUT), expose display, then append eligible LogicClass membership.
     pub(crate) fn try_reveal_entity(
@@ -1973,8 +1994,19 @@ impl Simulation {
                 self.finish_fly_layer_transition(id, after, rules);
             }
         }
+        // Display4A9720 has no limbo gate, so the tail resubmits even an owner
+        // the landing retry's C4 receiver just destroyed; store removal expires
+        // that registration. Object Mark5F5850 refuses a Limbo owner, so the
+        // cell lists never regain it.
         self.submit_entity_display(id, rules, None);
-        self.add_entity_occupancy(id);
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|e| !e.lifecycle.in_limbo)
+        {
+            self.add_entity_occupancy(id);
+        }
         true
     }
 
@@ -3580,6 +3612,9 @@ impl Simulation {
         // so its cell AltObject slot (`CellClass+0xE0`) is dropped here rather
         // than leaving the cell permanently claimed against later hoverers.
         self.substrate.air_slots.release_owner(stable_id);
+        // Display registration never outlives the object. Fly's phase tail
+        // (4CD4DE) resubmits even an owner concealed earlier in the frame.
+        self.substrate.display.remove(stable_id);
         let entity = self.substrate.entities.remove(stable_id);
         let anim = self.substrate.anims.remove(stable_id);
         let particle_system = self.substrate.particle_systems.finalize_remove(stable_id);

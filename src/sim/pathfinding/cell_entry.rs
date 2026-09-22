@@ -1795,6 +1795,18 @@ fn classify_blocker(
     // `movement_target` test; native's NavCom/rotating/`Is_Moving` triple
     // (`0x0073F865..F8C0`) is a recorded gap, unchanged here. The head-on exit
     // that precedes this arm is `head_on_with_moving_ally` above.
+    //
+    // RESIDUAL (duplicate Unit73F0A0): `bridge_repair_admission::foot_entry`
+    // is the native-compared Unit CanEnterCell (unit_entry/traversal/boundary/
+    // air_motion corpora) and owns the triple via `motion_query`, but only
+    // Infantry and repair's ==7 projection reach it. Drive/Ship admission
+    // still classifies here. Trigger: a Drive/Ship mover meets an allied
+    // stationary blocker that is rotating its body or holds a NavCom without a
+    // VERA path. Effect: FriendlyStationary (scatter request) where native
+    // takes the moving arm (head-on 7 / raise 2 / skip). Frequency: allied
+    // traffic jams. Risk: vehicle routing/scatter order; no determinism or
+    // lifecycle effect. Consolidate onto `foot_entry` with the Drive/Ship
+    // Process path owner (wip/track-order-deferred-path).
     if blocker.movement_target.is_some() {
         // The head-on exit precedes the locomotor question and exists only in
         // the Unit implementation (`0x0073F8D4`); Infantry `+0x1AC` has none.

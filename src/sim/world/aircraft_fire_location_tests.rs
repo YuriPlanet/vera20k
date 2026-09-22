@@ -401,7 +401,6 @@ pub(super) fn assert_reengagement(sim: &mut Simulation, row: &Value) {
     for (key, value) in fields.as_object().unwrap() {
         assert_eq!(value, &row[key], "{} {key}", row["input"]);
     }
-    assert_eq!(entity.mission.handler_state(), u32::from(*sub_state));
     assert_eq!(entity.mission.dispatch_timer().start_frame(), 100);
     assert_eq!(
         sim.scenario_rng.next_u32(),

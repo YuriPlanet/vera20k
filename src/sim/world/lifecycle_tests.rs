@@ -8070,3 +8070,24 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
     sim.complete_jumpjet_display_process(id, before, None);
     assert_eq!(sim.substrate.display.layer_of(id), Some(DisplayLayer::TOP));
 }
+
+/// Fly's phase tail (4CD4DE) resubmits Display after callbacks that may have
+/// UnInit an owner (landing retry's C4 receiver). Mark5F5850 refuses the
+/// Limbo owner; store removal expires the Display registration so the next
+/// Ground sort cannot meet a removed identity.
+#[test]
+fn display_registration_expires_with_a_resubmitted_uninit_owner() {
+    use super::display_layers::DisplayLayer;
+    let mut sim = Simulation::new();
+    let id = sim.allocate_stable_id();
+    insert_entity(&mut sim, id, EntityCategory::Unit);
+    sim.try_reveal_entity(id, common_raw_request(3, 3, 0, 128, 128));
+    sim.uninit(id);
+    assert!(sim.substrate.entities.get(id).unwrap().lifecycle.in_limbo);
+    sim.submit_entity_display(id, None, None);
+    assert_eq!(sim.substrate.display.layer_of(id), Some(DisplayLayer::GROUND));
+    sim.process_pending_delete();
+    assert!(!sim.substrate.entities.contains(id));
+    assert_eq!(sim.substrate.display.layer_of(id), None);
+    sim.sort_display_ground(None);
+}

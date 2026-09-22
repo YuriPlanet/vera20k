@@ -17,6 +17,17 @@ mod tests;
 #[path = "aircraft_approach_tests.rs"]
 mod approach_tests;
 
+/// Live occupants and Cell NavCom reservations read once per search.
+/// IsCellFree419B00 is an any-match over live objects, so one pass answers
+/// every candidate of one FindFireLocation call; nothing mutates between them.
+struct FireCellClaims {
+    occupied: std::collections::BTreeSet<(i16, i16)>,
+    /// Reserved fixed-cell identities (`None` = the shared Dummy), or raw
+    /// reserved coordinates when no terrain is loaded.
+    reserved: std::collections::BTreeSet<Option<usize>>,
+    reserved_cells: std::collections::BTreeSet<(i16, i16)>,
+}
+
 impl Simulation {
     /// Target+48 is its physical center, independently of the destination
     /// receiver+4C. In particular, do not read a Building's helipad offset here.
@@ -80,6 +91,7 @@ impl Simulation {
             .filter(|c| *c != (DriveCoord { x: 0, y: 0, z: 0 }))
             .unwrap_or_else(|| ground_pose::object_center_coord(entity, object));
         let check_shroud = !self.session.game_mode_nonzero && !entity.is_mission_only();
+        let mut claims = None;
         let mut radius = range.wrapping_sub(256);
         while radius > 256 {
             let mut best: Option<((i16, i16), i32)> = None;
@@ -110,7 +122,7 @@ impl Simulation {
                         continue;
                     }
                 }
-                if !self.aircraft_fire_cell_free(id, cell, rules) {
+                if !self.aircraft_fire_cell_free(id, cell, rules, &mut claims) {
                     continue;
                 }
                 let distance = crate::util::native_x87::distance_3d_leptons(
@@ -140,7 +152,13 @@ impl Simulation {
 
     /// 419B00 with includeSelf=true, as passed by FindFireLocation. The outer
     /// search already admitted the playfield; native repeats that query here.
-    fn aircraft_fire_cell_free(&self, id: u64, cell: (i16, i16), rules: &RuleSet) -> bool {
+    fn aircraft_fire_cell_free(
+        &self,
+        id: u64,
+        cell: (i16, i16),
+        rules: &RuleSet,
+        claims: &mut Option<FireCellClaims>,
+    ) -> bool {
         if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (i32::from(cell.0), i32::from(cell.1)),
             self.playfield_bounds,
@@ -195,9 +213,24 @@ impl Simulation {
             .resolved_terrain
             .as_ref()
             .map(|t| t.native_cell_identity(cell));
-        // This is a read-only any-match scan, so storage order cannot alter the
-        // answer. Do not use occupancy: air, limbo and Cell NavCom are distinct.
-        !self.substrate.entities.values().any(|other| {
+        let claims = claims.get_or_insert_with(|| self.fire_cell_claims(skip));
+        if claims.occupied.contains(&cell) {
+            return false;
+        }
+        match identity {
+            Some(identity) => !claims.reserved.contains(&identity_key(identity)),
+            None => !claims.reserved_cells.contains(&cell),
+        }
+    }
+
+    /// Do not use occupancy: air, limbo and Cell NavCom are distinct here.
+    fn fire_cell_claims(&self, skip: Option<u64>) -> FireCellClaims {
+        let mut claims = FireCellClaims {
+            occupied: Default::default(),
+            reserved: Default::default(),
+            reserved_cells: Default::default(),
+        };
+        for other in self.substrate.entities.values() {
             if skip == Some(other.stable_id())
                 || !other.lifecycle.object_alive
                 || other.lifecycle.in_limbo
@@ -206,27 +239,33 @@ impl Simulation {
                     EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
                 )
             {
-                return false;
+                continue;
             }
             let coord = ground_pose::position_world_coord(&other.position);
-            if ((coord.x / 256) as i16, (coord.y / 256) as i16) == cell {
-                return true;
-            }
-            match other.navigation.nav_com {
-                Some(NavTargetRef::Cell { rx, ry }) => {
-                    self.resolved_terrain
-                        .as_ref()
-                        .map_or((rx as i16, ry as i16) == cell, |t| {
-                            use crate::map::cell_index::NativeCellIdentity;
-                            // Pointer equality must not restamp the shared Dummy.
-                            let reserved = t
-                                .native_fixed_cell_index(rx as i16, ry as i16)
-                                .map_or(NativeCellIdentity::Dummy, NativeCellIdentity::Real);
-                            Some(reserved) == identity
-                        })
+            claims
+                .occupied
+                .insert(((coord.x / 256) as i16, (coord.y / 256) as i16));
+            if let Some(NavTargetRef::Cell { rx, ry }) = other.navigation.nav_com {
+                match self.resolved_terrain.as_ref() {
+                    // Pointer equality must not restamp the shared Dummy.
+                    Some(t) => {
+                        claims
+                            .reserved
+                            .insert(t.native_fixed_cell_index(rx as i16, ry as i16));
+                    }
+                    None => {
+                        claims.reserved_cells.insert((rx as i16, ry as i16));
+                    }
                 }
-                _ => false,
             }
-        })
+        }
+        claims
+    }
+}
+
+fn identity_key(identity: crate::map::cell_index::NativeCellIdentity) -> Option<usize> {
+    match identity {
+        crate::map::cell_index::NativeCellIdentity::Real(index) => Some(index),
+        crate::map::cell_index::NativeCellIdentity::Dummy => None,
     }
 }

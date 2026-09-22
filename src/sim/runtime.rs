@@ -700,8 +700,9 @@ where
     sim.install_resolved_terrain_for_new_map(resolved_terrain.clone());
     // Active `CellClass` overlay identity exists before the Techno map
     // sections are read. Install the already-resolved grid now so every
-    // UnitClass virtual Unlimbo sees ore, walls, and structural bridges;
-    // finalization later replaces this clone after wall-owner reconstruction.
+    // UnitClass virtual Unlimbo sees ore, walls, and structural bridges.
+    // This live grid then accumulates Cell+122 history, so finalization keeps
+    // it and uses its own overlay_grid argument only when none is installed.
     sim.overlay_grid = overlay_grid.cloned();
     // Wire the cliff/slope coefficients from [General] into the live World config;
     // it otherwise holds compiled vanilla defaults and never sees a modded INI.
@@ -1196,6 +1197,8 @@ pub(crate) fn finalize_constructed_scenario(
     // Population and starting-unit Unlimbo mutate the live Cell+122 bytes.
     // The loader argument is a presentation/materialization view taken before
     // those events; never replace their retained history with that older copy.
+    // Every production caller installs the live grid first, so the argument
+    // is only the fallback for callers that never populated one.
     let mut overlay_grid = sim.overlay_grid.take().unwrap_or(overlay_grid);
     // Attach the TIBTRE ore-spawner animation index to the terrain objects
     // constructed ahead of the map entities. Its authoritative raw SHP count

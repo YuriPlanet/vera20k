@@ -194,9 +194,10 @@ impl Simulation {
         }
     }
 
+    /// `AircraftMission::Attack` is the sole owner of Mission+BC for aircraft;
+    /// MissionState::handler_state is not mirrored for this class.
     fn commit_aircraft_attack_visit(&mut self, id: u64, state: u32, delay: i32) -> AircraftMission {
         let entity = self.substrate.entities.get_mut(id).unwrap();
-        entity.mission.set_handler_state(state);
         entity
             .mission
             .write_dispatch_epilogue(self.session.binary_frame as i32, delay);

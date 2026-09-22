@@ -152,15 +152,19 @@ pub fn has_weapon_ability(rank: VeterancyRank, object: &ObjectType, ability: Abi
 /// The one arithmetic shape every rank multiplier uses:
 /// `FILD dword; FMUL double [Rules+off]; CALL ftol`.
 ///
-/// The product is formed at the process's 53-bit precision (see
-/// `util::native_x87`), so an `f64` multiply reproduces it bit-exactly; the
-/// truncating `ftol` is the `as i32` cast. The multiplier is what
-/// `CCINIClass::ReadDouble` stored — a `%f` single widened to a double
-/// (`rules::ini_value::read_double`) — so stock `VeteranROF=0.6` is
-/// `0.6000000238…` and `50 * 0.6` lands at `30.0000012`, clear of the
-/// integer boundary at every x87 precision.
+/// Evaluated under the process's startup control word (53-bit, chop), the
+/// same model the FASTER speed arm and the Speed crate use, then the low
+/// 32 bits of `ftol`. The multiplier is what `CCINIClass::ReadDouble` stored —
+/// a `%f` single widened to a double (`rules::ini_value::read_double`) — so
+/// stock `VeteranROF=0.6` is `0.6000000238…` and `50 * 0.6` lands at
+/// `30.0000012`; stock inputs sit clear of integer boundaries, where a
+/// round-to-nearest product would agree.
 pub fn ftol_scale(value: i32, multiplier: f64) -> i32 {
-    (f64::from(value) * multiplier) as i32
+    use crate::util::native_x87::{MaskedX87Chop53 as X, NativeF64Bits};
+    X::ftol_i32_low_masked(X::mul(
+        X::load_i32(value),
+        X::load_f64(NativeF64Bits::from_bits(multiplier.to_bits())),
+    ))
 }
 
 /// `ftol_scale` gated on `HasWeaponAbility`; the caller passes the rules
@@ -671,11 +675,15 @@ mod tests {
     }
 
     /// The elite Grizzly's `105mmE` (`ROF=50`) reloads in 50..=52 frames before
-    /// `VeteranROF=0.6`; `ftol` of the binary64 products is 30, 30, 31 — never
-    /// 29, which a 64-bit-mantissa product of `50 * 0.6` would truncate to.
+    /// `VeteranROF`. A binary64 `0.6` is not the stock input: under the startup
+    /// chop53 control word (the model track_speed_native.json executes for the
+    /// same FILD/FMUL/ftol shape) `50 * 0.6` chops below 30. The stock
+    /// f32-widened `0.6000000238` gives 30, 30, 31 under either rounding model
+    /// (ruleset.rs asserts it against the loaded rules).
     #[test]
     fn gsi_08_05_veteran_rof_truncates_the_jittered_reload() {
-        assert_eq!(ftol_scale(50, 0.6), 30);
+        assert_eq!(ftol_scale(50, 0.6), 29);
+        assert_eq!(ftol_scale(50, f64::from(0.6f32)), 30);
         assert_eq!(ftol_scale(51, 0.6), 30);
         assert_eq!(ftol_scale(52, 0.6), 31);
         let object = object_with(&[Ability::Rof], &[]);
@@ -684,7 +692,13 @@ mod tests {
             50
         );
         assert_eq!(
-            scale_if_ability(50, VeterancyRank::Veteran, &object, Ability::Rof, 0.6),
+            scale_if_ability(
+                50,
+                VeterancyRank::Veteran,
+                &object,
+                Ability::Rof,
+                f64::from(0.6f32)
+            ),
             30
         );
     }
@@ -697,8 +711,10 @@ mod tests {
         assert_eq!(ftol_scale(25, 1.1), 27);
     }
 
-    /// Original Foot4DB1F1..4DB200 under startup chop53: stock Rhino15 ->17,
-    /// Grizzly17 ->20. See track_speed_native.json's stock input contrasts.
+    /// Original Foot4DB1F1..4DB200 under startup chop53 with a binary64 1.2
+    /// multiplier: Rhino15 ->17, Grizzly17 ->20 (track_speed_native.json rows).
+    /// This is not the stock input: the loader's f32-widened VeteranSpeed
+    /// (1.2000000476837158) gives Rhino15 ->18 (ruleset.rs asserts it).
     #[test]
     fn gsi_08_12_veteran_speed_scales_the_per_frame_integer() {
         use crate::util::fixed_math::ra2_speed_to_leptons_per_second;

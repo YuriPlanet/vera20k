@@ -261,6 +261,52 @@ impl Simulation {
         self.finish_fly_takeoff_entry(id, rules);
         true
     }
+
+    ///4CFA70. Its first gate (Mission!=Enter and6385C0) only refuses while
+    /// Techno+514 holds a planning path; VERA has no planning mode, so it
+    /// always passes. A live-type AirportBound Aircraft must be in radio
+    /// contact with the building in its current cell (+1BC); otherwise native
+    /// calls Enter_Idle_Mode(0,1) (vtable+484 ->4176F0) and does not land.
+    /// Callers: Horizontal_Step4CF520 arrival, Process4CE43C, null MoveTo4CCDDB.
+    pub(crate) fn begin_fly_landing(&mut self, id: u64, rules: Option<&RuleSet>) -> bool {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if entity
+            .locomotor
+            .as_ref()
+            .and_then(|l| l.fly_runtime())
+            .is_none()
+        {
+            return false;
+        }
+        let airport_bound = entity.category == crate::map::entities::EntityCategory::Aircraft
+            && rules
+                .and_then(|r| r.object(self.interner.resolve(entity.type_ref())))
+                .is_some_and(|o| o.airport_bound);
+        if airport_bound {
+            let cell = ground_pose::position_world_coord(&entity.position);
+            let contact = self
+                .fly_building_at(cell)
+                .is_some_and(|building| entity.radio_contacts.contains(building));
+            if !contact {
+                let entity = self.substrate.entities.get_mut(id).unwrap();
+                if entity.aircraft_mission.is_some() {
+                    entity.aircraft_mission = Some(crate::sim::aircraft::AircraftMission::Idle);
+                }
+                return false;
+            }
+        }
+        self.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .begin_fly_landing();
+        true
+    }
 }
 
 #[cfg(test)]

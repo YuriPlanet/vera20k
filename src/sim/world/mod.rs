@@ -294,7 +294,10 @@ pub enum SimSoundEvent {
         world: crate::sim::anim_class::AnimWorldCoord,
     },
     /// Native Fly AuxSound1/AuxSound2 at the phase callback world coordinate.
-    AircraftPhase { sound_id: InternedId, world: crate::sim::anim_class::AnimWorldCoord },
+    AircraftPhase {
+        sound_id: InternedId,
+        world: crate::sim::anim_class::AnimWorldCoord,
+    },
     /// A weapon fired — play its Report= sound.
     WeaponFired {
         report_sound_id: InternedId,
@@ -946,6 +949,11 @@ pub struct Simulation {
     /// the same tick.
     #[serde(skip)]
     pub(crate) pending_missile_detonations: Vec<crate::sim::spawn_manager::MissileDetonation>,
+    /// Aircraft whose Mission_Attack state4 visit, dispatched in their own
+    /// LogicVector slot, requested the combat receiver's release this frame.
+    /// Filled by the live pass, drained by combat in the same frame.
+    #[serde(skip)]
+    pub(crate) aircraft_fire_requests: std::collections::BTreeSet<u64>,
     /// BulletClass AI results produced in mixed Logic order and consumed at
     /// the existing combat receiver seam later in this master frame.
     #[serde(skip)]
@@ -2789,11 +2797,7 @@ impl Simulation {
         type_ref: InternedId,
         rules: &'r RuleSet,
     ) -> Option<&'r ObjectType> {
-        match self.type_handles.handle_for(type_ref) {
-            Some(handle) => Some(rules.object_by_handle(handle)),
-            None if self.type_handles.is_empty() => rules.object(self.interner.resolve(type_ref)),
-            None => None,
-        }
+        self.type_handles.object(&self.interner, type_ref, rules)
     }
 
     /// Create a new empty simulation with an explicit deterministic seed.
@@ -2845,6 +2849,7 @@ impl Simulation {
             pending_lifecycle_requests: Vec::new(),
             pending_rocket_detonations: Vec::new(),
             pending_missile_detonations: Vec::new(),
+            aircraft_fire_requests: Default::default(),
             pending_projectile_detonations: Vec::new(),
             pending_wave_damage_requests: Vec::new(),
             #[cfg(test)]
@@ -6030,6 +6035,8 @@ impl Simulation {
         // before advancing its cursor; later phases need only these outcomes.
         #[cfg(test)]
         self.trace_master_frame_rung(MasterFrameTestRung::LogicVector);
+        // Receipts are frame-local: an aborted earlier frame must not leak one.
+        self.aircraft_fire_requests.clear();
         let object_pass = self.advance_live_object_pass(rules, path_grid, overlay_registry)?;
         spawned_entities |= std::mem::take(&mut self.mission_spawned_entities);
         let movement_stats = object_pass.movement;
@@ -6091,13 +6098,9 @@ impl Simulation {
             crate::sim::rocking::tick(&mut self.substrate.entities, rules, &mut hook);
         }
 
-        // Aircraft mission state machines — between movement and combat.
-        // Reads updated positions, controls firing and RTB decisions.
-        let aircraft_fire_requests = rules
-            .map(|rules| {
-                crate::sim::aircraft::tick_aircraft_missions(self, rules, active_path_grid)
-            })
-            .unwrap_or_default();
+        // Aircraft missions ran in their own LogicVector slots during the live
+        // pass; combat admits the state4 releases they requested.
+        let aircraft_fire_requests = std::mem::take(&mut self.aircraft_fire_requests);
 
         // Wake anims under moving units on water (native gate and cadence in
         // `spawn_wakes_for_frame`).

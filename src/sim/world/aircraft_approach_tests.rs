@@ -167,7 +167,10 @@ fn aircraft_initial_attack_reaches_live_search_on_the_next_due_visit() {
     let rng = sim.scenario_rng.logical_state();
     crate::sim::aircraft::tick_aircraft_missions(&mut sim, &rules, None);
     let entity = sim.substrate.entities.get(1).unwrap();
-    assert_eq!(entity.mission.handler_state(), 1);
+    assert!(matches!(
+        entity.aircraft_mission,
+        Some(AircraftMission::Attack { sub_state: 1 })
+    ));
     assert_eq!(entity.mission.dispatch_timer().delay(), 1);
     assert!(entity.navigation.nav_com.is_none());
     assert_eq!(sim.scenario_rng.logical_state(), rng);
@@ -182,7 +185,10 @@ fn aircraft_initial_attack_reaches_live_search_on_the_next_due_visit() {
         world.session.binary_frame = 101;
         crate::sim::aircraft::tick_aircraft_missions(world, &rules, None);
         let entity = world.substrate.entities.get(1).unwrap();
-        assert_eq!(entity.mission.handler_state(), 3);
+        assert!(matches!(
+            entity.aircraft_mission,
+            Some(AircraftMission::Attack { sub_state: 3 })
+        ));
         assert_eq!(entity.mission.dispatch_timer().start_frame(), 101);
         assert_eq!(
             i64::from(entity.mission.dispatch_timer().delay()),

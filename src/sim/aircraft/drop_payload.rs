@@ -273,7 +273,7 @@ pub fn try_drop(
                     cell.level
                         .wrapping_add(u8::from(landing_layer == MovementLayer::Bridge) * 4)
                 });
-            let reveal_outcome = sim.try_reveal_entity(
+            let reveal_outcome = sim.try_reveal_entity_with_context(
                 passenger_id,
                 RevealRequest {
                     position: RevealPosition {
@@ -286,6 +286,7 @@ pub fn try_drop(
                     placement: PlacementEvidence::MarkSucceeded,
                     logic_eligible: true,
                 },
+                crate::sim::world::UninitContext::with_rules(rules),
             );
             if !matches!(reveal_outcome, RevealOutcome::Revealed { .. }) {
                 return Err(DepartureFailure::ParachuteReveal(

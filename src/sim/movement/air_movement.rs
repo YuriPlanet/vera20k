@@ -87,6 +87,28 @@ pub(crate) fn fly_coordinate_admitted(entity: &crate::sim::game_entity::GameEnti
         && !super::locomotor_owner::owner_is_warping(entity)
 }
 
+/// Horizontal_Step4CF520's landing arm: within 0x80 leptons (XY) of the
+/// retained destination with speed+48 below 0.05. The legacy horizontal
+/// adapter above never clears its path inside the fine-approach radius, so
+/// this is the arrival test, not `movement_target`. Its cruise+5C, type+D27
+/// and 4D0180 gates and its own BeginLanding call belong to the pending Fly
+/// navigation migration; the legacy dock drivers call BeginLanding on it.
+pub(crate) fn fly_landing_arrival(entity: &crate::sim::game_entity::GameEntity) -> bool {
+    let Some(loco) = entity.locomotor.as_ref() else {
+        return false;
+    };
+    let Some(state) = loco.fly_runtime() else {
+        return false;
+    };
+    let destination = state.destination();
+    let xy = super::ground_pose::position_world_xy(&entity.position);
+    crate::sim::cell_kernel::native_xy_distance(
+        destination.x.wrapping_sub(xy[0]),
+        destination.y.wrapping_sub(xy[1]),
+    ) < 0x80
+        && loco.fly_current_speed < MIN_CREEP_SPEED
+}
+
 /// Per-tick stats for air movement diagnostics.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AirMovementTickStats {

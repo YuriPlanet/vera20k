@@ -120,7 +120,18 @@ pub fn tick_attack_state(
             )
         }
 
-        // YR states 5..9 are deliberately residual pending the runtime cadence proof.
+        // RESIDUAL: native417FE0 states5..9 branch on the aircraft GetFireError
+        // code (vtable+3C0), which VERA's fire path does not produce yet.
+        // State5 (non-Fighter, non-strafe) re-faces, FireAts once, Cell-Scatters
+        // and returns to4 (or1 under Rules+17E1); states6/7/8/9 (strafers) each
+        // FireAt once on codes0/2/8/9 (8 first re-assigns the destination),
+        // Cell-Scatter, re-assign the Target destination and advance, state9
+        // ending in3. Trigger: every admitted strafe or non-Fighter release.
+        // Effect: stock strafers HORNET/ASW (projectile ROT<=1) drop only the
+        // state4 burst instead of five bombs per pass, without Cell Scatter.
+        // Frequency: every Carrier/strafe pass. Risk: pass damage and scatter;
+        // Ammo=1 stock strafers still return through state10/Guard, so ammo
+        // and Scenario RNG match for them.
         5..=9 => AttackTickResult::transition(AircraftMission::Attack { sub_state: 10 }),
 
         // ---------------------------------------------------------------

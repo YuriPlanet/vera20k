@@ -2546,16 +2546,20 @@ impl Simulation {
 
     /// Cancel aircraft dock reservation if in ReturnToBase or WaitForDock phase.
     pub(crate) fn cancel_aircraft_dock(&mut self, entity_id: u64) {
-        if let Some(e) = self.substrate.entities.get(entity_id) {
-            if let Some(ref ammo) = e.aircraft_ammo {
-                use crate::sim::docking::aircraft_dock::AircraftDockPhase;
-                if matches!(
+        use crate::sim::docking::aircraft_dock::AircraftDockPhase;
+        if self
+            .substrate
+            .entities
+            .get(entity_id)
+            .and_then(|e| e.aircraft_ammo.as_ref())
+            .is_some_and(|ammo| {
+                matches!(
                     ammo.dock_phase,
                     Some(AircraftDockPhase::ReturnToBase) | Some(AircraftDockPhase::WaitForDock)
-                ) {
-                    self.production.airfield_docks.release(entity_id);
-                }
-            }
+                )
+            })
+        {
+            self.release_airfield_pad(entity_id);
         }
     }
 
@@ -2576,18 +2580,22 @@ impl Simulation {
     /// Release a DockedIdle aircraft from its helipad and trigger takeoff.
     /// Called when a docked aircraft receives a Move or Attack command.
     pub(crate) fn release_docked_idle(&mut self, entity_id: u64) {
-        let Some(entity) = self.substrate.entities.get_mut(entity_id) else {
+        if !self.substrate.entities.get(entity_id).is_some_and(|e| {
+            e.aircraft_mission
+                .as_ref()
+                .is_some_and(|m| m.is_docked_idle())
+        }) {
             return;
-        };
-        if let Some(crate::sim::aircraft::AircraftMission::DockedIdle { .. }) =
-            entity.aircraft_mission
-        {
-            // Release dock slot.
-            self.production.airfield_docks.release(entity_id);
-            // Clear to Idle — the command handler will set the appropriate mission.
-            entity.aircraft_mission = Some(crate::sim::aircraft::AircraftMission::Idle);
-            // The following accepted Fly MoveTo owns the takeoff transition.
         }
+        // Release dock slot.
+        self.release_airfield_pad(entity_id);
+        // Clear to Idle — the command handler will set the appropriate mission.
+        self.substrate
+            .entities
+            .get_mut(entity_id)
+            .unwrap()
+            .aircraft_mission = Some(crate::sim::aircraft::AircraftMission::Idle);
+        // The following accepted Fly MoveTo owns the takeoff transition.
     }
 
     /// Replace the current selection with exactly the given stable entity IDs.

@@ -134,11 +134,12 @@ pub enum GameSoundEvent {
         source: Option<SoundSource>,
     },
 
-    /// DeploySound on infantry stance entry or successful unit-to-building conversion.
+    /// Fly BeginTakeoff AuxSound1 or the one-shot landing AuxSound2.
     AircraftPhase {
         sound_id: String,
         source: Option<SoundSource>,
     },
+    /// DeploySound on infantry stance entry or successful unit-to-building conversion.
     EntityDeployed {
         /// sound.ini ID from the entity's DeploySound= field.
         sound_id: String,

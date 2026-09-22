@@ -603,6 +603,11 @@ fn techno_ai_shell(
                     ctx.path_grid,
                     ctx.overlay_registry,
                 );
+                // The remaining aircraft missions dispatch here too, inside
+                // this slot and before Fly Process (FootClass::AI4DA530).
+                if crate::sim::aircraft::dispatch_aircraft_mission(sim, rules, id, ctx.path_grid) {
+                    sim.aircraft_fire_requests.insert(id);
+                }
             }
         }
     }
