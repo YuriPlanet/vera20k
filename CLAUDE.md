@@ -104,10 +104,6 @@ through the owner.
 Derived caches and indexes are allowed when their source of truth, update or
 invalidation rules, and consistency validation are explicit.
 
-Use relevant rows in the [dependency map](docs/module-map.md); verify against source.
-Refresh with `python tools/module_map.py` after dependency, layout, visibility or
-build configuration changes.
-
 One owner follows a complete mechanism through evidence, implementation, production
 integration and review. Consider the surrounding architecture and affected consumers,
 and use integration evidence appropriate to the change, including runtime reproduction

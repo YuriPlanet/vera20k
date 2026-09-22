@@ -76,8 +76,7 @@ membership and rebuilds map-derived caches. Existing global replay pins pass
 without rebaselining. Output: `%TEMP%/vera20k-combat-lib-tests.log`.
 `cargo clippy -p vera20k --lib` passes for the corrected candidate (1,031 warnings),
 recorded in `%TEMP%/vera20k-combat-clippy.log`.
-Source checkpoint: `3621bac4`. The module map was regenerated for that commit;
-its production dependency edges are unchanged. The single critic pass completed.
+Source checkpoint: `3621bac4`. The single critic pass completed.
 
 The critic found one required prerequisite defect: a new fire sequence could turn
 and fire during an accepted Walk step retained by an attack order. Confirmed the
