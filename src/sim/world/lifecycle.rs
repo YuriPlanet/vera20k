@@ -1795,6 +1795,7 @@ impl Simulation {
                 &mut self.substrate.entities,
                 &[stable_id],
                 self.session.tick,
+                self.session.binary_frame,
                 self.resolved_terrain.as_ref(),
                 rules.map(|r| (r, &self.interner)),
             ),
@@ -1809,11 +1810,121 @@ impl Simulation {
         {
             self.add_entity_occupancy(stable_id);
         }
+        self.complete_fly_takeoff_phase(stable_id, rules);
         self.sync_air_spatial_membership(stable_id);
         if let Some(before) = jumpjet_layer_before {
             self.complete_jumpjet_display_process(stable_id, before, rules);
         }
         stats
+    }
+
+    /// Fly4CCB40 ->4CD2A0's pure-takeoff branch. It follows4CD600's
+    /// movement/height Mark pair, then performs its OWN Mark/Display pair.
+    /// Native comparisons: fly_takeoff_phase.json (75 original full calls).
+    /// Landing (which runs first when both flags are set) and non-Landable
+    /// mode/height handling still require their separate native branches.
+    pub(super) fn complete_fly_takeoff_phase(&mut self, id: u64, rules: Option<&RuleSet>) -> bool {
+        let admitted = self.substrate.entities.get(id).is_some_and(|entity| {
+            entity.lifecycle.object_alive
+                && entity.health.current > 0
+                && entity.locomotor.as_ref().is_some_and(|l| {
+                    l.powered
+                        && l.fly_runtime()
+                            .is_some_and(|state| state.has_only_takeoff_callback())
+                })
+                && !(entity.category == EntityCategory::Aircraft
+                    && rules
+                        .and_then(|r| r.object(self.interner.resolve(entity.type_ref())))
+                        .is_some_and(|object| !object.landable))
+        });
+        if !admitted {
+            return false;
+        }
+        let before = self.entity_display_layer(id, rules);
+        self.unmark_entity_remove_impl(id, false, UninitContext::default());
+        self.substrate.display.remove(id);
+        self.apply_fly_takeoff_callback(id, rules);
+        let after = self.entity_display_layer(id, rules);
+        //4CE680 never writes coordinates or OnBridge, so no changed-layer
+        // landing side effects can run on this branch. Still resubmit on equal.
+        debug_assert_eq!(before, after);
+        self.submit_entity_display(id, rules, None);
+        self.add_entity_occupancy(id);
+        true
+    }
+
+    /// Admitted callback4CE680. The phase caller owns Mark/Display sequencing;
+    /// the callback owns flag clearing and the two existing facing controllers.
+    pub(super) fn apply_fly_takeoff_callback(&mut self, id: u64, rules: Option<&RuleSet>) {
+        use crate::sim::movement::{air_movement, fly_height::TakeoffFacing, ground_pose};
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .expect("admitted Fly callback");
+        let xy = ground_pose::position_world_xy(&entity.position);
+        let mut height = air_movement::current_fly_height(entity, self.resolved_terrain.as_ref());
+        //4CE696..4CE6DF: query structure even below416; bridge-normalize only
+        // when not already OnBridge and high enough above a structural deck.
+        if !entity.on_bridge {
+            let bridge = self.resolved_terrain.as_ref().is_some_and(|terrain| {
+                let cell =
+                    terrain.native_cell_identity(((xy[0] / 256) as i16, (xy[1] / 256) as i16));
+                terrain.native_cell_flags(cell) & 0x100 != 0
+            });
+            if bridge && height >= 416 {
+                height = height.wrapping_sub(416);
+            }
+        }
+        let landing_base = crate::sim::aircraft::landing_base::landing_base(
+            entity,
+            &self.substrate.entities,
+            rules.map(|r| (r, &self.interner)),
+        );
+        let entity = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .expect("admitted Fly callback");
+        air_movement::ensure_fly_facings(entity);
+        let state = entity
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .fly_runtime_mut()
+            .unwrap();
+        let destination = state.destination();
+        match state.complete_takeoff(height, landing_base) {
+            TakeoffFacing::Unchanged => {}
+            TakeoffFacing::SecondaryToPrimaryDestination => {
+                let desired = entity.body_facing.unwrap().destination();
+                entity
+                    .barrel_facing
+                    .as_mut()
+                    .unwrap()
+                    .set(desired, self.session.binary_frame);
+            }
+            TakeoffFacing::PrimaryToDestination => {
+                // Original also evaluates the zero delta; do not special-case
+                // it to the current heading. The shared native table owns it.
+                let desired = crate::util::direction_tables::facing16_from_delta(
+                    destination.x.wrapping_sub(xy[0]),
+                    destination.y.wrapping_sub(xy[1]),
+                );
+                entity
+                    .body_facing
+                    .as_mut()
+                    .unwrap()
+                    .set(desired, self.session.binary_frame);
+                entity.locomotor.as_mut().unwrap().speed_fraction =
+                    crate::util::fixed_math::SIM_ONE;
+            }
+        }
+        entity.facing = (entity
+            .body_facing
+            .unwrap()
+            .current(self.session.binary_frame)
+            >> 8) as u8;
     }
 
     /// Object-kind classification for the LogicVector dispatch (F13). Probes

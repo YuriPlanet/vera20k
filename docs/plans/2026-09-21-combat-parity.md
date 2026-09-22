@@ -231,20 +231,25 @@ probe; it is not a second implementation to publish.
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
 Branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Current validated source: `f241211c`: native FindFireLocation corpus, deterministic
-geometry comparisons and removal of the incorrect unused search model. Last
-production behavior source: `9d3be1105c1ed7beaa73ebf11a40c594d5be5fec`: admitted
+Current increment atop `a1537be19db4420300f4dc7fe3cdbbf3eb314f42`: pure Fly
+takeoff callback, its Mark/Display transaction and existing FacingClass consumers;
+see the takeoff section below for current validation and residuals. Snapshot188
+retains Fly destination XYZ in active and stashed runtime. `f241211c` preserves
+the native FindFireLocation corpus, deterministic geometry comparisons and removal
+of the incorrect unused search model. Production source
+`9d3be1105c1ed7beaa73ebf11a40c594d5be5fec`: admitted
 Aircraft state4 releases now run through shared production emission, synchronous
 burst control, pending ammo and native success state/readiness/raw-delay writes.
 The call-local request preserves AttackTarget and rearm. Retained `WeaponBurst`
-replaces the obsolete target-owned remaining-shot count; snapshot version187.
+replaces the obsolete target-owned remaining-shot count (introduced in snapshot187).
 The previous pending-state/initialization source `07c48b07` and MissionLeaf+6D2
 owner remain intact. **State1 navigation and the full Aircraft attack cycle
 remain unfinished.** See the release integration section for exact coverage and
 required residuals; this is not whole-combat parity.
 Previous source `4a32f4c3` extracted the shared emitter; preceding checkpoint
 `1e069d75`. Range source `d7c15550` remains intact, including native
-0x0 foundations. No tracked implementation WIP remains after this checkpoint.
+0x0 foundations. This takeoff increment is validated and ready for publication;
+`.local/` remains untracked and must not be staged.
 The dependency map is retired by user instruction: do not use or refresh it,
 regardless of the older branch contract text. Facing source `be8e2d62` and
 `ae5b3042` takeoff evidence remain intact, including80 original callbacks.
@@ -536,10 +541,11 @@ reader/getter cases remain checked. A new release retail load for FlightLevel an
 IsDropship and Carryall is required before merge; the prior release load predates
 these changes.
 
-The newly stored takeoff flag still lacks its native clearing callback:4CE680
+The original vertical increment lacked the clearing callback:4CE680
 clears BOTH flags unconditionally at4CE756/4CE763, then thresholds select facing/
 speed effects. It must run inside4CD2A0's explicit Display/Mark transaction, not
-be approximated by reaching the target height. BeginLanding still lacks+52,
+be approximated by reaching the target height. This is now connected for pure
+takeoff; see the current takeoff increment below. BeginLanding still lacks+52,
 admission, sound/animation, air-slot and touchdown effects. Legacy docking adapters
 reissue the start mutations each mission visit; port their proper native callers.
 BeginTakeoff refusals are70EFD0 (+504 EMP),4DE770 (Foot timer+6A0/+6A8),70C5B0
@@ -592,8 +598,9 @@ callbacks, using real Aircraft methods and original413FD2..41401A facing setup:
 19 no-setter,37 Primary.Set and24 Secondary.Set cases. All clear both flags,
 return1 and preserve coordinates. Coverage includes thresholds, Carryall base,
 bridge normalization, slopes, signed ROT, active turns and retained destination
-directions including zero. This does NOT demonstrate Rust takeoff parity or
-cover outer Process admission, BeginTakeoff, landing, or Mark/Display.
+directions including zero. That evidence-only commit did not establish Rust
+takeoff parity. The current takeoff increment below connects the Rust callback
+and adds a separate full Mark/Display witness; BeginTakeoff and landing remain open.
 
 Ghidra comments4C93DB/4C93EC,517BBD,44B08E,4CE756,41514C and416041 saved
 and read back. Corrected turret.rs's false writer claim: Aircraft AI41514C
@@ -973,6 +980,60 @@ or PR was opened for this increment; retain the single final pre-PR review.
 `cargo clippy -p vera20k --lib` also passes (37.04s,1032 existing warnings;
 `.local/fly-destination-clippy.log`). Both owned Cargo sessions are terminal.
 
+### Pure Fly takeoff production increment (2026-09-22)
+
+Acceptance is the previously traced pure-takeoff branch: preserve original flag
+clears, strict thresholds, live Carryall/bridge height inputs, facing histories,
+speed write and Mark/Display order, then retain behavior across save/restore.
+The landing and non-Landable branches remain separate required work.
+
+`FlyRuntime::complete_takeoff` owns both flag clears and threshold selection.
+`Simulation::apply_fly_takeoff_callback` queries current coordinates/landing base
+and updates the existing Primary/Secondary FacingClass owners. Above target-target/3,
+Secondary receives Primary's **destination**, not its current animated value;
+above target/2, Primary receives the direction to retained Fly destination and
+target speed becomes1. The callback changes no coordinates and draws no RNG.
+Facing setters retain native timer writes; no new facing state was added.
+
+The production air wrapper invokes `complete_fly_takeoff_phase` after motion:
+Mark(REMOVE), RemoveDisplay, callback, SubmitDisplay, Mark(PUT). Even equal live
+layers reorder the owner behind a peer. The new75-call original dispatcher
+corpus executes real Mark/Display callees, without substitutions, and compares
+this ordering and health/flag admission. The existing80 callback histories now
+compare Rust flags, speed, coordinates and every retained facing field.
+
+Aircraft construction initializes both facings from ROT even without Turret=yes.
+The traced Unlimbo chain414310 ->4D7170 ->6F6CA0 snaps Primary at6F6DAA;
+Aircraft414417 snaps Secondary. Both retain the binary spawn frame. Production
+authored/runtime tests cover signed ROT and multiple directions. Fly movement
+samples Primary.Current at the binary frame and its legacy navigation adapter
+uses Primary.Set after motion. The competing 8-bit ROT controller is deleted.
+The legacy XY integrator still quantizes this heading and retains its existing
+speed/arrival policy; this is not native horizontal or full4CEFB0 parity.
+
+Snapshot layout remains188: this increment changes writers of already-saved
+state. A production tick regression poisons the byte heading, verifies the
+retained controller wins and compares restored/uninterrupted full state hashes.
+Required residuals include landing/both-flags, non-Landable mode/height prefix,
+BeginTakeoff admission/effects, native horizontal motion, complete navigation
+and its destination/secondary-facing branches, retained moving/mode lifecycle,
+null/Stop, and all state1/Aircraft attack dependencies above. Clearing takeoff's
+latch does not complete the flight or attack loop.
+
+Ghidra labels/comments are saved and read back:4CE680's misleading Ascent_Step
+name is corrected to Takeoff_Facing_Callback (the callback never ascends), and
+4CD2A0 is identified as Process_Phase_Transitions. Comments4CE756/4CD4E7 record
+the native witnesses, production connection and bounded coverage.
+
+Validation: final `cargo test -p vera20k --lib` passes **9,142 tests,0 failures,
+135 ignored**, including both native corpora, production tick continuation and
+authored/runtime facing initialization (14.08s execution; log
+`.local/fly-takeoff-full-tests.log`). All whole-fixture hash pins remain unchanged;
+none was rebaselined. Both native `fly_takeoff --check` (80) and
+`fly_takeoff_phase --check` (75) pass. `cargo clippy -p vera20k --lib` passes
+(23.27s,1032 existing warnings; `.local/fly-takeoff-clippy.log`). All owned Cargo
+processes are terminal. No critic/PR; retain one final review before the coherent PR.
+
 ### Next safe implementation
 
 Finish FindFireLocation/NavCom/state1/state10 and native cadence dependencies;
@@ -985,15 +1046,16 @@ Techno+3D4 producers before wiring state1; do not flatten returned entity target
 to cells or install the removed test-only search as a production shortcut.
 
 Finish Fly destination lifecycle and the remaining Aircraft facing writers/
-readers, then native phase callbacks with their Mark/Display transaction. The
-generic turret sweep now excludes Aircraft and state4 owns its two Set calls;
-that does not complete takeoff, navigation or other mission-state setters.
+readers, then the landing/non-Landable phase branches and their effects. The
+generic turret sweep excludes Aircraft, state4 owns its two Set calls and pure
+takeoff now has its own Mark/Display transaction; full navigation and other
+mission-state setters remain required.
 The remaining MoveTo
 moving/mode state and null-stop
 behavior, EMP/Foot timer producers, continuous horizontal slowdown and target
 selection, descent drift and crash relocation remain required too.
 
-1. Complete explicit Fly resubmissions:4CD2A0 enters Mark(REMOVE)4CD324 and
+1. Complete the remaining explicit Fly resubmissions:4CD2A0 enters Mark(REMOVE)4CD324 and
    RemoveDisplay4CD333 only for health>0 with loco+50/+51, runs their height
    helpers, then unconditionally submits4CD4E7 before Mark(PUT), even when the
    live layer stayed equal. Aircraft Landable=false takes an earlier branch;
@@ -1001,7 +1063,8 @@ selection, descent drift and crash relocation remain required too.
    Existing Rules has `landable`; do not add another authority. Helper4CE840
    behind+51 handles landing (dock/bridge base height, refusal/alternate cells,
    touchdown+slot cleanup);4CE680 behind+50 clears both flags and stages takeoff
-   facing/speed. The new vertical owner does not implement these transactions.
+   facing/speed. The pure-takeoff transaction is now connected; landing and
+   non-Landable branches remain required.
    AirMovePhase is now a derived mission compatibility view, not native flags. Proven full-object writers:4CF9A5 clears+51 and
    sets+50, then type virtual+BC supplies+38;4CFADF clears+50, sets+51, clears+52
    and zeroes+38 after its refusal/docking gates. ILoco offsets+4C/+4D address
@@ -1028,9 +1091,10 @@ selection, descent drift and crash relocation remain required too.
    714B14..714B2F uses literal81B164 ROT. No Turret=yes or TurretROT gate.
    Aircraft Unlimbo414403..414417 snaps SecondaryFacing to authored facing<<8.
    FacingClass now preserves signed ROT and timer semantics; both native
-   constructors and61 histories are compared. Aircraft still requires complete
-   primary/secondary initialization, retained-destination steering and migration
-   of its heading consumers. Comments413FDE/4C9680 saved and read back.
+   constructors and61 histories are compared. Both Aircraft facings now initialize
+   through construction/Unlimbo semantics and pure takeoff uses their existing
+   owners; complete native navigation and remaining heading consumers still need
+   migration. Comments413FDE/4C9680 saved and read back.
 
    Landing4CE840 has589 instructions and is not a flag-only counterpart. It
    includes AirportBound/radio or Aircraft4196B0 admission, refusal ->BeginTakeoff

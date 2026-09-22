@@ -1754,6 +1754,65 @@ fn signed_constructor_and_authored_health_consume_original_corpus() {
 }
 
 #[test]
+fn aircraft_spawn_initializes_both_facings_without_a_turret_flag() {
+    // Native rate observations plus the traced Unlimbo snaps at6F6DAA/414417.
+    // Exercise both authored and runtime consumers of component construction.
+    let rows: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/spatial_oracle/facing_class.json"
+    ))
+    .unwrap();
+    for row in rows.as_array().unwrap().iter().filter(|row| {
+        row["input"]["rate_constructor"] == false
+            && row["input"]["start"] == 100
+            && row["input"]["operations"].as_array().unwrap().len() == 9
+    }) {
+        let rot = row["input"]["rot"].as_i64().unwrap();
+        let rate = &row["observations"][0]["rate"];
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[AircraftTypes]\n0=AIR\n[AIR]\nStrength=100\nTurret=no\nROT={rot}\n"
+        )))
+        .unwrap();
+        for direction in [0, 64, 255] {
+            let mut sim = Simulation::with_seed(7);
+            sim.session.binary_frame = 100;
+            let runtime = sim
+                .construct_runtime_techno(
+                    "AIR",
+                    "Americans",
+                    6,
+                    5,
+                    direction,
+                    0,
+                    &rules,
+                    TechnoConstructorInit::FreshScenario,
+                )
+                .unwrap()
+                .unwrap();
+            let mut placement = map_entity("AIR", EntityCategory::Aircraft, (6, 5));
+            placement.facing = direction;
+            assert_eq!(
+                sim.spawn_from_map(&[placement], Some(&rules), &BTreeMap::new()),
+                1
+            );
+            let authored = sim.substrate.entities.values().next().unwrap();
+            for entity in [&runtime, authored] {
+                for facing in [entity.body_facing.unwrap(), entity.barrel_facing.unwrap()] {
+                    assert_eq!(
+                        serde_json::json!(facing.rot_per_frame()),
+                        *rate,
+                        "ROT={rot}"
+                    );
+                    assert_eq!(facing.destination(), u16::from(direction) << 8);
+                    assert_eq!(facing.current(100), u16::from(direction) << 8);
+                    assert_eq!(facing.timer_start_frame(), Some(100));
+                    assert!(!facing.is_rotating(100));
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn aircraft_ammo_initialization_matches_native_for_authored_and_runtime_objects() {
     let corpus: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../tools/spatial_oracle/aircraft_attack_release.json"

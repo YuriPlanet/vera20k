@@ -111,6 +111,15 @@ impl Simulation {
                 initial,
                 obj.turret_rot,
             ));
+            if category == EntityCategory::Aircraft {
+                // Aircraft413FD2..414015 supplies ROT to BOTH controllers;
+                // Unlimbo414310 -> Foot4D7170 -> Techno6F6DAA snaps Primary;
+                // Aircraft414417 snaps Secondary. Both timers retain this frame.
+                let mut facing = crate::sim::movement::FacingClass::new(initial, obj.turret_rot);
+                facing.snap(initial, self.session.binary_frame);
+                ge.body_facing = Some(facing);
+                ge.barrel_facing = Some(facing);
+            }
         }
         if uses_voxel {
             ge.voxel_animation = Some(VoxelAnimation::new(1, 1));

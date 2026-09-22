@@ -709,3 +709,215 @@ fn fly_destination_is_hashed_and_persisted_in_active_and_stashed_runtime() {
         );
     }
 }
+
+fn takeoff_fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
+    let input = &row["input"];
+    let mut height_row = row.clone();
+    height_row["input"]["target"] = input
+        .get("target")
+        .cloned()
+        .unwrap_or(serde_json::json!(1500));
+    let (mut sim, rules) = fixture(&height_row);
+    let entity = sim.substrate.entities.get_mut(1).unwrap();
+    let rot = input["rot"].as_i64().unwrap_or(5) as i32;
+    for (slot, initial, destination) in [
+        (&mut entity.body_facing, 0x4000, 0xC000),
+        (&mut entity.barrel_facing, 0x6000, 0x2000),
+    ] {
+        let mut facing = crate::sim::movement::FacingClass::new(initial, rot);
+        facing.snap(initial, 90);
+        facing.set(destination, 90);
+        *slot = Some(facing);
+    }
+    let loco = entity.locomotor.as_mut().unwrap();
+    loco.rot = rot;
+    loco.speed_fraction = SimFixed::lit("0.25");
+    *loco.fly_runtime_mut().unwrap() = serde_json::from_value(serde_json::json!({
+        "target_height": input["target"].as_i64().unwrap_or(1500),
+        "taking_off": input["taking_off"].as_bool().unwrap_or(true),
+        "landing": input["landing"].as_bool().unwrap_or(false),
+        "destination": input.get("destination").cloned().unwrap_or(serde_json::json!([3456,2688,0])),
+    })).unwrap();
+    sim.session.binary_frame = 100;
+    (sim, rules)
+}
+
+fn assert_native_takeoff_result(sim: &Simulation, row: &serde_json::Value) {
+    let entity = sim.substrate.entities.get(1).unwrap();
+    let loco = entity.locomotor.as_ref().unwrap();
+    let (_, taking_off, landing) = loco.fly_runtime().unwrap().height_hash_fields();
+    assert_eq!(
+        serde_json::json!([u8::from(taking_off), u8::from(landing)]),
+        row["phase"],
+        "{row}"
+    );
+    assert_eq!(
+        loco.speed_fraction,
+        SimFixed::from_num(row["speed"].as_f64().unwrap()),
+        "{row}"
+    );
+    let coord = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+    assert_eq!(
+        serde_json::json!([coord.x, coord.y, coord.z]),
+        row["coordinates"],
+        "{row}"
+    );
+    assert_eq!(
+        entity.on_bridge,
+        row["on_bridge"].as_bool().unwrap(),
+        "{row}"
+    );
+    for (facing, expected) in [entity.body_facing.unwrap(), entity.barrel_facing.unwrap()]
+        .into_iter()
+        .zip(row["facings"].as_array().unwrap())
+    {
+        let fields = serde_json::to_value(facing).unwrap();
+        assert_eq!(fields["current"], expected["destination"], "{row}");
+        assert_eq!(fields["prev"], expected["previous"], "{row}");
+        assert_eq!(fields["start_frame"], expected["start"], "{row}");
+        assert_eq!(fields["duration_frames"], expected["duration"], "{row}");
+        assert_eq!(
+            serde_json::json!(facing.rot_per_frame()),
+            expected["rate"],
+            "{row}"
+        );
+        assert_eq!(
+            serde_json::json!(facing.current(100)),
+            expected["current"],
+            "{row}"
+        );
+    }
+}
+
+#[test]
+fn fly_takeoff_callback_matches_all_original_histories() {
+    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/fly_takeoff.json"
+    ))
+    .unwrap();
+    assert_eq!(rows.len(), 80);
+    for row in rows {
+        let (mut sim, rules) = takeoff_fixture(&row);
+        let rng = sim.scenario_rng.logical_state();
+        sim.apply_fly_takeoff_callback(1, Some(&rules));
+        assert_native_takeoff_result(&sim, &row);
+        assert_eq!(sim.scenario_rng.logical_state(), rng);
+    }
+}
+
+#[test]
+fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
+    use super::display_layers::DisplayLayer;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/fly_takeoff_phase.json"
+    ))
+    .unwrap();
+    assert_eq!(rows.len(), 75);
+    for row in rows {
+        let (mut sim, rules) = takeoff_fixture(&row);
+        if !row["input"]["marked"].as_bool().unwrap_or(false) {
+            sim.remove_entity_occupancy(1);
+        }
+        let peer = sim.allocate_stable_id();
+        insert_entity(&mut sim, peer, EntityCategory::Aircraft);
+        let owner = sim.substrate.entities.get(1).unwrap();
+        let (position, on_bridge, loco) = (
+            owner.position.clone(),
+            owner.on_bridge,
+            owner.locomotor.clone(),
+        );
+        let other = sim.substrate.entities.get_mut(peer).unwrap();
+        other.position = position;
+        other.on_bridge = on_bridge;
+        other.locomotor = loco;
+        sim.submit_entity_display(1, Some(&rules), None);
+        sim.submit_entity_display(peer, Some(&rules), None);
+        let rng = sim.scenario_rng.logical_state();
+        let admitted = sim.complete_fly_takeoff_phase(1, Some(&rules));
+        assert_eq!(
+            admitted,
+            !row["phase_calls"].as_array().unwrap().is_empty(),
+            "{row}"
+        );
+        assert_native_takeoff_result(&sim, &row);
+        assert_eq!(
+            sim.substrate.entities.get(1).unwrap().lifecycle.cell_marked,
+            row["marked"].as_bool().unwrap(),
+            "{row}"
+        );
+        for index in 0..5 {
+            let actual: Vec<u64> = sim
+                .substrate
+                .display
+                .members(DisplayLayer::from_index(index).unwrap())
+                .iter()
+                .filter_map(|&id| {
+                    if id == 1 {
+                        Some(0)
+                    } else if id == peer {
+                        Some(1)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            assert_eq!(
+                serde_json::json!(actual),
+                row["layers"][index as usize],
+                "{row}"
+            );
+        }
+        assert_eq!(sim.scenario_rng.logical_state(), rng);
+    }
+}
+
+#[test]
+fn fly_production_tick_uses_primary_current_and_continues_after_restore() {
+    let row = serde_json::json!({"input":{"z":900}});
+    let (mut sim, rules) = takeoff_fixture(&row);
+    // Tick remains stationary so the native phase evidence applies at z900.
+    // A stale byte heading must not replace the retained timer-based turn.
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .locomotor
+        .as_mut()
+        .unwrap()
+        .set_fly_target_height(900);
+    sim.substrate.entities.get_mut(1).unwrap().facing = 222;
+    let primary = sim.substrate.entities.get(1).unwrap().body_facing.unwrap();
+    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    let bytes = GameSnapshot::save(&sim, 0, 0, "Fly takeoff continuation", 0);
+    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+    restored.retain_in_scenario_process_state_from(&sim);
+    restored.resolved_terrain = sim.resolved_terrain.clone();
+    restored.restore_after_snapshot_load().unwrap();
+    for frame in 100..104 {
+        for instance in [&mut sim, &mut restored] {
+            instance.session.binary_frame = frame;
+            instance.tick_air_movement_with_cell_lists_one(1, Some(&rules));
+            let entity = instance.substrate.entities.get(1).unwrap();
+            assert_eq!(
+                entity.body_facing.unwrap(),
+                primary,
+                "callback copies Primary destination to Secondary"
+            );
+            assert_eq!(
+                entity.barrel_facing.unwrap().destination(),
+                primary.destination()
+            );
+            assert_eq!(entity.facing, (primary.current(frame) >> 8) as u8);
+            assert!(
+                !entity
+                    .locomotor
+                    .as_ref()
+                    .unwrap()
+                    .fly_runtime()
+                    .unwrap()
+                    .has_phase_callback()
+            );
+        }
+        assert_eq!(restored.state_hash(), sim.state_hash(), "frame{frame}");
+    }
+}

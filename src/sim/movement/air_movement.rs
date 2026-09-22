@@ -9,7 +9,6 @@ use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::components::{DriveCoord, MovementTarget};
 use crate::sim::debug_event_log::DebugEventKind;
 use crate::sim::entity_store::EntityStore;
-use crate::sim::movement::facing_from_delta;
 use crate::sim::movement::locomotor::{AirMovePhase, LocomotorState, MovementLayer};
 use crate::util::fixed_math::{
     SIM_HALF, SIM_ONE, SIM_ZERO, SimFixed, native_movement_frame_fraction,
@@ -85,23 +84,17 @@ fn approach_target_speed(dist_leptons: i32) -> SimFixed {
     }
 }
 
-/// Turn facing toward desired by at most `rot` steps per tick.
-/// Returns the new facing. Handles wrapping around 0/255.
-fn turn_facing_toward(current: u8, desired: u8, rot: i32) -> u8 {
-    if rot <= 0 || current == desired {
-        return desired; // instant turn or already aligned
-    }
-    let diff = desired.wrapping_sub(current) as i8;
-    let abs_diff = (diff as i16).unsigned_abs() as i32;
-    if abs_diff <= rot {
-        return desired; // close enough, snap
-    }
-    // Turn by rot in the shorter direction.
-    if diff > 0 {
-        current.wrapping_add(rot as u8)
-    } else {
-        current.wrapping_sub(rot as u8)
-    }
+/// Spawn owns Aircraft initialization. Legacy/headless movers may lack these
+/// controllers; initialize them once without replacing an existing live turn.
+pub(crate) fn ensure_fly_facings(entity: &mut crate::sim::game_entity::GameEntity) {
+    let initial = u16::from(entity.facing) << 8;
+    let rot = entity.locomotor.as_ref().map_or(0, |l| l.rot);
+    entity
+        .body_facing
+        .get_or_insert_with(|| super::FacingClass::new(initial, rot));
+    entity
+        .barrel_facing
+        .get_or_insert_with(|| super::FacingClass::new(initial, rot));
 }
 
 /// Issue a move command for an air unit.
@@ -278,6 +271,7 @@ pub fn tick_air_movement(
     entities: &mut EntityStore,
     live_order: &[u64],
     sim_tick: u64,
+    binary_frame: u32,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     rules_context: Option<(
         &crate::rules::ruleset::RuleSet,
@@ -323,6 +317,11 @@ pub fn tick_air_movement(
         let Some(entity) = entities.get_mut(entity_id) else {
             continue;
         };
+        ensure_fly_facings(entity);
+        // Fly4CDA62 reads Primary.Current before navigation/phase setters.
+        // The legacy XY integrator still quantizes to a byte, but no longer
+        // owns a competing ROT-based turn controller.
+        entity.facing = (entity.body_facing.unwrap().current(binary_frame) >> 8) as u8;
 
         // --- Horizontal movement (facing-based, only when airborne) ---
         let has_movement: bool = entity.movement_target.is_some();
@@ -369,19 +368,6 @@ pub fn tick_air_movement(
                     g
                 };
                 let dist_i32: i32 = dist.to_num::<i32>();
-
-                // 1. Compute desired facing toward goal.
-                let face_dx = dlx.to_num::<i32>();
-                let face_dy = dly.to_num::<i32>();
-                let desired_facing = if face_dx != 0 || face_dy != 0 {
-                    facing_from_delta(face_dx, face_dy)
-                } else {
-                    entity.facing
-                };
-
-                // 2. Gradually turn toward desired facing (ROT per tick).
-                let rot = entity.locomotor.as_ref().map_or(0, |l| l.rot);
-                entity.facing = turn_facing_toward(entity.facing, desired_facing, rot);
 
                 // 3. Set approach target speed based on distance.
                 let approach_speed = approach_target_speed(dist_i32);
@@ -469,6 +455,33 @@ pub fn tick_air_movement(
         // remains authoritative; loco.altitude is a bounded read cache only.
         let phase_before = fly_mission_phase(entity, terrain);
         update_fly_height(entity, terrain, rules_context);
+        // Process4CCC15..4CCC49 requests navigation after movement/height and
+        // before phase callbacks. Destination choice is still the legacy
+        // adapter pending4CEFB0's docking/strafe migration. Its heading request
+        // now uses Primary.Set and native phase/readiness suppression.
+        let state = entity.locomotor.as_ref().unwrap().fly_runtime().unwrap();
+        let navigation = entity.movement_target.is_some()
+            && entity.locomotor.as_ref().unwrap().powered
+            && entity.health.current > 0
+            && !state.has_phase_callback()
+            && entity
+                .mission_leaf
+                .as_aircraft()
+                .is_none_or(|leaf| leaf.action_latch() == 0)
+            && current_fly_height(entity, terrain) > 0;
+        if navigation {
+            let destination = state.destination();
+            let xy = super::ground_pose::position_world_xy(&entity.position);
+            let dx = destination.x.wrapping_sub(xy[0]);
+            let dy = destination.y.wrapping_sub(xy[1]);
+            if dx != 0 || dy != 0 {
+                entity.body_facing.as_mut().unwrap().set(
+                    crate::util::direction_tables::facing16_from_delta(dx, dy),
+                    binary_frame,
+                );
+            }
+        }
+        entity.facing = (entity.body_facing.unwrap().current(binary_frame) >> 8) as u8;
         let phase_after = fly_mission_phase(entity, terrain);
         if phase_before != phase_after {
             entity.push_debug_event(
@@ -499,7 +512,7 @@ pub fn tick_air_movement(
 
 /// Object5F5F40 evaluated from retained Z and the current ground/bridge surface.
 /// Only pre-migration fixtures without an exact coordinate read the cache.
-fn current_fly_height(
+pub(crate) fn current_fly_height(
     entity: &crate::sim::game_entity::GameEntity,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> i32 {
@@ -683,8 +696,8 @@ mod tests {
         let mut live_entities = build_entities();
         let mut stable_entities = build_entities();
 
-        let live_stats = tick_air_movement(&mut live_entities, &[2], 0, None, None);
-        let stable_stats = tick_air_movement(&mut stable_entities, &[], 0, None, None);
+        let live_stats = tick_air_movement(&mut live_entities, &[2], 0, 0, None, None);
+        let stable_stats = tick_air_movement(&mut stable_entities, &[], 0, 0, None, None);
 
         assert_eq!(
             live_stats.air_movers, 1,
@@ -798,22 +811,6 @@ mod tests {
             ramp_fly_speed(&mut loco);
         }
         assert_eq!(loco.fly_current_speed, SIM_ZERO);
-    }
-
-    #[test]
-    fn test_turn_facing_toward() {
-        // Turn from 0 toward 10 with rot=3: should go 0 -> 3
-        assert_eq!(turn_facing_toward(0, 10, 3), 3);
-        // Turn from 0 toward 2 with rot=3: snap to 2
-        assert_eq!(turn_facing_toward(0, 2, 3), 2);
-        // Turn from 0 toward 250 (shorter path is clockwise-negative, wrapping):
-        // diff = 250u8.wrapping_sub(0) = 250, as i8 = -6.
-        // abs_diff = 6, > rot=3. diff < 0 so subtract: 0.wrapping_sub(3) = 253
-        assert_eq!(turn_facing_toward(0, 250, 3), 253);
-        // rot=0: instant snap
-        assert_eq!(turn_facing_toward(50, 200, 0), 200);
-        // Already aligned
-        assert_eq!(turn_facing_toward(128, 128, 5), 128);
     }
 
     #[test]

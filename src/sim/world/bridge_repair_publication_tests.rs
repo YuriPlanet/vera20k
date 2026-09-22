@@ -2043,6 +2043,7 @@ fn jumpjet_stop_command_keeps_native_moving_and_selected_coordinate() {
         &mut sim.substrate.entities,
         &[id],
         sim.session.tick,
+        sim.session.binary_frame,
         sim.resolved_terrain.as_ref(),
         Some((&rules, &sim.interner)),
     );

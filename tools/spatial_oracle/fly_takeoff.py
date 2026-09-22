@@ -18,7 +18,7 @@ from tools.spatial_oracle.map_queries import dwords, EMPTY_TABLE, TABLE, GLOBAL_
 LOCO, ARG, OUTPUT = SCRATCH + 0x1B000, SCRATCH + 0x1D000, SCRATCH + 0x1D100
 
 
-def execute(case):
+def execute(case, *, phase_transaction=False):
     u, sp, actors, _ = fixture(dict(actors=[dict(kind='aircraft')]))
     owner = actors[0]
     object_type = owner + 0x800
@@ -67,8 +67,31 @@ def execute(case):
     u.mem_write(LOCO + 0x50, bytes([1, int(case.get('landing', False))]))
     u.mem_write(0xA8ED84, dwords(100))
     calls = []
+    phase_calls = []
+    if phase_transaction:
+        from tools.spatial_oracle.crate_ground_membership import LAYERS
+        buffers, peer = SCRATCH + 0x18000, SCRATCH + 0x17000
+        u.mem_write(owner + 0x6C, dwords(case.get('health',100)))
+        u.mem_write(owner + 0x90, b'\1')
+        u.mem_write(owner + 0x674, dwords(LOCO+4))
+        u.mem_write(owner + 0x94, dwords(-1))
+        u.mem_write(object_type + 0xE0A, bytes([case.get('landable',True)]))
+        u.mem_write(LOCO + 0x50, bytes([case.get('taking_off',True),0]))
+        u.mem_write(peer, bytes(u.mem_read(owner,0x700)))
+        u.reg_write(UC_X86_REG_ESP,sp)
+        run_checked(u,0x4A8630,0x4A866D,count=100)
+        for layer in range(5):
+            u.mem_write(LAYERS+24*layer+4,dwords(buffers+0x100*layer,16))
+        if case.get('marked',False):
+            call(0x4D3780,owner,1)
+        call(0x4A9720,0x87F7E8,owner)
+        call(0x4A9720,0x87F7E8,peer)
 
     def observe(_u, address, _size, _data):
+        if phase_transaction and address in (0x4D3780,0x4A9770,0x4A9720,0x4CE680):
+            arg=struct.unpack('<I',u.mem_read(u.reg_read(UC_X86_REG_ESP)+4,4))[0]
+            phase_calls.append(['mark',arg] if address==0x4D3780 else
+                               ['remove' if address==0x4A9770 else 'submit' if address==0x4A9720 else 'takeoff'])
         if address == 0x47B3A0:
             assert u.reg_read(UC_X86_REG_ECX) == CELL, 'ground query selected wrong cell'
         elif address == 0x4CE6CB:
@@ -79,7 +102,7 @@ def execute(case):
             calls.append('primary_set' if receiver == owner + 0x388 else 'secondary_set')
 
     u.hook_add(UC_HOOK_CODE, observe)
-    returned = call(0x4CE680, LOCO) & 0xFF
+    returned = call(0x4CD2A0 if phase_transaction else 0x4CE680, LOCO) & 0xFF
     facings = []
     for offset in (0x388, 0x3A0):
         call(0x4C93D0, owner + offset, OUTPUT)
@@ -88,14 +111,23 @@ def execute(case):
             '<6I', u.mem_read(owner + offset, 24))
         facings.append(dict(destination=destination & 0xFFFF, previous=previous & 0xFFFF,
                             start=start, duration=duration, rate=rate & 0xFFFF, current=current))
-    return dict(input=case, returned=returned, facings=facings, calls=calls,
+    result = dict(input=case, returned=returned, facings=facings, calls=calls,
                 phase=list(u.mem_read(LOCO + 0x50, 2)),
                 speed=struct.unpack('<d', u.mem_read(LOCO + 0x40, 8))[0],
                 coordinates=list(struct.unpack('<iii', u.mem_read(owner + 0x9C, 12))),
                 on_bridge=bool(u.mem_read(owner + 0x8C, 1)[0]))
+    if phase_transaction:
+        layers=[]
+        for layer in range(5):
+            count=struct.unpack('<I',u.mem_read(LAYERS+24*layer+16,4))[0]
+            assert count<=16
+            pointers=struct.unpack('<'+'I'*count,u.mem_read(buffers+0x100*layer,count*4))
+            layers.append([0 if pointer==owner else 1 if pointer==peer else -1 for pointer in pointers])
+        result.update(phase_calls=phase_calls,layers=layers,marked=bool(u.mem_read(owner+0x74,1)[0]))
+    return result
 
 
-def generate():
+def cases():
     cases = [dict(z=z, carryall=carryall, loaded=loaded)
              for carryall, loaded in ((False, False), (False, True), (True, False), (True, True))
              for z in (0, 750, 751, 800, 801, 1000, 1001, 1034, 1035, 1500)]
@@ -108,7 +140,11 @@ def generate():
     cases += [dict(z=z, rot=rot, landing=True)
               for rot in (-255, -1, 0, 127, 128) for z in (900, 1200)]
     cases += [dict(z=z, target=target) for z, target in ((0, 0), (1, 0), (-2, -2), (-1, -2))]
-    return [execute(case) for case in cases]
+    return cases
+
+
+def generate():
+    return [execute(case) for case in cases()]
 
 
 if __name__ == '__main__':

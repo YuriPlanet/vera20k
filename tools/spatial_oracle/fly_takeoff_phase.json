@@ -1,0 +1,5173 @@
+[
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        1,
+        0
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      750
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": false,
+      "z": 750
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      751
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": false,
+      "z": 751
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      800
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": false,
+      "z": 800
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      801
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": false,
+      "z": 801
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1000
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": false,
+      "z": 1000
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1001
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": false,
+      "z": 1001
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1034
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": false,
+      "z": 1034
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1035
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": false,
+      "z": 1035
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1500
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": false,
+      "z": 1500
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        1,
+        0
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      750
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": true,
+      "z": 750
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      751
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": true,
+      "z": 751
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      800
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": true,
+      "z": 800
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      801
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": true,
+      "z": 801
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1000
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": true,
+      "z": 1000
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1001
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": true,
+      "z": 1001
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1034
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": true,
+      "z": 1034
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1035
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": true,
+      "z": 1035
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1500
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "carryall": false,
+      "loaded": true,
+      "z": 1500
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        1,
+        0
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      750
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": false,
+      "z": 750
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      751
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": false,
+      "z": 751
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      800
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": false,
+      "z": 800
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      801
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": false,
+      "z": 801
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1000
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": false,
+      "z": 1000
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1001
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": false,
+      "z": 1001
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1034
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": false,
+      "z": 1034
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1035
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": false,
+      "z": 1035
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1500
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": false,
+      "z": 1500
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        1,
+        0
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      750
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": true,
+      "z": 750
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      751
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": true,
+      "z": 751
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      800
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": true,
+      "z": 800
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      801
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": true,
+      "z": 801
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1000
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": true,
+      "z": 1000
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1001
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": true,
+      "z": 1001
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1034
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": true,
+      "z": 1034
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1035
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": true,
+      "z": 1035
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1500
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "carryall": true,
+      "loaded": true,
+      "z": 1500
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      415
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "bridge": true,
+      "on_bridge": false,
+      "z": 415
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      416
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "bridge": true,
+      "on_bridge": false,
+      "z": 416
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      1166
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "bridge": true,
+      "on_bridge": false,
+      "z": 1166
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1167
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "bridge": true,
+      "on_bridge": false,
+      "z": 1167
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1416
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "bridge": true,
+      "on_bridge": false,
+      "z": 1416
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1417
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "bridge": true,
+      "on_bridge": false,
+      "z": 1417
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      415
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "bridge": true,
+      "on_bridge": true,
+      "z": 415
+    },
+    "layers": [
+      [],
+      [],
+      [
+        1,
+        0
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "on_bridge": true,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      416
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "bridge": true,
+      "on_bridge": true,
+      "z": 416
+    },
+    "layers": [
+      [],
+      [],
+      [
+        1,
+        0
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "on_bridge": true,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      1166
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "bridge": true,
+      "on_bridge": true,
+      "z": 1166
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": true,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1167
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "bridge": true,
+      "on_bridge": true,
+      "z": 1167
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": true,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1416
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "bridge": true,
+      "on_bridge": true,
+      "z": 1416
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": true,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1417
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "bridge": true,
+      "on_bridge": true,
+      "z": 1417
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": true,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      1010
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "level": 2,
+      "slope": 1,
+      "z": 1010
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1011
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "level": 2,
+      "slope": 1,
+      "z": 1011
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1260
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "level": 2,
+      "slope": 1,
+      "z": 1260
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1261
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "level": 2,
+      "slope": 1,
+      "z": 1261
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 0,
+        "duration": 2,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "destination": [
+        2688,
+        1920,
+        0
+      ],
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 8315,
+        "duration": 3,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "destination": [
+        3456,
+        1920,
+        0
+      ],
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3267,
+        "destination": 24451,
+        "duration": 16,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "destination": [
+        3456,
+        3456,
+        0
+      ],
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3281,
+        "destination": 32767,
+        "duration": 23,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "destination": [
+        2688,
+        3456,
+        0
+      ],
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 41082,
+        "duration": 21,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "destination": [
+        1920,
+        3456,
+        0
+      ],
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3252,
+        "destination": 49153,
+        "duration": 15,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "destination": [
+        1920,
+        2688,
+        0
+      ],
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3259,
+        "destination": 57221,
+        "duration": 9,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "destination": [
+        1920,
+        1920,
+        0
+      ],
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3267,
+        "destination": 11853,
+        "duration": 6,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "destination": [
+        3305,
+        2399,
+        0
+      ],
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "destination": [
+        2688,
+        2688,
+        0
+      ],
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3259,
+        "destination": 57221,
+        "duration": 9,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "target": 0,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        1,
+        0
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      1
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "target": 0,
+      "z": 1
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      -2
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "target": -2,
+      "z": -2
+    },
+    "layers": [
+      [],
+      [],
+      [
+        1,
+        0
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "secondary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      -1
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10916,
+        "destination": 49152,
+        "duration": 21,
+        "previous": 10922,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "input": {
+      "target": -2,
+      "z": -1
+    },
+    "layers": [
+      [],
+      [],
+      [
+        1,
+        0
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "health": 0,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": false,
+    "on_bridge": false,
+    "phase": [
+      1,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "health": -1,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": false,
+    "on_bridge": false,
+    "phase": [
+      1,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": false,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "marked": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        1,
+        0
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 0.25
+  },
+  {
+    "calls": [
+      "primary_set"
+    ],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3273,
+        "destination": 16383,
+        "duration": 10,
+        "previous": 3266,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "marked": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        1,
+        0
+      ]
+    ],
+    "marked": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "remove"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "returned": 0,
+    "speed": 1.0
+  }
+]

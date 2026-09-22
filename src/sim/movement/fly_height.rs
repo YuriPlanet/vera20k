@@ -20,7 +20,40 @@ pub struct FlyRuntime {
     destination: [i32; 3],
 }
 
+pub(crate) enum TakeoffFacing {
+    Unchanged,
+    PrimaryToDestination,
+    SecondaryToPrimaryDestination,
+}
+
 impl FlyRuntime {
+    pub(crate) fn has_phase_callback(&self) -> bool {
+        self.taking_off || self.landing
+    }
+
+    /// Landing runs first in4CD2A0 when both flags are set; its callback must
+    /// complete before that case can select the takeoff arm.
+    pub(crate) fn has_only_takeoff_callback(&self) -> bool {
+        self.taking_off && !self.landing
+    }
+
+    /// Takeoff4CE746..4CE821. Height is already bridge-normalized by the caller.
+    /// Both flags clear even below either threshold; this is a callback latch,
+    /// not a persistent ascending phase. No coordinate write occurs here.
+    pub(crate) fn complete_takeoff(&mut self, height: i32, landing_base: i32) -> TakeoffFacing {
+        let height = height.wrapping_sub(landing_base);
+        let target = self.target_height.wrapping_sub(landing_base);
+        self.taking_off = false;
+        self.landing = false;
+        if height > target.wrapping_sub(target / 3) {
+            TakeoffFacing::SecondaryToPrimaryDestination
+        } else if height > target / 2 {
+            TakeoffFacing::PrimaryToDestination
+        } else {
+            TakeoffFacing::Unchanged
+        }
+    }
+
     pub(crate) fn destination(&self) -> DriveCoord {
         let [x, y, z] = self.destination;
         DriveCoord { x, y, z }
