@@ -8,7 +8,7 @@ from tools.spatial_oracle.map_queries import dwords
 
 BUILDING, TYPE, REQUESTER = SCRATCH+0x1000, SCRATCH+0x3000, SCRATCH+0x6000
 CONTACTS, OFFSETS, OUTPUT = SCRATCH+0x8000, SCRATCH+0x9000, SCRATCH+0xA000
-FLAGS = dict(helipad=0x16CB, repair=0x16A9, bunker=0x16AB, refinery=0x16BB, shipyard=0x16BC)
+FLAGS = dict(helipad=0x16CB, repair=0x16A9, bunker=0x16AB, refinery=0x16BB, weeder=0x16BC)
 
 def query(row):
     u=Uc(UC_ARCH_X86, UC_MODE_32)
@@ -55,7 +55,7 @@ def generate():
     rows=[]
     for foundation in [0,1,5,10]:
         base=dict(foundation=foundation,current=[1408,1664,416],requester=[2560,2560,0],count=3,offsets=[[11,-22,33],[44,55,-66],[-77,88,99]],contacts=[2,0,1])
-        for flags in [[],['refinery'],['shipyard'],['helipad'],['repair'],['bunker'],['helipad','shipyard'],['repair','refinery']]:
+        for flags in [[],['refinery'],['weeder'],['helipad'],['repair'],['bunker'],['helipad','weeder'],['repair','refinery']]:
             rows.append(base|dict(name='dispatch_'+str(foundation)+'_'+'_'.join(flags),flags=flags))
     base=dict(current=[1408,1664,-17],flags=['helipad'],offsets=[[0,0,0],[101,-202,303],[-1,2,-3]],requester=[0,0,0])
     for count in [-1,0,1,2,3]:
@@ -65,7 +65,7 @@ def generate():
     for x,y in [(0,0),(128,0),(0,128),(-128,0),(0,-128),(128,128),(-128,128),(-128,-128),(128,-128),(1,1000),(-1,1000),(1000,1),(1000,-1)]:
         rows.append(dict(name=f'bunker_{x}_{y}',current=[0,0,17],flags=['bunker'],requester=[x,y,900]))
     for current in [[-257,-1,-2147483648],[2147483647,2147483647,2147483647]]:
-        for flags in [[],['helipad'],['helipad','shipyard'],['repair','refinery']]:
+        for flags in [[],['helipad'],['helipad','weeder'],['repair','refinery']]:
             rows.append(dict(name='signed_'+str(current)+'_'+str(flags),current=current,flags=flags,count=1,offsets=[[2147483647,-2147483648,1]]))
     # Quantization-near-axis probes distinguish native rounded DirStruct from
     # high-byte truncation or a sign-only quadrant. Deltas are wide x87 values.
@@ -75,7 +75,7 @@ def generate():
                 rows.append(dict(name=f'bunker_round_{x}_{y}',current=[0,0,17],flags=['bunker'],requester=[x,y,900]))
     for current,requester in [([-2147483648,-2147483648,0],[2147483647,2147483647,0]),([2147483647,-2147483648,0],[-2147483648,2147483647,0])]:
         rows.append(dict(name='bunker_wide_'+str(current),current=current,flags=['bunker'],requester=requester))
-    for flags in [['bunker'],['bunker','helipad'],['bunker','repair'],['bunker','refinery'],['bunker','shipyard'],['helipad','repair','bunker','refinery','shipyard']]:
+    for flags in [['bunker'],['bunker','helipad'],['bunker','repair'],['bunker','refinery'],['bunker','weeder'],['helipad','repair','bunker','refinery','weeder']]:
         for requester in [None,[3000,4000,0]]:
             rows.append(dict(name='priority_'+str(flags)+'_'+str(requester),flags=flags,current=[1408,1664,11],requester=requester,count=1,offsets=[[1,2,3]]))
     for kind in ['building','anim','attached_anim']:
@@ -87,4 +87,4 @@ if __name__=='__main__':
     finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=lambda:provenance(
         scope='Original Building447E90 virtual navigation query, original447B20 approach dispatch,447AC0 foundation center and65AD90 sparse contacts. Supplied typed state, not parser/producer/docking mission parity.',
         entry_points={'navigation':0x447E90,'approach':0x447B20,'center':0x447AC0,'contact_index':0x65AD90},
-        assumptions=['Original Building/BuildingType and Unit, Building, Anim requester vtables; attached Anim calls original owner Building+48. Immutable native foundation dimension arrays retained. Supplied physical XYZ, signed dock count, declared offset array and sparse radio slots.', 'Original x87 atan2/ftol path for bunker directional approach, FPCW0E7F. Current/requester do not move during read. Refineries and shipyards only reach approach special branches when one of Helipad/UnitRepair/Bunker dispatch flags is also present.'],substitutions=[]))
+        assumptions=['Original Building/BuildingType and Unit, Building, Anim requester vtables; attached Anim calls original owner Building+48. Immutable native foundation dimension arrays retained. Supplied physical XYZ, signed dock count, declared offset array and sparse radio slots.', 'Original x87 atan2/ftol path for bunker directional approach, FPCW0E7F. Current/requester do not move during read. Refineries and weeders only reach approach special branches when one of Helipad/UnitRepair/Bunker dispatch flags is also present.'],substitutions=[]))

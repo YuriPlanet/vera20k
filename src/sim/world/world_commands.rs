@@ -2075,15 +2075,16 @@ impl Simulation {
                             b.position.rx,
                             b.position.ry,
                             b.owner(),
-                            // Building447E90 delegates ordinary targets to+48.
-                            // Special Helipad/UnitRepair/Bunker +A8 docking
-                            // coordinates remain the existing bounded adapter;
-                            // stock CABHUT has none of those flags.
-                            if obj.helipad || obj.unit_repair || obj.bunker {
-                                crate::sim::movement::ground_pose::position_world_coord(&b.position)
-                            } else {
-                                crate::sim::movement::ground_pose::object_center_coord(b, obj)
-                            },
+                            crate::sim::movement::nav_target_coordinate(
+                                crate::sim::components::NavTargetRef::Building {
+                                    id: *target_building_id,
+                                },
+                                Some(*engineer_id),
+                                &self.substrate.entities,
+                                self.resolved_terrain.as_ref(),
+                                Some((rules, &self.interner)),
+                            )
+                            .ok()?,
                         ))
                     });
                 let Some((trx, try_, target_owner, target_coord)) = target_info else {

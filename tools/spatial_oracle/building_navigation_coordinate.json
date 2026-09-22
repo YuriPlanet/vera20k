@@ -118,10 +118,10 @@
         416
       ],
       "flags": [
-        "shipyard"
+        "weeder"
       ],
       "foundation": 0,
-      "name": "dispatch_0_shipyard",
+      "name": "dispatch_0_weeder",
       "offsets": [
         [
           11,
@@ -332,10 +332,10 @@
       ],
       "flags": [
         "helipad",
-        "shipyard"
+        "weeder"
       ],
       "foundation": 0,
-      "name": "dispatch_0_helipad_shipyard",
+      "name": "dispatch_0_helipad_weeder",
       "offsets": [
         [
           11,
@@ -537,10 +537,10 @@
         416
       ],
       "flags": [
-        "shipyard"
+        "weeder"
       ],
       "foundation": 1,
-      "name": "dispatch_1_shipyard",
+      "name": "dispatch_1_weeder",
       "offsets": [
         [
           11,
@@ -751,10 +751,10 @@
       ],
       "flags": [
         "helipad",
-        "shipyard"
+        "weeder"
       ],
       "foundation": 1,
-      "name": "dispatch_1_helipad_shipyard",
+      "name": "dispatch_1_helipad_weeder",
       "offsets": [
         [
           11,
@@ -956,10 +956,10 @@
         416
       ],
       "flags": [
-        "shipyard"
+        "weeder"
       ],
       "foundation": 5,
-      "name": "dispatch_5_shipyard",
+      "name": "dispatch_5_weeder",
       "offsets": [
         [
           11,
@@ -1170,10 +1170,10 @@
       ],
       "flags": [
         "helipad",
-        "shipyard"
+        "weeder"
       ],
       "foundation": 5,
-      "name": "dispatch_5_helipad_shipyard",
+      "name": "dispatch_5_helipad_weeder",
       "offsets": [
         [
           11,
@@ -1375,10 +1375,10 @@
         416
       ],
       "flags": [
-        "shipyard"
+        "weeder"
       ],
       "foundation": 10,
-      "name": "dispatch_10_shipyard",
+      "name": "dispatch_10_weeder",
       "offsets": [
         [
           11,
@@ -1589,10 +1589,10 @@
       ],
       "flags": [
         "helipad",
-        "shipyard"
+        "weeder"
       ],
       "foundation": 10,
-      "name": "dispatch_10_helipad_shipyard",
+      "name": "dispatch_10_helipad_weeder",
       "offsets": [
         [
           11,
@@ -4562,9 +4562,9 @@
       ],
       "flags": [
         "helipad",
-        "shipyard"
+        "weeder"
       ],
-      "name": "signed_[-257, -1, -2147483648]_['helipad', 'shipyard']",
+      "name": "signed_[-257, -1, -2147483648]_['helipad', 'weeder']",
       "offsets": [
         [
           2147483647,
@@ -4685,9 +4685,9 @@
       ],
       "flags": [
         "helipad",
-        "shipyard"
+        "weeder"
       ],
-      "name": "signed_[2147483647, 2147483647, 2147483647]_['helipad', 'shipyard']",
+      "name": "signed_[2147483647, 2147483647, 2147483647]_['helipad', 'weeder']",
       "offsets": [
         [
           2147483647,
@@ -9324,9 +9324,9 @@
       ],
       "flags": [
         "bunker",
-        "shipyard"
+        "weeder"
       ],
-      "name": "priority_['bunker', 'shipyard']_None",
+      "name": "priority_['bunker', 'weeder']_None",
       "offsets": [
         [
           1,
@@ -9356,9 +9356,9 @@
       ],
       "flags": [
         "bunker",
-        "shipyard"
+        "weeder"
       ],
-      "name": "priority_['bunker', 'shipyard']_[3000, 4000, 0]",
+      "name": "priority_['bunker', 'weeder']_[3000, 4000, 0]",
       "offsets": [
         [
           1,
@@ -9395,9 +9395,9 @@
         "repair",
         "bunker",
         "refinery",
-        "shipyard"
+        "weeder"
       ],
-      "name": "priority_['helipad', 'repair', 'bunker', 'refinery', 'shipyard']_None",
+      "name": "priority_['helipad', 'repair', 'bunker', 'refinery', 'weeder']_None",
       "offsets": [
         [
           1,
@@ -9430,9 +9430,9 @@
         "repair",
         "bunker",
         "refinery",
-        "shipyard"
+        "weeder"
       ],
-      "name": "priority_['helipad', 'repair', 'bunker', 'refinery', 'shipyard']_[3000, 4000, 0]",
+      "name": "priority_['helipad', 'repair', 'bunker', 'refinery', 'weeder']_[3000, 4000, 0]",
       "offsets": [
         [
           1,

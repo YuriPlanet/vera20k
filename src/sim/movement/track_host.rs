@@ -394,7 +394,7 @@ impl Simulation {
                 }
                 // Native clears Head_To and selector before target+4C, then
                 // queries the owner's physical cell and fresh +4C height.
-                let reached = self.track_reached_destination(id, family)?;
+                let reached = self.track_reached_destination(id, family, rules)?;
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     if reached {
                         match family {
@@ -1117,7 +1117,12 @@ impl Simulation {
         true
     }
 
-    fn track_reached_destination(&self, id: u64, family: TrackFamily) -> Result<bool, String> {
+    fn track_reached_destination(
+        &self,
+        id: u64,
+        family: TrackFamily,
+        rules: Option<&RuleSet>,
+    ) -> Result<bool, String> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(false);
         };
@@ -1126,8 +1131,10 @@ impl Simulation {
         };
         let coord = super::navcom::nav_target_coordinate(
             target,
+            Some(id),
             &self.substrate.entities,
             self.resolved_terrain.as_ref(),
+            rules.map(|rules| (rules, &self.interner)),
         )?;
         let destination = match family {
             TrackFamily::Drive => entity

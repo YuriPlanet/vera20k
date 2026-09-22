@@ -1449,7 +1449,83 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): Fly landing and phase ownership
+## Current checkpoint (2026-09-22): Building navigation prerequisite
+
+Owned branch `feature/combat-foot-speed`, parent `bcbf4beb` (Fly landing).
+Continue the active combat goal; no goal rewrite. Attack state1 still needs
+FindFireLocation4197C0 -> AssignDestination41AA80/4D94B0 -> Fly MoveTo and
+multi-release validation. This increment ports its building-coordinate
+receiver; the attack loop and docking lifecycle remain required work.
+
+Acceptance: replace the live Building+4C error with original447E90/447B20
+coordinate dispatch, reuse the existing foundation/direction/radio owners,
+migrate current +4C consumers, and compare original calls plus production
+arrival/capture and persistence. No new saved state or snapshot version.
+
+Implementation:
+- `movement/building_coordinate.rs` reads live type flags, signed NumberOfDocks,
+  XYZ pads and sparse Contacts. Ordinary Building+4C returns foundation center;
+  Helipad/UnitRepair/Bunker dispatches +A8. Weeder and Refinery precedence,
+  null requester, missing/out-of-count slot and count1 unconditional offset0
+  follow original instructions. Undeclared pads read native zero initialization.
+- Bunker uses full native direction then rounded-byte quadrant; wide coordinate
+  subtraction reuses `direction_tables::native_angle` before f32 narrowing,
+  preserving signed-coordinate boundary behavior without host floating point.
+- Shared NavCom query now receives requester and type context. Drive/Ship's
+  post-track arrival query and the existing movement preparation caller migrate.
+  Engineer CaptureBuilding also uses it, removing its raw-anchor substitute for
+  special building targets. Other docking mission adapters remain required work.
+- Reused the existing258-call `building_navigation_coordinate` corpus. Corrected
+  its false `shipyard` input name to `weeder`: ReadINI4604C1 reads literal81AC50
+  `Weeder` into BuildingType+16BC. Refinery is+16BB (460A67/81AA5C).
+  Every original output coordinate and call trace is unchanged. Native
+  `--check` passes after the naming correction.
+- Ghidra447E90 renamed to `BuildingClass__Get_Navigation_Coord`; comments at
+ 447E90/447B2D saved and read back. Vtable7E3EBC+4C=447E90 and+A8=447B20
+  read from binary. No byte, prototype or boundary changes.
+
+Validation (all owned processes terminal):
+- `cargo test -p vera20k --lib`: **9176 passed,0 failed,135 ignored**,26.53s
+  after3m35s compilation (`.local/building-nav-full.log`). Includes all258 native
+  coordinate rows,136 representable live Foot-requester cases and11 sampled
+  save/restores, both Drive/Ship terminal callbacks and CaptureBuilding with a
+  native dock-coordinate expectation. No replay pins or snapshot version changed.
+- `cargo clippy -p vera20k --lib`:pass,1030 warnings (same count as parent),
+ 53.29s (`.local/building-nav-clippy.log`). Native `building_navigation_coordinate
+ --check`:pass. Ghidra rename/comments saved and read back.
+- Earlier focused runs identified fixture-only issues: duplicate INI section,
+  unallocated saved contact objects, missing explicit Walk CLSID and an incorrect
+  expected case count. Corrected fixture inputs; native outputs stayed unchanged.
+No PR, merge, repeated critic or new retail/rendered run. The prior sole critic
+still requires the attack and rendered-flight joins below before closure.
+Retain `.local/` and the extensive remaining required work below.
+
+Next join notes (read this turn, not ported):
+- Existing full51-call `aircraft_fire_location` corpus and native_trig geometry
+  remain the next search evidence. Reuse `ground_pose::object_center_coord`
+  for Target+48 and the new shared NavCom query for requester-dependent +4C.
+- GetRange7012C0 uses GetWeapon(index) raw Range, reduced by the minimum armed
+  passenger GetCurrentWeapon range when OpenTopped+5E4 is true. Cargo+114's
+  head getter473450 reads+4; traversal follows passenger+30 until non-Foot.
+  Existing `PassengerCargo` is head-first. No new range implementation yet.
+- FindFireLocation4197C0 uses target NavCom+48 as reference for Foot targets,
+  previous-record minimum as alternate, one RandomRanged(0,99) on success.
+  Search campaign visibility reads GLOBAL Cell+12C bit16 without an owner
+  test; resolve the current viewer through the existing fog/session authority,
+  not an assumed aircraft-owner plane. Cell admission419B00 differs from
+  landing-space Foot4DDC60 and includes the requester in physical reservations.
+- State1's epilogue418D1D reads MissionControl rate and consumes additional
+  Scenario RandomRanged(0,2). State is3 or10 from actual NavCom after the void
+  destination setter, not from Fly MoveTo's adapter bool.
+- The258-call coordinate corpus supplies type offsets and contacts. It does
+  not certify ART parsing or docking lifecycle. Existing ArtRegistry pads
+  collect only0..7 and compact missing authored indices; broader pad-loader
+  migration and retained-array layering remain required where reachable.
+  Existing `building_dock_offset_lifecycle`, `building_dock_coord_rules` and
+  `building_dock_resize` native corpora already exist; inspect before adding
+  another oracle or treating their presence as a production port.
+
+## Previous checkpoint (2026-09-22): Fly landing and phase ownership
 
 Owned checkout: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`,
 branch `feature/combat-foot-speed`. Landing increment parent:

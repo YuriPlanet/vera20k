@@ -75,7 +75,7 @@ fn terminal_horizontal_mismatch_does_not_query_missing_owner_locomotor() {
     e.drive_locomotion.as_mut().unwrap().destination = Some(DriveCoord::cell(20, 20, 0));
     e.locomotor = None;
     assert!(
-        !sim.track_reached_destination(1, TrackFamily::Drive)
+        !sim.track_reached_destination(1, TrackFamily::Drive, None)
             .unwrap()
     );
     sim.substrate
@@ -85,9 +85,92 @@ fn terminal_horizontal_mismatch_does_not_query_missing_owner_locomotor() {
         .navigation
         .nav_com = Some(NavTargetRef::cell(10, 10));
     assert!(
-        sim.track_reached_destination(1, TrackFamily::Drive)
+        sim.track_reached_destination(1, TrackFamily::Drive, None)
             .is_err()
     );
+}
+
+#[test]
+fn building_navigation_reaches_drive_and_ship_terminal_callbacks() {
+    use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
+    use crate::sim::components::NavTargetRef;
+    for family in [TrackFamily::Drive, TrackFamily::Ship] {
+        for contacted in [false, true] {
+            let (mut sim, invocation, budget) = fixture(family, 8);
+            let mut rules = RuleSet::from_ini(&IniFile::from_str(
+                "[VehicleTypes]\n0=MTNK\n[BuildingTypes]\n0=PAD\n[PAD]\nHelipad=yes\nNumberOfDocks=3\n",
+            )).unwrap();
+            rules.merge_art_data(&ArtRegistry::from_ini(&IniFile::from_str(
+                "[PAD]\nFoundation=3x3\nDockingOffset0=-256,0,0\nDockingOffset1=0,0,0\nDockingOffset2=256,0,0\n",
+            )));
+            let mut building = GameEntity::test_default(2, "PAD", "Americans", 8, 8);
+            building.category = EntityCategory::Structure;
+            building.foundation = "3x3".into();
+            building.radio_contacts.set_capacity(3);
+            for id in [100, 101, if contacted { 1 } else { 102 }] {
+                building.radio_contacts.insert(id);
+            }
+            building.radio_contacts.remove(101);
+            sim.substrate.entities.insert(building);
+            sim.interner = crate::sim::intern::test_interner();
+            let mover = sim.substrate.entities.get_mut(1).unwrap();
+            let destination = head(mover, family);
+            mover.navigation.nav_com = Some(NavTargetRef::Building { id: 2 });
+            match family {
+                TrackFamily::Drive => {
+                    mover.drive_locomotion.as_mut().unwrap().destination = Some(destination)
+                }
+                TrackFamily::Ship => {
+                    mover.ship_locomotion.as_mut().unwrap().destination = Some(destination)
+                }
+            }
+            progress_mut(mover, family).unwrap().cursor =
+                super::super::drive_track::raw_track_points(1).len() as i32;
+            let mut callbacks = 0;
+            sim.run_track_points_observed(
+                invocation,
+                budget,
+                Some(&rules),
+                None,
+                None,
+                &mut |world, _, event| {
+                    if event == TrackWorldEvent::PerCell {
+                        callbacks += 1;
+                        // The native caller keeps the earlier reached decision;
+                        // live radio changes here affect only subsequent queries.
+                        world
+                            .substrate
+                            .entities
+                            .get_mut(2)
+                            .unwrap()
+                            .radio_contacts
+                            .clear_all();
+                    }
+                },
+            );
+            assert_eq!(callbacks, 1);
+            let mover = sim.substrate.entities.get(1).unwrap();
+            assert_eq!(mover.navigation.nav_com.is_none(), contacted, "{family:?}");
+            assert_eq!(
+                match family {
+                    TrackFamily::Drive => mover
+                        .drive_locomotion
+                        .as_ref()
+                        .unwrap()
+                        .destination
+                        .is_none(),
+                    TrackFamily::Ship => mover
+                        .ship_locomotion
+                        .as_ref()
+                        .unwrap()
+                        .destination
+                        .is_none(),
+                },
+                contacted,
+                "{family:?}"
+            );
+        }
+    }
 }
 
 #[test]

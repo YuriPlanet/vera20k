@@ -53,6 +53,7 @@ use crate::util::fixed_math::{SimFixed, facing_from_delta_int};
 
 // --- Internal submodules ---
 pub(crate) mod at_coord;
+mod building_coordinate;
 mod cell_arrival;
 mod drive_locomotion;
 mod foot_coordinate;
@@ -70,7 +71,7 @@ mod movement_path;
 mod movement_step;
 pub(crate) mod movement_tick;
 mod navcom;
-pub(crate) use navcom::{set_walk_destination_coord, target_cell_coord};
+pub(crate) use navcom::{nav_target_coordinate, set_walk_destination_coord, target_cell_coord};
 mod path_markers;
 pub(crate) mod ready_producer;
 pub(crate) mod slope_transition;

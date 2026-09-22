@@ -2559,8 +2559,14 @@ fn prepare_movement_pass(
             .into_iter()
             .filter(|(mover_id, _)| !tube_active_at_start.contains(mover_id))
             .map(|(mover_id, target)| {
-                super::navcom::nav_target_coordinate(target, entities, resolved_terrain)
-                    .map(|coord| (mover_id, coord))
+                super::navcom::nav_target_coordinate(
+                    target,
+                    Some(mover_id),
+                    entities,
+                    resolved_terrain,
+                    rules.map(|rules| (rules, &*interner)),
+                )
+                .map(|coord| (mover_id, coord))
             })
             .collect::<Result<Vec<_>, _>>()?;
     for (mover_id, coord) in drive_reaims {

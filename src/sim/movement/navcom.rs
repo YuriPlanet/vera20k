@@ -138,10 +138,15 @@ pub(super) fn refresh_drive_destination_coord(
 
 /// Resolve the live receiver behind a non-null NavCom. The Rust reference tag
 /// does not change the native virtual receiver, and a dangling ID is not NULL.
-pub(super) fn nav_target_coordinate(
+pub(crate) fn nav_target_coordinate(
     target: NavTargetRef,
+    requester: Option<u64>,
     entities: &EntityStore,
     terrain: Option<&ResolvedTerrainGrid>,
+    rules: Option<(
+        &crate::rules::ruleset::RuleSet,
+        &crate::sim::intern::StringInterner,
+    )>,
 ) -> Result<DriveCoord, String> {
     let id = match target {
         NavTargetRef::Cell { rx, ry } => return Ok(target_cell_coord(rx, ry, terrain)),
@@ -153,12 +158,35 @@ pub(super) fn nav_target_coordinate(
         .get(id)
         .ok_or_else(|| format!("NavCom coordinate target {id} disappeared"))?;
     if entity.category == crate::map::entities::EntityCategory::Structure {
-        // Building447E90 is requester-dependent for Helipad/UnitRepair/Bunker.
-        // Its full receiver and signed dock metadata remain required; do not
-        // silently turn a live Building target into native navigation failure.
-        return Err(format!(
-            "Building {id} navigation coordinate requires its +4C receiver"
-        ));
+        let (rules, interner) =
+            rules.ok_or_else(|| format!("Building {id} navigation requires type data"))?;
+        let object = rules
+            .object(interner.resolve(entity.type_ref()))
+            .ok_or_else(|| format!("Building {id} navigation type disappeared"))?;
+        return super::building_coordinate::navigation_coordinate(
+            super::ground_pose::position_world_coord(&entity.position),
+            super::ground_pose::object_center_coord(entity, object),
+            object,
+            &entity.radio_contacts,
+            requester,
+            || {
+                let id = requester.expect("Bunker only reads a non-null requester");
+                let entity = entities
+                    .get(id)
+                    .ok_or_else(|| format!("Navigation requester {id} disappeared"))?;
+                Ok(rules
+                    .object(interner.resolve(entity.type_ref()))
+                    .map_or_else(
+                        || {
+                            super::ground_pose::object_center_coord_with_foundation(
+                                entity,
+                                &entity.foundation,
+                            )
+                        },
+                        |object| super::ground_pose::object_center_coord(entity, object),
+                    ))
+            },
+        );
     }
     super::foot_coordinate::navigation_coordinate(entity, terrain)
 }
@@ -590,10 +618,13 @@ mod tests {
         target.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
         entities.insert(target);
 
-        let first = nav_target_coordinate(NavTargetRef::Entity { id: 2 }, &entities, None).unwrap();
+        let first =
+            nav_target_coordinate(NavTargetRef::Entity { id: 2 }, None, &entities, None, None)
+                .unwrap();
         entities.get_mut(2).unwrap().position.rx += 1;
         let second =
-            nav_target_coordinate(NavTargetRef::Entity { id: 2 }, &entities, None).unwrap();
+            nav_target_coordinate(NavTargetRef::Entity { id: 2 }, None, &entities, None, None)
+                .unwrap();
 
         assert_ne!(first, second);
     }
@@ -602,7 +633,7 @@ mod tests {
     fn nav_target_coordinate_dispatches_cells_and_rejects_dangling_objects() {
         let entities = EntityStore::new();
         assert_eq!(
-            nav_target_coordinate(NavTargetRef::cell(12, 34), &entities, None).unwrap(),
+            nav_target_coordinate(NavTargetRef::cell(12, 34), None, &entities, None, None).unwrap(),
             DriveCoord::cell(12, 34, 0)
         );
         for target in [
@@ -611,7 +642,7 @@ mod tests {
             NavTargetRef::Building { id: 7 },
         ] {
             assert!(
-                nav_target_coordinate(target, &entities, None)
+                nav_target_coordinate(target, None, &entities, None, None)
                     .unwrap_err()
                     .contains("disappeared")
             );
