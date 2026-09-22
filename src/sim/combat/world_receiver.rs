@@ -682,6 +682,22 @@ pub(crate) fn commit_entities(
             if let Some(scatter) = scatter {
                 if let Some(target) = world.substrate.entities.get_mut(target_id) {
                     queue_entity_mission_deferred(target, MissionId::from_known(MissionType::Move));
+                }
+                let walk = world
+                    .assign_damage_scatter_walk_destination(
+                        target_id,
+                        scatter,
+                        rules,
+                        overlay_registry,
+                    )
+                    .unwrap_or_else(|cause| {
+                        panic!("damage Scatter destination for {target_id}: {cause}")
+                    });
+                if !walk {
+                    // Residual: non-Walk and JumpJet's class-switching setter
+                    // still use the prior compatibility handoff. This is not
+                    // a second implementation of the migrated Walk branch.
+                    let target = world.substrate.entities.get_mut(target_id).unwrap();
                     crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
                         target,
                         Some(crate::sim::components::NavTargetRef::cell(
@@ -689,17 +705,17 @@ pub(crate) fn commit_entities(
                             scatter.destination.1,
                         )),
                     );
+                    crate::sim::movement::issue_direct_move(
+                        &mut world.substrate.entities,
+                        target_id,
+                        scatter.destination,
+                        scatter.speed,
+                        crate::sim::movement::DestinationTiming::from_rules(
+                            world.session.binary_frame,
+                            Some(rules),
+                        ),
+                    );
                 }
-                let _ = crate::sim::movement::issue_direct_move(
-                    &mut world.substrate.entities,
-                    target_id,
-                    scatter.destination,
-                    scatter.speed,
-                    crate::sim::movement::DestinationTiming::from_rules(
-                        world.session.binary_frame,
-                        Some(rules),
-                    ),
-                );
             }
 
             let Some(target) = world.substrate.entities.get_mut(target_id) else {

@@ -83,15 +83,8 @@ pub(crate) fn ensure_fly_facings(entity: &mut crate::sim::game_entity::GameEntit
 /// Shared represented MoveTo/BeginTakeoff refusal gates. EMP and Foot+6A0
 /// still require their missing native owners; do not substitute deploy state.
 pub(crate) fn fly_coordinate_admitted(entity: &crate::sim::game_entity::GameEntity) -> bool {
-    !entity.locomotor.as_ref().is_some_and(|l| !l.powered) && !fly_owner_disabled(entity)
-}
-
-/// Represented owner disable gates shared by MoveTo and BeginTakeoff.
-pub(crate) fn fly_owner_disabled(entity: &crate::sim::game_entity::GameEntity) -> bool {
-    entity
-        .teleport_state
-        .as_ref()
-        .is_some_and(|t| t.warp_in_active() || t.warp_out_active())
+    !entity.locomotor.as_ref().is_some_and(|l| !l.powered)
+        && !super::locomotor_owner::owner_is_warping(entity)
 }
 
 /// Per-tick stats for air movement diagnostics.

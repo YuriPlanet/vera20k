@@ -24,6 +24,12 @@ pub(crate) fn set_walk_destination_coord(
     coord: DriveCoord,
     terrain: Option<&ResolvedTerrainGrid>,
 ) {
+    // Walk75ACBD/75ACD0/75ACE3 checks EMP and both owner warp bytes.
+    // The teleport owner represents the latter; the native EMP timer still
+    // lacks its production writer. There is deliberately no power gate here.
+    if super::locomotor_owner::owner_is_warping(entity) {
+        return;
+    }
     let Some(loco) = entity
         .locomotor
         .as_mut()
@@ -457,6 +463,43 @@ fn ship_stop_moving(entity: &mut GameEntity) {
             entity.foot_speed.applied_fraction = SIM_ZERO;
         }
         entity.foot_speed.cached_current_speed = 0;
+    }
+}
+
+impl crate::sim::world::Simulation {
+    /// Foot4D94B0 clears NavComAux before its three nonnull admission gates.
+    /// Class preprocessing precedes this call; publication, locomotor dispatch
+    /// and accepted timers follow it. Linked-lift and retained-particle cleanup
+    /// still require their missing native owners and are not implied here.
+    pub(crate) fn begin_foot_destination(
+        &mut self,
+        id: u64,
+        nonnull: bool,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> bool {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let open_transport = match entity.passenger_role {
+            crate::sim::passenger::PassengerRole::Inside { transport_id } => self
+                .substrate
+                .entities
+                .get(transport_id)
+                .and_then(|e| rules.object(self.interner.resolve(e.type_ref())))
+                .is_some_and(|o| o.open_topped),
+            _ => false,
+        };
+        let refused = nonnull
+            && (entity.foot_locomotor_swap_active
+                || open_transport
+                || entity.bunker_link.installed_in().is_some());
+        self.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .navigation
+            .nav_com_aux = None;
+        !refused
     }
 }
 

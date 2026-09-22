@@ -482,49 +482,6 @@ pub(crate) fn issue_move_command_with_destination(
     )>,
     timing: crate::sim::movement::DestinationTiming,
 ) -> bool {
-    issue_move_command_with_destination_impl(
-        entities,
-        grid,
-        entity_id,
-        target,
-        speed,
-        queue,
-        terrain_costs,
-        entity_blocks,
-        resolved_terrain,
-        zone_grid,
-        entity_block_map,
-        blocker_neighbor_counts,
-        playfield_bounds,
-        cell_occupation,
-        object_destination,
-        true,
-        timing,
-    )
-}
-
-fn issue_move_command_with_destination_impl(
-    entities: &mut EntityStore,
-    grid: &PathGrid,
-    entity_id: u64,
-    target: (u16, u16),
-    speed: SimFixed,
-    queue: bool,
-    terrain_costs: Option<&TerrainCostGrid>,
-    entity_blocks: Option<&BTreeSet<(u16, u16)>>,
-    resolved_terrain: Option<&ResolvedTerrainGrid>,
-    zone_grid: Option<&ZoneGrid>,
-    entity_block_map: Option<&LayeredEntityBlockMap>,
-    blocker_neighbor_counts: Option<&BlockerNeighborCounts>,
-    playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
-    cell_occupation: Option<&mut crate::sim::occupancy::CellOccupationGrid>,
-    object_destination: Option<(
-        crate::sim::components::NavTargetRef,
-        crate::sim::components::DriveCoord,
-    )>,
-    publish_destination: bool,
-    timing: crate::sim::movement::DestinationTiming,
-) -> bool {
     // Read the entity's current position and locomotor state.
     let Some(entity) = entities.get(entity_id) else {
         log::warn!("issue_move_command: entity {} not found", entity_id);
@@ -587,16 +544,6 @@ fn issue_move_command_with_destination_impl(
         .locomotor
         .as_ref()
         .is_some_and(|loco| supports_layered_bridge_pathing(loco, grid, entity.on_bridge));
-    // Accepting a destination re-powers the locomotor — the player-facing
-    // recovery edge. Native's Set_Destination powers it on before installing the
-    // destination, so a unit that was powered down can always be ordered to move
-    // again. Placed after the immutable reads above so the borrow is free.
-    if let Some(loco) = entities
-        .get_mut(entity_id)
-        .and_then(|entity| entity.locomotor.as_mut())
-    {
-        loco.power_on();
-    }
     if locomotor_kind == Some(LocomotorKind::Walk)
         && (!queue
             || entities
@@ -612,37 +559,32 @@ fn issue_move_command_with_destination_impl(
         // topology may have changed while a synchronized order was queued.
         let effective_target = target;
         let entity = entities.get_mut(entity_id).expect("resolved mover");
-        if publish_destination {
-            if let Some((reference, coord)) = object_destination {
-                entity.navigation.nav_com = Some(reference);
-                entity.navigation.nav_com_aux = None;
-                entity.navigation.pending_arrival_clear = false;
-                super::navcom::set_walk_destination_coord(entity, coord, resolved_terrain);
-            } else {
-                super::navcom::set_destination_internal_cell(
-                    entity,
-                    effective_target,
-                    resolved_terrain,
-                );
-            }
+        if let Some((reference, coord)) = object_destination {
+            entity.navigation.nav_com = Some(reference);
+            entity.navigation.nav_com_aux = None;
+            entity.navigation.pending_arrival_clear = false;
+            super::navcom::set_walk_destination_coord(entity, coord, resolved_terrain);
+        } else {
+            super::navcom::set_destination_internal_cell(
+                entity,
+                effective_target,
+                resolved_terrain,
+            );
         }
-        // One live Foot+5E0 word is cleared; suffix/reference and NavQueue
-        // survive. MovementTarget owns only the execution request until the
-        // object turn searches, or the already-paid head until it completes.
-        let committed_head = committed_path_head(entity);
         entity.navigation.path_replay.clear_live_head();
         timing.accept(entity);
-        entity.movement_target = Some(MovementTarget {
-            speed,
-            current_speed: speed,
-            final_goal: Some(effective_target),
-            ..Default::default()
-        });
-        if committed_head.is_some() {
-            retain_path_to_head(entity, committed_head);
-            entity.movement_target.as_mut().unwrap().final_goal = Some(effective_target);
-        }
+        prepare_walk_execution(entity, effective_target, speed);
         return true;
+    }
+    // Retain the existing non-Walk recovery policy. Infantry51AA40 ->
+    // Foot4D94B0 -> Walk75ACB0 has no PowerOn; a powered-down Walk still
+    // accepts its destination, with power unchanged (scatter_destination).
+    if locomotor_kind != Some(LocomotorKind::Walk)
+        && let Some(loco) = entities
+            .get_mut(entity_id)
+            .and_then(|e| e.locomotor.as_mut())
+    {
+        loco.power_on();
     }
     let mut merged_entity_blocks = merge_path_blocks(
         entity_blocks,
@@ -934,14 +876,12 @@ fn issue_move_command_with_destination_impl(
         let uses_drive_locomotor = locomotor_kind == Some(LocomotorKind::Drive);
         let uses_ship_locomotor = locomotor_kind == Some(LocomotorKind::Ship);
         let uses_shared_tracks = uses_drive_locomotor || uses_ship_locomotor;
-        if publish_destination && let Some((reference, coord)) = object_destination {
+        if let Some((reference, coord)) = object_destination {
             entity_mut.navigation.nav_com = Some(reference);
             entity_mut.navigation.nav_com_aux = None;
             entity_mut.navigation.pending_arrival_clear = false;
             super::navcom::set_walk_destination_coord(entity_mut, coord, resolved_terrain);
-        } else if publish_destination
-            && (uses_shared_tracks || locomotor_kind == Some(LocomotorKind::Walk))
-        {
+        } else if uses_shared_tracks || locomotor_kind == Some(LocomotorKind::Walk) {
             super::navcom::set_destination_internal_cell(
                 entity_mut,
                 effective_target,
@@ -1019,47 +959,58 @@ fn issue_move_command_with_destination_impl(
     true
 }
 
-/// Scatter51D455 installs the Cell destination before51D478 enters Process.
-/// Prepare the existing path adapter after that store without repeating its
-/// observable Cell/ground/destination lookups. Ordinary order callers still
-/// publish their destination through the existing branch above.
+/// Accepted Cell destination -> Walk75ACB0, without searching or advancing
+/// Process. The class caller owns preceding admission; this accepted Cell
+/// path preserves Enter-without-contact's skipped path-head write.
+/// No PathGrid is needed until the next ordinary Process (or the immediate
+/// Process specifically required by NULL-source Scatter51D478).
 pub(crate) fn prepare_walk_cell_destination(
     entities: &mut EntityStore,
-    grid: &PathGrid,
     entity_id: u64,
     target: (u16, u16),
     speed: SimFixed,
-    terrain_costs: Option<&TerrainCostGrid>,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
-    zone_grid: Option<&ZoneGrid>,
-    playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
-    cell_occupation: &mut crate::sim::occupancy::CellOccupationGrid,
     timing: crate::sim::movement::DestinationTiming,
 ) -> bool {
     let Some(entity) = entities.get_mut(entity_id) else {
         return false;
     };
-    if !can_accept_destination(entity) {
+    if !entity
+        .locomotor
+        .as_ref()
+        .is_some_and(|l| l.kind == LocomotorKind::Walk)
+    {
         return false;
     }
+    clear_infantry_cell_destination_head(entity);
     super::navcom::set_destination_internal_cell(entity, target, resolved_terrain);
-    issue_move_command_with_destination_impl(
-        entities,
-        grid,
-        entity_id,
-        target,
+    timing.accept(entity);
+    prepare_walk_execution(entity, target, speed);
+    true
+}
+
+/// 51AC25..51AD17: Cell is not a Techno, so Enter without a radio contact
+/// skips the one-word PathHead clear. NavQueue, suffix and reference survive.
+pub(super) fn clear_infantry_cell_destination_head(entity: &mut GameEntity) {
+    if (entity.mission.effective().raw() != 7 && entity.mission.queued().raw() != 7)
+        || !entity.radio_contacts.is_empty()
+    {
+        entity.navigation.path_replay.clear_live_head();
+    }
+}
+
+/// MovementTarget is only the scheduling adapter. Retain a paid head, never
+/// turn at order time or create a competing straight-line path for Walk.
+fn prepare_walk_execution(entity: &mut GameEntity, target: (u16, u16), speed: SimFixed) {
+    let committed_head = committed_path_head(entity);
+    entity.movement_target = Some(MovementTarget {
         speed,
-        false,
-        terrain_costs,
-        None,
-        resolved_terrain,
-        zone_grid,
-        None,
-        None,
-        playfield_bounds,
-        Some(cell_occupation),
-        None,
-        false,
-        timing,
-    )
+        current_speed: speed,
+        final_goal: Some(target),
+        ..Default::default()
+    });
+    if committed_head.is_some() {
+        retain_path_to_head(entity, committed_head);
+        entity.movement_target.as_mut().unwrap().final_goal = Some(target);
+    }
 }

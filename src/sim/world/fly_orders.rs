@@ -74,26 +74,10 @@ impl Simulation {
                 }
             }
         }
-        let entity = self.substrate.entities.get(id).unwrap();
-        // The existing cargo relationship owns this represented +82 input.
-        let open_transport = match entity.passenger_role {
-            crate::sim::passenger::PassengerRole::Inside { transport_id } => self
-                .substrate
-                .entities
-                .get(transport_id)
-                .and_then(|e| rules.object(self.interner.resolve(e.type_ref())))
-                .is_some_and(|o| o.open_topped),
-            _ => false,
-        };
-        let refused = requested.is_some()
-            && (entity.foot_locomotor_swap_active
-                || open_transport
-                || entity.bunker_link.installed_in().is_some());
-        let entity = self.substrate.entities.get_mut(id).unwrap();
-        entity.navigation.nav_com_aux = None;
-        if refused {
+        if !self.begin_foot_destination(id, requested.is_some(), rules) {
             return;
         }
+        let entity = self.substrate.entities.get_mut(id).unwrap();
         crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
             entity, requested,
         );
@@ -250,7 +234,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
-        if air_movement::fly_owner_disabled(entity)
+        if crate::sim::movement::locomotor_owner::owner_is_warping(entity)
             || entity
                 .locomotor
                 .as_ref()

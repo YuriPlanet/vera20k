@@ -312,15 +312,10 @@ impl Simulation {
             .ok_or_else(|| self.hut_callback_error(id, "hut Process requires navigation".into()))?;
         movement::prepare_walk_cell_destination(
             &mut self.substrate.entities,
-            grid,
             id,
             destination,
             move_info.speed,
-            self.terrain_costs.get(&speed_type),
             self.resolved_terrain.as_ref(),
-            self.zone_grid.as_ref(),
-            self.playfield_bounds,
-            &mut self.substrate.cell_occupation,
             crate::sim::movement::DestinationTiming::new(
                 self.session.binary_frame,
                 rules.general.blockage_path_delay_ticks,

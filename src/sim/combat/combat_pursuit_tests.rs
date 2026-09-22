@@ -696,15 +696,10 @@ fn walk_destination_search_observes_route_opened_before_process() {
     let (mut sim, _rules, actor, _) = walk_pursuit_scene();
     assert!(crate::sim::movement::prepare_walk_cell_destination(
         &mut sim.substrate.entities,
-        &closed_grid,
         actor,
         (14, 10),
         crate::util::fixed_math::SimFixed::from_num(4),
-        None,
         sim.resolved_terrain.as_ref(),
-        sim.zone_grid.as_ref(),
-        sim.playfield_bounds,
-        &mut sim.substrate.cell_occupation,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
     let e = sim.substrate.entities.get(actor).unwrap();
@@ -724,6 +719,7 @@ fn walk_cell_order_defers_queue_publication_and_first_head_motion() {
     };
     let entity = sim.substrate.entities.get_mut(actor).unwrap();
     entity.navigation.path_replay = queue.clone();
+    entity.locomotor.as_mut().unwrap().powered = false;
     entity.navigation.nav_queue = vec![NavTargetRef::Cell { rx: 25, ry: 10 }];
     let before = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
     walk_command(
@@ -738,6 +734,10 @@ fn walk_cell_order_defers_queue_publication_and_first_head_motion() {
         },
     );
     let entity = sim.substrate.entities.get(actor).unwrap();
+    assert!(
+        !entity.locomotor.as_ref().unwrap().powered,
+        "ordinary Walk destination also preserves native power state"
+    );
     let mut invalidated = queue;
     invalidated.clear_live_head();
     assert_eq!(

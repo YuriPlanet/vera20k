@@ -806,28 +806,12 @@ impl Simulation {
         let move_info = self
             .resolve_move_info(id, Some(rules))
             .ok_or("Find_Path redirect requires the actor's move info")?;
-        let grid = self.path_grid_snapshot();
-        let grid = grid
-            .as_deref()
-            .ok_or("Find_Path redirect requires navigation")?;
-        let speed_type = self
-            .substrate
-            .entities
-            .get(id)
-            .and_then(|actor| self.object_type(actor.type_ref(), rules))
-            .map(|object| object.speed_type)
-            .ok_or("Find_Path redirect requires the Infantry type")?;
         if !super::prepare_walk_cell_destination(
             &mut self.substrate.entities,
-            grid,
             id,
             (cell.0 as u16, cell.1 as u16),
             move_info.speed,
-            self.terrain_costs.get(&speed_type),
             self.resolved_terrain.as_ref(),
-            self.zone_grid.as_ref(),
-            self.playfield_bounds,
-            &mut self.substrate.cell_occupation,
             super::DestinationTiming::new(
                 self.session.binary_frame,
                 rules.general.blockage_path_delay_ticks,

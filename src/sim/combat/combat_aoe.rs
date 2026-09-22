@@ -3376,6 +3376,7 @@ mod tests {
             queued_mission: MissionId,
             rng_changed: bool,
             rng_indices: serde_json::Value,
+            setter: serde_json::Value,
         }
 
         #[derive(Default)]
@@ -3431,16 +3432,17 @@ mod tests {
                  [Warheads]\n0=WH\n\
                  [IQ]\nScatter=99\n\
                  [CombatDamage]\nPlayerScatter=no\nMaxDamage=10000\n\
-                 [Guard]\nScatter=yes\n\
+                 [Guard]\nScatter=yes\n[Enter]\nScatter=yes\n\
                  [Attack]\nScatter=no\n\
                  [E1]\nStrength=125\nArmor=none\nSpeed=4\nFraidycat={fraidycat}\n\
                  Locomotor={{4A582744-9839-11d1-B709-00A024DDAFD1}}\n\
                  MovementZone=Infantry\nSpeedType=Foot\n\
-                 [ATTACKER]\nStrength=100\nArmor=none\n\
+                 [ATTACKER]\nStrength=100\nArmor=none\nOpenTopped=yes\n\
                  [WH]\nCellSpread=0\nPercentAtMax=1\n\
                  Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
             ));
-            let rules = RuleSet::from_ini(&ini).expect("damage-scatter fixture");
+            let mut rules = RuleSet::from_ini(&ini).expect("damage-scatter fixture");
+            rules.general.blockage_path_delay_ticks = 22;
             let mut interner = test_interner();
             let attacker_house = interner.intern("AttackerHouse");
             let victim_house = interner.intern("VictimHouse");
@@ -3496,6 +3498,65 @@ mod tests {
                 ai_counter: 0,
                 dispatch_timer: MissionDispatchTimer::at_frame(0),
             });
+            if let Some(case) = fixture
+                .entry_case
+                .as_ref()
+                .filter(|c| c["live_setter"] == true)
+            {
+                use crate::sim::components::{DriveCoord, FootPathQueue};
+                use crate::sim::timer::CdTimer;
+                victim.facing = 64;
+                victim.infantry.as_mut().unwrap().cell_entry_blocked = true;
+                victim.navigation.nav_com_aux =
+                    Some(crate::sim::components::NavTargetRef::cell(1, 1));
+                victim.navigation.path_replay = FootPathQueue {
+                    directions: vec![2, 3, 4, 5],
+                    cursor: 0,
+                    reference_cell: Some((9, 8)),
+                };
+                let path = &mut victim.navigation.path_runtime;
+                path.movement_timer = CdTimer::started(50, 5);
+                path.blocked_timer = CdTimer::started(40, 6);
+                path.path_blocked = true;
+                path.retries_left = 7;
+                let loco = victim.locomotor.as_mut().unwrap();
+                loco.powered = case["power_off"] != true;
+                if let Some(head) = case["head"].as_array() {
+                    loco.set_step_head(Some(DriveCoord {
+                        x: head[0].as_i64().unwrap() as i32 - 1280,
+                        y: head[1].as_i64().unwrap() as i32 - 1280,
+                        z: head[2].as_i64().unwrap() as i32,
+                    }));
+                }
+                if case["moving"] == true {
+                    loco.set_walk_destination(Some(DriveCoord {
+                        x: 6528,
+                        y: 1408,
+                        z: 0,
+                    }));
+                }
+                victim.foot_locomotor_swap_active = case["swap_active"] == true;
+                if case["bunker"] == true {
+                    victim.bunker_link = crate::sim::game_entity::BunkerLink::Installed(1);
+                }
+                if case["warp_in"] == true || case["warp_out"] == true {
+                    use crate::sim::movement::teleport_movement::{TeleportPhase, TeleportState};
+                    victim.teleport_state = Some(TeleportState {
+                        phase: if case["warp_out"] == true {
+                            TeleportPhase::Relocate
+                        } else {
+                            TeleportPhase::ChronoDelay
+                        },
+                        target_rx: 8,
+                        target_ry: 8,
+                        being_warped_ticks: 3,
+                    });
+                }
+                if case["open_transport"] == true {
+                    victim.passenger_role =
+                        crate::sim::passenger::PassengerRole::Inside { transport_id: 1 };
+                }
+            }
             entities.insert(victim);
 
             let mut occupancy = OccupancyGrid::new();
@@ -3559,7 +3620,7 @@ mod tests {
                     raw.mark_deck(x, y, cell[3].as_u64().unwrap() as u8);
                 }
             }
-            let event = EntityDamageEvent::area(
+            let mut event = EntityDamageEvent::area(
                 2,
                 10,
                 0,
@@ -3571,6 +3632,16 @@ mod tests {
                 attacker_present.then_some(attacker_house),
                 warhead_ref,
             );
+            if fixture
+                .entry_case
+                .as_ref()
+                .is_some_and(|c| c["warp_out"] == true || c["bunker"] == true)
+            {
+                // Ordinary damage is immune before Scatter in these states.
+                // Explicit ignore-defenses input reaches the same production
+                // receiver continuation so the native setter refusal is tested.
+                event.receiver_flags.as_mut().unwrap().ignore_defenses = true;
+            }
             let mut world = crate::sim::world::Simulation::new();
             world.substrate.entities = entities;
             world.substrate.occupancy = occupancy;
@@ -3589,6 +3660,7 @@ mod tests {
                     ),
                 );
             }
+            world.session.binary_frame = 100;
             world.main_rng = SimRng::new(7);
             world.scenario_rng = SimRng::new(1);
             // Some(false) models campaign PlayerControl without IsHuman.
@@ -3628,12 +3700,39 @@ mod tests {
                 destination: victim
                     .movement_target
                     .as_ref()
-                    .map(|movement| *movement.path.last().expect("direct move has destination")),
+                    .and_then(|movement| movement.final_goal),
                 queued_mission: victim.mission.queued(),
                 rng_changed: world.scenario_rng.state() != before_rng,
                 rng_indices: {
                     let state = world.scenario_rng.logical_state();
                     serde_json::json!([state.index_a, state.index_b])
+                },
+                setter: {
+                    let loco = victim.locomotor.as_ref().unwrap();
+                    let path = &victim.navigation.path_runtime;
+                    let coord = |value: Option<crate::sim::components::DriveCoord>| {
+                        value.map_or([0, 0, 0], |v| [v.x + 1280, v.y + 1280, v.z])
+                    };
+                    let nav = victim.navigation.nav_com.and_then(|target| match target {
+                        crate::sim::components::NavTargetRef::Cell { rx, ry } => {
+                            Some([rx + 5, ry + 5])
+                        }
+                        _ => None,
+                    });
+                    serde_json::json!({
+                        "nav": nav, "aux": if victim.navigation.nav_com_aux.is_none() { 0 } else { 123 },
+                        "destination": coord(loco.walk_destination()), "head": coord(loco.step_head()),
+                        "queue": victim.navigation.path_replay.directions.iter().map(|&v| if v == 255 { -1 } else { i32::from(v) }).collect::<Vec<_>>(),
+                        "reference": victim.navigation.path_replay.reference_cell,
+                        "queued_mission": victim.mission.queued().raw(),
+                        "facing": u32::from(victim.facing) * 256 * 65537,
+                        "moving": u8::from(loco.walk_is_moving().unwrap()), "powered": u8::from(loco.powered),
+                        "blocked": u8::from(path.path_blocked),
+                        "movement_timer": [path.movement_timer.start_frame(), path.movement_timer.duration()],
+                        "blocked_timer": [path.blocked_timer.start_frame(), path.blocked_timer.duration()],
+                        "retries": path.retries_left,
+                        "entry_blocked": u8::from(victim.infantry.as_ref().unwrap().cell_entry_blocked),
+                    })
                 },
             }
         }
@@ -3688,6 +3787,38 @@ mod tests {
                 })
             );
         }
+        let destinations: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/infantry_scatter_destination.json"
+        ))
+        .unwrap();
+        assert_eq!(destinations.as_array().unwrap().len(), 18);
+        for row in destinations.as_array().unwrap() {
+            let mission = if row["input"]["mission"] == 7 {
+                MissionType::Enter
+            } else {
+                MissionType::Guard
+            };
+            let output = run_fixture(
+                mission,
+                true,
+                125,
+                true,
+                None,
+                false,
+                false,
+                ScatterFixture {
+                    entry_case: Some(row["input"].clone()),
+                    ..fixture()
+                },
+            );
+            assert_eq!(output.setter, row["setter"], "{}", row["input"]);
+            assert_eq!(
+                output.rng_indices, row["random_indices"],
+                "{}",
+                row["input"]
+            );
+            assert_eq!((output.health, output.fear), (115, 300));
+        }
         let displayed_death = run_scene(ScatterFixture {
             animation: Some(crate::sim::animation::SequenceKind::Die1),
             ..fixture()
@@ -3697,13 +3828,13 @@ mod tests {
             Some((6, 4)),
             "display does not own Doing"
         );
-        let retained_death = run_scene(ScatterFixture {
+        let refused_doing = run_scene(ScatterFixture {
             doing: 7,
             animation: Some(crate::sim::animation::SequenceKind::Stand),
             ..fixture()
         });
-        assert_eq!(retained_death.destination, None);
-        assert!(!retained_death.rng_changed);
+        assert_eq!(refused_doing.destination, None);
+        assert!(!refused_doing.rng_changed);
         let later_preferred = run_scene(ScatterFixture {
             first_bridge: true,
             ..fixture()
