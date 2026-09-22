@@ -552,7 +552,8 @@ use crate::sim::world::Simulation;
 // 186 -> 187: object burst position replaces AttackTarget's remaining-shot count.
 // 187 -> 188: Fly retains exact destination XYZ, independent of the cell cache.
 // 188 -> 189: retained Techno+3D4 cannot be recovered from live type or cargo.
-const SNAPSHOT_VERSION: u32 = 189;
+// 189 -> 190: Foot+55C history and the combined retained wall/Foot Cell+122 plane.
+const SNAPSHOT_VERSION: u32 = 190;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1934,7 +1935,7 @@ impl Simulation {
                     grid.width(),
                     grid.height(),
                     grid.cell_storage_len(),
-                    grid.retained_wall_neighbor_count_storage_len(),
+                    grid.retained_neighbor_count_storage_len(),
                 )
             })
             .ok_or(SnapshotRestoreError::MissingMapAuthorityComponent {
@@ -2887,14 +2888,14 @@ mod tests {
             width: u16,
             height: u16,
             cells: Vec<OverlayCell>,
-            retained_wall_neighbor_counts: Option<Vec<u8>>,
+            retained_neighbor_counts: Option<Vec<u8>>,
         }
 
         let malformed_bytes = bincode::serialize(&OverlayGridWire {
             width: 2,
             height: 1,
             cells: vec![OverlayCell::default()],
-            retained_wall_neighbor_counts: None,
+            retained_neighbor_counts: None,
         })
         .expect("malformed overlay wire fixture");
         let malformed: OverlayGrid =
@@ -2929,14 +2930,14 @@ mod tests {
             width: u16,
             height: u16,
             cells: Vec<OverlayCell>,
-            retained_wall_neighbor_counts: Option<Vec<u8>>,
+            retained_neighbor_counts: Option<Vec<u8>>,
         }
 
         let malformed_bytes = bincode::serialize(&OverlayGridWire {
             width: 2,
             height: 1,
             cells: vec![OverlayCell::default(); 2],
-            retained_wall_neighbor_counts: Some(vec![7]),
+            retained_neighbor_counts: Some(vec![7]),
         })
         .expect("malformed retained wall-neighbor wire fixture");
         let malformed: OverlayGrid =
@@ -2976,14 +2977,14 @@ mod tests {
             width: u16,
             height: u16,
             cells: Vec<OverlayCell>,
-            retained_wall_neighbor_counts: Option<Vec<u8>>,
+            retained_neighbor_counts: Option<Vec<u8>>,
         }
 
         let planeless_bytes = bincode::serialize(&OverlayGridWire {
             width: 2,
             height: 1,
             cells: vec![OverlayCell::default(); 2],
-            retained_wall_neighbor_counts: None,
+            retained_neighbor_counts: None,
         })
         .expect("plane-less retained wall wire fixture");
         let planeless: OverlayGrid =
@@ -3449,8 +3450,8 @@ mod tests {
         // 185 -> 186: Aircraft pending ammo survives independently of Attack.
         // 186 -> 187: object burst position replaces the target-owned count.
         // 187 -> 188: retained Fly destination XYZ cannot be recovered from cells.
-        // 188 -> 189: Techno+3D4 deployment history.
-        assert_eq!(super::SNAPSHOT_VERSION, 189);
+        // 189 -> 190: Foot neighbor history and retained live counters.
+        assert_eq!(super::SNAPSHOT_VERSION, 190);
     }
 
     #[test]
@@ -3720,7 +3721,7 @@ mod tests {
                 .overlay_grid
                 .as_ref()
                 .expect("overlay authority")
-                .retained_wall_neighbor_counts(),
+                .retained_neighbor_counts(),
             Some(&[0, 7, 255, 4][..])
         );
     }
@@ -6691,6 +6692,10 @@ mod tests {
         process_dummy.set_level_slope(-7, 11);
         process_dummy.stamp_coord(7, 9);
 
+        let before_neighbor_count = live.state_hash();
+        process_dummy.adjust_neighbor_count(true);
+        assert_ne!(before_neighbor_count, live.state_hash());
+
         let owner = live.intern("DummyOccupationOwner");
         let hash_before_raw = live.state_hash();
         live.substrate.raw_cell_occupation.write_infantry(
@@ -6748,6 +6753,7 @@ mod tests {
             "the process-global CellClass bytes are not Scenario payload"
         );
         assert!(!cold.shared_cell_dummy.same_identity(&process_dummy));
+        assert_eq!(cold.shared_cell_dummy.neighbor_count(), 0);
 
         let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
         restored.retain_in_scenario_process_state_from(&live);
@@ -6756,6 +6762,7 @@ mod tests {
             live.substrate.raw_cell_occupation.dummy_for_hash()
         );
         assert!(restored.shared_cell_dummy.same_identity(&process_dummy));
+        assert_eq!(restored.shared_cell_dummy.neighbor_count(), 1);
         assert_eq!(
             restored.shared_cell_dummy.snapshot(),
             crate::map::resolved_terrain::SharedCellDummySnapshot {

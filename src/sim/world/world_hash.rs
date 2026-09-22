@@ -842,6 +842,12 @@ impl Simulation {
                 gap_flags.hash(&mut hasher);
             }
             let shared_dummy_overlay = shared_dummy_handle.overlay_identity_state();
+            if schema.includes(HashFeature::FootNeighborHistory)
+                && shared_dummy_handle.neighbor_count() != 0
+            {
+                b"shared-cell-dummy-neighbor-count-v1".hash(&mut hasher);
+                shared_dummy_handle.neighbor_count().hash(&mut hasher);
+            }
             let shared_dummy_tube = shared_dummy_handle.raw_tube_index();
             if shared_dummy_tube != -1 {
                 b"shared-cell-dummy-tube-v1".hash(&mut hasher);
@@ -1400,7 +1406,7 @@ impl Simulation {
         }
         if schema.includes(HashFeature::WallRuntime) {
             b"retained-wall-neighbor-counts-v1".hash(hasher);
-            match overlay_grid.retained_wall_neighbor_counts() {
+            match overlay_grid.retained_neighbor_counts() {
                 None => 0u8.hash(hasher),
                 Some(counts) => {
                     1u8.hash(hasher);
@@ -1746,6 +1752,9 @@ impl Simulation {
 
             if schema.includes(HashFeature::FootPathRuntime) {
                 entity.navigation.path_runtime.hash(hasher);
+            }
+            if schema.includes(HashFeature::FootNeighborHistory) {
+                entity.navigation.neighbor_state.hash(hasher);
             }
             entity.navigation.path_replay.hash(hasher);
             entity.navigation.nav_com_aux.hash(hasher);

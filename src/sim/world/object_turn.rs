@@ -129,6 +129,14 @@ impl Simulation {
         let sim = self;
         let one = [stable_id];
         let mut outcome = GroundLocomotorOutcome::default();
+        let movement_before = sim.substrate.entities.get(stable_id).map(|entity| {
+            (
+                (entity.position.rx, entity.position.ry),
+                entity.movement_target.is_some(),
+                entity.low_bridge_tube_state.is_some(),
+                entity.locomotor.as_ref().map(|loco| loco.active_kind()),
+            )
+        });
         // Drive4B050B..0557 / Ship69FC1B..FC67 samples the containing
         // cell slope before any active-track, destination or turn return.
         // Entry-active Tube owns its whole visit and does not call Process.
@@ -275,6 +283,20 @@ impl Simulation {
                 &mut sim.pending_lifecycle_requests,
                 &mut sim.movement_pass_cache,
             ));
+        if let Some((old_cell, had_target, tube_active, kind)) = movement_before {
+            let per_cell = sim.substrate.entities.get(stable_id).is_some_and(|entity| {
+                // Tube exits Unit73603F / Infantry51BA9B and Hover arrival5146CA / cell-entry
+                // 515A1C. The existing Hover integrator still approximates
+                // native crossing timing; its accepted entries use this owner.
+                (tube_active && entity.low_bridge_tube_state.is_none())
+                    || (kind == Some(crate::rules::locomotor_type::LocomotorKind::Hover)
+                        && (old_cell != (entity.position.rx, entity.position.ry)
+                            || (had_target && entity.movement_target.is_none())))
+            });
+            if per_cell {
+                sim.foot_neighbors_at_per_cell(stable_id);
+            }
+        }
         Ok(outcome)
     }
     pub(super) fn advance_live_object_pass(
@@ -486,6 +508,11 @@ impl Simulation {
                 None,
             );
         }
+        if teleport_relocating {
+            // Relocation71971C / 719ADE calls PerCell(2), including a
+            // same-cell relocation; ordinary Fly motion has no such call.
+            sim.foot_neighbors_at_per_cell(stable_id);
+        }
         sim.pending_rocket_detonations
             .extend(rocket_movement::tick_rocket_movement(
                 &mut sim.substrate.entities,
@@ -514,6 +541,9 @@ impl Simulation {
                 sim.session.tick,
             );
             if was_falling && !falling(sim) {
+                // Object AI5F3F8D: grounded fall completion precedes the
+                // parachute animation's wind-down.
+                sim.foot_neighbors_at_per_cell(stable_id);
                 sim.wind_down_parachute_anim(rules, stable_id);
             }
         }

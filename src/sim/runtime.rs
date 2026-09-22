@@ -1189,10 +1189,14 @@ pub(crate) fn finalize_constructed_scenario(
     map_data: &crate::map::map_file::MapFile,
     rules: &RuleSet,
     overlay_registry: &crate::map::overlay_types::OverlayTypeRegistry,
-    mut overlay_grid: crate::sim::overlay_grid::OverlayGrid,
+    overlay_grid: crate::sim::overlay_grid::OverlayGrid,
     house_roster: &crate::map::houses::HouseRoster,
     skirmish_session: Option<&crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
 ) -> crate::sim::scenario_post_map::ScenarioPostMapOutput {
+    // Population and starting-unit Unlimbo mutate the live Cell+122 bytes.
+    // The loader argument is a presentation/materialization view taken before
+    // those events; never replace their retained history with that older copy.
+    let mut overlay_grid = sim.overlay_grid.take().unwrap_or(overlay_grid);
     // Attach the TIBTRE ore-spawner animation index to the terrain objects
     // constructed ahead of the map entities. Its authoritative raw SHP count
     // is rules-owned; presentation atlases retain only body-frame ranges.
@@ -1279,4 +1283,48 @@ pub(crate) fn finalize_constructed_scenario(
         });
     sim.discard_lighting_events();
     output
+}
+#[test]
+fn finalization_keeps_live_neighbor_counts_instead_of_the_loader_copy() {
+    use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
+    use crate::sim::overlay_grid::OverlayGrid;
+    let map = crate::map::map_file::MapFile::from_bytes(
+            b"[Map]\nTheater=TEMPERATE\nSize=0,0,4,4\nLocalSize=0,0,4,4\n[IsoMapPack5]\n1=CAAEABUAAAAAEQAA\n"
+        ).unwrap();
+    let rules = SimResources::empty().rules;
+    let registry = crate::map::overlay_types::OverlayTypeRegistry::from_ini(
+        &crate::rules::ini_parser::IniFile::from_str(""),
+        None,
+    );
+    let roster = crate::map::houses::parse_house_roster(&map.ini, &[], Some(&rules));
+    let mut sim = Simulation::new();
+    sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
+        8,
+        8,
+        (0..8)
+            .flat_map(|y| (0..8).map(move |x| test_flat_cell(x, y)))
+            .collect(),
+    ));
+    let stale = OverlayGrid::new_with_retained_wall_plane(8, 8);
+    sim.overlay_grid = Some(stale.clone());
+    sim.overlay_grid
+        .as_mut()
+        .unwrap()
+        .adjust_foot_neighbor_source(sim.resolved_terrain.as_ref(), (3, 3), true);
+    let expected = sim
+        .overlay_grid
+        .as_ref()
+        .unwrap()
+        .retained_neighbor_counts()
+        .unwrap()
+        .to_vec();
+    finalize_constructed_scenario(&mut sim, &map, &rules, &registry, stale, &roster, None);
+    assert_eq!(
+        sim.overlay_grid
+            .as_ref()
+            .unwrap()
+            .retained_neighbor_counts()
+            .unwrap(),
+        expected
+    );
 }

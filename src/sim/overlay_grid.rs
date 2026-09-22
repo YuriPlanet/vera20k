@@ -94,18 +94,20 @@ pub struct OverlayGrid {
     width: u16,
     height: u16,
     cells: Vec<OverlayCell>,
-    /// Authoritative wall-only contribution to CellClass+0x122. `Some`, even
+    /// Retained wall and Foot contribution to CellClass+0x122. `Some`, even
     /// when all zero, means the finalized authored plane was retained and final
     /// wall identities must never be scanned as a substitute. `None` is the
     /// temporary legacy-constructor compatibility mode.
     #[serde(default)]
-    retained_wall_neighbor_counts: Option<Vec<u8>>,
+    retained_neighbor_counts: Option<Vec<u8>>,
+    #[serde(skip, default)]
+    foot_neighbor_changes: crate::sim::cell_neighbors::NeighborCountChanges,
     /// Cells mutated this tick — drained by Simulation's end-of-frame finalizer
     /// before the authoritative hash. Not part of game state; never serialized.
     #[serde(skip, default)]
     dirty_cells: Vec<(u16, u16)>,
-    /// Bumped by every mutator that can change an overlay identity or the
-    /// retained wall-neighbour plane (the movement blocker plane keys on it).
+    /// Bumped by mutators that can change overlay identity or retained neighbor
+    /// bytes. Movement uses the wall epoch plus Foot deltas for retained grids.
     /// Not every internal write bumps it; the public and wall-transaction entry
     /// points do. Not game state; never serialized.
     #[serde(skip)]
@@ -193,6 +195,9 @@ fn increment_wall_neighbor_plane(
             i32::from(ry) + dy,
         );
         let Some(NativeRuntimeOverlayCell::Real(nx, ny)) = target else {
+            if let Some(terrain) = resolved_terrain {
+                terrain.shared_cell_dummy().adjust_neighbor_count(true);
+            }
             continue;
         };
         let Some(index) = index_of(width, height, nx, ny) else {
@@ -210,7 +215,8 @@ impl OverlayGrid {
             width,
             height,
             cells: vec![OverlayCell::default(); count],
-            retained_wall_neighbor_counts: None,
+            retained_neighbor_counts: None,
+            foot_neighbor_changes: Default::default(),
             dirty_cells: Vec::new(),
             mutation_epoch: 0,
             wall_plane_epoch: 0,
@@ -227,8 +233,7 @@ impl OverlayGrid {
     #[cfg(test)]
     pub(crate) fn new_with_retained_wall_plane(width: u16, height: u16) -> Self {
         let mut grid = Self::new(width, height);
-        grid.retained_wall_neighbor_counts =
-            Some(vec![0u8; usize::from(width) * usize::from(height)]);
+        grid.retained_neighbor_counts = Some(vec![0u8; usize::from(width) * usize::from(height)]);
         grid
     }
 
@@ -239,17 +244,26 @@ impl OverlayGrid {
     pub(crate) fn retain_zero_wall_plane_for_tests(&mut self) {
         self.mutation_epoch = self.mutation_epoch.wrapping_add(1);
         self.wall_plane_epoch = self.wall_plane_epoch.wrapping_add(1);
-        self.retained_wall_neighbor_counts = Some(vec![0u8; self.cells.len()]);
+        self.retained_neighbor_counts = Some(vec![0u8; self.cells.len()]);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn seed_neighbor_counts_for_tests(&mut self, value: u8) {
+        self.retained_neighbor_counts
+            .as_mut()
+            .expect("retained plane")
+            .fill(value);
+        self.wall_plane_epoch = self.wall_plane_epoch.wrapping_add(1);
     }
 
     /// Consume the one finalized map payload. This boundary has no raw-pack,
     /// rules, source-filter, RNG, Mark, or Recalc capability.
     pub(crate) fn from_finalized_map_payload(payload: FinalizedOverlayPayload) -> Self {
-        let (width, height, finalized, retained_wall_neighbor_counts) = payload.into_parts();
+        let (width, height, finalized, retained_neighbor_counts) = payload.into_parts();
         let expected = usize::from(width) * usize::from(height);
         assert_eq!(finalized.len(), expected, "finalized overlay cell shape");
         assert_eq!(
-            retained_wall_neighbor_counts.len(),
+            retained_neighbor_counts.len(),
             expected,
             "finalized wall-neighbor plane shape"
         );
@@ -265,7 +279,8 @@ impl OverlayGrid {
             width,
             height,
             cells,
-            retained_wall_neighbor_counts: Some(retained_wall_neighbor_counts),
+            retained_neighbor_counts: Some(retained_neighbor_counts),
+            foot_neighbor_changes: Default::default(),
             dirty_cells: Vec::new(),
             mutation_epoch: 0,
             wall_plane_epoch: 0,
@@ -433,7 +448,7 @@ impl OverlayGrid {
                 }
             }
         }
-        grid.retained_wall_neighbor_counts = Some(wall_neighbor_counts);
+        grid.retained_neighbor_counts = Some(wall_neighbor_counts);
         grid
     }
 
@@ -485,20 +500,81 @@ impl OverlayGrid {
     /// current: the wall plane's own when one is retained, else (legacy
     /// constructors, which scan wall identities instead) every mutation.
     pub(crate) fn blocker_plane_epoch(&self) -> (bool, u64) {
-        match self.retained_wall_neighbor_counts {
+        match self.retained_neighbor_counts {
             Some(_) => (true, self.wall_plane_epoch),
             None => (false, self.mutation_epoch),
         }
     }
 
-    /// Read the retained wall contribution plane. `Some(all-zero)` is
+    /// Read the retained wall and Foot contribution plane. `Some(all-zero)` is
     /// authoritative and must not fall back to a final-identity scan.
-    pub(crate) fn retained_wall_neighbor_counts(&self) -> Option<&[u8]> {
-        self.retained_wall_neighbor_counts.as_deref()
+    pub(crate) fn retained_neighbor_counts(&self) -> Option<&[u8]> {
+        self.retained_neighbor_counts.as_deref()
     }
 
-    pub(crate) fn retained_wall_neighbor_count_storage_len(&self) -> Option<usize> {
-        self.retained_wall_neighbor_counts.as_ref().map(Vec::len)
+    pub(crate) fn retained_neighbor_count_storage_len(&self) -> Option<usize> {
+        self.retained_neighbor_counts.as_ref().map(Vec::len)
+    }
+
+    pub(crate) fn foot_neighbor_revision(&self) -> u64 {
+        self.foot_neighbor_changes.revision()
+    }
+
+    pub(crate) fn foot_neighbor_changes_since(
+        &self,
+        revision: u64,
+    ) -> Option<impl Iterator<Item = (usize, u8)> + '_> {
+        self.foot_neighbor_changes.since(revision)
+    }
+
+    /// Foot counter loops use one saved packed source for all eight probes,
+    /// unlike wall Adjacent_Cell which rereads a potentially restamped Dummy.
+    pub(crate) fn adjust_foot_neighbor_source(
+        &mut self,
+        terrain: Option<&ResolvedTerrainGrid>,
+        source: (i16, i16),
+        add: bool,
+    ) {
+        let Some(counts) = self.retained_neighbor_counts.as_mut() else {
+            return;
+        };
+        let terrain = terrain.expect("retained neighbor counts need native CellClass lookup");
+        self.mutation_epoch = self.mutation_epoch.wrapping_add(1);
+        for (dx, dy) in [
+            (0i16, -1i16),
+            (1, -1),
+            (1, 0),
+            (1, 1),
+            (0, 1),
+            (-1, 1),
+            (-1, 0),
+            (-1, -1),
+        ] {
+            let target = native_runtime_overlay_cell_lookup(
+                self.width,
+                self.height,
+                Some(terrain),
+                i32::from(source.0.wrapping_add(dx)),
+                i32::from(source.1.wrapping_add(dy)),
+            );
+            match target {
+                Some(NativeRuntimeOverlayCell::Real(x, y)) => {
+                    let index = usize::from(y) * usize::from(self.width) + usize::from(x);
+                    counts[index] = if add {
+                        counts[index].wrapping_add(1)
+                    } else {
+                        counts[index].wrapping_sub(1)
+                    };
+                    if !self.foot_neighbor_changes.record(index, add) {
+                        self.wall_plane_epoch = self.wall_plane_epoch.wrapping_add(1);
+                    }
+                }
+                Some(NativeRuntimeOverlayCell::Dummy) => {
+                    terrain.shared_cell_dummy().adjust_neighbor_count(add)
+                }
+                None => unreachable!("native lookup always yields CellClass"),
+            }
+        }
     }
 
     fn adjust_retained_wall_neighbor_source(
@@ -528,7 +604,7 @@ impl OverlayGrid {
         // 0x00481070..0x00481082; cleanup auto-removal's conditional decrement
         // uses the zone comparison returned by recalculate_runtime_cell below.
         let (width, height) = (self.width, self.height);
-        let Some(counts) = self.retained_wall_neighbor_counts.as_mut() else {
+        let Some(counts) = self.retained_neighbor_counts.as_mut() else {
             return;
         };
         let terrain = resolved_terrain
@@ -569,9 +645,9 @@ impl OverlayGrid {
                 base_x + dx,
                 base_y + dy,
             ) else {
-                // Native still performed the lookup and stamped the process
-                // dummy. The retained Rust count plane intentionally exports
-                // only allocated real CellClass storage.
+                // The lookup already stamped the shared fallback identity.
+                // Its counter lives with that identity, not in the real plane.
+                terrain.shared_cell_dummy().adjust_neighbor_count(add);
                 continue;
             };
             let Some(index) = index_of(width, height, nx, ny) else {
@@ -1270,7 +1346,7 @@ pub(crate) fn damage_wall_overlay_with_runtime_host(
     mut host: Option<&mut dyn WallDamageTransactionHost>,
 ) -> WallDamageResult {
     assert!(
-        overlay_grid.retained_wall_neighbor_counts().is_none() || resolved_terrain.is_some(),
+        overlay_grid.retained_neighbor_counts().is_none() || resolved_terrain.is_some(),
         "retained wall-neighbor authority requires resolved terrain for wall damage"
     );
     let mut result = WallDamageResult::default();
@@ -1763,7 +1839,7 @@ pub(crate) fn refresh_wall_connectivity_after_placement_with_host(
     mut host: Option<&mut dyn WallDamageTransactionHost>,
 ) {
     assert!(
-        grid.retained_wall_neighbor_counts().is_none() || resolved_terrain.is_some(),
+        grid.retained_neighbor_counts().is_none() || resolved_terrain.is_some(),
         "retained wall-neighbor authority requires resolved terrain for placement cleanup"
     );
     const CLEANUP_CROSS: [(i32, i32); 5] = [(0, -1), (1, 0), (0, 1), (-1, 0), (0, 0)];
@@ -2066,7 +2142,7 @@ mod tests {
             (Some(0x18), 9)
         );
         assert!(grid.dirty_cells.is_empty());
-        assert_eq!(grid.retained_wall_neighbor_counts(), Some(&[5, 8][..]));
+        assert_eq!(grid.retained_neighbor_counts(), Some(&[5, 8][..]));
     }
 
     #[test]
@@ -2083,7 +2159,7 @@ mod tests {
             bincode::deserialize(&bytes).expect("deserialize overlay authority");
 
         assert_eq!(
-            restored.retained_wall_neighbor_counts(),
+            restored.retained_neighbor_counts(),
             Some(&[0, 7, 255, 3][..])
         );
         assert_eq!(restored.cell(1, 0), grid.cell(1, 0));
@@ -2453,7 +2529,7 @@ mod tests {
             "the non-wall overlay was accepted, so the zero plane is not a filter artifact"
         );
         assert_eq!(
-            no_wall.retained_wall_neighbor_counts(),
+            no_wall.retained_neighbor_counts(),
             Some(&[0u8; 12][..]),
             "a stamped non-wall overlay still retains an all-zero plane"
         );
@@ -2473,7 +2549,7 @@ mod tests {
         );
         assert_eq!(walled.cell(1, 1).overlay_id, Some(2));
         let plane = walled
-            .retained_wall_neighbor_counts()
+            .retained_neighbor_counts()
             .expect("map-pack boundary retains the plane");
         // Every neighbour of (1,1) took one increment; the anchor took none,
         // and (3, y) is two cells away.
@@ -2517,7 +2593,7 @@ mod tests {
             true,
         );
         assert_eq!(
-            grid.retained_wall_neighbor_counts(),
+            grid.retained_neighbor_counts(),
             Some(&[1u8, 1, 1, 1, 0, 0, 1, 1, 1][..]),
             "the unallocated east neighbour resolves to the shared dummy"
         );
@@ -2544,7 +2620,7 @@ mod tests {
             true,
         );
         assert_eq!(
-            grid.retained_wall_neighbor_counts(),
+            grid.retained_neighbor_counts(),
             Some(&[0u8, 1, 1, 1][..]),
             "only the three in-grid neighbours took an increment"
         );
@@ -2918,7 +2994,7 @@ mod tests {
             "direct Recalc precedes the cleanup-removal Recalc"
         );
         assert!(
-            grid.retained_wall_neighbor_counts()
+            grid.retained_neighbor_counts()
                 .expect("retained authority")
                 .iter()
                 .all(|&count| count == 0),
@@ -2958,7 +3034,7 @@ mod tests {
         );
         assert_eq!(result.destroyed_cells, vec![(2, 2), (2, 1)]);
         assert_eq!(
-            unchanged_zone_grid.retained_wall_neighbor_counts(),
+            unchanged_zone_grid.retained_neighbor_counts(),
             Some(retained_cleanup_plane.as_slice()),
             "cleanup removal retains its source when Recalc leaves zone type unchanged"
         );
@@ -2974,14 +3050,14 @@ mod tests {
                 vec![7, 8, 9, 10],
             ));
         let retained = grid
-            .retained_wall_neighbor_counts()
+            .retained_neighbor_counts()
             .expect("retained authority")
             .to_vec();
 
         assert_eq!(grid.clear_overlay(0, 0), Some(0));
         grid.place_overlay(1, 1, 3, 4);
         assert_eq!(
-            grid.retained_wall_neighbor_counts(),
+            grid.retained_neighbor_counts(),
             Some(retained.as_slice()),
             "generic identity writers cannot infer or reverse historical wall sources"
         );
@@ -3923,7 +3999,7 @@ Strength=400
         assert_eq!(cleanup.cell(511, 0).overlay_id, None);
         assert!(
             cleanup
-                .retained_wall_neighbor_counts()
+                .retained_neighbor_counts()
                 .expect("retained authority")
                 .iter()
                 .all(|&count| count == 0),

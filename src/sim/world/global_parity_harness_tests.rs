@@ -680,7 +680,9 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xBC5E_52DA_969F_
 // Schema187: object burst index replaces the obsolete target remaining count.
 // The pre187 assertion below reproduces the preceding full fixture hash.
 // Schema189 folds retained Techno+3D4; Before(189) below reproduces v188.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x6AA2_FA03_DF44_4115;
+// v190 adds saved Foot neighbor history. Before(190) reproduces the full v189
+// fixture; its legacy grid has no retained plane. Route/RNG pins are unchanged.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x1EB4_793B_5056_9A45;
 const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 12759965280527249411;
 
 fn harness_ini() -> IniFile {
@@ -1008,6 +1010,11 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     let (_, final_scen, final_main, final_mapgen) =
         *recorded_streams.last().expect("final checkpoint recorded");
     let final_hash = *replayed.last().expect("at least one tick recorded");
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
+        0x6AA2_FA03_DF44_4115,
+        "v190 changes only the Foot neighbor-history hash composition in this fixture"
+    );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
         0xC373_742E_090E_5AAC,

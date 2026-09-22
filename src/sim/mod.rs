@@ -108,6 +108,7 @@ pub mod occupancy;
 pub mod map; // bridge topology service (first member of the map/cell-substrate workstream)
 
 // --- Mutable per-cell overlay state (ore density, wall damage, bridge frames) ---
+pub mod cell_neighbors;
 pub mod overlay_grid;
 
 // --- Mutable per-cell smudge state (craters, scorches, pre-placed map decals) ---

@@ -455,7 +455,9 @@ const SLICE6_BEFORE_INFANTRY_ROT_HASH: u64 = 209154586170202422;
 const SLICE6_BASELINE_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 0x3AB4_0B61_DE3B_5224;
 // Schema187: the pre187 projection below preserves the preceding full pin.
 // Schema189 folds retained Techno+3D4; Before(189) below reproduces v188.
-const SLICE6_BASELINE_HASH: u64 = 0x3C8E_AEF3_C768_5EC1;
+// v190 adds saved Foot neighbor history. Before(190) reproduces the full v189
+// fixture; it has no retained counter plane. Route/RNG pins are unchanged.
+const SLICE6_BASELINE_HASH: u64 = 0x5F8D_EA7A_00CC_F03D;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -745,6 +747,11 @@ fn replay_hash_stable_through_slice6() {
         sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
         0x8A7D_7855_6AAF_1E46,
         "v189 adds only the retained Techno+3D4 hash fold"
+    );
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
+        4363617451014381249,
+        "v190 changes only the Foot neighbor-history hash composition in this fixture"
     );
     assert_eq!(
         hash, SLICE6_BASELINE_HASH,

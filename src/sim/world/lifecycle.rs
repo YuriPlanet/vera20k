@@ -908,6 +908,7 @@ impl Simulation {
         // +198(owner) next; only afterward Infantry51E0EF clears +41B for
         // exactly Sight=0. Never move these producers before the Mark call.
         self.record_foot_owner_discovery(stable_id);
+        self.foot_neighbors_after_unlimbo(stable_id, context.rules);
         // Aircraft4143A8 follows successful Foot Unlimbo, including the dead
         // Techno success arm. Failed placement above must not promote +3D4.
         if let Some(rules) = context.rules
@@ -2400,6 +2401,7 @@ impl Simulation {
         if !self.substrate.entities.contains(stable_id) {
             return ConcealOutcome::MissingOrDead;
         }
+        self.foot_neighbors_before_limbo(stable_id);
         self.release_track_occupation_before_foot_limbo(stable_id);
         self.release_walk_occupation_before_foot_limbo(stable_id);
         if self

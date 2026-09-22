@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "88 counter/history slices: zero sentinel, overlap, unchanged and disjoint cells, byte wrapping, map edge/shared Dummy, high-flight threshold/Mark gate and V3RocketType/DMislType locomotor override. Not full Unlimbo/PerCell/Limbo/ChangeOwner parity.",
+  "assumptions": [
+    "Supplied live Aircraft owner and original vtable, initialized 128x128 allocated map in native fixed512 table; remaining lookups use original shared Dummy.",
+    "Enter counter slices with supplied owner/source, seed bytes, stack and registers. Limbo is already admitted; PerCell is already reason2 after its sensor prefix.",
+    "Original virtual coordinate/high-flight and map callees execute. Native eight-neighbor initializer executes. Rocket cases use the original constructor and supplied phases0..6, under both Rules-designated type slots. No caller admission, sensor deposit, zones or full lifecycle is certified."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "unlimbo_counter_slice": "0x004D7235",
+    "per_cell_counter_slice": "0x004D8627",
+    "limbo_counter_slice": "0x004DB284",
+    "owner_change_history_slice": "0x004DBF37"
+  },
+  "payload_sha256": "6aa9481484638ba4efe901fc981a66c9d955838cfc28d0fb484edcfe075b5078"
+}

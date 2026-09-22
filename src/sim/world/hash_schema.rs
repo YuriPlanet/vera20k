@@ -16,6 +16,9 @@
 //! Those bounded fixtures are recoverable; arbitrary former aircraft state is not.
 //! Pre-187 projections omit the retained burst index and restore a zero remaining-
 //! shot byte on AttackTarget. Only the established zero-count fixtures support it.
+//! Pre-190 projections omit Foot+55C but cannot recover the former wall-only
+//! plane after Foot events mutate it. Historical probes without a retained
+//! plane remain comparable; arbitrary pre-190 counter histories do not.
 
 #[derive(Clone, Copy)]
 pub(super) enum HashSchema {
@@ -88,6 +91,7 @@ pub(super) enum HashFeature {
     WeaponBurstAuthority = 187,
     FlyDestination = 188,
     TechnoMissionOnly = 189,
+    FootNeighborHistory = 190,
 }
 
 impl HashSchema {
@@ -107,6 +111,7 @@ impl HashSchema {
                     | HashFeature::WeaponBurstAuthority
                     | HashFeature::FlyDestination
                     | HashFeature::TechnoMissionOnly
+                    | HashFeature::FootNeighborHistory
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

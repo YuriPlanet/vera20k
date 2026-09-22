@@ -2286,18 +2286,11 @@ fn advance_ordinary_mover(
 
 /// Derived movement inputs that survive across object turns.
 ///
-/// The blocker-neighbour plane is the sum of a part no entity contributes to
-/// (every cell's terrain-object occupation and the retained wall plane) and
-/// one source per cell-marked, non-dying, non-passenger object
-/// (`bump_crush::blocker_plane_source`). The first part changes only with
-/// `ResolvedTerrainGrid::mutation_epoch` (terrain-object occupation has one
-/// writer, through `cell_mut`) and `OverlayGrid::blocker_plane_epoch` (the
-/// retained wall plane's own epoch), so it is rebuilt under that key.
-/// The sources follow the entities: the store logs every entity it hands out
-/// mutably, the block index drains that log and forwards it, and the plane
-/// takes out each touched entity's old source and adds its new one. The counts
-/// are wrapping bytes, so that is exact. Debug builds rebuild the plane from
-/// the whole world on every use and compare.
+/// The base contains retained wall/Foot bytes and derived terrain occupation.
+/// Wall/terrain edits rebuild under their epochs. Foot writes replay the owner's
+/// bounded cell-delta journal, rebuilding only if the reader fell behind. The
+/// entity touch log maintains building contributions (and legacy fixture mobiles).
+/// Debug checks compare against a fresh sum. No cache data is saved or hashed.
 #[derive(Default)]
 pub(crate) struct MovementPassCache {
     blocker: BlockerPlaneCache,
@@ -2318,6 +2311,7 @@ struct BlockerPlaneEntry {
     key: BlockerPlaneKey,
     plane: crate::sim::pathfinding::BlockerNeighborCounts,
     sources: BTreeMap<u64, bump_crush::BlockerPlaneSource>,
+    foot_revision: u64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -2393,15 +2387,29 @@ impl MovementPassCache {
             height: grid.height(),
             rules: rules.map(|rules| std::ptr::from_ref(rules) as usize),
         };
-        match blocker
-            .entry
-            .as_mut()
-            .filter(|entry| entry.key == key && !touched.everything)
-        {
+        let retained_foot =
+            overlay_grid.is_some_and(|grid| grid.retained_neighbor_counts().is_some());
+        match blocker.entry.as_mut().filter(|entry| {
+            entry.key == key
+                && !touched.everything
+                && overlay_grid.is_none_or(|grid| {
+                    grid.foot_neighbor_changes_since(entry.foot_revision)
+                        .is_some()
+                })
+        }) {
             Some(entry) => {
+                if let Some(grid) = overlay_grid {
+                    for (index, delta) in grid
+                        .foot_neighbor_changes_since(entry.foot_revision)
+                        .unwrap()
+                    {
+                        entry.plane.apply_retained_delta(index, delta);
+                    }
+                    entry.foot_revision = grid.foot_neighbor_revision();
+                }
                 for id in touched.ids {
                     let now = entities.get(id).and_then(|entity| {
-                        bump_crush::blocker_plane_source(entity, interner, rules)
+                        bump_crush::blocker_plane_source(entity, interner, rules, retained_foot)
                     });
                     if entry.sources.get(&id) == now.as_ref() {
                         continue;
@@ -2416,7 +2424,7 @@ impl MovementPassCache {
                 }
             }
             None => {
-                let mut plane = bump_crush::blocker_plane_without_entities(
+                let mut plane = bump_crush::blocker_plane_base(
                     grid.width(),
                     grid.height(),
                     resolved_terrain,
@@ -2425,7 +2433,8 @@ impl MovementPassCache {
                 );
                 let mut sources = BTreeMap::new();
                 for entity in entities.values() {
-                    if let Some(source) = bump_crush::blocker_plane_source(entity, interner, rules)
+                    if let Some(source) =
+                        bump_crush::blocker_plane_source(entity, interner, rules, retained_foot)
                     {
                         source.add_to(&mut plane);
                         sources.insert(entity.stable_id(), source);
@@ -2435,6 +2444,7 @@ impl MovementPassCache {
                     key,
                     plane,
                     sources,
+                    foot_revision: overlay_grid.map_or(0, |grid| grid.foot_neighbor_revision()),
                 });
                 #[cfg(test)]
                 {
@@ -3672,6 +3682,103 @@ mod pass_cache_tests {
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::test_interner;
     use crate::sim::occupancy::CellListInsertion;
+
+    #[test]
+    fn retained_foot_changes_replay_without_world_rebuild_or_position_reconstruction() {
+        let grid = PathGrid::new(5, 5);
+        let terrain = ResolvedTerrainGrid::from_cells(
+            5,
+            5,
+            (0..5)
+                .flat_map(|y| {
+                    (0..5).map(move |x| crate::map::resolved_terrain::test_flat_cell(x, y))
+                })
+                .collect(),
+        );
+        let mut overlays =
+            crate::sim::overlay_grid::OverlayGrid::new_with_retained_wall_plane(5, 5);
+        let mut entities = EntityStore::new();
+        let mut unit = GameEntity::test_default(7, "MTNK", "Americans", 2, 2);
+        unit.lifecycle.cell_marked = true;
+        entities.insert(unit);
+        let interner = test_interner();
+        let mut cache = MovementPassCache::default();
+        overlays.adjust_foot_neighbor_source(Some(&terrain), (2, 2), true);
+        assert_eq!(
+            cache
+                .blocker_plane(
+                    &mut entities,
+                    &grid,
+                    Some(&terrain),
+                    Some(&overlays),
+                    None,
+                    &interner,
+                    None
+                )
+                .count_at(1, 1),
+            1,
+            "do not double-count live Foot positions"
+        );
+        entities.get_mut(7).unwrap().position.rx = 4;
+        assert_eq!(
+            cache
+                .blocker_plane(
+                    &mut entities,
+                    &grid,
+                    Some(&terrain),
+                    Some(&overlays),
+                    None,
+                    &interner,
+                    None
+                )
+                .count_at(1, 1),
+            1,
+            "physical flight preserves history"
+        );
+        overlays.adjust_foot_neighbor_source(Some(&terrain), (2, 2), false);
+        overlays.adjust_foot_neighbor_source(Some(&terrain), (3, 2), true);
+        let current = cache.blocker_plane(
+            &mut entities,
+            &grid,
+            Some(&terrain),
+            Some(&overlays),
+            None,
+            &interner,
+            None,
+        );
+        assert_eq!(current.count_at(1, 1), 0);
+        assert_eq!(current.count_at(4, 1), 1);
+        assert_eq!(cache.blocker_plane_world_rebuilds(), 1);
+        // A dormant reader can miss the bounded journal; rebuilding must
+        // recover the authoritative wrapping bytes, not inferred occupancy.
+        for _ in 0..260 {
+            overlays.adjust_foot_neighbor_source(Some(&terrain), (3, 2), false);
+            overlays.adjust_foot_neighbor_source(Some(&terrain), (2, 2), true);
+        }
+        let expected = bump_crush::build_blocker_neighbor_counts_with_overlays(
+            &entities,
+            5,
+            5,
+            Some(&terrain),
+            Some(&overlays),
+            None,
+            &interner,
+            None,
+        );
+        assert_eq!(
+            cache.blocker_plane(
+                &mut entities,
+                &grid,
+                Some(&terrain),
+                Some(&overlays),
+                None,
+                &interner,
+                None
+            ),
+            &expected
+        );
+        assert_eq!(cache.blocker_plane_world_rebuilds(), 2);
+    }
 
     /// A marked object that starts dying stays on the occupancy grid. Its
     /// writer takes it mutably from the store, which is all the plane needs.

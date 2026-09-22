@@ -69,6 +69,14 @@ pub enum RocketPhase {
     Secondary,
 }
 
+impl RocketPhase {
+    /// Rocket ILocomotion+80 / 661F90 accepts native phases3..5 only.
+    /// Also used by the Aircraft41B920 V3/DMisl high-flight override.
+    pub(crate) fn is_moving_now(self) -> bool {
+        matches!(self, Self::Ascent | Self::Cruise | Self::Terminal)
+    }
+}
+
 /// Per-projectile flight values selected from the native rocket table.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RocketFlightParameters {

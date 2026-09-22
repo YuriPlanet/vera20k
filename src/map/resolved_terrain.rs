@@ -47,7 +47,7 @@ use crate::util::pixel_conversion::PixelConversionBounds;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{
     Arc,
-    atomic::{AtomicI16, AtomicU32, AtomicU64, Ordering},
+    atomic::{AtomicI16, AtomicU8, AtomicU32, AtomicU64, Ordering},
 };
 #[cfg(test)]
 pub(crate) use tests::{
@@ -1149,6 +1149,8 @@ struct SharedCellDummyState {
     overlay: AtomicU64,
     /// CellClass+0x116, written even when ReadTubesINI resolves a dummy cell.
     tube_index: AtomicI16,
+    /// Retained wrapping CellClass+122; ctor47BD34 initializes zero.
+    neighbor_count: AtomicU8,
 }
 
 /// One native map-query identity domain. Bulk terrain is borrowed; input
@@ -1265,6 +1267,7 @@ impl SharedCellDummy {
                 native_anchor: AtomicU64::new(0),
                 overlay: AtomicU64::new(SHARED_DUMMY_DEFAULT_OVERLAY),
                 tube_index: AtomicI16::new(-1),
+                neighbor_count: AtomicU8::new(0),
             }),
         }
     }
@@ -1280,6 +1283,7 @@ impl SharedCellDummy {
                 native_anchor: AtomicU64::new(self.state.native_anchor.load(Ordering::Relaxed)),
                 overlay: AtomicU64::new(self.state.overlay.load(Ordering::Relaxed)),
                 tube_index: AtomicI16::new(self.state.tube_index.load(Ordering::Relaxed)),
+                neighbor_count: AtomicU8::new(self.neighbor_count()),
             }),
         }
     }
@@ -1302,6 +1306,7 @@ impl SharedCellDummy {
             .fetch_and(0xff80_0000, Ordering::Relaxed);
         self.state.native_anchor.store(0, Ordering::Relaxed);
         self.state.tube_index.store(-1, Ordering::Relaxed);
+        self.state.neighbor_count.store(0, Ordering::Relaxed);
         self.state
             .overlay
             .store(SHARED_DUMMY_DEFAULT_OVERLAY, Ordering::Relaxed);
@@ -1318,6 +1323,16 @@ impl SharedCellDummy {
             slope_type: (packed >> 40) as u8,
             bridge_flags_0x1180: self.raw_flags() & MODELED_CELLCLASS_BRIDGE_FLAG_MASK,
         }
+    }
+
+    pub(crate) fn neighbor_count(&self) -> u8 {
+        self.state.neighbor_count.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn adjust_neighbor_count(&self, add: bool) {
+        self.state
+            .neighbor_count
+            .fetch_add(if add { 1 } else { u8::MAX }, Ordering::Relaxed);
     }
 
     pub(crate) fn raw_tube_index(&self) -> i16 {
@@ -1343,6 +1358,9 @@ impl SharedCellDummy {
             .raw_flags
             .store(prepared.raw_flags(), Ordering::Relaxed);
         self.write_native_anchor(prepared.native_anchor());
+        self.state
+            .neighbor_count
+            .store(prepared.neighbor_count(), Ordering::Relaxed);
         self.state
             .tube_index
             .store(prepared.raw_tube_index(), Ordering::Relaxed);

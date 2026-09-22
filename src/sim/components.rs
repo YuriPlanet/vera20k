@@ -318,6 +318,9 @@ impl NavTargetRef {
 /// `MovementTarget`, which is only the active execution path.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct NavigationState {
+    /// Foot+55C is retained lifecycle history, not current occupancy.
+    #[serde(default)]
+    pub neighbor_state: crate::sim::cell_neighbors::FootNeighborState,
     /// Foot timers, retry count and blockage latch survive path retirement.
     #[serde(default)]
     pub path_runtime: FootPathRuntime,

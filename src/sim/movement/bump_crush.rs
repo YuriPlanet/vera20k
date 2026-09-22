@@ -154,26 +154,26 @@ pub(crate) fn build_blocker_neighbor_counts_with_overlays(
     interner: &crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> BlockerNeighborCounts {
-    let mut counts = blocker_plane_without_entities(
+    let mut counts = blocker_plane_base(
         width,
         height,
         resolved_terrain,
         overlay_grid,
         overlay_registry,
     );
+    let retained_foot = overlay_grid.is_some_and(|grid| grid.retained_neighbor_counts().is_some());
     for entity in entities.values() {
-        if let Some(source) = blocker_plane_source(entity, interner, rules) {
+        if let Some(source) = blocker_plane_source(entity, interner, rules, retained_foot) {
             source.add_to(&mut counts);
         }
     }
     counts
 }
 
-/// The part of the blocker plane that no entity contributes to: the retained
-/// wall plane (or, for legacy constructors, the current wall overlays) and
-/// every cell's terrain-object occupation. It changes only with the terrain
-/// and overlay mutation epochs.
-pub(crate) fn blocker_plane_without_entities(
+/// Retained wall/Foot bytes plus the existing derived terrain contribution.
+/// Foot lifecycle writes are authoritative when the retained plane is present;
+/// only legacy fixtures without it reconstruct mobile position contributions.
+pub(crate) fn blocker_plane_base(
     width: u16,
     height: u16,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
@@ -181,14 +181,14 @@ pub(crate) fn blocker_plane_without_entities(
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
 ) -> BlockerNeighborCounts {
     let retained_wall_counts = overlay_grid.and_then(|grid| {
-        if grid.retained_wall_neighbor_counts().is_some() {
+        if grid.retained_neighbor_counts().is_some() {
             assert_eq!(
                 (grid.width(), grid.height()),
                 (width, height),
                 "retained wall-neighbor authority must match pathfinding grid"
             );
         }
-        grid.retained_wall_neighbor_counts()
+        grid.retained_neighbor_counts()
     });
     let mut counts = retained_wall_counts
         .map(|plane| BlockerNeighborCounts::from_retained_wall_plane(width, height, plane))
@@ -267,7 +267,11 @@ pub(crate) fn blocker_plane_source(
     entity: &GameEntity,
     interner: &crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
+    retained_foot: bool,
 ) -> Option<BlockerPlaneSource> {
+    if retained_foot && entity.category != EntityCategory::Structure {
+        return None;
+    }
     // Dying corpses are off the occupancy grid: don't let them inflate the
     // A* dynamic-blocker neighbor costs.
     if entity.dying || !entity.lifecycle.cell_marked {

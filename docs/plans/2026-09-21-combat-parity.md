@@ -1449,178 +1449,122 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): target-reset consumers and landing prerequisites
+## Current checkpoint (2026-09-22): retained Foot neighbor history
 
-Owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`;
-branch `feature/combat-foot-speed`. This increment is based on published
-`abc880e9` and migrates the target-reset consumers below. Trigger ownership
-source is `7b83fc6c`; main integration is `d75dc8b6`. `.local/` is intentional
-untracked evidence. The combat goal remains active. Main's
-retirement of the dependency map is merged; never consult or refresh it.
+Active combat parity goal; do not rewrite the goal or invoke goal-prompt. The
+user retired the dependency map: do not use, consult or refresh it. No new critic.
+Owned checkout: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`,
+branch `feature/combat-foot-speed`. This validated counter increment follows
+published `6ef2fc7a`; its source and checkpoint are committed together (read the
+actual Git HEAD on continuation). `.local/` is intentional retained evidence.
+No PR: the completed critic's aircraft re-engagement and landing P1s still hold.
 
-Current target-reset implementation: RepairAtDepot, EnterTransport, PlantC4,
-CaptureBuilding and EnterBunker now call `represented_assign_target(None)` after
-admission instead of dropping the field. Both locomotor and mission arrival
-receivers and Sticky pursuit refusal use the same owner. This preserves
-changed-null burst reset and same-null retention; rejected orders and stale
-handle expiry keep their existing distinct behavior. No new serialized state.
-The helper's comment no longer falsely claims to implement the whole native
-setter: target redirection/linked effects and Infantry override branches remain.
+Current increment and acceptance:
+- Native Foot+55C is retained history, not inferred occupancy. New `cell_neighbors`
+  owns its private saved source and updates EXISTING OverlayGrid Cell+122 bytes.
+  Unlimbo adds before high-flight gating; PerCell(reason2) skips the entire
+  migration for zero source; Limbo subtracts even zero and keeps source;
+  ChangeOwner can overwrite source without counter writes; DropPayload samples
+  the selected Cell center, then signed-truncates /256. Landing skips only old
+  zero decrement, then always stores/adds current. The landing helper is tested
+  but its production callback is NOT implemented yet.
+- Production Unlimbo/Limbo/owner change, Drive/Ship PerCell, Walk completion,
+  Hover entry/arrival, both Unit/Infantry tube exits, Teleport relocation,
+  Jumpjet touchdown and Object parachute landing call the owner. Fly cruise
+  never runs a generic cell-change counter update. Hover crossing, Teleport,
+  Tube and other existing host approximations are not certified by these hooks.
+- Pathfinding no longer reconstructs mobile counts when a retained plane exists.
+  A bounded 4096-entry, read-only delta journal updates each cache independently;
+  stale/rolled-over readers rebuild from authority. Derived building/terrain
+  contributions and legacy fixture fallback remain; this is NOT all Cell+122
+  writer parity. Journal/cache state is neither serialized nor hashed.
+- Shared Dummy+122 initializes/resets to zero, wraps, survives process handoff,
+  forks/adopts with its existing owner, and is hashed. Authored/runtime wall
+  writers now mutate that same Dummy byte. Cold saves omit process globals,
+  matching the existing restore contract; real counters and Foot history save.
+- Generated materialization takes back the grid mutated by construction before
+  germination, reinstalls it for starting units, and finalization preserves the
+  LIVE grid instead of overwriting it with the loader's earlier copy. App and
+  headless share finalization. A regression explicitly supplies a stale copy.
+- Snapshot190; three Rust replay pins include the new Foot history. Each must
+  prove `Before(190)` equals its previous full v189 hash, with old route/RNG
+  tripwires unchanged. These fixtures lack retained planes; arbitrary pre190
+  wall-only history cannot be reconstructed from the combined plane.
 
-`techno_target_burst` saves108 original Unit setter/caller-boundary comparisons,
-with original vtables and no substituted calls. Event4C7467, Unit738AF5/738C75
-and Foot4D5730 establish the call roles. The corpus excludes preceding native
-admission, Infantry override and whole combat behavior. Rust tests compare all
-108 rows and exercise five special orders with existing/null targets, rejected
-ownership, both arrival routes, Sticky refusal and stale expiry preservation.
-Ghidra idle/pursuit comments saved/read back. The first focused test run failed
-because the test attempted to board a Size3 tank into a SizeLimit2 transport;
-the corrected fixture boards Infantry. Final validation:
-- `cargo test -p vera20k --lib`: **9,152 passed,0 failed,135 ignored**,14.35s
-  (`.local/target-clear-full-tests.log`). All new regressions actually executed.
-- `cargo clippy -p vera20k --lib`: passes,1,029 warnings,22.65s
-  (`.local/target-clear-clippy.log`).
-- `python -m tools.spatial_oracle.techno_target_burst --check`: all108 native
-  outputs match without writes. Snapshot189 and replay baselines unchanged.
-No new release/retail/GPU claim. Cargo and native operations are terminal.
+Evidence:
+`tools/spatial_oracle/foot_neighbors.{py,json,meta.json}` preserves88 original
+counter/history slices, with original coordinate, high-flight and map callees,
+zero/overlap/disjoint sources, seeds0/255, edges/Dummy, Mark and height207/208/900,
+and Rules V3RocketType/DMislType phases0..6. Larger lifecycle admission, sensors,
+and all locomotor cadence are excluded. `--check` passes. Native SHA:
+`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+Aircraft41B920 was falsely named Is_Firing_Possible; corrected to IsHighFlying,
+annotated, saved and read back. It dispatches Rocket661F90 for the two designated
+types: phases3..5, independently of Mark/height. RocketPhase owns that predicate,
+also reused by projectile collision. Foot4D72B9/4D8627/4DB284 comments saved.
+`fly_landing_phase` still provides29 whole native phase comparisons; the new Rust
+counter tests compare only its completed counter suffixes, NOT full landing.
 
-Previously published abc880e9: SHP and voxel instance builders, including voxel slope
-selection, consume retained `DisplayLayers::layer_of`; removed their competing
-altitude/locomotor classifier. A CPU regression reproduces the zero-altitude /
-retained-Top mismatch and checks a real conceal/reveal resubmission against
-NativeGroundOrder. This fixes the consumer conflict; it does NOT implement
-landing or prove the required takeoff -> landing -> reload instance-builder path.
-Air/Top interleaving across body/effect buckets remains open. Snapshot189 and
-simulation/replay baselines are unchanged.
+Validation of this counter candidate:
+- Full `cargo test -p vera20k --lib`: **9,159 passed,0 failed,135 ignored**,
+  14.80s (`.local/foot-neighbors-final-tests.log`). This includes88 native Foot
+  slices, landed native counter suffixes, save/history/hash, journal rollover and
+  cache lag, real Teleport object-turn/Limbo, stale-loader finalization, and
+  shared-Dummy process handoff. All three Before190 proof assertions pass.
+- `cargo clippy -p vera20k --lib` passes,1,030 warnings,41.09s
+  (`.local/foot-neighbors-clippy.log`); the extra warning is the staged Fly
+  landing helper whose production callback remains unported.
+- Native `python -m tools.spatial_oracle.foot_neighbors --check` passes.
+- `cargo build -p vera20k --release --bin parity-digest` passes,2m04s,
+  27 library warnings (`.local/foot-neighbors-release.log`). Release executable SHA
+  `1154843b58cec7dc63be9ddf44b77241abc57a3551499305e99a4632f790636d`.
+- Two release Dustbowl.mmx loads at seed0x00C0FFEE each execute30 frames and
+  produce byte-identical digests (151 entities,3 houses at frame1). Logs/output:
+  `.local/foot-neighbors-retail-{a,b}.{log,jsonl}`; digest SHA256
+  `0e51d9630b2aae94e57ba87c68d82d3f42bcc6eab371e89452c478aaac443ddf`.
+  These digests cover visible entity health/position, credits and RNG cursors;
+  they are neither a full simulation-state hash nor native gameplay parity.
+- `git diff --check` passes. Owned Cargo/native/release operations are terminal.
 
-Validation of published abc880e9:
-- Focused instance suite:73 passed (`.local/display-body-focused.log`).
-- Full `cargo test -p vera20k --lib`: **9,149 passed,0 failed,135 ignored**,
-  13.16s (`.local/display-body-full-tests.log`). Six obsolete classifier tests
-  were replaced by one retained-history regression.
-- Library Clippy passes with1,029 warnings,22.41s (`.local/display-body-clippy.log`).
-- Four existing Ground GPU readbacks pass,0.77s (`.local/display-body-gpu.log`).
-  An initial filter omitted `merge_passes` and matched0; the corrected run ran4.
-  These cover lowering/replay, NOT the actual landing instance-builder sequence.
-- Native `python -m tools.spatial_oracle.fly_landing_phase` passes against29
-  newly saved original-executable histories; native SHA is pinned in its sidecar.
-  No new release/retail capture; the older executable results below predate this.
+Next safe action: continue actual Fly landing and aircraft re-engagement before
+PR/merge; do not repeat critic. No full landing or whole-combat parity claim.
 
-Landing evidence: `tools/spatial_oracle/fly_landing_phase.{py,json,meta.json}`
-executes the entire4CD2A0 phase with real Fly/Aircraft/Mark/Display, air Add/Remove,
-CanEnterCell, destination and neighbor-counter calls; no gameplay substitution.
-Initial registration and air membership execute original calls, then supplied Z
-models prior descent. Ordinary non-AirportBound landings, thresholds299/300,
-health/phase/latch gates, owner+2E8 sign, old/new neighbor overlap and wrapping,
-already-OnBridge and null-building/null-radio equality are covered. Each admitted
-phase resubmits even when BOTH live queries are Ground but retained membership
-was Top. Completion removes air membership, clears both flags/speeds, migrates
-Foot+55C across eight Cell+122 bytes, clears destination and starts the existing
-path timer. Scenario RNG remains unchanged in all29 cases. Rust landing parity
-is still absent; these are supplied histories, not lifecycle or complete Process
-proof. Ghidra4CE840 is now `FlyLocomotionClass__Process_Landing`, with explanatory
-comment and alias `FlyLocomotionClass__Landing_Callback`; saved and read back.
+Landing continuation evidence:
+`fly_landing_phase` runs full4CD2A0 with real Aircraft/Fly/Mark/Display/AirTracker,
+CanEnterCell, destination and counters, no substituted gameplay calls. Ordinary
+non-AirportBound acceptance covers retained Top->Ground resubmission even if both
+live queries are Ground, threshold299/300, latches, health, owner+2E8 sign,
+old/new overlap/wrapping, already-OnBridge and empty destination. RNG unchanged.
+Changed-layer bridge admission remains excluded: bridge=true,z416,on_bridge=false
+reaches Foot4DDC60/radio24 then Tactical6DA8EE without initialized context; complete
+that fixture rather than stub it. Refusal/search/destruction, AirportBound radio,
+Carryall/type+C95 effects and complete Process are excluded. Type+C95 is confirmed
+`IsDropship` (existing rules field); Type+3B0 is PitchAngle. Owner+2E8 appears to be
+forward pitch written in Fly4CE3BA; confirm its render reader before naming it.
+FlyRuntime still lacks +52 landing latch,+34 moving,+5C mode. Completion needs
+FootSetSpeed4D3710 zero, air removal, retained counter helper, destination clear,
+path timer and the Mark/Display transaction. No new duplicate speed authority.
 
-Landing prerequisite audit (instruction evidence, not yet a Rust migration):
-- Current blocker-plane builders and MovementPassCache infer every mobile source
-  from current occupancy. Native retained history cannot be reconstructed that
-  way. Extend the EXISTING OverlayGrid Cell+122 authority (currently wall-only)
-  and migrate those readers together; do not add a separate aircraft plane.
-- Foot ctor4D3243/4D324A initializes+55C=(0,0). Unlimbo4D7248 gets current cell,
-  increments eight neighbors unconditionally, then4D72B2 tests owner+54. Only
-  false writes+55C at4D72B9. High-altitude Unlimbo can increment around the actual
-  cell while retaining zero history; do not invent balanced occupancy accounting.
-- Foot PerCell4D85D0 reason2 alone decrements old eight/stores current/increments
-  new eight, and skips that entire update when old+55C is zero. Limbo4DB260 has
-  no zero-source guard on its decrement and does not clear+55C. Fly landing
-  skips only the old decrement when zero, but always stores/adds the new source.
-  BeginTakeoff4CF950 does not change these counters or+55C.
-- Successful Foot ChangeOwner4DBF53 can replace+55C with current cell when+54
-  is false, without changing counters. Aircraft DropPayload415E6E writes the
-  selected cell's coordinates from Cell486840, converted with signed truncation
-  /256. IMPORTANT correction to the earlier turn summary: this is NOT a write
-  of the zero sentinel. Original415E26..415E6E and Cell486840 were re-read.
-- Aircraft vtable+544 points Foot4D3710, SetSpeedFraction. Landing's zero call
-  belongs to existing FootSpeedState.applied_fraction, not a new Fly speed owner.
-  Techno+2E8 is initialized zero and written by FlyProcess4CE3BA from type+3B0,
-  height and speed. Its precise identity and Type+C95 still need resolution.
-  FlyRuntime also lacks+52 landing latch. Keep those identities unguessed.
-Native listings are retained in `.local/foot-counter-{unlimbo,owner-change,
-drop-payload}.native.txt` and `.local/fly-process-owner-2e8.native.txt`.
-World Foot-Unlimbo seam follows record_foot_owner_discovery; PerCell seams are
-track_host/unit_track_per_cell and walk_host. Migrate all Foot lifecycle writers,
-shared dummy/wrapping behavior, save/hash and production readers coherently.
+Review and remaining required joins:
+The sole `combat_increment_critic` finished against d75dc8b6/main3a7a76dd;
+`.local/combat-increment-critic.txt` is its report. Do not reopen/repeat review.
+1. Attack state1 remains absorbing with a target/ammo after release. Implement
+   native FindFireLocation4197C0/AssignDestination and multi-release production
+   validation; do not invent state0/3/countdown transitions.
+2. abc880e9 made SHP/voxel builders consume retained DisplayLayers, removing their
+   conflicting altitude classifier. Actual takeoff->landing->reload instance
+   validation and landing remain required; four Ground GPU readbacks do not prove it.
+3. 6ef2fc7a migrated five special orders, Unit arrivals and Sticky refusal through
+   represented target ownership. Its108 native burst vectors and9,152-test suite
+   passed. Raw clears in spawner, boarding/unload/dock, teleport, MCV deployment
+   and mixed combat cleanup still need classification. Preserve real PointerExpired
+   semantics. Full target redirection/linked effects/Infantry override remain open.
 
-Next safe action: complete landing on the simulation owner with these prerequisites. Preserve actual Aircraft4196B0 admission rather than the Winged
-Cell leaf. Changed-layer bridge landing additionally reaches Foot4DDC60 admission,
-radio24, owner+48C/+488 and map567DA0; a native probe reaches Tactical6DA8EE and
-faults without its initialized context, so this branch is deliberately excluded
-from the29-case corpus. Reproduce by calling execute with bridge=True,z=416,
-on_bridge=False. Complete this fixture/context rather than substituting answers.
-Refusal starts takeoff/search and can kill the owner; AirportBound radio/building
-and Carryall/type+C95 effects remain required. Hold PR/merge for the critic defects.
-All owned Cargo/native operations are terminal. No repeat critic.
-
-Trigger ownership implementation: Simulation owns trigger initialization and dispatch
-throughout actions. Removed the temporary `mem::take` runtime and detached app
-loader handoff. Shared authored/generated construction initializes map locals and
-disabled flags before objects; headless binds actual graph/trigger/event/action
-resources instead of empty tables. Runtime fields are private. Existing action
-semantics and serialized/hash layout are unchanged; live Tag instances, timers,
-force/enable behavior and native polling order remain required migrations.
-
-Validation of trigger ownership source7b83fc6c (the main merge changes no Rust):
-- All25 trigger tests pass (`.local/trigger-owner-focused.log`).
-- `sim::runtime::tests::staged_trigger_state_reaches_bound_frames_and_survives_restore`
-  passes: authored locals/disabled flags reach a bound production frame, and
-  restoring before/after the first frame preserves one-shot state without reseeding.
-- Full `cargo test -p vera20k --lib`: **9,153 passed,0 failed,135 ignored**,12.24s
-  (`.local/trigger-owner-full-tests.log`). Snapshot189/replay pins unchanged.
-- Library Clippy passes,1,029 warnings,36.13s (`.local/trigger-owner-clippy.log`).
-- Release build passes,2m06s (`.local/trigger-owner-release.log`).
-- Explicit ignored retail headless construction test passes: two Dustbowl loads,
-  matching initial state and30 frames (`.local/trigger-owner-headless-retail.log`).
-  An initial exact filter matched0 tests; the corrected run actually executes1.
-- Release SHA256 `cae5a88dd0afe2176becd100d49afed0d0dc653ff061b9a318a88cd86a17f6ea`
-  loads sealed Fight.MAP and reaches scripted tick1. Full tactical capture remains
-  **INVALID**: MCV582 facing64 versus128, the previously traced stale immediate-turn
-  assertion (see the earlier deployment/capture analysis). No final screenshot or
-  visual parity claim. All sealed inputs unchanged, child27208 exits1 without
-  timeout. Evidence: `.local/trigger-owner-retail-soviet/{run.json,loader.log,
-  capture/capture.json}`. Owned Cargo/capture operations are terminal.
-
-The single fresh pre-PR critic `combat_increment_critic` FINISHED its risk-focused
-review of d75dc8b6 against origin/main3a7a76dd. No PR was opened: hold the merge.
-Do not repeat the critic after fixes. It found three confirmed integration defects:
-1. Aircraft Attack state1 is absorbing with a resolved target and ammo remaining
-   after pending debit. The new Fighter/re-engagement suffixes reach it; native
-   FindFireLocation/AssignDestination continuation is required before shipping.
-   Stock ORCA/BEAG Ammo1 escape the zero-ammo gate, but multi/unlimited-ammo rules
-   stall. Require a multi-release production regression, not only suffix samples.
-2. Pure Fly takeoff registers TOP, but landing does not resubmit GROUND. The
-   renderer conflict is fixed in published abc880e9 by retained membership.
-   The native landing transaction and actual takeoff -> landing -> reload instance
-   builder validation are STILL REQUIRED before closing this finding.
-3. Entity-owned WeaponBurst outlived direct command target clears. Event Stop4C75F8
-   invokes Assign_Target(NULL), MegaMission4C7467 invokes the target setter, and
-   Techno6FCF5B resets+3B8 only on a changed-null assignment. Raw pointer clearing
-   bypassed that reset. Owner fix migrates Move, Stop, AttackMove and untargeted
-   Guard through `represented_assign_target`, with a production-command regression.
-   The current increment additionally fixes the five special commands, both
-   vehicle-arrival consumers and Sticky pursuit. Remaining raw clears still need
-   native-role classification: spawner, boarding/unload/aircraft dock, teleport,
-   MCV deploy and combat cleanup (including mixed Phase5 removal reasons). Preserve genuine Detach/PointerExpired direct-write semantics.
-
-Burst command fix:3 focused tests pass, including the new production-command
-regression for all4 orders. Full `cargo test -p vera20k --lib` passes **9,154
-passed,0 failed,135 ignored**,12.54s (`.local/burst-command-full-tests.log`).
-Snapshot189/replay pins unchanged. Library Clippy passes with1,029 warnings in
-25.67s (`.local/burst-command-clippy.log`). The release/retail results above are
-for7b83fc6c, not the command fix; no new loader or schema change. All owned Cargo
-and native operations are terminal at this checkpoint.
-Original Event comments4C7467/4C75F8 were added, saved and read back. Critic text is
-retained at `.local/combat-increment-critic.txt`. Earlier Ground GPU checks passed4
-(`.local/display-consumers-gpu.log`), but did not cover landing or full visual parity.
+Prior trigger owner7b83fc6c installed Simulation-owned TriggerRuntime and bound
+resources; it did not port live Tag/Trigger instances. Its older release retail
+Dustbowl loads+30 frames passed, but do not certify current source. The sealed
+Fight.MAP capture remains INVALID at MCV582 facing64 versus128 (stale immediate
+turn assertion); no final image/visual-parity claim. Existing work stays preserved.
 
 Retained native evidence from published9202149b: `trigger_event_records` has54
 original constructor/read/list cases and bounded predicates. Rust compares all

@@ -4363,6 +4363,7 @@ impl Simulation {
         if let Some(rules) = rules {
             self.change_owner_harvester_idle_arm(stable_id, rules);
         }
+        self.foot_neighbors_after_owner_change(stable_id, rules);
         self.refresh_waypoint_edge_from_committed_structure(stable_id);
         self.reveal_building_sight_after_owner_change(stable_id, rules);
         if let Some(rules) = rules {

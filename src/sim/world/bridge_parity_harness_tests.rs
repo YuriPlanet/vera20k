@@ -210,7 +210,9 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 69276585554619595
 // pre186 below must reproduce the preceding full hash, with route/RNG unchanged.
 // Schema187: the pre187 projection below preserves the preceding full pin.
 // Schema189 folds retained Techno+3D4; Before(189) below reproduces v188.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 2395935886825451856;
+// v190 adds saved Foot neighbor history. Before(190) reproduces the full v189
+// fixture; its legacy grid has no retained plane. Route/RNG pins are unchanged.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x8179_79E2_8FBC_8D79;
 const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 121431099463487950;
 
 fn bridge_ini() -> IniFile {
@@ -817,6 +819,11 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
         17815022180346188402,
         "v189 adds only the retained Techno+3D4 hash fold"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
+        2395935886825451856,
+        "v190 changes only the Foot neighbor-history hash composition in this fixture"
     );
     assert_eq!(
         final_hash, BRIDGE_HARNESS_FINAL_HASH,

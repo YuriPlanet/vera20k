@@ -313,6 +313,10 @@ impl BlockerNeighborCounts {
         }
     }
 
+    pub(crate) fn apply_retained_delta(&mut self, index: usize, delta: u8) {
+        self.counts[index] = self.counts[index].wrapping_add(delta);
+    }
+
     #[cfg(test)]
     pub(crate) fn set_count(&mut self, x: u16, y: u16, count: u8) {
         if x < self.width && y < self.height {

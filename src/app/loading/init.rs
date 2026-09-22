@@ -2076,6 +2076,10 @@ impl MapLoadInitial {
             },
         )
         .expect("production generated-map construction funnel");
+        overlay_grid = simulation
+            .overlay_grid
+            .take()
+            .expect("populated generated CellClass grid");
         // The generator tail, where the match load runs it: growth and spread
         // queues from the painted densities, then the final germination
         // (`RandomMapGenerator::Generate @ 0x00598960` tail). The post-map
@@ -2097,6 +2101,7 @@ impl MapLoadInitial {
             map_data.header.width as u16,
             map_data.header.height as u16,
         );
+        simulation.overlay_grid = Some(overlay_grid.clone());
         crate::app::loading::init_helpers::bind_staged_app_scenario_metadata(
             &mut simulation,
             asset_manager,
@@ -2950,6 +2955,12 @@ pub(crate) fn load_map_from_initial(
                     );
                 },
             )?;
+            // Keep the live constructor mutations when running the final ore
+            // pass. The pre-population materialization copy has no Foot history.
+            overlay_grid = staged_simulation
+                .overlay_grid
+                .take()
+                .expect("populated generated CellClass grid");
             // `RandomMapGenerator::Generate @ 0x00598960` tail (`0x00599370..
             // 0x0059945B`): after the generator constructors and its final
             // whole-map Recalc (`0x0059937D`), `TiberiumClass::InitGrowthQueues_All
@@ -2998,6 +3009,7 @@ pub(crate) fn load_map_from_initial(
                     germination.unallocated_cells,
                 );
             }
+            staged_simulation.overlay_grid = Some(overlay_grid.clone());
             overlay_grid
         }
     };

@@ -1191,7 +1191,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
         sim.overlay_grid
             .as_ref()
             .unwrap()
-            .retained_wall_neighbor_counts(),
+            .retained_neighbor_counts(),
         Some(expected_after_sale.as_slice()),
         "native sale leaves the sold wall contribution stale and reverses only cleanup removals"
     );
@@ -1396,7 +1396,7 @@ fn wall_sale_preserves_the_sold_anchor_retained_count_source() {
     let grid = sim.overlay_grid.as_ref().expect("overlay authority");
     assert_eq!(grid.cell(2, 2).overlay_id, None);
     assert_eq!(
-        grid.retained_wall_neighbor_counts(),
+        grid.retained_neighbor_counts(),
         Some(expected.as_slice()),
         "HouseClass sale has no CellClass+0x122 decrement for the sold anchor"
     );
@@ -1474,7 +1474,7 @@ fn wall_sale_cleanup_reaches_fixed_stride_alias_and_reverses_that_source_only() 
     assert_eq!(grid.cell(0, 1).overlay_id, None);
     assert_eq!(grid.cell(511, 0).overlay_id, None);
     assert_eq!(
-        grid.retained_wall_neighbor_counts(),
+        grid.retained_neighbor_counts(),
         Some(expected.as_slice()),
         "sale keeps the sold aliasing source but reverses the cleanup-removed aliased source"
     );

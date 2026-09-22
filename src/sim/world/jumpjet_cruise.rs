@@ -631,6 +631,12 @@ impl Simulation {
             }
         }
 
+        // Jumpjet54C8F0 calls PerCell(2) only at accepted touchdown, before
+        // clearing the destination. Cruise coordinate changes do not do this.
+        if effects.touched_down {
+            self.foot_neighbors_at_per_cell(stable_id);
+        }
+        let entity = self.substrate.entities.get_mut(stable_id)?;
         let mut moving = effects.moving;
         // `Set_Destination` after a scatter re-aims the owner at the neighbour.
         if let Some(cell) = effects.scatter_to

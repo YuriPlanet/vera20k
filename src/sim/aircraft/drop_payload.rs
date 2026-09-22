@@ -297,6 +297,7 @@ pub fn try_drop(
             // `ObjectClass::Paradrop @ 0x005F5940` builds the canopy once it has
             // placed the object and set its coordinate.
             sim.attach_parachute_anim(rules, passenger_id);
+            sim.foot_neighbors_after_payload_drop(passenger_id, (drop_rx as i16, drop_ry as i16));
 
             // 7. ChuteSound at drop cell.
             sim.sound_events.push(SimSoundEvent::ChuteSound {
