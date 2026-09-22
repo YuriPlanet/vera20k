@@ -153,6 +153,13 @@ fn spawn_pdplane(
         }
     };
 
+    // 65E6BE sets Techno+3D4 before the edge helper and Aircraft Unlimbo;
+    // a normal Selectable/Landable type must retain this reinforcement history.
+    sim.substrate
+        .entities
+        .get_mut(pdplane_id)
+        .expect("constructed carrier")
+        .mark_mission_only();
     let edge_cell = find_paradrop_edge_cell(
         sim.playfield_bounds,
         sim.resolved_terrain.as_ref(),

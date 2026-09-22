@@ -58,6 +58,8 @@ mod world_orders;
 mod world_spawn;
 
 #[cfg(test)]
+mod aircraft_deployment_tests;
+#[cfg(test)]
 mod damage_consequence_tests;
 #[cfg(test)]
 mod eva_dispatch_tests;

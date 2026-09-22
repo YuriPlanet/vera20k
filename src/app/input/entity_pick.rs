@@ -302,7 +302,12 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
 
     let picked = entities.get(picked_sid)?;
     let type_str = interner.map_or("", |i| i.resolve(picked.type_ref()));
-    let admitted = static_selection_gate(picked, type_str, rules, require_playfield_membership);
+    // With no selection, DisplayDetermineAction69261B ->692762..692778
+    // refuses ACTION_SELECT for retained Techno+3D4. A nonempty selection
+    // delegates to WhatActionOnObject; its source/target and modifier gates
+    // differ. Don't apply this leaf to that path or forced/type selection.
+    let admitted = (!current_selection.is_empty() || !picked.is_mission_only())
+        && static_selection_gate(picked, type_str, rules, require_playfield_membership);
     // A shift-click adds when the selection it is joining is the local player's,
     // whatever was clicked. The native ACTION_SELECT arm asks
     // `HouseClass__IsHumanPlayer(CurrentObjects[0]->Owner)` — 0x004ABD42 loads
@@ -1825,6 +1830,45 @@ mod tests {
             [2],
             "enemy anchor contributes only its type; the batch admits only the local match"
         );
+    }
+
+    #[test]
+    fn mission_only_empty_selection_click_matches_native_flag_gate() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/aircraft_mission_only.json"
+        ))
+        .unwrap();
+        let mut interner = StringInterner::new();
+        let owner = interner.intern("Americans");
+        let type_ref = interner.intern("PLANE");
+        for row in rows {
+            let mut entities = EntityStore::new();
+            let mut plane =
+                item83_entity(1, 10, 10, owner, type_ref, EntityCategory::Aircraft, false);
+            if row["mission_only"].as_bool().unwrap() {
+                plane.mark_mission_only();
+            }
+            let (x, y) = crate::render::locomotor_visual::screen_position(&plane);
+            entities.insert(plane);
+            let result = compute_click_selection_snapshot(
+                &entities,
+                &[1],
+                &[],
+                None,
+                Some("Americans"),
+                x,
+                y,
+                30.0,
+                false,
+                None,
+                None,
+                &std::collections::BTreeMap::new(),
+                None,
+                Some(&interner),
+            )
+            .unwrap();
+            assert_eq!(!result.select.is_empty(), row["click_action"] == 7, "{row}");
+        }
     }
 
     #[test]

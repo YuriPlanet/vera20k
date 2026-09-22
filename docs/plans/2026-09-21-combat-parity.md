@@ -231,11 +231,13 @@ probe; it is not a second implementation to publish.
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
 Branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Current increment atop published `16b609e1ab7ac7d2c9daba3c1668ffb02cb287e4`:
-paid Fly motion uses full Primary facing and the live type-speed authority.
-That preceding commit connects pure takeoff's callback and Mark/Display
-transaction. See the sections below for validation and residuals. Snapshot188
-retains Fly destination XYZ in active and stashed runtime. `f241211c` preserves
+Current increment atop published `75155bc835bbd49764f971dfd3769a48470c55b0`:
+retain Techno+3D4 deployment history through Aircraft Unlimbo and paradrop,
+empty-selection click admission, save/restore and hashing (snapshot189). The
+preceding paid Fly motion uses full Primary facing and live type speed;
+`16b609e1` connects pure takeoff callback and Mark/Display. The native comparisons and all9,148 lib tests pass; see the flag section
+below for validation and exact coverage limits.
+Snapshot188 retained Fly destination XYZ in active and stashed runtime. `f241211c` preserves
 the native FindFireLocation corpus, deterministic geometry comparisons and removal
 of the incorrect unused search model. Production source
 `9d3be1105c1ed7beaa73ebf11a40c594d5be5fec`: admitted
@@ -1094,7 +1096,7 @@ Next map-edge dependency is concrete:4CDB88 calls original568300 (the existing
 `NativeOverlayMapShape::admits` geometry, not allocated-cell membership). An
 out-of-shape candidate calls owner+4DC: Aircraft table7E22A4 ->41B890. That
 predicate reads Target+2B4, raw mission+AC, retained+3D5, mission getter exclusions,
-Team+5D4/6EC300 and the still-missing retained Techno+3D4. Spawned Type+E0B
+Team+5D4/6EC300 and retained Techno+3D4 (now owned by GameEntity). Spawned Type+E0B
 bypasses correction. Otherwise565660 converts the packed cell to local coords,
 then the branch nudges X by128 toward the map center and, if needed, repeatedly
 calls49F420(distance64,flag0) until568300 accepts. Each scatter draws Scenario RNG
@@ -1216,3 +1218,62 @@ Normal SimFixed speed ranges do not prove arbitrary non-retail crate multipliers
 Broader combat remains open: Active_Click_With+6E0, shared cursor/click, NavCom/
 action/fire legality, FLH slope/scatter/homing, special warheads, visibility and
 whole-combat acceptance. Recording a required omission does not resolve it.
+
+## Retained Techno+3D4 deployment prerequisite
+
+Before implementation: retain one private GameEntity byte (VERA name
+`mission_only`, historical native field name unconfirmed). Constructor6F2F55
+clears it. AircraftUnlimbo4143A0..4143F2 promotes it only after successful Foot
+Unlimbo when !Selectable, !Landable, or GetWeapon(0).Camera; the normal arm
+preserves prior history. Use the existing tier-aware weapon owner. Paradrop
+65E6BE sets it immediately after construction, before edge selection/Unlimbo.
+Do not derive it from live cargo, type, playfield membership or mission.
+
+Acceptance: original instruction-region comparisons cover failure, preservation,
+type gates, null/base/elite Camera weapons; production construct/reveal and
+paradrop preserve ordering; empty-selection click admission reads retained history via
+DisplayDetermineAction69261B->692762..692778; save/restore and entity hashing retain it.
+Do not globally reject forced selection: ObjectSelect5F4578 consults this byte
+only after virtual+A0 succeeds, and that is not the ordinary click-action gate.
+No full ObjectSelect or complete AircraftUnlimbo parity claim (height, cargo
+history and other suffix effects remain open). The other native SET producers
+65DBF2/65DFA1/65E8FF/65EB10 belong to still-unported reinforcement/airstrike
+chains. Native constructor/SET instruction census found no ordinary clear writer.
+Fly map-edge and FindFireLocation production readers remain the next dependency.
+No RNG, timer or detach operation occurs in this bounded flag writer/reader;
+parent Unlimbo, reinforcements and following mission-timer writes remain distinct.
+
+The Display flag gate is reachable only with CurrentObjects.Count=0. Nonempty
+selection delegates692640/692666 to WhatActionOnObject/Cell. Preserve this
+boundary: those source/target/modifier branches and forced ObjectSelect remain
+required reader migrations. Cursor feedback currently returns early for an empty
+selection; completing its ordinary selection feedback remains part of the shared
+cursor/click action resolver work, not proof supplied by this flag leaf.
+
+Next map-edge Team dependency:6EC300 requires Team+7F, Script6915D0
+(unsigned cursor+2C < ScriptType+24.Count+A0), current action3, and its
+Scenario68BCC0 waypoint outside mode-one Map578460. Existing TeamScriptVm
+owns membership, cursor and actions, but not +7F. Direct writers found:
+constructor6E8B11; AI6E91BE SET after +79/+77 gates;6EA089 and6EA0E2
+clear/reset (their full semantics remain to trace). AI SET also writes +78=1,
++7A=0, conditional Foot member+689, calls Script691590, then sets+80.
+Do not derive+7F from the VM completed flag or assume teamless behavior for a
+member. Reuse this owner and trace the linked prerequisite flags before adding
+state. No Team implementation was changed in the deployment increment.
+
+Deployment validation: `python -m tools.spatial_oracle.aircraft_mission_only
+--check` passes96 original instruction-region pairs. The five added tests pass
+for production construction/reveal, reinforcement on an ordinary landable type,
+empty-selection clicks, snapshot/limbo/reveal continuation and isolated hashing.
+`cargo test -p vera20k --lib` passes **9,148 passed,0 failed,135 ignored**
+(14.26s execution; `.local/aircraft-mission-only-final-tests.log`). The initial
+full run found only the three expected replay hash pins. Before(189) reproduces
+each preceding pin and all RNG/behavior tripwires pass: current global
+6AA2FA03DF444115, bridge2395935886825451856, slice6 3C8EAEF3C7685EC1.
+Snapshot189 is an intentional layout/hash change, not a compatibility claim for
+older saves. Ghidra comments4143EB/65E6BE/692766 saved and read back, preserving
+the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
+`cargo clippy -p vera20k --lib` passes (1,030 existing warnings,28.06s;
+`.local/aircraft-mission-only-clippy.log`). All owned Cargo/native processes are
+terminal. No release loader binding changed in this increment; the coherent
+branch still needs the post-FlightLevel/Carryall retail load before merge.

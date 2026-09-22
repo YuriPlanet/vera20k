@@ -1598,6 +1598,9 @@ impl Simulation {
                 entity.in_playfield.hash(hasher);
             }
             entity.move_sound_active.hash(hasher);
+            if schema.includes(HashFeature::TechnoMissionOnly) {
+                entity.is_mission_only().hash(hasher);
+            }
             entity.move_sound_countdown.hash(hasher);
             entity.position.rx.hash(hasher);
             entity.position.ry.hash(hasher);

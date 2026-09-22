@@ -1,0 +1,1250 @@
+[
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": false,
+      "selectable": false,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "none"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": false,
+      "selectable": false,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "gun"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": false,
+      "selectable": false,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "camera"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": false,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "none"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": false,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "gun"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": false,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "camera"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "none"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "gun"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "camera"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "none"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "gun"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "camera"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": false,
+      "selectable": false,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "none"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": false,
+      "selectable": false,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": false,
+      "selectable": false,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": false,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "none"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": false,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": false,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "none"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "none"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "gun"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": true,
+      "selectable": false,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "none"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": true,
+      "selectable": false,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": true,
+      "selectable": false,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": false,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "none"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": false,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": false,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "none"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "none"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 0,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": true,
+      "selectable": false,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "none"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": true,
+      "selectable": false,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": true,
+      "selectable": false,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": false,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "none"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": false,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": false,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "none"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": false,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "none"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 0,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 1,
+      "weapon": "gun"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "gun",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 1,
+      "weapon": "gun"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "camera",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 1,
+      "weapon": "gun"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 1,
+      "weapon": "camera"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "gun",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 1,
+      "weapon": "camera"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "camera",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 1,
+      "weapon": "camera"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 2,
+      "weapon": "gun"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "gun",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 2,
+      "weapon": "gun"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "camera",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 2,
+      "weapon": "gun"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 2,
+      "weapon": "camera"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "gun",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 2,
+      "weapon": "camera"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "camera",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": false,
+      "veterancy": 2,
+      "weapon": "camera"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 1,
+      "weapon": "gun"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "gun",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 1,
+      "weapon": "gun"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "camera",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 1,
+      "weapon": "gun"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 1,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "gun",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 1,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "camera",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 1,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 2,
+      "weapon": "gun"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "gun",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 2,
+      "weapon": "gun"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "camera",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 2,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 2,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 7,
+    "input": {
+      "elite_weapon": "gun",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 2,
+      "weapon": "camera"
+    },
+    "mission_only": false
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "camera",
+      "landable": true,
+      "previous": false,
+      "selectable": true,
+      "success": true,
+      "veterancy": 2,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 1,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "gun",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 1,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "camera",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 1,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 1,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "gun",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 1,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "camera",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 1,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 2,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "gun",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 2,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "camera",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 2,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 2,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "gun",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 2,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "camera",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": false,
+      "veterancy": 2,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 1,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "gun",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 1,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "camera",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 1,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 1,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "gun",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 1,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "camera",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 1,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 2,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "gun",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 2,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "camera",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 2,
+      "weapon": "gun"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "none",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 2,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "gun",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 2,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  },
+  {
+    "click_action": 0,
+    "input": {
+      "elite_weapon": "camera",
+      "landable": true,
+      "previous": true,
+      "selectable": true,
+      "success": true,
+      "veterancy": 2,
+      "weapon": "camera"
+    },
+    "mission_only": true
+  }
+]

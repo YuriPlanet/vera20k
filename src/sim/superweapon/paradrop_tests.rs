@@ -283,6 +283,40 @@ fn infantry_terminal_empty_custom_carrier_retires_after_failed_launch() {
 }
 
 #[test]
+fn mission_only_paradrop_marks_even_an_ordinary_landable_type() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AircraftTypes]\n0=PDPLANE\n[InfantryTypes]\n0=E1\n[VehicleTypes]\n[BuildingTypes]\n\
+         [General]\nAmerParaDropInf=E1\nAmerParaDropNum=1\nFlightLevel=1500\n\
+         [PDPLANE]\nStrength=100\nSpeed=10\nSelectable=yes\nLandable=yes\n\
+         Locomotor={4A582746-9839-11D1-B709-00A024DDAFD1}\n[E1]\nStrength=100\n",
+    ))
+    .unwrap();
+    let (mut sim, path_grid) = build_sim(&rules);
+    let owner = sim.interner.intern("Americans");
+    let sw = sim.interner.intern("SWTEST");
+    assert!(launch(
+        &mut sim,
+        &rules,
+        owner,
+        50,
+        20,
+        ParaDropKind::American,
+        sw,
+        Some(&path_grid)
+    ));
+    let id = find_pdplane(&sim).unwrap();
+    assert!(sim.substrate.entities.get(id).unwrap().is_mission_only());
+    assert!(
+        sim.substrate
+            .entities
+            .values()
+            .filter(|e| e.stable_id() != id)
+            .all(|e| !e.is_mission_only()),
+        "payload constructors do not inherit carrier history"
+    );
+}
+
+#[test]
 fn paradrop_launch_spawns_carrier_with_loaded_cargo() {
     let rules = make_paradrop_rules();
     let (mut sim, path_grid) = build_sim(&rules);

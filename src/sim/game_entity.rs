@@ -550,6 +550,13 @@ pub struct GameEntity {
     /// fact; a fresh bounds query would erase the native movement hysteresis.
     #[serde(default)]
     pub in_playfield: bool,
+    /// Retained Techno+3D4 (VERA name; historical native name unconfirmed).
+    /// Constructor6F2F55 clears it; special Aircraft Unlimbo4143EB and
+    /// reinforcement65E6BE promote it. Never infer it from current type,
+    /// mission, cargo or +3D5. Ordinary click action692766 reads this history;
+    /// forced ObjectSelect5F4578 has a separate virtual+A0 prerequisite.
+    #[serde(default)]
+    mission_only: bool,
     /// Explicit represented type fact for the native type `+0xAC` tactical-dirty
     /// branch. False unless a caller has positive evidence; never inferred from
     /// category or render representation.
@@ -1033,6 +1040,36 @@ pub struct GameEntity {
 }
 
 impl GameEntity {
+    pub(crate) const fn is_mission_only(&self) -> bool {
+        self.mission_only
+    }
+
+    /// Native SET writers are monotonic for this object's lifetime.
+    pub(crate) fn mark_mission_only(&mut self) {
+        self.mission_only = true;
+    }
+
+    /// AircraftUnlimbo4143A8..4143F2, only after Foot placement succeeds.
+    /// GetWeapon(0) uses the same tier/slot authority as production combat.
+    pub(crate) fn retain_aircraft_unlimbo_control(
+        &mut self,
+        rules: &crate::rules::ruleset::RuleSet,
+        type_id: &str,
+    ) {
+        if self.category != EntityCategory::Aircraft {
+            return;
+        }
+        let Some(object) = rules.object(type_id) else {
+            return;
+        };
+        let camera = crate::sim::combat::combat_weapon::primary_for_tier(object, self.veterancy)
+            .and_then(|id| rules.weapon(id))
+            .is_some_and(|weapon| weapon.camera);
+        if !object.selectable || !object.landable || camera {
+            self.mark_mission_only();
+        }
+    }
+
     /// Immutable storage key. Construction and snapshot decoding establish it.
     pub fn stable_id(&self) -> u64 {
         self.stable_id
@@ -1292,6 +1329,7 @@ impl GameEntity {
             in_logic_vector: false,
             lifecycle: ObjectLifecycle::default(),
             in_playfield: false,
+            mission_only: false,
             dirty_rect_eligible: false,
             occupier: false,
             owned_count_released: false,

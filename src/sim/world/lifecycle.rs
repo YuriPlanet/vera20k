@@ -908,6 +908,14 @@ impl Simulation {
         // +198(owner) next; only afterward Infantry51E0EF clears +41B for
         // exactly Sight=0. Never move these producers before the Mark call.
         self.record_foot_owner_discovery(stable_id);
+        // Aircraft4143A8 follows successful Foot Unlimbo, including the dead
+        // Techno success arm. Failed placement above must not promote +3D4.
+        if let Some(rules) = context.rules
+            && let Some(entity) = self.substrate.entities.get_mut(stable_id)
+        {
+            let type_id = self.interner.resolve(entity.type_ref());
+            entity.retain_aircraft_unlimbo_control(rules, type_id);
+        }
         if let Some(entity) = self.substrate.entities.get_mut(stable_id)
             && entity.category == EntityCategory::Infantry
             && entity.sight_is_zero

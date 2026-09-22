@@ -551,7 +551,8 @@ use crate::sim::world::Simulation;
 // are removed; pending state cannot be recovered from the old representation.
 // 186 -> 187: object burst position replaces AttackTarget's remaining-shot count.
 // 187 -> 188: Fly retains exact destination XYZ, independent of the cell cache.
-const SNAPSHOT_VERSION: u32 = 188;
+// 188 -> 189: retained Techno+3D4 cannot be recovered from live type or cargo.
+const SNAPSHOT_VERSION: u32 = 189;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3448,7 +3449,8 @@ mod tests {
         // 185 -> 186: Aircraft pending ammo survives independently of Attack.
         // 186 -> 187: object burst position replaces the target-owned count.
         // 187 -> 188: retained Fly destination XYZ cannot be recovered from cells.
-        assert_eq!(super::SNAPSHOT_VERSION, 188);
+        // 188 -> 189: Techno+3D4 deployment history.
+        assert_eq!(super::SNAPSHOT_VERSION, 189);
     }
 
     #[test]
