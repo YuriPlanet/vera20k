@@ -65,8 +65,13 @@ def query(case):
     events = []
     addresses = {0x741970:'unit', 0x4D94B0:'foot', 0x4AFD40:'drive_move',
                  0x69F450:'ship_move', 0x4E0190:'clear_queue', 0x565730:'lookup'}
-    u.hook_add(UC_HOOK_CODE, lambda _u, address, _size, _data:
-               events.append(addresses[address]) if address in addresses else None)
+    def observe(_u, address, _size, _data):
+        # Destination acceptance never calls Foot::Find_Path. The first
+        # locomotor Process owns that request, even for an obstructed route.
+        assert address != 0x4D3920, 'destination setter performed Find_Path'
+        if address in addresses:
+            events.append(addresses[address])
+    u.hook_add(UC_HOOK_CODE, observe)
     before = bytes(u.mem_read(ACTOR, 0x700))
     entry = case['entry']
     if entry == 'move':

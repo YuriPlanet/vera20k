@@ -203,28 +203,33 @@ pub(crate) fn set_destination_internal_cell(
     target: (u16, u16),
     resolved_terrain: Option<&ResolvedTerrainGrid>,
 ) {
+    let coord = target_cell_coord(target.0, target.1, resolved_terrain);
+    set_destination_internal_coord(
+        entity,
+        NavTargetRef::cell(target.0, target.1),
+        coord,
+        resolved_terrain,
+    );
+}
+
+/// Foot4D9510/4D9628 publishes the reference and dispatches its captured +4C
+/// coordinate. Cell and object orders reach the same active locomotor owner.
+pub(crate) fn set_destination_internal_coord(
+    entity: &mut GameEntity,
+    target: NavTargetRef,
+    coord: DriveCoord,
+    resolved_terrain: Option<&ResolvedTerrainGrid>,
+) {
     entity.navigation.nav_com_aux = None;
-    entity.navigation.nav_com = Some(NavTargetRef::cell(target.0, target.1));
+    entity.navigation.nav_com = Some(target);
     entity.navigation.pending_arrival_clear = false;
 
     if is_drive_locomotor(entity) {
-        drive_set_destination(
-            entity,
-            target_cell_coord(target.0, target.1, resolved_terrain),
-            resolved_terrain,
-        );
+        drive_set_destination(entity, coord, resolved_terrain);
     } else if is_ship_locomotor(entity) {
-        ship_set_destination(
-            entity,
-            target_cell_coord(target.0, target.1, resolved_terrain),
-            resolved_terrain,
-        );
+        ship_set_destination(entity, coord, resolved_terrain);
     } else {
-        set_walk_destination_coord(
-            entity,
-            target_cell_coord(target.0, target.1, resolved_terrain),
-            resolved_terrain,
-        );
+        set_walk_destination_coord(entity, coord, resolved_terrain);
     }
 }
 

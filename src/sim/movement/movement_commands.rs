@@ -490,6 +490,35 @@ pub(crate) fn issue_move_command_with_destination(
     if !can_accept_destination(entity) {
         return false;
     }
+    if entity.locomotor.as_ref().is_some_and(|loco| {
+        matches!(
+            loco.active_kind(),
+            LocomotorKind::Drive | LocomotorKind::Ship
+        )
+    }) {
+        // Ordinary Unit741970 -> Foot4D94B0 -> Drive4AFD40/Ship69F450
+        // accepts before any FindPath, preserves power and a paid head, and
+        // clears only the live path word (741E88). Request mode1 clears the
+        // waypoint queue. Neither map availability nor an A* result admits
+        // the destination. Native evidence: track_destination unit rows.
+        // Complete class preprocessing (radio/force/skip-MoveTo) remains open.
+        let entity = entities.get_mut(entity_id).expect("resolved mover");
+        entity.navigation.path_replay.clear_live_head();
+        entity.navigation.nav_queue.clear();
+        if let Some((reference, coord)) = object_destination {
+            super::navcom::set_destination_internal_coord(
+                entity,
+                reference,
+                coord,
+                resolved_terrain,
+            );
+        } else {
+            super::navcom::set_destination_internal_cell(entity, target, resolved_terrain);
+        }
+        timing.accept(entity);
+        prepare_destination_execution(entity, target, speed);
+        return true;
+    }
     // The original engine dispatches its cell-entry predicate by object class,
     // so terrain-object occupation is read at sub-cell granularity for infantry
     // and whole-cell for everything else, and reads the crusher flags from the
@@ -501,9 +530,6 @@ pub(crate) fn issue_move_command_with_destination(
     // during staged startup, so neither can stand in for the other.
     let allow_zone_hierarchy = playfield_bounds.is_none() || entity.in_playfield;
     let locomotor_kind = entity.locomotor.as_ref().map(|locomotor| locomotor.kind);
-    let uses_drive_locomotor = locomotor_kind == Some(LocomotorKind::Drive);
-    let uses_ship_locomotor = locomotor_kind == Some(LocomotorKind::Ship);
-    let uses_shared_tracks = uses_drive_locomotor || uses_ship_locomotor;
     // A new destination never rewinds a curve already in flight.
     // `TechnoClass::Set_Destination` @ `0x00741970` only records the target —
     // NavCom in `FootClass::Set_Destination_Internal` @ `0x004D94B0`, the
@@ -560,10 +586,12 @@ pub(crate) fn issue_move_command_with_destination(
         let effective_target = target;
         let entity = entities.get_mut(entity_id).expect("resolved mover");
         if let Some((reference, coord)) = object_destination {
-            entity.navigation.nav_com = Some(reference);
-            entity.navigation.nav_com_aux = None;
-            entity.navigation.pending_arrival_clear = false;
-            super::navcom::set_walk_destination_coord(entity, coord, resolved_terrain);
+            super::navcom::set_destination_internal_coord(
+                entity,
+                reference,
+                coord,
+                resolved_terrain,
+            );
         } else {
             super::navcom::set_destination_internal_cell(
                 entity,
@@ -573,7 +601,7 @@ pub(crate) fn issue_move_command_with_destination(
         }
         entity.navigation.path_replay.clear_live_head();
         timing.accept(entity);
-        prepare_walk_execution(entity, effective_target, speed);
+        prepare_destination_execution(entity, effective_target, speed);
         return true;
     }
     // Retain the existing non-Walk recovery policy. Infantry51AA40 ->
@@ -625,10 +653,9 @@ pub(crate) fn issue_move_command_with_destination(
         );
     }
 
-    if queue && !uses_shared_tracks {
-        // Check if entity already has a movement target to append to. Drive
-        // commands reissue the destination instead; standard YR player/team/
-        // trigger paths do not append to Foot NavQueue.
+    if queue {
+        // Remaining adapter families can append to their prepared path.
+        // Ordinary Drive/Ship requests have already published the destination.
         let entity_mut = entities.get_mut(entity_id);
         if let Some(entity_mut) = entity_mut {
             if let Some(ref mut movement) = entity_mut.movement_target {
@@ -837,15 +864,6 @@ pub(crate) fn issue_move_command_with_destination(
     } else {
         (SIM_ZERO, SIM_ZERO, SIM_ZERO)
     };
-    let initial_step_delta = if path.len() >= 2 {
-        Some((
-            path[1].0 as i32 - path[0].0 as i32,
-            path[1].1 as i32 - path[0].1 as i32,
-        ))
-    } else {
-        None
-    };
-
     // Attach the MovementTarget and update facing on the entity.
     // All units start at full speed — acceleration/deceleration is disabled.
     let movement: MovementTarget = MovementTarget {
@@ -873,57 +891,18 @@ pub(crate) fn issue_move_command_with_destination(
             .locomotor
             .as_ref()
             .map(|locomotor| locomotor.kind);
-        let uses_drive_locomotor = locomotor_kind == Some(LocomotorKind::Drive);
-        let uses_ship_locomotor = locomotor_kind == Some(LocomotorKind::Ship);
-        let uses_shared_tracks = uses_drive_locomotor || uses_ship_locomotor;
         if let Some((reference, coord)) = object_destination {
-            entity_mut.navigation.nav_com = Some(reference);
-            entity_mut.navigation.nav_com_aux = None;
-            entity_mut.navigation.pending_arrival_clear = false;
-            super::navcom::set_walk_destination_coord(entity_mut, coord, resolved_terrain);
-        } else if uses_shared_tracks || locomotor_kind == Some(LocomotorKind::Walk) {
+            super::navcom::set_destination_internal_coord(
+                entity_mut,
+                reference,
+                coord,
+                resolved_terrain,
+            );
+        } else if locomotor_kind == Some(LocomotorKind::Walk) {
             super::navcom::set_destination_internal_cell(
                 entity_mut,
                 effective_target,
                 resolved_terrain,
-            );
-            if uses_shared_tracks {
-                entity_mut.navigation.nav_queue.clear();
-            }
-        }
-        if uses_drive_locomotor {
-            let drive = entity_mut
-                .drive_locomotion
-                .get_or_insert_with(Default::default);
-            super::path_markers::install_path_replay(
-                &mut entity_mut.navigation.path_replay,
-                (start_rx, start_ry),
-                &movement.path,
-                1,
-            );
-            drive.turn.target_direction = entity_mut
-                .navigation
-                .path_replay
-                .directions
-                .first()
-                .copied();
-            drive.turn.target_facing_16 = initial_step_delta
-                .map(|(dx, dy)| crate::util::fixed_math::facing_from_delta_int_u16(dx, dy));
-            drive.turn.rate_timer = 0;
-            drive.turn.first_movement_allowed = false;
-            // Drive path installation preserves the target/current speed fractions.
-            // On the ordinary Move path, active YR produces the target in
-            // DriveLocomotionClass::Process_Movement @ 0x004B2630 and applies it in
-            // Process_Drive_Track @ 0x004B0F20.
-        } else if uses_ship_locomotor {
-            entity_mut
-                .ship_locomotion
-                .get_or_insert_with(Default::default);
-            super::path_markers::install_path_replay(
-                &mut entity_mut.navigation.path_replay,
-                (start_rx, start_ry),
-                &movement.path,
-                1,
             );
         }
         if locomotor_kind == Some(LocomotorKind::Walk) {
@@ -934,15 +913,7 @@ pub(crate) fn issue_move_command_with_destination(
             // the existing prepared physical path, without publishing it here.
             entity_mut.navigation.path_replay.clear_live_head();
         }
-        // Unit741970 -> Foot4D94B0 -> Drive4AFD40/Ship69F450 records a
-        // destination. Fresh ProcessMovement4B2630/6A1C80 owns turn admission,
-        // CanEnter, selector/head publication, queue shift and Apply1. Preparing
-        // a track here used to bypass that entire production corridor.
-        // An already committed head remains independent of the new route.
-        if !keep_in_flight_curve
-            && !uses_shared_tracks
-            && let Some(f) = new_facing
-        {
+        if !keep_in_flight_curve && let Some(f) = new_facing {
             let has_rot = entity_mut.locomotor.as_ref().is_some_and(|l| l.rot > 0);
             if entity_mut.category != EntityCategory::Infantry && has_rot {
                 entity_mut.facing_target = Some(f);
@@ -985,7 +956,7 @@ pub(crate) fn prepare_walk_cell_destination(
     clear_infantry_cell_destination_head(entity);
     super::navcom::set_destination_internal_cell(entity, target, resolved_terrain);
     timing.accept(entity);
-    prepare_walk_execution(entity, target, speed);
+    prepare_destination_execution(entity, target, speed);
     true
 }
 
@@ -1000,8 +971,9 @@ pub(super) fn clear_infantry_cell_destination_head(entity: &mut GameEntity) {
 }
 
 /// MovementTarget is only the scheduling adapter. Retain a paid head, never
-/// turn at order time or create a competing straight-line path for Walk.
-fn prepare_walk_execution(entity: &mut GameEntity, target: (u16, u16), speed: SimFixed) {
+/// turn or search at order time. The ordinary Process owns the first route
+/// and subsequent head selection for Walk, Drive and Ship.
+fn prepare_destination_execution(entity: &mut GameEntity, target: (u16, u16), speed: SimFixed) {
     let committed_head = committed_path_head(entity);
     entity.movement_target = Some(MovementTarget {
         speed,

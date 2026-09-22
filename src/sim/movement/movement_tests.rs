@@ -1994,13 +1994,20 @@ fn move_order_defers_drive_track_admission_until_process() {
     assert_eq!(drive.head_to, None);
     assert_eq!(drive.track.turn_index, -1);
     assert_eq!(drive.occupation_head_to, None);
-    assert_eq!(entity.navigation.path_replay.directions, vec![2; 5]);
+    assert!(
+        entity
+            .navigation
+            .path_replay
+            .remaining_directions()
+            .is_empty()
+    );
     assert_eq!(entity.navigation.path_replay.cursor, 0);
-    assert_eq!(entity.navigation.path_replay.reference_cell, Some((2, 3)));
+    assert_eq!(entity.navigation.path_replay.reference_cell, None);
     assert_eq!(drive.target_speed_fraction, SIM_ZERO);
     assert_eq!(entity.foot_speed.applied_fraction, SIM_ZERO);
-    assert_eq!(drive.turn.target_direction, Some(2));
-    assert_eq!(drive.turn.target_facing_16, Some(0x3fff));
+    assert_eq!(drive.turn.target_direction, None);
+    assert_eq!(drive.turn.target_facing_16, None);
+    assert!(entity.movement_target.as_ref().unwrap().path.is_empty());
 
     tick_movement_with_grid(
         &mut entities,
@@ -2096,7 +2103,7 @@ fn test_reissue_mid_curve_keeps_track_and_anchors_path_at_head() {
     e.lifecycle.cell_marked = true;
     entities.insert(e);
 
-    // The order supplies the path; first Process commits its head (3,3).
+    // First Process searches and commits its head (3,3).
     assert!(issue_move_command(
         &mut entities,
         &grid,
@@ -2166,12 +2173,12 @@ fn test_reissue_mid_curve_keeps_track_and_anchors_path_at_head() {
     );
     let movement = entity.movement_target.as_ref().expect("movement target");
     assert_eq!(
-        movement.path.first().copied(),
+        movement.path.last().copied(),
         Some((3, 3)),
-        "new path is anchored at the curve's committed head cell"
+        "only the curve's committed head survives until Process searches again"
     );
     assert_eq!(
-        movement.next_index, 0,
+        movement.next_index, 1,
         "the still-unreached head is itself the first queued node"
     );
     assert_eq!(movement.final_goal, Some((0, 3)));
@@ -2182,7 +2189,14 @@ fn test_reissue_mid_curve_keeps_track_and_anchors_path_at_head() {
         "the kept curve keeps its head-to occupation claim"
     );
     assert_eq!(entity.navigation.path_replay.reference_cell, Some((3, 3)));
-    assert_eq!(entity.navigation.path_replay.cursor, 0);
+    assert_eq!(entity.navigation.path_replay.cursor, 1);
+    assert!(
+        entity
+            .navigation
+            .path_replay
+            .remaining_directions()
+            .is_empty()
+    );
     assert_eq!(drive.target_speed_fraction, SimFixed::lit("0.4"));
     assert_eq!(entity.foot_speed.applied_fraction, SimFixed::lit("0.25"));
     assert_eq!(entity.foot_speed.cached_current_speed, 7);

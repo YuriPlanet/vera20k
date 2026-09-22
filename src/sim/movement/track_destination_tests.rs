@@ -1,5 +1,5 @@
-//! Original MoveTo/Foot caller comparisons. Unit preprocessing rows remain
-//! evidence for its pending complete setter; these tests do not claim that port.
+//! Original MoveTo/Foot and ordinary Unit destination comparisons. The complete
+//! Unit setter (radio, force-reassign and skip-MoveTo) remains a required port.
 use super::*;
 use crate::sim::components::{FootPathQueue, FootPathRuntime};
 use crate::sim::movement::locomotor::LocomotorState;
@@ -145,7 +145,14 @@ fn compare(e: &GameEntity, row: &Value) {
         ("aux", json!(e.navigation.nav_com_aux.is_some())),
         (
             "path",
-            json!(e.navigation.path_replay.remaining_directions()),
+            json!(
+                e.navigation
+                    .path_replay
+                    .directions
+                    .iter()
+                    .map(|&v| { if v == u8::MAX { -1 } else { i32::from(v) } })
+                    .collect::<Vec<_>>()
+            ),
         ),
         ("reference", json!(e.navigation.path_replay.reference_cell)),
         (
@@ -161,6 +168,68 @@ fn compare(e: &GameEntity, row: &Value) {
     ] {
         assert_eq!(actual, row[key], "{key}: {row}");
     }
+}
+
+#[test]
+fn ordinary_track_orders_match_native_without_an_eager_path_or_power_change() {
+    let mut checked = 0;
+    for row in corpus() {
+        let input = &row["input"];
+        if input["entry"] != "unit"
+            || input.get("same_nav").is_some()
+            || input.get("skip_move").is_some()
+        {
+            continue;
+        }
+        checked += 1;
+        let terrain = terrain(input["bridge"] == true);
+        for blocked in [false, true] {
+            let mut entities = EntityStore::new();
+            entities.insert(actor(input));
+            let mut grid = crate::sim::pathfinding::PathGrid::new(32, 32);
+            if blocked {
+                // A wall surrounding the requested cell is irrelevant until
+                // Process; its accepted NavCom must not be redirected/refused.
+                for y in 0..32 {
+                    grid.set_blocked(11, y, true);
+                }
+            }
+            assert!(
+                super::super::movement_commands::issue_move_command_with_layered(
+                    &mut entities,
+                    &grid,
+                    1,
+                    (11, 10),
+                    SimFixed::from_num(768),
+                    false,
+                    None,
+                    None,
+                    Some(&terrain),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    super::super::DestinationTiming::new(100, 22),
+                )
+            );
+            let entity = entities.get(1).unwrap();
+            compare(entity, &row);
+            let restored: GameEntity =
+                serde_json::from_value(serde_json::to_value(entity).unwrap()).unwrap();
+            compare(&restored, &row);
+            let request = entity.movement_target.as_ref().unwrap();
+            assert_eq!(request.final_goal, Some((11, 10)));
+            assert!(
+                entity
+                    .navigation
+                    .path_replay
+                    .remaining_directions()
+                    .is_empty()
+            );
+        }
+    }
+    assert_eq!(checked, 24);
 }
 
 #[test]
