@@ -1158,10 +1158,10 @@ pub fn blocker_is_fraidycat(
 
 /// Try to scatter a blocker to an adjacent cell by issuing a movement command.
 ///
-/// Matches the original engine's movement scatter (Branch A — NullCoord):
-/// search 8 neighbors starting from a random direction, pick the first
-/// walkable + unoccupied cell, issue the blocker a movement order to walk
-/// there.
+/// Compatibility displacement for the blocked-cell caller: search eight
+/// neighbours from a random direction and issue a movement order. Residual:
+/// native NULL-source Infantry Scatter first tries FNPC, then uses the shared
+/// eight-neighbour fallback; this adapter still needs that class migration.
 ///
 /// `rules` resolves the Infantry scatter gates and the normal movement speed.
 /// Scatter changes the destination; it does not grant a special speed.
@@ -1339,17 +1339,18 @@ pub(crate) struct InfantryDamageScatter {
 /// Select the native attacker-relative displacement used by the Infantry
 /// damage receiver.
 ///
-/// This is deliberately separate from [`scatter_blocker`]: blocked-cell
-/// scatter starts from an unconstrained eight-way draw, while the damage
-/// callback draws inclusive `0..=4`, offsets the direction away from the
-/// attacker by `-2..=+2`, and then scans all eight adjacent cells in wrapping
-/// compass order. The returned command is committed by combat between the HP
-/// write and the fear callback, preserving the receiver's synchronous order.
+/// The source-aware callback draws inclusive `0..=4`, offsets the direction
+/// away from the attacker by `-2..=+2`, then scans eight neighbours of Foot's
+/// navigation coordinate. It retains the first legal fallback while seeking
+/// a direct nonstructural surface. Combat commits the result between the HP
+/// write and fear. The separate NULL-source class path is still a residual
+/// on [`scatter_blocker`], as are this caller's entry/setter adapters below.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn select_infantry_damage_scatter(
     infantry: &GameEntity,
     attacker_coord: (i32, i32),
     terrain: Option<&ResolvedTerrainGrid>,
+    playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
     occupancy: &OccupancyGrid,
     rules: &crate::rules::ruleset::RuleSet,
     owner_controlled_by_human: bool,
@@ -1365,14 +1366,11 @@ pub(crate) fn select_infantry_damage_scatter(
         return None;
     }
 
-    let doing = infantry
-        .animation
-        .as_ref()
-        .map(|animation| crate::rules::infantry_sequence::action_id(animation.sequence));
+    let doing = infantry.mission_leaf.as_infantry()?.doing();
     // With ReceiveDamage's literal false/false arguments, a player-owned man
     // in the four deploy-family actions returns at the entry branch. This is
     // independent of the permission-table byte (28..30 are otherwise allowed).
-    if owner_controlled_by_human && doing.is_some_and(|doing| (0x1b..=0x1e).contains(&doing)) {
+    if owner_controlled_by_human && (0x1b..=0x1e).contains(&doing) {
         return None;
     }
 
@@ -1389,13 +1387,12 @@ pub(crate) fn select_infantry_damage_scatter(
     if !mission_scatter {
         return None;
     }
-    // Native indexes byte zero of the four-byte Doing record. -1 (no Rust
-    // Animation) and action 0x1f are explicit bypasses; every represented
-    // SequenceKind maps into the verified 42-entry table.
-    if doing.is_some_and(|doing| {
-        !crate::rules::infantry_sequence::scatter_allowed_by_doing(i32::from(doing))
-            .expect("represented sequence has a native Doing record")
-    }) {
+    // 51D1AA reads retained Doing+6C4, independent of the displayed sequence.
+    // -1 and 31 bypass the table. All 42 native actions are represented by the
+    // mission leaf, including the nine without a presentation SequenceKind.
+    if !crate::rules::infantry_sequence::scatter_allowed_by_doing(doing)
+        .expect("mission leaf retains a valid native Doing")
+    {
         return None;
     }
     // gamemd 51D212..51D220: every path with effective first flag=false
@@ -1428,29 +1425,35 @@ pub(crate) fn select_infantry_damage_scatter(
     let defender_y = i32::from(infantry.position.ry)
         .wrapping_mul(256)
         .wrapping_add(infantry.position.sub_y.to_num::<i32>());
-    let away_facing = crate::util::fixed_math::facing_from_delta_int_u16(
-        defender_x.wrapping_sub(attacker_coord.0),
-        defender_y.wrapping_sub(attacker_coord.1),
-    );
-    let away_direction = (((u32::from(away_facing) >> 12) + 1) >> 1) as i32 & 7;
-    let start_direction = rng.next_range_u32_inclusive(0, 4) as i32 - 2 + away_direction;
+    let start_direction =
+        super::scatter_cell::source_start_direction((defender_x, defender_y), attacker_coord, rng);
+    let terrain = terrain?;
+    let bounds = playfield_bounds?;
+    // 51D4A5 seeds the scan from Foot+4C, which can be a paid head or Tube
+    // exit. The source-relative heading above deliberately uses Object+9C.
+    let navigation = super::foot_coordinate::navigation_coordinate(infantry, Some(terrain)).ok()?;
+    let seed = ((navigation.x / 256) as i16, (navigation.y / 256) as i16);
     let layer = infantry.movement_layer_or_ground();
     let locomotor = infantry.locomotor.as_ref().expect("checked above");
 
-    for offset in 0..8 {
-        let direction = (start_direction + offset) & 7;
-        let (dx, dy) = NEIGHBOR_OFFSETS[direction as usize];
-        let nx = i32::from(infantry.position.rx) + dx;
-        let ny = i32::from(infantry.position.ry) + dy;
-        let (Ok(nx), Ok(ny)) = (u16::try_from(nx), u16::try_from(ny)) else {
-            continue;
-        };
-
-        let terrain_allows = terrain.is_none_or(|grid| {
-            let Some(cell) = grid.cell(nx, ny) else {
-                return false;
+    let destination =
+        super::scatter_cell::select_neighbor(seed, start_direction, |candidate, _| {
+            // Keep the first Get_CellClass before the height-aware playfield query:
+            // both lookups can stamp the map's shared dummy identity.
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            let cell = cells.lookup(candidate);
+            if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
+                (i32::from(candidate.0), i32::from(candidate.1)),
+                Some(bounds),
+                Some(terrain),
+            ) {
+                return None;
+            }
+            let crate::map::cell_index::NativeCellIdentity::Real(index) = cell else {
+                return None;
             };
-            match layer {
+            let cell = &terrain.cells()[index];
+            let terrain_allows = match layer {
                 MovementLayer::Ground => {
                     crate::sim::pathfinding::passability::is_passable_for_zone(
                         cell.zone_type,
@@ -1459,19 +1462,22 @@ pub(crate) fn select_infantry_damage_scatter(
                 }
                 MovementLayer::Bridge => cell.bridge_walkable,
                 MovementLayer::Air | MovementLayer::Underground => false,
+            };
+            // Residual: this existing entry adapter has not yet migrated to the
+            // world-owned Infantry+1AC numeric query. Source selection now retains
+            // native fallback/preference, but that does not prove class legality.
+            if !terrain_allows
+                || !cell_passable_for_infantry(occupancy.get(cell.rx, cell.ry), layer)
+            {
+                return None;
             }
-        });
-        if !terrain_allows || !cell_passable_for_infantry(occupancy.get(nx, ny), layer) {
-            continue;
-        }
+            Some(super::scatter_cell::preferred_surface(terrain, candidate))
+        })?;
 
-        return Some(InfantryDamageScatter {
-            destination: (nx, ny),
-            speed: scatter_movement_speed(infantry, Some(rules), interner),
-        });
-    }
-
-    None
+    Some(InfantryDamageScatter {
+        destination: (destination.0 as u16, destination.1 as u16),
+        speed: scatter_movement_speed(infantry, Some(rules), interner),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1719,6 +1725,9 @@ mod tests {
     fn infantry(id: u64, rx: u16, ry: u16, sub: u8) -> GameEntity {
         let mut e = GameEntity::test_default(id, "E1", "Allies", rx, ry);
         e.category = EntityCategory::Infantry;
+        e.mission_leaf = crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+            EntityCategory::Infantry,
+        );
         e.sub_cell = Some(sub);
         e.crushable = true;
         e
@@ -2953,42 +2962,6 @@ mod tests {
         use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
         use crate::sim::animation::{Animation, SequenceKind};
         use crate::sim::house_state::HouseState;
-        use SequenceKind::*;
-        let represented = [
-            Stand,
-            Prone,
-            Walk,
-            Attack,
-            Down,
-            Crawl,
-            Up,
-            FireProne,
-            Idle1,
-            Idle2,
-            Die1,
-            Die2,
-            Die3,
-            Die4,
-            Die5,
-            Tread,
-            Swim,
-            WetIdle1,
-            WetIdle2,
-            WetAttack,
-            Hover,
-            Fly,
-            FireFly,
-            Deploy,
-            Deployed,
-            DeployedFire,
-            DeployedIdle,
-            Undeploy,
-            Cheer,
-            Paradrop,
-            Panic,
-            SecondaryFire,
-            SecondaryProne,
-        ];
         let corpus: serde_json::Value = serde_json::from_str(include_str!(
             "../../../tools/spatial_oracle/infantry_damage_scatter.json"
         ))
@@ -2998,15 +2971,6 @@ mod tests {
             let input = &row["input"];
             let flag = |name: &str, default: bool| input[name].as_bool().unwrap_or(default);
             let doing = input["doing"].as_i64().unwrap_or(-1);
-            let sequence = represented
-                .iter()
-                .copied()
-                .find(|&kind| i64::from(crate::rules::infantry_sequence::action_id(kind)) == doing);
-            if doing != -1 && sequence.is_none() {
-                // Native-only actions remain in the corpus; Rust currently
-                // has no SequenceKind for nine of the 42 Doing records.
-                continue;
-            }
             let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
                 "[General]\nFixture=1\n[InfantryTypes]\n0=E1\n[E1]\nSpeed=4\nFraidycat={}\nVeteranAbilities={}\nEliteAbilities={}\n[Guard]\nScatter={}\n[CombatDamage]\nPlayerScatter={}\n",
                 flag("fraidycat", true),
@@ -3016,7 +2980,16 @@ mod tests {
             ))).unwrap();
             let mut victim = infantry(1, 5, 5, 2);
             let interner = crate::sim::intern::test_interner();
-            victim.animation = sequence.map(Animation::new);
+            victim.mission_leaf = crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+                EntityCategory::Infantry,
+            );
+            victim
+                .mission_leaf
+                .set_infantry_doing_verified(doing as i32)
+                .unwrap();
+            // Deliberately disagree with Doing: presentation cannot admit or
+            // refuse simulation work, including native-only action codes.
+            victim.animation = Some(Animation::new(SequenceKind::Die1));
             victim.veterancy = input["rank"].as_u64().unwrap_or(0) as u16 * 100;
             victim.locomotor = Some(
                 crate::sim::movement::locomotor::LocomotorState::for_test_kind(
@@ -3049,7 +3022,12 @@ mod tests {
             let result = select_infantry_damage_scatter(
                 &victim,
                 (1000, 1000),
-                None,
+                Some(&flat_resolved_terrain(20, 20)),
+                Some(
+                    crate::sim::cell_rect::PlayfieldBounds::from_normalized_local_size(
+                        16, -16, -16, 64, 64,
+                    ),
+                ),
                 &OccupancyGrid::new(),
                 &rules,
                 house.is_controlled_by_human(flag("game_mode_nonzero", true)),
@@ -3066,7 +3044,7 @@ mod tests {
             );
             checked += 1;
         }
-        assert_eq!(checked, 260);
+        assert_eq!(checked, 278);
     }
 
     #[test]
@@ -3084,7 +3062,12 @@ mod tests {
         let scatter = select_infantry_damage_scatter(
             &civilian,
             (0, 0),
-            None,
+            Some(&flat_resolved_terrain(20, 20)),
+            Some(
+                crate::sim::cell_rect::PlayfieldBounds::from_normalized_local_size(
+                    16, -16, -16, 64, 64,
+                ),
+            ),
             &OccupancyGrid::new(),
             &rules,
             false,

@@ -675,7 +675,8 @@ pub(crate) fn commit_entities(
                         target,
                         attacker_coord,
                         world.resolved_terrain.as_ref(),
-                        &mut world.substrate.occupancy,
+                        world.playfield_bounds,
+                        &world.substrate.occupancy,
                         rules,
                         world.houses.get(&target.owner()).is_some_and(|house| {
                             house.is_controlled_by_human(world.session.game_mode_nonzero)

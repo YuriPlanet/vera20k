@@ -74,6 +74,7 @@ mod navcom;
 pub(crate) use navcom::{nav_target_coordinate, set_walk_destination_coord, target_cell_coord};
 mod path_markers;
 pub(crate) mod ready_producer;
+mod scatter_cell;
 pub(crate) mod slope_transition;
 mod track_entry;
 #[cfg(test)]

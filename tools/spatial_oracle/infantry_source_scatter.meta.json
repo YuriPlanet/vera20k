@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Source-aware Infantry Scatter selection, native RNG and dispatch order; supplied Can_Enter_Cell answers and observed destination receiver, not full movement parity.",
+  "assumptions": [
+    "Valid Fraidycat Infantry with native Walk interface, AI house, Guard Scatter enabled; zero NullCoord/NullCell.",
+    "32x32 allocated cells and supplied raw playfield fields widened for boundary selection; not a map-loader or retail boundary-reachability fixture. Original heading arithmetic under chop53 control word.",
+    "Original49F2F0 initializes the runtime direction table before Scatter; never use its cold image zeros.",
+    "No NULL-source FNPC or true/true DoAction31 cases."
+  ],
+  "substitutions": [
+    "Infantry+1AC returns per-direction supplied numeric answers.",
+    "QueueMission and SetDestination are argument-checking observers."
+  ],
+  "entry_points": {
+    "scatter": "0x0051D0D0",
+    "navigation_coord": "0x004DBDF0",
+    "projection": "0x006D6410",
+    "height": "0x005F5F00",
+    "direction_startup": "0x0049F2F0",
+    "playfield": "0x00578460",
+    "random": "0x0065C7E0"
+  },
+  "payload_sha256": "c56ce191ac5776c51c265dd03efe9014c00879401adadee4de3e775b66a673bf"
+}

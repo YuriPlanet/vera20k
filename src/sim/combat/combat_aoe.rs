@@ -3377,6 +3377,16 @@ mod tests {
             rng_changed: bool,
         }
 
+        #[derive(Default)]
+        struct ScatterFixture {
+            doing: i32,
+            animation: Option<crate::sim::animation::SequenceKind>,
+            first_bridge: bool,
+            all_bridges: bool,
+            head: Option<crate::sim::components::DriveCoord>,
+            outside: bool,
+        }
+
         fn run(
             mission: MissionType,
             attacker_present: bool,
@@ -3385,6 +3395,31 @@ mod tests {
             human_control: Option<bool>,
             team: bool,
             nav: bool,
+        ) -> Outcome {
+            run_fixture(
+                mission,
+                attacker_present,
+                health,
+                fraidycat,
+                human_control,
+                team,
+                nav,
+                ScatterFixture {
+                    doing: -1,
+                    ..Default::default()
+                },
+            )
+        }
+
+        fn run_fixture(
+            mission: MissionType,
+            attacker_present: bool,
+            health: i32,
+            fraidycat: bool,
+            human_control: Option<bool>,
+            team: bool,
+            nav: bool,
+            fixture: ScatterFixture,
         ) -> Outcome {
             let ini = IniFile::from_str(&format!(
                 "[General]\nFixture=1\n[InfantryTypes]\n0=E1\n\
@@ -3421,6 +3456,14 @@ mod tests {
             victim.owner = victim_house;
             victim.type_ref = victim_type;
             victim.category = EntityCategory::Infantry;
+            victim.mission_leaf = crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+                EntityCategory::Infantry,
+            );
+            victim
+                .mission_leaf
+                .set_infantry_doing_verified(fixture.doing)
+                .unwrap();
+            victim.animation = fixture.animation.map(crate::sim::animation::Animation::new);
             victim.health.current = health;
             victim.sub_cell = Some(2);
             victim.infantry = Some(crate::sim::game_entity::InfantryRuntime::new());
@@ -3433,6 +3476,9 @@ mod tests {
                     0,
                 ),
             );
+            if let Some(head) = fixture.head {
+                victim.locomotor.as_mut().unwrap().set_step_head(Some(head));
+            }
             victim.mission.apply_test_fixture(MissionTestFixture {
                 current: MissionId::from_known(mission),
                 suspended: MissionId::NONE,
@@ -3457,7 +3503,19 @@ mod tests {
             let cells = (0..10)
                 .flat_map(|ry| (0..10).map(move |rx| test_terrain_cell(rx, ry)))
                 .collect();
-            let terrain = ResolvedTerrainGrid::from_cells(10, 10, cells);
+            let mut terrain = ResolvedTerrainGrid::from_cells(10, 10, cells);
+            if fixture.first_bridge {
+                terrain.cell_mut(6, 4).unwrap().bridge_facts.raw_flags = 0x100;
+            }
+            if fixture.all_bridges {
+                for (dx, dy) in crate::util::direction::DIRECTION_DELTAS {
+                    terrain
+                        .cell_mut((5 + dx) as u16, (5 + dy) as u16)
+                        .unwrap()
+                        .bridge_facts
+                        .raw_flags = 0x100;
+                }
+            }
             let event = EntityDamageEvent::area(
                 2,
                 10,
@@ -3475,6 +3533,18 @@ mod tests {
             world.substrate.occupancy = occupancy;
             world.interner = interner;
             world.resolved_terrain = Some(terrain);
+            world.playfield_bounds = Some(
+                crate::sim::cell_rect::PlayfieldBounds::from_normalized_local_size(
+                    16, -16, -16, 64, 64,
+                ),
+            );
+            if fixture.outside {
+                world.playfield_bounds = Some(
+                    crate::sim::cell_rect::PlayfieldBounds::from_normalized_local_size(
+                        16, 0, 0, 1, 1,
+                    ),
+                );
+            }
             world.main_rng = SimRng::new(7);
             world.scenario_rng = SimRng::new(1);
             // Some(false) models campaign PlayerControl without IsHuman.
@@ -3519,6 +3589,71 @@ mod tests {
                 rng_changed: world.scenario_rng.state() != before_rng,
             }
         }
+
+        let run_scene = |fixture| {
+            run_fixture(
+                MissionType::Guard,
+                true,
+                125,
+                true,
+                None,
+                false,
+                false,
+                fixture,
+            )
+        };
+        let fixture = || ScatterFixture {
+            doing: -1,
+            ..Default::default()
+        };
+        let displayed_death = run_scene(ScatterFixture {
+            animation: Some(crate::sim::animation::SequenceKind::Die1),
+            ..fixture()
+        });
+        assert_eq!(
+            displayed_death.destination,
+            Some((6, 4)),
+            "display does not own Doing"
+        );
+        let retained_death = run_scene(ScatterFixture {
+            doing: 7,
+            animation: Some(crate::sim::animation::SequenceKind::Stand),
+            ..fixture()
+        });
+        assert_eq!(retained_death.destination, None);
+        assert!(!retained_death.rng_changed);
+        let later_preferred = run_scene(ScatterFixture {
+            first_bridge: true,
+            ..fixture()
+        });
+        assert_eq!(later_preferred.destination, Some((6, 5)));
+        let fallback = run_scene(ScatterFixture {
+            all_bridges: true,
+            ..fixture()
+        });
+        assert_eq!(fallback.destination, Some((6, 4)));
+        let from_head = run_scene(ScatterFixture {
+            head: Some(crate::sim::components::DriveCoord {
+                x: 7 * 256 + 128,
+                y: 7 * 256 + 128,
+                z: 0,
+            }),
+            ..fixture()
+        });
+        assert_eq!(
+            from_head.destination,
+            Some((8, 6)),
+            "scan follows Foot head; heading follows physical source"
+        );
+        let outside = run_scene(ScatterFixture {
+            outside: true,
+            ..fixture()
+        });
+        assert_eq!(outside.destination, None);
+        assert!(
+            outside.rng_changed,
+            "selection failure keeps the preceding native draw"
+        );
 
         // Seed 1 yields RandomRanged(0,4)==1. With the attacker due west,
         // native base direction is E (2), so start=NE (1) and the first open

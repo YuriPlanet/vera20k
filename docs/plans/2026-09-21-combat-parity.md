@@ -1449,7 +1449,88 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): Infantry damage-scatter admission
+## Current checkpoint (2026-09-22): Infantry source-scatter selection
+
+Owned checkout and branch remain `engine-ownership-boundaries/ra2-rust-game`,
+`feature/combat-foot-speed`; parent `35f42822`. Preserve `.local/` and all prior
+work. The combat goal remains active. No repeated critic, PR or merge while the
+required aircraft attack/flight chain remains unfinished.
+
+Acceptance for this increment: damage scatter reads retained Infantry Doing,
+including all42 action records independently of presentation. The source-aware
+eight-neighbour selector preserves native direction/RNG order, Foot navigation
+seed, packed-cell arithmetic, height-aware playfield gate, first legal fallback,
+and direct-projection/nonstructural preference. Production damage uses this
+selection; no full Infantry+1AC, SetDestination or aircraft-scatter claim.
+
+Implemented ownership: MissionLeafState owns Doing (damage had incorrectly read
+Animation). Foot's existing navigation-coordinate owner supplies the scan seed;
+physical Object coordinates still supply the away heading. New movement
+scatter_cell owns the eight-neighbour selection and reuses FNPC's existing
+6D6410 projection kernel. No additional simulation state or save format.
+Damage now receives the actual world playfield bounds. Native NullCell(0,0)
+remains a sentinel even when a candidate is legal.
+
+Evidence: `tools/spatial_oracle/infantry_source_scatter.{py,json,meta.json}`
+executes56 original51D0D0 entry-to-return cases. Real house/mission/Walk reads,
+native heading, Scenario RNG, Foot+4C, map/playfield, height and6D6410 execute.
+Can_Enter_Cell numeric answers, QueueMission and SetDestination are declared
+observable seams. Coverage: eight headings, coincident XY with nonzero Z,
+three RNG seeds, all eight sole-legal directions, refusal codes1..7, bridge
+fallback, projected hills/bridge sides, signed level/OnBridge, retained Walk
+head, playfield refusal, dummy edge, Doing refusal, forced action31, wide
+coordinate differences and legal NullCell candidates (with/without fallback).
+Native `--check` passes. Initial exploratory output revealed an uninitialized
+runtime direction table (every delta was zero); the retained harness executes
+original startup49F2F0. Cold-image outputs were rejected before validation.
+The original278 admission rows now all have Rust comparisons; no18-row
+SequenceKind omission remains.
+
+Validation: final full `cargo test -p vera20k --lib` passes **9,182 tests,
+0 failures,135 ignored**,29.32s (`.local/scatter-selection-full2.log`). First compile caught
+a u32/u64 seed fixture mismatch, corrected. The focused run then passed44 and
+failed1 on the negative-edge native projection. Shared6D6410 had skipped its
+initial signed world-coordinate /256: center(-1)=-128 maps back to0. Added that
+conversion on the shared owner for both Scatter and FNPC, after checking all5
+FNPC native callers. Source direction now uses existing facing16_between to
+avoid premature i32 subtraction overflow, demonstrated by original execution.
+Production receiver
+coverage includes conflicting Doing/Animation, later preferred versus fallback
+bridge cells, a retained head distinct from physical coordinates, and rejection
+outside the configured playfield. Native entry-answer and setter seams do not
+prove those omitted receivers. No rendered retail/Linux/macOS execution.
+First full run:9,181 passed,1 failed,135 ignored. The affected naval-placement
+fixture blocked all real Float rows but used a diamond far beyond its populated
+32x32 cells; its missing cells were still candidates. The projection correction
+changed its selected candidate. Restricted that fixture's diamond to populated
+cells, preserving the intended all-candidates-blocked assertion. No naval
+production behavior was changed separately. Clippy passes with1,026 warnings
+(`.local/scatter-selection-clippy.log`,46.56s; parent had1,027). Final native
+`--check` passes all56 rows (`.local/infantry-source-check-final.log`). Its
+provenance explicitly identifies the widened synthetic playfield fields; the
+boundary rows are arithmetic witnesses, not retail reachability claims.
+
+Ghidra51D1AA,51D5D5 and6D641B comments saved and read back: Doing authority,
+first-legal fallback versus preferred surface, and the shared signed coordinate
+conversion, with bounded corpus provenance.
+
+Required next: replace the damage selector's legacy terrain/occupancy entry
+adapter with world-owned Infantry+1AC numeric admission, including its live
+height/raw occupation/ordered-list predicates. Migrate affected sale/source
+callers to the same class receiver and native SetDestination lifecycle (current
+damage still uses issue_direct_move). Retain NULL-source FNPC distinction and
+DoAction31/moving-force gates; aircraft additionally requires Unit Scatter.
+The new selector does not close these dependencies or aircraft states5..9.
+Additional prerequisite traced during validation: UnitVT7F5C70+28C resolves
+6F3280, called743A5C before either force flag. Original+184 ->5B3040 reads
+current+AC or queued+B4; reject Sleep0/Sticky6/Unload16, then Type.IsTrain+C94.
+ReadINI71227F/712284 and key8444BC confirm IsTrain. Existing mission.effective()
+owns that projection. The earlier Harmless16 interpretation was wrong:
+Harmless=23; holds_until_retasked is a different three-mission predicate.
+6F3280 annotation saved/read back; body/vtable/writer evidence only, not a new
+Unit Scatter port or executable comparison.
+
+## Previous checkpoint (2026-09-22): Infantry damage-scatter admission
 
 Owned checkout `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`,
 branch `feature/combat-foot-speed`, parent `2ade36cc` (published cell-eligibility
