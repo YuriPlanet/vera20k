@@ -13,10 +13,18 @@ use crate::sim::movement::{ground_pose, target_cell_coord};
 #[path = "aircraft_fire_location_tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "aircraft_approach_tests.rs"]
+mod approach_tests;
+
 impl Simulation {
     /// Target+48 is its physical center, independently of the destination
     /// receiver+4C. In particular, do not read a Building's helipad offset here.
-    fn fire_location_center(&self, target: NavTargetRef, rules: &RuleSet) -> Option<DriveCoord> {
+    pub(super) fn fire_location_center(
+        &self,
+        target: NavTargetRef,
+        rules: &RuleSet,
+    ) -> Option<DriveCoord> {
         let id = match target {
             NavTargetRef::Cell { rx, ry } => {
                 return Some(target_cell_coord(rx, ry, self.resolved_terrain.as_ref()));

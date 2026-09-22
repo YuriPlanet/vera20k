@@ -276,22 +276,21 @@ pub fn tick_aircraft_missions(
                 if let Some(entity) = sim.substrate.entities.get_mut(snap.id) {
                     attack_mission::enter_attack_state(entity, *sub_state);
                 }
-                let result = if *sub_state == 1 {
+                let result = if *sub_state == 0 {
+                    attack_mission::AttackTickResult::transition(sim.aircraft_begin_attack(snap.id))
+                } else if *sub_state == 1 {
                     attack_mission::AttackTickResult::transition(
                         sim.aircraft_reengage(snap.id, rules),
                     )
-                } else {
-                    attack_mission::tick_attack_state(
-                        &sim.substrate.entities,
-                        rules,
-                        &sim.interner,
-                        snap.id,
-                        *sub_state,
+                } else if *sub_state == 3 {
+                    attack_mission::AttackTickResult::transition(
+                        sim.aircraft_approach(snap.id, rules),
                     )
+                } else {
+                    attack_mission::tick_attack_state(&sim.substrate.entities, snap.id, *sub_state)
                 };
                 m.new_mission = result.new_mission;
                 m.fire_at = result.fire_at;
-                m.move_to = result.move_to;
 
                 // Fly owns height targets. Native4CF3D4..4CF4CF selects
                 // destination-relative height, IsDropship approach height or
@@ -302,33 +301,8 @@ pub fn tick_aircraft_missions(
                     m.set_speed_fraction = Some(SIM_ONE);
                 }
 
-                // Speed tiers based on distance to target.
-                // Cell targets resolve to cell-center coords via the helper.
-                if matches!(*sub_state, 3 | 4) {
-                    if let Some(entity) = sim.substrate.entities.get(snap.id) {
-                        if let Some(status) =
-                            crate::sim::aircraft::attack_mission::aircraft_target_status(
-                                entity.attack_target.as_ref(),
-                                &sim.substrate.entities,
-                            )
-                        {
-                            let dx = (entity.position.rx as i32 - status.rx as i32).abs();
-                            let dy = (entity.position.ry as i32 - status.ry as i32).abs();
-                            let dist_cells = dx.max(dy);
-
-                            let speed_frac = if dist_cells < 1 {
-                                SIM_ZERO
-                            } else if dist_cells < 2 {
-                                SimFixed::lit("0.5")
-                            } else if dist_cells < 3 {
-                                SimFixed::lit("0.75")
-                            } else {
-                                SIM_ONE
-                            };
-                            m.set_speed_fraction = Some(speed_frac);
-                        }
-                    }
-                }
+                // Fly Process owns acceleration/approach speed. Mission_Attack
+                // does not write the old cell-distance speed tiers.
             }
 
             AircraftMission::Guard => {

@@ -90,7 +90,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         "[General]\nFlightLevel=1500\n[AircraftTypes]\n0=TEST\n[VehicleTypes]\n0=TARGET\n1=DEST\n2=BLOCKER\n{registered}\
          [BuildingTypes]\n0=BUILDING\n[BUILDING]\nFoundation=1x1\n\
          [TEST]\nStrength=100\nSpeed=8\nAmmo=2\nLandable=yes\nLocomotor={{4A582746-9839-11D1-B709-00A024DDAFD1}}\n\
-         Primary={}\n{}AirportBound={}\nCarryall={}\nSpawned={}\nOpenTopped={}\n\
+         Primary={}\n{}AirportBound={}\nCarryall={}\nSpawned={}\nOpenTopped={}\nFighter={}\n\
          [TARGET]\nStrength=100\n[DEST]\nStrength=100\n\
          [BLOCKER]\nStrength=100\nSpawned={}\nSpawns=TEST\nSpawnsNumber=1\n\
          [PRIMARY]\nDamage=1\nRange={}\nProjectile=PROJECTILE\n\
@@ -110,6 +110,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         input["carryall"].as_bool().unwrap_or(false),
         input["spawned"].as_bool().unwrap_or(false),
         input["open_topped"].as_bool().unwrap_or(false),
+        input["fighter"].as_bool().unwrap_or(false),
         input["blocker_spawned"].as_bool().unwrap_or(false),
         input["range"].as_i64().unwrap_or(1536) as f64 / 256.0,
         input["elite_range"].as_i64().unwrap_or(2304) as f64 / 256.0,
@@ -281,7 +282,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     (sim, rules)
 }
 
-fn reengagement_fixture(input: &Value) -> (Simulation, RuleSet) {
+pub(super) fn reengagement_fixture(input: &Value) -> (Simulation, RuleSet) {
     use crate::sim::aircraft::AircraftMission;
     use crate::sim::docking::aircraft_dock::AircraftAmmo;
     use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionLeafState};
@@ -368,7 +369,7 @@ fn reengagement_fixture(input: &Value) -> (Simulation, RuleSet) {
     (sim, rules)
 }
 
-fn assert_reengagement(sim: &mut Simulation, row: &Value) {
+pub(super) fn assert_reengagement(sim: &mut Simulation, row: &Value) {
     let entity = sim.substrate.entities.get(1).unwrap();
     let nav = match entity.navigation.nav_com {
         Some(NavTargetRef::Cell { rx, ry }) => json!([rx, ry]),

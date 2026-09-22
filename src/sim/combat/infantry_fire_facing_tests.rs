@@ -344,9 +344,19 @@ fn production_zero_delay_shot_and_restore_use_new_heading() {
         .expect("production shot");
     assert_eq!(event.facing, 63);
     assert_eq!(event.origin_snapshot.facing, 63);
-    let delta =
-        crate::util::flh_transform::native_flh_world_delta(80, 20, 40, 0, facing, facing, 0)
-            .expect("bounded FLH");
+    let delta = crate::util::flh_transform::native_flh_world_delta(
+        80,
+        20,
+        40,
+        0,
+        crate::util::flh_transform::FlhFacings {
+            aim: facing,
+            body: facing,
+            matrix: facing,
+        },
+        0,
+    )
+    .expect("bounded FLH");
     assert_eq!(event.fire_coord.x, source_x + delta.0);
     assert_eq!(event.fire_coord.y, source_y + delta.1);
     assert_eq!(

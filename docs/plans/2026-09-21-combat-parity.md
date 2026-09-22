@@ -1449,7 +1449,75 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): Aircraft re-engagement integration
+## Current checkpoint (2026-09-22): Aircraft entry and approach integration
+
+Owned checkout `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`,
+branch `feature/combat-foot-speed`, increment parent `ce4e2c5b`. Resolve current
+HEAD/upstream from Git. Combat goal remains active; preserve `.local/` and all
+existing work. No goal rewrite, new critic, PR or merge. The full attack/flight
+loop remains unfinished.
+
+Acceptance: initial Attack -> live fire-location search -> class-specific
+approach, preserving actual NavCom, both headings, primary FLH, ammo/latch,
+timers and RNG through production dispatch and save/restore.
+
+Changes:
+- `world/aircraft_attack.rs` owns states0/1/3. State0 now enters1 when raw Target
+  exists (else10), returning delay1 without consuming pending ammo or RNG.
+  The former direct0->3 transition skipped the native search.
+- State3 classifies strafe before Fighter. Only strafe compares raw primary
+  weapon range; an out-of-range strafe calls the existing destination owner.
+  Nonstrafe Fighter or actual Fly speed0 enters4. Otherwise it reads retained
+  NavCom: NULL->1; distance<512 faces live Target; distance<16 also assignsNULL
+  and enters4; farther navigation faces from primary GetFLH to Nav physical
+  center. These branches return delay1 without Scenario draws.
+- Deleted the old generic approach movement request, mission distance-based
+  speed tiers, unused target-coordinate copies and redundant result constructor.
+  Aircraft dispatch and release continue through their existing owners.
+- The shared muzzle transform now distinguishes locomotor matrix heading from
+  body heading: Fly DrawMatrix4CF659 reads SecondaryFacing, while GetFLH6F3BCA
+  subtracts PrimaryFacing in its separate relative rotation. Steering and actual
+  firing share this correction. No new saved state/version or replay rebaseline.
+
+Evidence and validation:
+- `aircraft_approach.{py,json,meta.json}` has49 full original417FE0 calls (8
+  entry,41 approach), actual classifiers/Fly/FLH/Facings/setters. Only inherited
+  OS atomic imports are substituted. `--check` passes in
+  `.local/aircraft-approach-check49.log`.
+- 17 native FLH observations: retained point-wise f32 arithmetic differs by
+  one lepton in three poses. Tests pin exact signed differences, with no blanket
+  tolerance. Native probes show unchanged steering in those three cases; tests
+  compare complete facing histories exactly. This is documented precision
+  policy, not exact-coordinate parity or proof for arbitrary FLH. No added x87
+  matrix emulation. Fly pitch/roll and ground-slope transforms remain required.
+- New production tests compare49 calls before/after save/restore and repeated
+  same-frame dispatch. A connected0->1->search history checks the due visit,
+  reservation, delay/RNG and restoration between visits.
+- The older235-row corpus only covers the selected range branch. Its tests now
+  author a real strafe projectile, retain all distance/weapon/range comparisons,
+  and compare complete production behavior only for its in-range arm. Full
+  out-of-range behavior uses the new corpus; the old generic move expectation
+  and five superseded legacy tests were removed.
+- Full `cargo test -p vera20k --lib`: **9177 passed,0 failed,135 ignored**,
+  17.91s after compilation (`.local/aircraft-approach-full.log`). No replay pins
+  changed. `cargo clippy -p vera20k --lib` passes,36.27s,1027 warnings (parent
+  1030; `.local/aircraft-approach-clippy.log`). All owned jobs are terminal.
+  Earlier focused attempt:97 passed,1 failed on the now-documented FLH precision
+  difference (`.local/aircraft-approach-focused2.log`). First compile attempt had
+  a test-only body_facing field-name error, corrected before that run.
+- Ghidra comments at41801B,418175,418229,4CF659 and6F3BCA were saved/read back:
+  initial state1 selection, actual post-setter navigation, primary FLH semantics
+  and independent Fly matrix heading. The last two correct the inferred shared
+  body-basis assumption; no executable bytes changed.
+- No new retail/rendered run or Linux/macOS execution in this increment.
+
+Next: validate the connected repeated-release/flight path, complete required
+destination and Fly lifecycle arms (queued Enter, linked lifts,+304 cleanup,
++6AC, Stop/BeginLanding, horizontal Process/docking), then retail/rendered
+flight before PR/merge. Legacy states5..9 and state10 return lifecycle remain
+open. Whole-combat residuals in earlier checkpoints are still required.
+
+## Previous checkpoint (2026-09-22): Aircraft re-engagement integration
 
 Owned checkout `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`,
 branch `feature/combat-foot-speed`, increment parent `8325af12`. Resolve current

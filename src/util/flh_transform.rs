@@ -30,6 +30,17 @@ pub fn flh_lateral_for_burst(lateral: i32, burst_index: u8) -> i32 {
     }
 }
 
+/// GetFLH's relative aim/body rotation and the locomotor's independent basis.
+/// Fly DrawMatrix4CF610 uses SecondaryFacing; ordinary ground locomotors use
+/// PrimaryFacing. Keeping the basis explicit prevents firing and steering
+/// from silently assuming that those retained headings always agree.
+#[derive(Clone, Copy)]
+pub struct FlhFacings {
+    pub aim: u16,
+    pub body: u16,
+    pub matrix: u16,
+}
+
 /// The native fire coordinate, as a signed lepton delta from the object's
 /// render coordinate.
 ///
@@ -43,20 +54,27 @@ pub fn flh_lateral_for_burst(lateral: i32, burst_index: u8) -> i32 {
 ///
 /// with the Y component negated at `0x006F3D0A` before the truncation, and the
 /// three `Math__ftol` calls chopping toward zero.
+/// The retained implementation evaluates points with separate IEEE f32
+/// operations, rather than emulating native matrix stores/chop rounding.
+/// In aircraft_approach.json three supplied poses differ by one lepton on X
+/// (one also on Y); their final steering histories still match the executable.
+/// Those exact differences are pinned in aircraft_approach_tests. This is a
+/// bounded precision comparison, not exact coordinate parity for arbitrary FLH.
 ///
 /// Two things here are easy to get wrong and are pinned by tests:
 ///
 /// 1. **`B` and `Rz(theta)` are two separate rotations and do NOT collapse.**
 ///    A turreted object takes the locomotor branch, where `theta` is the
-///    DIFFERENCE `d32(aim) - d32(body)` and `B` supplies `Rz(d32(body) - 8)`.
-///    Algebraically that composes to `Rz(aim)`, but retail's sine table is
+///    DIFFERENCE `d32(aim) - d32(body)` and `B` supplies its own heading.
+///    Fly4CF651 reads SecondaryFacing for B; ground55A730 reads PrimaryFacing.
+///    On ground that algebraically composes to `Rz(aim)`, but retail's sine table is
 ///    asymmetric, so composing two lookups leaves a residual of exactly two
 ///    table steps (0.088 degrees) against the single-rotation form — a whole
 ///    lepton on a long barrel. `BuildFacingRotationMatrix @ 0x0055A730` uses the
 ///    same quantisation and the same `-(pi/16)` double, and on flat ground `B`
 ///    reduces to that pure Z rotation with no translation and no scale.
 /// 2. **`TurretOffset` is added between the two rotations**, so it rides the
-///    BODY frame rather than the turret's — matching the art-INI description of
+///    locomotor matrix frame — matching the art-INI description of
 ///    an offset along the body centreline. `GetFLH` uses the raw value; note
 ///    that `render/vxl_raster.rs` divides the same field by 8 for its own
 ///    purposes, and that scaling must not leak in here.
@@ -71,15 +89,15 @@ pub fn native_flh_world_delta(
     lateral: i32,
     height: i32,
     turret_offset: i32,
-    aim_facing16: u16,
-    body_facing16: u16,
+    facings: FlhFacings,
     burst_index: u8,
 ) -> Option<(i32, i32, i32)> {
     use crate::util::direction_tables::step32_from_facing16;
     use crate::util::native_trig::rotate_z_by_step;
 
-    let aim_step = i32::from(step32_from_facing16(aim_facing16));
-    let body_step = i32::from(step32_from_facing16(body_facing16));
+    let aim_step = i32::from(step32_from_facing16(facings.aim));
+    let body_step = i32::from(step32_from_facing16(facings.body));
+    let matrix_step = i32::from(step32_from_facing16(facings.matrix));
 
     // `T(forward, sign * lateral, height)`, the innermost translate.
     let lateral = flh_lateral_for_burst(lateral, burst_index);
@@ -91,8 +109,8 @@ pub fn native_flh_world_delta(
     // `T(TurretOffset, 0, 0)`, in the body frame.
     let offset = (rotated.0 + turret_offset as f32, rotated.1, rotated.2);
 
-    // `B`, which on flat ground is `Rz(d32(body) - 8)`.
-    let world = rotate_z_by_step(offset, body_step - 8)?;
+    // B's heading is a locomotor virtual, independent of the relative turn.
+    let world = rotate_z_by_step(offset, matrix_step - 8)?;
 
     // Y is negated before the three truncations.
     Some((
@@ -127,15 +145,51 @@ mod tests {
     /// be wrong.
     #[test]
     fn gsi_08_04_mtnk_fixture_matches_the_native_fire_coordinate() {
-        let delta = native_flh_world_delta(190, 25, 120, 0, 0x4000, 0x0000, 0).expect("in range");
+        let delta = native_flh_world_delta(
+            190,
+            25,
+            120,
+            0,
+            FlhFacings {
+                aim: 0x4000,
+                body: 0,
+                matrix: 0,
+            },
+            0,
+        )
+        .expect("in range");
         assert_eq!(delta, (189, -25, 120));
     }
 
     /// The odd burst mirrors only the lateral term.
     #[test]
     fn gsi_08_04_mtnk_fixture_odd_burst_mirrors_lateral_only() {
-        let even = native_flh_world_delta(190, 25, 120, 0, 0x4000, 0x0000, 0).expect("in range");
-        let odd = native_flh_world_delta(190, 25, 120, 0, 0x4000, 0x0000, 1).expect("in range");
+        let even = native_flh_world_delta(
+            190,
+            25,
+            120,
+            0,
+            FlhFacings {
+                aim: 0x4000,
+                body: 0,
+                matrix: 0,
+            },
+            0,
+        )
+        .expect("in range");
+        let odd = native_flh_world_delta(
+            190,
+            25,
+            120,
+            0,
+            FlhFacings {
+                aim: 0x4000,
+                body: 0,
+                matrix: 0,
+            },
+            1,
+        )
+        .expect("in range");
         assert_eq!(odd, (190, 24, 120));
         assert_eq!(even.2, odd.2, "height is untouched by the burst index");
     }
@@ -147,7 +201,21 @@ mod tests {
     fn gsi_08_04_transform_rejects_an_out_of_range_step_rather_than_wrapping() {
         // d32 spans 0..=31, so the largest reachable difference is +/-31 and
         // anything beyond it is a caller bug rather than a wrap.
-        assert!(native_flh_world_delta(190, 25, 120, 0, 0x0000, 0x0000, 0).is_some());
+        assert!(
+            native_flh_world_delta(
+                190,
+                25,
+                120,
+                0,
+                FlhFacings {
+                    aim: 0,
+                    body: 0,
+                    matrix: 0
+                },
+                0
+            )
+            .is_some()
+        );
     }
 
     #[test]

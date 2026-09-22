@@ -2,6 +2,7 @@ use super::*;
 use crate::map::entities::EntityCategory;
 use crate::rules::foundation::FOUNDATION_TABLE;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::ruleset::RuleSet;
 use crate::sim::docking::aircraft_dock::AircraftAmmo;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::test_interner;
@@ -33,8 +34,9 @@ fn fixture(row: &Value) -> (Simulation, RuleSet) {
          [ORCA]\nStrength=150\nSpeed=14\nAmmo=2\nPrimary=PRIMARY\n{elite}\
          Locomotor={{4A582746-9839-11d1-B709-00A024DDAFD1}}\n\
          [TARGET]\nStrength=300\n[BUILDING]\nStrength=500\nFoundation={}\nBib={}\n\
-         [PRIMARY]\nRange={primary_range}\nDamage=10\nROF=20\n\
-         [ELITE]\nRange={elite_range}\nDamage=10\nROF=20\n",
+         [PRIMARY]\nRange={primary_range}\nDamage=10\nROF=20\nProjectile=PROJ\n\
+         [ELITE]\nRange={elite_range}\nDamage=10\nROF=20\nProjectile=PROJ\n\
+         [PROJ]\nROT=0\nInviso=no\n",
         foundation.name,
         case["bib"].as_bool().unwrap_or(false)
     )))
@@ -97,41 +99,39 @@ fn fixture(row: &Value) -> (Simulation, RuleSet) {
     (sim, rules)
 }
 
-fn assert_native_mission_result(sim: &Simulation, row: &Value) {
+fn assert_native_in_range_result(sim: &Simulation, row: &Value) {
     let aircraft = sim.substrate.entities.get(1).unwrap();
-    let in_range = row["in_range"].as_bool().unwrap();
+    assert!(row["in_range"].as_bool().unwrap());
     let Some(AircraftMission::Attack { sub_state, .. }) = aircraft.aircraft_mission else {
         panic!("unexpected mission for {row}");
     };
-    assert_eq!(sub_state, if in_range { 4 } else { 3 }, "{row}");
+    assert_eq!(sub_state, 4, "{row}");
     assert!(
         !aircraft.aircraft_ammo.as_ref().unwrap().release_pending(),
         "the range branch only authorizes the next mission state"
     );
     assert_eq!(aircraft.aircraft_ammo.as_ref().unwrap().current, 2);
-    assert_eq!(aircraft.movement_target.is_some(), !in_range, "{row}");
+    assert!(aircraft.movement_target.is_none(), "{row}");
     assert!(sim.projectiles.is_empty());
 }
 
 #[test]
-fn native_range_branches_reach_production_mission_and_move_dispatch() {
+fn selected_strafe_range_branch_matches_native_and_dispatches_when_in_range() {
     let rows = native_rows();
     assert_eq!(rows.len(), 235);
     for row in rows {
         let (mut sim, rules) = fixture(&row);
         let aircraft = sim.substrate.entities.get(1).unwrap();
         let target = aircraft.attack_target.as_ref().unwrap().target;
-        assert_eq!(
-            crate::sim::combat::object_distance_to(
-                aircraft,
-                &target,
-                &sim.substrate.entities,
-                &rules,
-                &sim.interner
-            ),
-            Some(row["distance"].as_i64().unwrap() as i32),
-            "{row}"
-        );
+        let distance = crate::sim::combat::object_distance_to(
+            aircraft,
+            &target,
+            &sim.substrate.entities,
+            &rules,
+            &sim.interner,
+        )
+        .unwrap();
+        assert_eq!(distance, row["distance"].as_i64().unwrap() as i32, "{row}");
         let weapon = crate::sim::combat::combat_weapon::primary_for_tier(
             rules.object("ORCA").unwrap(),
             aircraft.veterancy,
@@ -142,14 +142,27 @@ fn native_range_branches_reach_production_mission_and_move_dispatch() {
             row["weapon"].as_str().unwrap(),
             "{row}"
         );
-        crate::sim::aircraft::tick_aircraft_missions(&mut sim, &rules, None);
-        assert_native_mission_result(&sim, &row);
+        assert_eq!(
+            distance < rules.weapon(weapon).unwrap().range_leptons,
+            row["in_range"].as_bool().unwrap(),
+            "{row}"
+        );
+        // This older native corpus stops before the out-of-range setter.
+        // Complete state3 effects are compared in aircraft_approach_tests.
+        if row["in_range"].as_bool().unwrap() {
+            crate::sim::aircraft::tick_aircraft_missions(&mut sim, &rules, None);
+            assert_native_in_range_result(&sim, &row);
+        }
     }
 }
 
 #[test]
 fn pending_approach_range_decision_survives_save_restore() {
-    for row in native_rows().into_iter().step_by(23) {
+    for row in native_rows()
+        .into_iter()
+        .filter(|r| r["in_range"].as_bool().unwrap())
+        .step_by(23)
+    {
         let (mut sim, rules) = fixture(&row);
         // Native range inputs are already object/rules authority; no new saved
         // distance or target cache should be needed to resume this decision.
@@ -159,7 +172,7 @@ fn pending_approach_range_decision_survives_save_restore() {
         assert_eq!(sim.state_hash(), restored.state_hash());
         crate::sim::aircraft::tick_aircraft_missions(&mut sim, &rules, None);
         crate::sim::aircraft::tick_aircraft_missions(&mut restored, &rules, None);
-        assert_native_mission_result(&restored, &row);
+        assert_native_in_range_result(&restored, &row);
         assert_eq!(sim.state_hash(), restored.state_hash());
     }
 }
