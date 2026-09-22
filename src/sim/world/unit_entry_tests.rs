@@ -39,6 +39,15 @@ fn unit_entry_reads_actual_blocker_movement_state() {
     );
 }
 
+#[test]
+fn unit_entry_reads_fly_pitch_and_jumpjet_request_independently_of_phase() {
+    compare_rows(
+        include_str!("../../../tools/spatial_oracle/unit_entry_air_motion.json"),
+        288,
+        true,
+    );
+}
+
 fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
     let rows: serde_json::Value = serde_json::from_str(json).unwrap();
     let mut mismatches = Vec::new();
@@ -268,7 +277,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                     };
                     blocker.position.sub_x = SimFixed::from_num(128);
                     blocker.position.sub_y = SimFixed::from_num(128);
-                    let head = coordinate(&state["head"]);
+                    let head = state.get("head").and_then(coordinate);
                     match state["family"].as_str().unwrap() {
                         "drive" => {
                             blocker.drive_locomotion = Some(DriveLocomotionRuntime {
@@ -296,6 +305,17 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                             walk.moving = state["moving"].as_bool().unwrap();
                             walk.head = head;
                             blocker.locomotor = Some(loco);
+                        }
+                        "fly" | "jumpjet" => {
+                            if state["family"] == "fly" {
+                                blocker.category = EntityCategory::Aircraft;
+                            } else if node["infantry"] == true {
+                                blocker.category = EntityCategory::Infantry;
+                            }
+                            crate::sim::movement::motion_query::tests::apply_air_state(
+                                &mut blocker,
+                                state,
+                            );
                         }
                         _ => unreachable!(),
                     }

@@ -64,6 +64,7 @@ pub(crate) mod infantry_entry;
 mod infantry_scatter;
 pub(crate) mod locomotor_owner;
 pub(crate) mod locomotor_ready;
+pub(crate) mod motion_query;
 mod movement_blocked;
 pub(crate) mod movement_bridge;
 mod movement_commands;

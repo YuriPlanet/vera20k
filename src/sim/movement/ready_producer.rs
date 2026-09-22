@@ -178,12 +178,11 @@ fn drive_family(
     }
 }
 
-/// Teleport's readiness input is a private one-shot flag, not the warp phase
-/// counter.
-///
-/// It is true only for the relocation tick itself. It is NOT true during the
-/// post-warp chrono delay — treating the whole teleport state as "moving" would
-/// defer a warped unit's missions for the entire delay.
+/// Legacy phase adapter, pending Teleport's retained-request lifecycle port.
+/// Native718080 reads interface+30 ==1: MoveTo7181DB sets it, Stop718254 and
+/// Process719BD2 clear it. Process719B0D can also reach Stop through the owner
+/// destination setter. Those writes do not establish a Relocate-only lifetime;
+/// the phase mapping below is not native parity evidence.
 fn teleport(entity: &GameEntity) -> LocomotorReadyState {
     LocomotorReadyState::Teleport {
         state: u8::from(matches!(

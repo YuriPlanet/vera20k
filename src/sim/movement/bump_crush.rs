@@ -1202,13 +1202,9 @@ pub fn scatter_blocker(
     {
         return false;
     }
-    // Infantry51D16B queries IsMoving before demoting force. Walk75AB30 reads
-    // its retained byte, independently of NavCom, paid head or path adapter.
-    // Other families keep the prior adapter pending their state migration.
-    let moving = blocker
-        .locomotor
-        .as_ref()
-        .and_then(|l| l.walk_is_moving())
+    // Infantry51D16B queries its active IsMoving before demoting force.
+    // Unported families keep the prior adapter pending their state migration.
+    let moving = super::motion_query::is_moving(blocker)
         .unwrap_or_else(|| blocker.movement_target.is_some());
     let is_fraidycat = blocker_is_fraidycat(entities, blocker_id, rules, interner);
     if moving && !moving_blocker_accepts_forced_scatter(blocker, rules, is_fraidycat) {
@@ -2890,8 +2886,27 @@ mod tests {
         let oracle: serde_json::Value =
             serde_json::from_str(include_str!("../../../tools/infantry_scatter_oracle.json"))
                 .unwrap();
+        compare_forced_scatter_gates(
+            oracle["scatter_gates"].as_array().unwrap(),
+            crate::rules::locomotor_type::LocomotorKind::Walk,
+        );
+    }
+
+    #[test]
+    fn jumpjet_forced_scatter_gates_match_original_query_and_refusal_state() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/jumpjet_scatter_gates.json"
+        ))
+        .unwrap();
+        compare_forced_scatter_gates(&rows, crate::rules::locomotor_type::LocomotorKind::Jumpjet);
+    }
+
+    fn compare_forced_scatter_gates(
+        rows: &[serde_json::Value],
+        kind: crate::rules::locomotor_type::LocomotorKind,
+    ) {
         let mut checked = 0;
-        for case in oracle["scatter_gates"].as_array().unwrap() {
+        for case in rows {
             let flag = |key: &str| case[key].as_bool().unwrap();
             if !flag("first_bool") {
                 continue;
@@ -2911,12 +2926,15 @@ mod tests {
             }
             for has_adapter in [false, true] {
                 let mut actor = gi.clone();
-                let mut loco = super::super::locomotor::LocomotorState::for_test_kind(
-                    crate::rules::locomotor_type::LocomotorKind::Walk,
-                );
-                loco.set_walk_destination(
-                    flag("moving").then(|| crate::sim::components::DriveCoord::cell(6, 5, 0)),
-                );
+                let mut loco = super::super::locomotor::LocomotorState::for_test_kind(kind);
+                if let Some(state) = loco.jumpjet_runtime_mut() {
+                    state.moving = flag("moving");
+                    state.phase = 2;
+                } else {
+                    loco.set_walk_destination(
+                        flag("moving").then(|| crate::sim::components::DriveCoord::cell(6, 5, 0)),
+                    );
+                }
                 actor.locomotor = Some(loco);
                 actor.movement_target = has_adapter.then(moving_target);
                 let before = serde_json::to_value(&actor).unwrap();

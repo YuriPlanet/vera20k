@@ -98,9 +98,7 @@ fn ship_mirrors_drive_but_keeps_its_own_variant() {
     assert!(state.is_moving_now());
 }
 
-/// The trap this producer exists to avoid: a warped unit sitting out its chrono
-/// delay is NOT moving. Treating the whole teleport state as "moving" would
-/// defer its missions for the entire delay.
+/// Existing adapter regression; native request-byte lifetime remains unported.
 #[test]
 fn teleport_chrono_delay_reports_not_moving() {
     let mut entity = entity_with(LocomotorKind::Teleport);
@@ -118,7 +116,7 @@ fn teleport_chrono_delay_reports_not_moving() {
     );
 }
 
-/// The relocation tick itself is the one moment the native flag is set.
+/// Existing adapter regression, not proof of when the native request byte is set.
 #[test]
 fn teleport_relocate_reports_moving() {
     let mut entity = entity_with(LocomotorKind::Teleport);
@@ -303,6 +301,11 @@ fn retained_motion_and_walk_readiness_match_original_queries() {
                 is_moving_for_unit_shp_draw(&entity)
             };
             assert_eq!(moving, row["moving"].as_bool().unwrap(), "{row}");
+            assert_eq!(
+                crate::sim::movement::motion_query::is_moving(&entity),
+                Some(moving),
+                "{row}"
+            );
         }
     }
 }

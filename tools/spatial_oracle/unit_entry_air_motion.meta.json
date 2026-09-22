@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Complete Unit73F0A0 admission with allied Fly Aircraft and Jumpjet Unit/Infantry blockers",
+  "assumptions": [
+    "Shared unit_entry fixture; real object/type/interface vtables. Supplied ordered ground list and independent raw occupation.",
+    "Fly pitch/request and Jumpjet phase/request are independent. Blocker NavCom absent and body turn idle.",
+    "All calls require the original selected IsMoving leaf and preserve object/house memory. No flight, unlimbo, scatter or scenario load."
+  ],
+  "substitutions": [
+    "Only OS Interlocked imports from shared Unit fixture; no gameplay callable substitution."
+  ],
+  "entry_points": {
+    "unit_entry": "0x0073F0A0",
+    "fly": "0x004CCA90",
+    "jumpjet": "0x0054AE50"
+  },
+  "payload_sha256": "85f0fdd08951dd351d4ec8c2f8e40b90b54f49e01fa68aceb83c28b085ecec28"
+}

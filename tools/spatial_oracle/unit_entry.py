@@ -117,7 +117,17 @@ def query(case):
                 if 'motion' in node:
                     state = node['motion']
                     family = state['family']
-                    if family == 'walk':
+                    if family in ('fly', 'jumpjet'):
+                        from tools.spatial_oracle.air_locomotor_moving import write_state
+                        write_state(u, loco + 4, address, state)
+                        if family == 'fly':
+                            u.mem_write(address, dwords(0x7E22A4))
+                            u.mem_write(typ, dwords(0x7E2868))
+                        elif node.get('infantry'):
+                            u.mem_write(address, dwords(0x7EB058))
+                            u.mem_write(address + 0x6C0, dwords(typ))
+                            u.mem_write(typ, dwords(0x7EB610))
+                    elif family == 'walk':
                         u.mem_write(address, dwords(0x7EB058))
                         u.mem_write(address + 0x6C0, dwords(typ))
                         u.mem_write(typ, dwords(0x7EB610))
@@ -152,7 +162,7 @@ def query(case):
             seen.append(hex(address))
         elif case.get('trace_boundary') and address in (0x578540, 0x4DA1D0, 0x6EC300, 0x578460):
             seen.append(hex(address))
-        elif case.get('trace_motion') and address in (0x4AFB80, 0x69F290, 0x75AB30):
+        elif case.get('trace_motion') and address in (0x4AFB80, 0x69F290, 0x75AB30, 0x4CCA90, 0x54AE50):
             seen.append(hex(address))
     u.hook_add(UC_HOOK_CODE, observe)
     before = bytes(u.mem_read(EXTRA, 0x30000))

@@ -54,7 +54,8 @@ def fresh():
     return uc
 
 
-def scatter_gates():
+def scatter_gates(family='walk'):
+    assert family in ('walk', 'jumpjet')
     cases = []
     for moving, first_bool, mission_scatter, fraidycat, has_target, global_scatter in product((False, True), repeat=6):
         uc = fresh()
@@ -62,8 +63,10 @@ def scatter_gates():
         uc.mem_write(OWNER + 0x6c0, u32(TYPE))
         uc.mem_write(OWNER + 0x6c4, u32(-1))  # accepted animation-sequence sentinel
         uc.mem_write(OWNER + 0x2b4, u32(1 if has_target else 0))
-        uc.mem_write(LOCO, u32(0x7f69f8))  # original Walk ILocomotion vtable
-        uc.mem_write(LOCO + 0x30, bytes([moving]))
+        uc.mem_write(LOCO, u32(0x7f69f8 if family == 'walk' else 0x7ecd68))
+        uc.mem_write(LOCO + (0x30 if family == 'walk' else 0x48), bytes([moving]))
+        if family == 'jumpjet':
+            uc.mem_write(LOCO + 0x4c, u32(2))  # holding; IsMoving is independent
         uc.mem_write(TYPE + 0xebf, bytes([fraidycat]))
         uc.mem_write(MISSION + 9, bytes([mission_scatter]))
         uc.mem_write(0x8871e0, u32(RULES))
@@ -85,7 +88,8 @@ def scatter_gates():
 
         uc.hook_add(UC_HOOK_CODE, supplied_calls)
         stop = run_checked(uc, 0x51d162, (0x51d226, 0x51d6e6), count=300,
-                           required_addresses=[0x75ab30, 0x51d16e, 0x51d17b])
+                           required_addresses=[0x75ab30 if family == 'walk' else 0x54ae50,
+                                               0x51d16e, 0x51d17b])
         if bytes(uc.mem_read(OWNER, 0x700)) != owner_before:
             raise RuntimeError('scatter refusal/admission gate mutated owner state')
         if uc.reg_read(UC_X86_REG_ESP) != STACK:

@@ -1,0 +1,8642 @@
+[
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": -1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": -1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": -1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": -1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 1.52587890625e-05
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 1.52587890625e-05
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 1.52587890625e-05
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 1.52587890625e-05
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 2
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 2
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 2
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 2
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 2
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 2
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 2
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 2
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 3
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 3
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 3
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 3
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 3
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 3
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 3
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 3
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 4
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 4
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 4
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 4
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 4
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 4
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 4
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 4
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 5
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 5
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 5
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 5
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 5
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 5
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 5
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 5
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 6
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 6
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 6
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 6
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 6
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 6
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 6
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 6
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": -1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": -1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": -1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": -1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 1.52587890625e-05
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 1.52587890625e-05
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 1.52587890625e-05
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 1.52587890625e-05
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 2
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 2
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 2
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 2
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 2
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 2
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 2
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 2
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 3
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 3
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 3
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 3
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 3
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 3
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 3
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 3
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 4
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 4
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 4
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 4
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 4
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 4
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 4
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 4
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 5
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 5
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 5
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 5
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 5
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 5
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 5
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 5
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 6
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 6
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 6
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 6
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 6
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 6
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 6
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 6
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": -1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": -1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": -1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": -1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 1.52587890625e-05
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 1.52587890625e-05
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 1.52587890625e-05
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 1.52587890625e-05
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": false,
+            "pitch": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 2
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 2
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 2
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 2
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 2
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 2
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 2
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 2
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 3
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 3
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 3
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 3
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 3
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 3
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 3
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 3
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 4
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 4
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 4
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 4
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 4
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 4
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 4
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 4
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 5
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 5
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 5
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 5
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 5
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 5
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 5
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 5
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 6
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 6
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 6
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 6
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 6
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 6
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 6
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": false,
+            "phase": 6
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": -1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": -1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": -1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": -1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 1.52587890625e-05
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 1.52587890625e-05
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 1.52587890625e-05
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 1.52587890625e-05
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4cca90",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "fly",
+            "moving": true,
+            "pitch": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 0
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 0
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 1
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 1
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 2
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 2
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 2
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 2
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 2
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 2
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 2
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 2
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 3
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 3
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 3
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 3
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 3
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 3
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 3
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 3
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 4
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 4
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 4
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 4
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 4
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 4
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 4
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 4
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 5
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 5
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 5
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 5
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 5
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 5
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 5
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 5
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 6
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 6
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 6
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": false,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 6
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 6
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 6
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 6
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x54ae50",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "infantry": true,
+          "motion": {
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "family": "jumpjet",
+            "moving": true,
+            "phase": 6
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  }
+]

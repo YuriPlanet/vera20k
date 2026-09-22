@@ -1449,135 +1449,127 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): retained locomotor movement queries
+## Current checkpoint (2026-09-22): active Fly/Jumpjet movement queries
 
-Owned checkout: engine-ownership-boundaries/ra2-rust-game, branch
-feature/combat-foot-speed, published parent **af2636b2**. Combat goal stays
-active. Preserve .local/ and existing work. Sole critic already ran; no new
-critic or PR/merge until required aircraft attack/flight joins and production
-validation are resolved. Previous goal turn published af2636b2.
+Owned checkout: C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game.
+Branch feature/combat-foot-speed; published parent f322d062. This increment
+contains the validated changes below. Combat goal stays active; preserve .local/.
+Sole critic already ran. No new critic or PR/merge until required aircraft
+attack/flight joins and production validation are resolved.
 
-Acceptance: Drive/Ship IsMoving agree on native destination/head/physical-XY
-semantics; cell entry and tube exit scatter read Walk's retained moving byte.
-Walk readiness reads that byte, Foot+578 fraction >0 and its retained head.
-Orders and adapter phases must not replace these inputs. Keep existing state
-owners/save format and migrate affected consumers in the same increment.
+Acceptance met for this increment: Fly4CCA90 reads its retained request OR
+positive Techno pitch; Jumpjet54AE50 reads its retained moving byte independently
+of destination/phase. Active ILocomotion+10 queries share one dispatcher over
+existing owners for Drive, Ship, Walk, Fly and Jumpjet. Cell-entry, tube-exit,
+forced-blocker Scatter and hut Scatter callers use it. No new state/save version,
+path/phase inference or readiness(+80) substitution. Hover/Rocket/Teleport
+lifecycle migrations remain required; their existing adapters remain explicit.
 
-Implemented: track_head::motion_state owns the shared Drive4AFB80/Ship69F290
-coordinate predicate. Drive's existing wrapper, SHP draw and readiness use it;
-Ship cell-entry and tube-scatter predicates now do too. Null XYZ is absent;
-a head at current X/Y is stationary even when Z differs. Walk cell-entry,
-tube scatter and the forced blocked-cell Scatter adapter all use
-LocomotorState::walk_is_moving. Walk readiness75AB40 now reads
-WalkRuntime head/moving and FootSpeedState.applied_fraction instead of a path
-and GroundMovePhase. No added state or serialization change. Fixed stale Walk
-speed comment: Foot4D3710 writes owner+578, not+544.
+Implementation: movement/motion_query.rs dispatches existing track_head,
+WalkRuntime, FlyRuntime/FlightAttitude and JumpjetRuntime owners. Removed the
+callers' duplicate family selection. Existing family-specific readiness and
+SHP queries retain their own semantics. Native Fly pitch samples are exactly
+Q16/f32 representable; arbitrary native float precision is not established.
 
-Evidence: locomotor_moving.{py,json,meta.json} executes84 supplied original
-queries (30 Drive,30 Ship,24 Walk), plus each Walk IsMovingNow. Includes null/
-partial-null coordinates, exact physical XY and Z-only differences, retained
-moving byte and negative/zero/Q16-positive owner fraction. Real interface
-vtables, no substituted calls, owner/locomotor memory preserved.
-unit_entry_motion.{py,json,meta.json} executes56 complete Unit73F0A0 calls with
-allied Drive/Ship Unit and Walk Infantry blockers, independent raw occupation
-and6B6. Every case requires its actual IsMoving body. Only shared fixture OS
-Interlocked imports substituted; no gameplay body replaced. Existing150-row
-unit_entry native --check and both new corpora pass. No full movement producer,
-Scatter, tube finalizer or rendered parity claim.
+Evidence under tools/spatial_oracle, with reproducible scripts/JSON/provenance:
+- air_locomotor_moving:44 original queries. Fly16 moving/pitch/destination
+  states; Jumpjet28 moving/phase0..6/destination states. Actual vtables, no
+  substitutions, unchanged owner/locomotor memory.
+- unit_entry_air_motion:288 complete Unit73F0A0 calls:64 Fly Aircraft and224
+  Jumpjet Unit/Infantry. Independent raw occupation and ground lists; each
+  requires the actual selected IsMoving leaf. Only shared fixture OS
+  Interlocked imports supplied; no gameplay body substituted.
+- jumpjet_scatter_gates:64 original Infantry51D162..51D226/51D6E6 gate rows
+  through actual Jumpjet54AE50, holding phase2/null destination. Mission-table
+  and ability callbacks supplied. Excludes direction/RNG/destination suffix.
+All three --check runs pass. Existing unit_entry_motion56 and
+infantry_scatter_oracle --check also pass after their fixture extensions.
 
-Rust compares all84 query states with/without unrelated NavCom/MovementTarget,
-all56 complete Unit entry answers and repair projection, and Walk paid-head
-Stop/retirement with serde continuation. Existing32 forced-Infantry native gate
-rows now drive the actual compatibility scatter twice each, with/without an
-independent path. Refusals preserve entire entity and RNG. Additional production
-regressions cover tube-exit skip and same-tick mission promotion after retiring
-a real head; removing only the path cannot commence a moving walker.
-The existing infantry_scatter_oracle native --check also passes (bounded
-interior gates, supplied mission/ability callbacks; not full Scatter).
-Focused84-query Rust comparison passes. First full suite had9194 pass/1 failure:
-the old techno_ai set_walking fixture provided only MovementTarget. It now
-supplies the actual Walk byte/head and Foot fraction and verifies adapter
-retirement independently. The next compile caught a missing test-only import;
-corrected after Cargo terminated. Final full cargo test -p vera20k --lib passes **9196 tests,0 failures,
-135 ignored**,19.41s (.local/locomotor-moving-full3.log), including all new
-native comparisons and connected caller regressions. cargo clippy -p vera20k
---lib passes with **1024 warnings unchanged**,33.54s
-(.local/locomotor-moving-clippy.log). All Cargo/native operations are terminal.
-No replay rebaseline, rendered/retail launch or Linux/macOS execution claim.
+Rust compares all44 queries with independent orders/power and serde roundtrip,
+all288 complete numeric entry answers plus repair's ==7 projection, and32
+force=true Jumpjet gate rows with/without a path (64 production calls). Existing
+Walk gates remain connected; refusals preserve entity and RNG. Actual tube-exit
+scatter skips retained Walk/Jumpjet motion without an order. Prior84 Drive/Ship/
+Walk native states also assert the shared dispatcher. These are bounded query/
+caller comparisons, not complete flight, Scatter, tube or scenario parity.
 
-Ghidra: Walk75AB40, Ship69F290 and Infantry51D0D0 annotated, saved and
-read back. Unit tube
-735F2C directly calls blocker ILocomotion+10 before conditional Scatter. Native
-Hover514C30 reads destination interface+14/+18/+1C OR head+20/+24/+28, both
-against NullA8F180. Rocket661F50 tests only destination+14/+18/+1C against
-NullB04E38; phase3..5 belongs to its different IsMovingNow661F90. Other real
-+10 slots read existing state: Fly4CCA90 interface+30 nonzero OR owner+2E8
-float>0 (FlyRuntime.moving / flight_attitude.blocks_landing); Jumpjet54AE50
-interface+48 (JumpjetRuntime.moving); Teleport718080 interface+30==1, whose
-producer must be confirmed before mapping TeleportPhase. These callers have
-not yet been migrated. Hover lacks
-retained destination in current payload; Rocket retains only coarse target
-cells. Do not substitute NavCom or phase for either native query.
+Validation: cargo test -p vera20k --lib: **9199 passed,0 failed,135 ignored**,
+20.19s (.local/air-motion-full.log). Subsequent edits only corrected misleading
+Teleport documentation; no behavior changed. cargo clippy -p vera20k --lib:
+**pass,1024 warnings unchanged**,30.83s (.local/air-motion-clippy.log).
+Native checks logged in .local/air-motion-native-check.log. All owned Cargo/
+native operations terminal. No replay rebaseline, retail/rendered launch or
+Linux/macOS execution claim. Git diff whitespace check passes.
 
-Next: finish remaining family queries/state and migrate Unit source Scatter
-through actual class setter, then Aircraft CellScatter/Attack.
-.local/unit-scatter-setter-probe.py runs full743A50 ->73F0A0 ->QueueMove ->
-741970 ->4D94B0 ->Drive/Ship MoveTo with no gameplay substitutions: both pick
-Cell12,10, destinationXYZ3200,2688,0, queueMove2, RNG indices[1,104]. Promote
-useful cases into a committed corpus and compare the production call.
-Unit ordinary path clears only first5E0 dword; mode1 clearsNavQueue588. Same
-NavCom with1F8=false returns before Aux/path/timers;1F8=true continues and clears
-that byte. Foot6AC suppresses one MoveTo after NavCom store but timers reset.
-Drive+98 is constantfalse4B4C80. Command adapter unconditional PowerOn and
-immediate A* still need migration through actual class-owned lifecycle.
-Unit+6D8 is death counter, not crash: ctor735416=-1, fatal damage737DBF starts0
-with TypeE20>0 and health1/flag90; AI73635B compares old value to TypeE38 then
-terminal738680/+124/+F8. Type747A8B reads MaxDeathCounter845CC4 toE38; adjacent
-StartDeathFrame toE34. Draw uses min(counter/E24,E20-1)+E34.746C90 now named
-UnitClass__IsDeathCounterActiveOrEMP (or Techno+504>0). Positive gates unported.
+Ghidra: labeled54AE50 JumpjetLocomotionClass__Is_Moving; annotated Fly4CCA90,
+Jumpjet54AE50 and corrected Teleport718080's unsupported one-tick claim.
+All saved and read back. No prototype/boundary/byte changes.
+
+Next state migrations, from original instructions (local Capstone dumps retained):
+- Hover514C30 reads destination interface14/18/1C OR head20/24/28. MoveTo514D90
+  stores raw destination BEFORE owner380 refusal, then ground/bridge Z, power,
+  IsMovingNow, and immediate path/head work via5164D0/514F70. Stop516320 clears
+  destination and firstFoot5E0 only when destination differs from head. Current
+  payload has only head; add/migrate actual destination lifecycle, never NavCom
+  alias. .local/hover_{move,stop}-slots.txt preserve bodies.
+- Rocket661F50 reads destination14/18/1C; phase3..5 belongs to661F90(+80).
+  MoveTo6632E0 admits only a previously null destination, selects missile-family
+  Rules parameters, starts phase1/2 and timer/pitch, then stores XYZ. Stop6633C0
+  is a no-op. Current coarse target/duplicate Rocket state needs a proper owner
+  and producer migration. .local/rocket_{move,stop}-slots.txt preserve bodies.
+- Teleport718080 reads byteinterface30==1, separate from phaseDWORD34. MoveTo
+  7181DB sets it; Stop718254 and Process719BD2 clear it. Process719B0D can call
+  owner SetDestination(NULL), reaching Stop earlier. Existing Relocate-only
+  readiness adapter is unvalidated; its comments now say so. Full indirect
+  setter/phase lifecycle must be compared before changing behavior.
+- techno_ai/cloak and end-gate queries still need native caller classification;
+  do not replace IsMovingNow or explicit family semantics with +10 blindly.
+
+Next production join: Unit source Scatter through actual class setter, then
+Aircraft CellScatter/Attack. .local/unit-scatter-setter-probe.py runs full743A50
+->73F0A0 ->QueueMove ->741970 ->4D94B0 ->Drive/Ship MoveTo, no gameplay stubs:
+Cell12,10, XYZ3200/2688/0, queueMove2, RNG indices[1,104]. Promote useful cases
+into a committed corpus and compare production. Setter: sameNavCom/1F8=false
+returns early; otherwise clears1F8, ordinary path first5E0 only, mode1 NavQueue588.
+Foot6AC suppresses one MoveTo after NavCom store, not timer writes. Drive+98 is
+constantfalse4B4C80. Adapter unconditional PowerOn/immediate A* need migration.
+Unit6D8 is death counter (ctor=-1; fatal damage starts0 withTypeE20>0/health1;
+AI compares old counter withTypeE38, then terminal738680/+124/+F8).746C90 is
+IsDeathCounterActiveOrEMP; positive gates remain unported.
 
 Published prerequisites retained:
-- af2636b2: Drive/Ship MoveTo preserve destination/head/power and skip map lookup
-  while existing owner warp bytes are active; zeroXYZ becomesNone. Foot still
-  publishes NavCom/timers. Drive live-target refresh retries after warp clears.
-  track_destination126 original calls:72 MoveTo,24 Foot,30 ordinary Unit; Rust
-  compares72+24. Full9192/135ignored and Clippy1024 passed; no new state.
-- 18a76f18: shared Foot4DA1D0 boundaries in live Unit/Infantry and Walk precheck;
-  retained Cell578540 avoids relookup/dummy stamping.100 original calls; full9189,
-  135ignored and Clippy1024 passed. Native150/328 entry/traversal rows unchanged.
-- 423a5cf5: shared Foot4D9C60 height/Tube traversal with native class differences;
-  328 original calls, full9187/135ignored and Clippy1024 passed.
-- 12f7a4b6: Unit numeric0..7 admission, Gate/Wall/raw/list ordering and shared
-  Object5F6CD0 crush correction;150 original calls, full9186/135ignored/Clippy1024.
-- d17dad7c:69 Unit Scatter state-prefix and56 source-selection cases; full9185,
-  135ignored, Clippy1024. All eight active-retail loco+1C entries are55ABF0 zero,
-  confirmed by48 Foot4D9C10 calls. Dormant TS families excluded.
+- f322d062:84 native Drive/Ship/Walk queries,56 complete Unit entry calls;
+  retained Walk readiness/forced Scatter/tube and paid-head retirement/save
+  regressions. Full9196/135ignored and Clippy1024 passed.
+- af2636b2: warp/zeroXYZ Drive/Ship MoveTo;126 native calls, Rust72+24;
+  full9192/135ignored and Clippy1024. Foot NavCom/timers still publish.
+- 18a76f18: Foot4DA1D0 boundaries100calls; full9189/135ignored/Clippy1024.
+- 423a5cf5: Foot4D9C60 class-specific height/Tube traversal328calls;
+  full9187/135ignored/Clippy1024. 12f7a4b6: numeric Unit entry150calls,
+  full9186/135ignored/Clippy1024. d17dad7c:69 Unit Scatter prefix/56 selector
+  cases, full9185/135ignored/Clippy1024; active-retail loco+1C zero proven.
 
 Required joins remain open:
 - Team6EC300 needs retained7F and valid Script action3 outside-waypoint admission.
-  Constructor6E8B11 clears7F; AI6E91BE sets it,6EA089/6EA0E2 clear. VM lacks
-  production activation/creation; do not infer7F. Shared Foot admission handles
-  invalid cursor/non-action3 independently; action3 returns explicit error.
-- Live entry/tube IsMoving still approximate Hover and other non-track/non-Walk
-  families; audit exact retained state and producers before general exposure. LocomotorState.active_kind() currently
-  returns.kind exactly, so that spelling alone is not a separate stashed dispatch.
-  Scatter requires numeric==0, never repair's !=7 projection.
-- Source743CA0 gates current MissionControl Paralyzed7, miner.unload_active6D1,
-  NavCom/second flag and turret_rotation_latch6AF. Unforced Target draws1..4;
-  only1 admits. Physical9C away heading, jitter0..2-1 and Foot4C seed feed the
-  shared eight-neighbor selector. QueueMove(false) precedes741970. NULL source
-  uses FNPC56DC20 and setter only, with no immediate Process.
-- Unit setter still requires queue/force/6AC owners, Teleporter/Jumpjet branches,
-  radio/docking, death-counter/EMP/Foot6A0 gates and full execution migration.
-- Infantry general/NULL Scatter needs DoAction31 lifetime and non-Walk setters.
-  Garrison457DE0 Scatter(center,true,true) follows Unlimbo/target clear; the
-  production_sell coarse/inverted direct-move copy remains. Overlay registry
-  must reach those callers. DirectRocker2A8, lift2AC/2B0 detach70FEE0 and retained
-  UseFireParticles304 cleanup remain required.
+  Constructor6E8B11 clears7F; AI6E91BE sets,6EA089/6EA0E2 clear. Production
+  activation/creation absent; action3 remains explicit error. Never infer7F.
+- Scatter admission requires numeric==0, not repair's !=7 projection.
+  Source743CA0 gates MissionControl Paralyzed7, miner.unload_active6D1,
+  NavCom/second flag and turret_rotation_latch6AF. Unforced Target draws1..4,
+  only1 admits. Physical9C away heading, jitter0..2-1 and Foot4C seed feed
+  eight-neighbor selector. QueueMove(false) precedes741970. NULL source uses
+  FNPC56DC20/setter only, no immediate Process.
+- Unit setter: queue/force/6AC owners, Teleporter/Jumpjet branches, radio/docking,
+  death-counter/EMP/Foot6A0 gates and full execution migration.
+- Infantry general/NULL Scatter: DoAction31 lifetime/non-Walk setters.
+  Garrison457DE0 Scatter(center,true,true) follows Unlimbo/target clear;
+  production_sell still has coarse/inverted direct-move copy. Overlay registry
+  must reach callers. DirectRocker2A8, lift2AC/2B0 detach70FEE0 and retained
+  UseFireParticles304 cleanup required.
 - Aircraft CellScatter/Attack5..9, full Fly navigation/landing/reload/rendered
   joins, live Tag/Trigger migration, launch/homing, vehicle click, fire legality,
-  special warheads and whole-combat audit remain required. Recording omissions
-  does not complete the goal; preserve the previous evidence below.
+  special warheads, whole-combat audit and cross-platform validation remain.
+Recording omissions does not resolve them. Preserve earlier evidence below.
 
 ## Previous checkpoint (2026-09-22): Infantry damage-scatter admission
 
