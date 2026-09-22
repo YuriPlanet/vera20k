@@ -1449,53 +1449,59 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): native event records and Tag lifecycle
+## Current checkpoint (2026-09-22): installed trigger ownership and integration review
 
 Owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`;
-branch `feature/combat-foot-speed`. Increment based on published `56c70104`;
-the commit containing this checkpoint is the next source checkpoint. `.local/`
-is intentional untracked evidence. No critic or PR for this branch yet. The
-combat goal remains active. The dependency map is retired: never consult or refresh it.
+branch `feature/combat-foot-speed`. Latest source `7b83fc6c`, main integration
+`d75dc8b6`; the commit containing this checkpoint records its validation. `.local/`
+is intentional untracked evidence. The combat goal remains active. Main's
+retirement of the dependency map is merged; never consult or refresh it.
 
-Implemented: Event records now materialize native numeric values, optional type
-names and unresolved Team references. TEvent Read71F4E0 consumes three tokens,
-or four for parameter type2; empty comma tokens are skipped, names retain case
-and whitespace and at most24 bytes, numeric values use CRT decimal-prefix/wrapping
-semantics. The original TriggerType7274DC..727516 loop prepends records, so the
-shared loader reverses authored conditions. All runtime consumers and fixtures
-use these fields instead of mistaking ParamType for the operand. No new mutable
-runtime state, snapshot version or replay rebaseline. Invalid global/local indices
-return false: native Get leaves an output byte uninitialized outside0..49/0..99,
-so stack residue is intentionally not reproduced.
+Implemented in this increment: Simulation owns trigger initialization and dispatch
+throughout actions. Removed the temporary `mem::take` runtime and detached app
+loader handoff. Shared authored/generated construction initializes map locals and
+disabled flags before objects; headless binds actual graph/trigger/event/action
+resources instead of empty tables. Runtime fields are private. Existing action
+semantics and serialized/hash layout are unchanged; live Tag instances, timers,
+force/enable behavior and native polling order remain required migrations.
 
-Acceptance/validation: `trigger_event_records.{py,json,meta.json}` preserves54
-original full constructor/read/list cases and bounded predicate samples. `--check`
-passes. Rust `parsed_event_records_match_native_list_and_production_predicates`
-compares record shape/order for every row and elapsed/global/local predicates
-through340 production master-frame checks, including signed frame boundaries. Resolved
-Team references, timer-instance state and nonempty TechnoType queries are NOT
-certified. Existing type-count queries still use an approximate case-insensitive
-entity-name scan without native reverse Type registry resolution; missing type
-must eventually return false for BOTH60/61. The signed threshold/empty-entity
-rule follows71EA03, but those registry cases need executable Rust comparisons.
+Validation of the source candidate (the main merge changes no Rust):
+- All25 trigger tests pass (`.local/trigger-owner-focused.log`).
+- `sim::runtime::tests::staged_trigger_state_reaches_bound_frames_and_survives_restore`
+  passes: authored locals/disabled flags reach a bound production frame, and
+  restoring before/after the first frame preserves one-shot state without reseeding.
+- Full `cargo test -p vera20k --lib`: **9,153 passed,0 failed,135 ignored**,12.24s
+  (`.local/trigger-owner-full-tests.log`). Snapshot189/replay pins unchanged.
+- Library Clippy passes,1,029 warnings,36.13s (`.local/trigger-owner-clippy.log`).
+- Release build passes,2m06s (`.local/trigger-owner-release.log`).
+- Explicit ignored retail headless construction test passes: two Dustbowl loads,
+  matching initial state and30 frames (`.local/trigger-owner-headless-retail.log`).
+  An initial exact filter matched0 tests; the corrected run actually executes1.
+- Release SHA256 `cae5a88dd0afe2176becd100d49afed0d0dc653ff061b9a318a88cd86a17f6ea`
+  loads sealed Fight.MAP and reaches scripted tick1. Full tactical capture remains
+  **INVALID**: MCV582 facing64 versus128, the previously traced stale immediate-turn
+  assertion (see the earlier deployment/capture analysis). No final screenshot or
+  visual parity claim. All sealed inputs unchanged, child27208 exits1 without
+  timeout. Evidence: `.local/trigger-owner-retail-soviet/{run.json,loader.log,
+  capture/capture.json}`. Owned Cargo/capture operations are terminal.
 
-All25 focused trigger tests pass. Full `cargo test -p vera20k --lib`: **9,152
-passed,0 failed,135 ignored**,12.25s; `.local/trigger-event-records-full-tests.log`.
-Library Clippy passes with1,030 existing warnings,29.15s;
-`.local/trigger-event-records-clippy.log`. Snapshot189/replay pins are unchanged.
-Release build passes in2m00s (`.local/trigger-event-records-release.log`). Retail
-validation details and limitations are below.
+One fresh pre-PR critic `combat_increment_critic` is reviewing the accumulated
+branch against origin/main3a7a76dd. No PR yet. Next delivery action: resolve its
+confirmed findings, validate affected changes, then publish/merge a coherent
+increment. Do not repeat the critic after fixes. Earlier Ground rendering GPU
+checks passed4 tests (`.local/display-consumers-gpu.log`); no full visual parity.
 
-`tag_lifecycle.{py,json,meta.json}` now preserves49 original histories;
-`--check` passes and the39 earlier histories are unchanged. New cases execute
-real Object construction/attachment, deferred drain725C70, original Tag/Trigger
-destructors and the complete Logic tag-poll prefix55AFB0..55B205. Only storage
-allocation/free, Windows IsBadReadPtr transport and fixture state are supplied;
-no gameplay call or instruction is replaced. Lifecycle cases keep gameplay/
-shutdown gates false. Registration classification, countdown expiry/UI callback,
-Team/physical Object destruction and gated House-win/cursor updates remain open.
-No Rust live-instance parity claim. Ghidra TEvent71F4E0 was named/annotated, and
-Logic55AFB0's plate was extended while preserving prior notes; both saved/read back.
+Retained native evidence from published9202149b: `trigger_event_records` has54
+original constructor/read/list cases and bounded predicates. Rust compares all
+records plus340 elapsed/global/local production-frame predicates. Names retain
+case/whitespace and at most24bytes; native list prepends Events. Invalid variable
+indices return false intentionally rather than native uninitialized stack residue.
+TechnoType60/61 queries still use an approximate entity-name scan; resolve the
+case-sensitive reverse native Type registry before claiming those predicates.
+`tag_lifecycle` preserves49 original histories with real Object attachment,
+deferred destructors and Logic polling. No Rust live-instance parity yet.
+Ghidra TEvent71F4E0 and Logic55AFB0 annotations were saved/read back in that
+increment; no Ghidra mutation in the ownership increment.
 
 Native ownership and ordering to preserve in the migration:
 - Find/create6E52A0 returns the first registered same-TagType instance even pending.
@@ -1529,28 +1535,23 @@ Native ownership and ordering to preserve in the migration:
   until the next poll. Tail clears+34AA/+34A9/+34AB/+34BE. Never use diagnostic
   TriggerGraph sorting as production order.
 
-Next safe action: migrate the EXISTING TriggerRuntime to live Tag/Trigger instances,
-removing definition-ID fired/disabled latches and MapTrigger.repeating. Keep this
-owner reachable during actions: world::advance_triggers currently mem::takes it,
-which would lose nested Team creation state. Move dispatch onto Simulation with
-short state borrows; use world/lifecycle's existing pending-delete owner. Bind
-static Tag/CellTag definitions before map-object construction, retain authored
-Object attachments and initialize RNG/timers in native construction order. Wire
-app, headless and restore together. App creates a detached TriggerRuntime in
-loading/init.rs:3411; headless_scenario binds empty trigger tables; SimResources
-lacks Tag/CellTag definitions; MapEntity omits tags. Shared object population is
-sim/runtime.rs -> world/world_spawn.rs. Team construction/recruitment/AI are still
-test-only prerequisites. These migrations are required, not optional follow-ups.
+Next implementation: replace the EXISTING TriggerRuntime definition-ID latches
+and MapTrigger.repeating with live Tag/Trigger instances on the installed owner.
+Use world/lifecycle's pending-delete authority. Materialize ordered Tag/CellTag
+inputs and authored Object attachments through shared staging/resources, preserving
+constructor timer/RNG order. Team construction/recruitment/AI remain test-only.
 
-Current release SHA256
-`38b387174a0328ee8fff4f527341b4bec585b1f2e38d5669abcc8ccaa3d349fe`
-loaded sealed Soviet Fight.MAP far enough to reach scripted tick1. Capture is
-still INVALID: MCV582 facing64 versus expected128, the same failure as the prior
-checkpoint. See `.local/trigger-event-records-retail-soviet/{run.json,loader.log,
-capture/capture.json}`; all sealed inputs stayed unchanged and the child exited.
-Inherited RUST_LOG=1 retained warnings/errors, not INFO frame markers; do not claim
-a new successful frame capture. No visual parity claim. All owned Cargo/native/
-capture operations are terminal at this checkpoint.
-Team activation/recruitment/scripts, Fly map-edge and other flight states,
-launch/scatter/homing, vehicle click/shared resolver, fire legality, special
-warheads and destruction remain required. No merge is pending.
+Additional native reader evidence (body/vtable only, not a new executable corpus):
+TagType ctor6E5B60 sets vt7F45C4; its+64 slot points6E6080. The reader clears
+INI cache526B00, uses ReadString128, tokenizes then passes BUFFER START to atoi
+(not the returned token pointer), stores repeat+9C, copies name max48 to+64 and
+resolves token3 via TriggerType find-or-create727AA0 into+A0. Leading commas
+therefore matter. The resolver scans registry8B4178 by first case-insensitive
+ID match; missing nonsentinel names construct a Type. Original section loader
+6E5ED0 preserves source order. `.local/tag-type-read-6e6080.txt` retains notes;
+Ghidra has no function at6E6080: inspect bytes without repairing boundaries.
+
+Required remaining work includes Team activation/recruitment/scripts; Fly map-edge,
+search/navigation/landing; remaining Display consumers and crate pickup effects;
+launch/scatter/homing; vehicle click/shared resolver; fire legality; special
+warheads and destruction. Recording these omissions does not resolve them.
