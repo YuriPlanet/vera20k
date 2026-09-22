@@ -1449,88 +1449,109 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): Infantry scatter Walk destination
+## Current checkpoint (2026-09-22): Unit scatter state refusals
 
 Owned checkout: engine-ownership-boundaries/ra2-rust-game, branch
-feature/combat-foot-speed, published parent **0a3afe10**. Combat goal stays active.
+feature/combat-foot-speed, published parent **00cbae96**. Combat goal stays active.
 The sole critic already ran; no repeated critic or PR/merge while its required
 aircraft attack/flight joins remain unfinished. Preserve .local/ and prior work.
 
-Acceptance for this increment: source-aware damage Scatter installs the ordinary
-non-JumpJet Walk destination, preserves paid head/facing/power and path suffix,
-resets Foot timers only after Foot admission, and reaches real subsequent
-Process/path/head/motion. Match original class/Foot/locomotor refusal ordering;
-do not certify other locomotor setters or missing linked-effect producers.
+Acceptance for this increment: apply Unit Scatter's unconditional represented
+state refusals to the shared production blocker receiver before RNG or any
+mission/destination/timer/power mutation. Read existing state owners and compare
+original execution. This does not complete Unit Scatter or aircraft CellScatter.
 
-Implemented: damage receiver queues Move, then movement/infantry_scatter
-runs the ordinary Walk class handoff. Moving owners query current physical Cell
-through shared4834A0 decision logic (ignore infantry, retain vehicles, select deck
-on structural bridge), then reuse the actual Infantry failed-path receiver when
-required. Enter-without-contact retains PathHead for a Cell target. Foot admission
-clears Aux even on refusal; this shared owner now also serves aircraft Attack
-instead of its duplicated three-gate block. Warp state comes from the existing
-TeleportState writer and is shared by Walk/Fly. Accepted Walk preparation no
-longer needs PathGrid/costs/zones or runs generic A*. Command/repair/FindPath
-callers share one execution adapter; preserve paid head and defer first search.
-Walk never gains power or snaps facing merely from accepting this destination.
-No new simulation fields or save format; existing state owners retain lifecycle.
+Implemented in movement/bump_crush::unit_scatter_state_allows: effective mission
+(current or queued) Sleep0/Sticky6/Unload16; ACTIVE Teleport locomotor; body
+Facing388 IsRotating at the caller's binary frame; any represented deploy phase;
+and locomotor IsPowered. The shared scatter_blocker uses it before its existing
+compatibility selection and setter. It covers movement occupancy, Drive track,
+tube exit and bunker blocker callers. Moving alone is not a Unit refusal; a
+Chrono Miner's active Drive is eligible despite its stashed Teleport. No added
+state/save format, duplicate latch or owner. IsTrain+C94 remains unparsed and
+absent from stock retail types. Deploy animation producers remain approximate.
 
-Evidence: infantry_scatter_destination.{py,json,meta.json} has18 original
-Scatter -> live CanEnter -> real QueueMission -> Infantry51AA40 -> Foot4D94B0
--> Walk75ACB0/Stop witnesses. Includes moving receiver, zero terrain row,
-infantry/vehicle raw masks, bridge planes, retained head, Enter, powered-off,
-warp-in/out and each Foot gate. Two later Process probes stop at first FindPath
-or paid numeric step boundary. No gameplay callable substituted; OS atomic
-reference-count imports only. Declared empty lists/overlays, nonhuman Fraidycat,
-zero sequence counts, no JumpJet/EMP/linked effects, widened synthetic bounds.
-Original startup builds neighbor/translation tables; structural destination adds
-414, not the416 head/OnBridge rise. New18, prior56 source and14 live-entry
-corpora all passed --check. Native output files are included by the production
-damage-receiver test, alongside HP/fear/RNG comparisons. An additional real
-world damage/tick regression checks path creation, paid motion and arrival.
+Native evidence: tools/spatial_oracle/unit_scatter_state.{py,json,meta.json}
+executes69 real Unit743A50 prefixes through refusal or the743BAC source split.
+Real Unit vtable, effective mission6F3280/+184, Drive/Teleport constructors,
+QueryInterface/GetClassID/refcounts, Facing SetROT/Set/IsRotating and IsPowered
+execute. Only OS Interlocked imports substituted. Both flags are true to bypass
+conditional mission Scatter/NavCom gates; IsTrain=false. Cases cover every
+current mission -1..31, queued fallbacks, all three deploy bytes, power/Teleport,
+rotation rates/elapsed frames and paused frameFFFFFFFF. Actor bytes unchanged;
+refcounts balance on returned refusals. --check passes. Rust compares all69
+rows; every rejected row also calls the production blocker receiver and checks
+whole serialized actor state and Scenario RNG remain unchanged. Separate active
+Drive/stashed Teleport and turret-vs-body test; prior scatter vehicle fixtures
+now install their required Drive instance instead of a null locomotor.
 
-Ghidra saved/read back:51AA40 plate corrects the old Mission interpretation to
-human-only Doing27..30;75ACB0 comment documents owner gates/no PowerOn; false
-BuildingClass__DeployUnit_ChronoWarp70FEE0 renamed conservatively to
-TechnoClass__DetachLinkedObject_2AC with proved reciprocal writes/call ordering.
-Read-only Java comment readback succeeded despite unrelated shared-script errors.
-No executable/prototype/boundary changes.
+Validation: the focused scatter run passed47 tests and exposed one older fixture
+with a vehicle lacking a locomotor. Installed its required Drive instance.
+Final cargo test -p vera20k --lib passes **9185 tests,0 failures,135 ignored**
+(.local/unit-scatter-full.log,19.74s); cargo clippy -p vera20k --lib passes with
+1024 warnings, unchanged from the parent (.local/unit-scatter-clippy.log,23.00s).
+Both Cargo processes finished. No retail rendered/Linux/macOS claim.
 
-Final validation: `cargo test -p vera20k --lib` passes **9,183 tests,0 failed,
-135 ignored**,26.56s (.local/scatter-destination-full.log). This includes all18
-new native setter rows in the damage receiver, prior14 entry rows, the complete
-damage-to-Walk-arrival regression, and normal move-order power preservation.
-Warp-out/bunker setter rows use explicit ignore-defenses damage to pass earlier
-immunity gates. The test fixture uses a real INI merge for Fraidycat overrides;
-pre-existing NavCom is not mistaken for a newly issued movement request.
-`cargo clippy -p vera20k --lib` passes,1,024 warnings,50.16s
-(.local/scatter-destination-clippy.log). All owned Cargo/native runs are terminal.
-No rendered retail/Linux/macOS claim. Validated increment ready to commit and
-publish; resolve current HEAD/upstream through Git. The only Rust edit after
-the full suite corrected a native address in a comment; Clippy followed it.
+Next-receiver evidence: unit_source_scatter.{py,json,meta.json} executes56
+original743A50 calls through argument-observing QueueMove/SetDestination. Native
+heading, ScenarioRandom, Foot4C seed, height/projection and selection execute;
+50 rows supply numeric entry responses, six execute original Unit73F0A0 on empty
+object lists with supplied raw occupation/terrain. Covers all refusal codes1..7,
+each sole legal direction, first legal bridge fallback, retained Drive head,
+Paralyzed/unloading/NavCom/turret flags, mission force and both outcomes of the
+unforced-target random gate. Raw vehicle occupation returns2 and refuses
+Scatter even though repair's ==7 projection would admit it. Original Unit entry
+also refuses occupied Infantry/zero speed rows with7. This corpus is not yet
+compared to Rust and does not claim setter/movement or occupied-list parity.
 
-Required continuation: non-Walk and JumpJet class-switching setters still use
-the prior direct-move compatibility handoff; Walk source branch no longer does.
-DirectRocker+2A8 reciprocal owner (Bullet4699AD/4699B9), linked lift+2AC/+2B0
-release70FEE0, retained UseFireParticles+304 release and Unit-produced+6AC latch
-remain unported prerequisites. Full generic Infantry setter (including prone
-DoAction7 for non-Fraidycat humans) is not claimed. Sale Scatter, NULL-source
-fallback/DoAction31, Unit Scatter, Aircraft CellScatter and Attack states5..9,
-real flight/landing/reload validation and whole-combat audit remain required.
+Ghidra: original Unit vtable7F5C70+480 proves741970 is Unit's override; corrected
+false TechnoClass__Set_Destination label to UnitClass__Set_Destination. Updated
+743A50 plate to remove the old claim that every forced moving vehicle proceeds.
+Deploy6E1 producer739AC0 sets739C62 and clears739B70 while setting deployed6E0;
+undeploy6E2 producer739CD0 sets739E46 and clears739D28 with6E0. Both producers
+annotated, no prototype or function-boundary edits; saved/read back.69-case prefix does
+not execute/certify these deploy animation lifetimes.
 
-Published parent0a3afe10 migrated actual Infantry cell admission and shared
-physical height owner (14 native rows);88979788 owns retained Doing/admission
-(278 native rows), Foot navigation seed and56 selector rows. Parent full suite:
-9182 passed,135 ignored; Clippy1026 warnings. Those runs do not validate WIP.
+Next required receiver work: Unit source branch743CA0 additionally tests current
+MissionControl Paralyzed(+7), Unit6D1 (existing miner.unload_active), NavCom and
+second flag plus6AF (existing turret_rotation_latch). If Target and !firstFlag,
+RandomRanged(1,4) admits only1. Away heading uses physical9C, jitter0..2 minus1;
+seed is Foot4C. Shared eight-neighbor fallback/projection policy matches Infantry
+but its numeric class entry is Unit73F0A0 (UnitVT+1AC), NOT Infantry51BF90.
+Existing bridge_repair_admission Unit branch currently preserves only ==7;
+source Scatter requires exact ==0. Port/migrate its numeric answers before reuse.
+QueueMove(false)744053 then Unit destination741970 at744070. NULL source uses
+FNPC56DC20 and SetDestination only, without QueueMove or immediate Process.
+The compatibility blocker selection/setter remains a residual, with flags and
+conditional gates still to migrate. Do not count this prefix as complete Scatter.
 
-Additional prerequisite traced during validation: UnitVT7F5C70+28C resolves
-6F3280, called743A5C before either force flag. Original+184 ->5B3040 reads
-current+AC or queued+B4; reject Sleep0/Sticky6/Unload16, then Type.IsTrain+C94.
-ReadINI71227F/712284 and key8444BC confirm IsTrain. Existing mission.effective()
-owns that projection. The earlier Harmless16 interpretation was wrong:
-Harmless=23; holds_until_retasked is a different three-mission predicate.
-6F3280 annotation saved/read back; body/vtable/writer evidence only, not a new
-Unit Scatter port or executable comparison.
+Garrison shared-receiver migration investigated but NOT implemented: actual
+Building457DE0 calls occupant Scatter(building virtual+48 center, true,true) at
+45810A, following Unlimbo and AssignTarget(NULL). Current production_sell copy
+uses an inverted/coarse heading, simplified admission and direct movement.
+General Infantry flags need actual moving-byte demotion, human/Doing27..30 and
+true/true DoAction31, then shared class entry and Walk setter; non-Fraidycat
+human same-destination prone setter needs DoAction7 and TypeFearless+EAC proof.
+Accepted DoAction31 lifetime is already an explicit hut residual. Do not invent
+Doing/frame/undeploy lifetime or infer it from presentation. Original Unlimbo
+51DFF0 calls Foot4D7170 and writes wet-state6E8=2; no observed Doing reset.
+Propagate overlay registry to sale/red-HP/destruction callers before live entry.
+
+Published00cbae96 owns the damage Scatter -> Infantry51AA40 -> Foot4D94B0 ->
+Walk75ACB0 handoff:18 full native setter rows,56 source rows,14 live entry rows;
+ordinary subsequent Process/search/head/motion and arrival regression. Full lib
+9183 passed,135 ignored; Clippy1024 warnings. Logs .local/scatter-destination-*
+are parent validation, not this WIP. Walk preserves paid head/facing/power and
+path backing; shared Foot admission serves Aircraft Attack too. Ghidra51AA40
+Doing correction,75ACB0 no-PowerOn, and70FEE0 renamed
+TechnoClass__DetachLinkedObject_2AC were saved/read back there.
+
+Remaining required prerequisites: non-Walk/JumpJet class-switching setters,
+DirectRocker2A8 reciprocal link, lifted-unit2AC/2B0 detach70FEE0, retained
+UseFireParticles304 release, Unit-produced6AC latch; Infantry NULL-source
+fallback/DoAction31; full Unit Scatter; Aircraft CellScatter and Attack5..9;
+real flight/landing/reload and whole-combat audit. The larger existing critic
+findings and goal residuals elsewhere in this file still apply.
 
 
 ## Previous checkpoint (2026-09-22): Infantry damage-scatter admission

@@ -1156,6 +1156,33 @@ pub fn blocker_is_fraidycat(
         .is_some_and(|obj| obj.fraidycat)
 }
 
+/// Unconditional Unit743A50 refusals, shared by NULL and source-aware calls.
+/// Force does not override Techno6F3280's effective Sleep/Sticky/Unload,
+/// active Teleport GUID, body Facing388 rotation, deploy-family bytes6E0..2,
+/// or ILocomotion+60 (IsPowered55A930). Test the active instance: a Chrono
+/// Miner's temporary Drive is eligible even though its installed slot is Teleport.
+///
+/// Existing deploy_state owns the represented three deploy phases; no second
+/// latch is introduced here. Its animation-driven native producers remain a
+/// separate migration. IsTrain+C94 is unparsed and absent from retail types.
+/// Mission Scatter, NavCom and source-only gates are NOT covered by this prefix.
+/// Evidence: tools/spatial_oracle/unit_scatter_state.{py,json,meta.json}.
+fn unit_scatter_state_allows(blocker: &GameEntity, binary_frame: u32) -> bool {
+    use crate::rules::locomotor_type::LocomotorKind;
+    if matches!(blocker.mission.effective().raw(), 0 | 6 | 16)
+        || blocker
+            .body_facing
+            .as_ref()
+            .is_some_and(|facing| facing.is_rotating(binary_frame))
+        || blocker.deploy_state.is_some()
+    {
+        return false;
+    }
+    blocker.locomotor.as_ref().is_some_and(|locomotor| {
+        locomotor.active_kind() != LocomotorKind::Teleport && locomotor.is_powered()
+    })
+}
+
 /// Try to scatter a blocker to an adjacent cell by issuing a movement command.
 ///
 /// Compatibility displacement for the blocked-cell caller: search eight
@@ -1187,6 +1214,11 @@ pub fn scatter_blocker(
     // Buildings are immutable obstacles — never scatter targets. Bail before
     // the RNG read so determinism is preserved for all legitimate cases.
     if blocker.category == EntityCategory::Structure {
+        return false;
+    }
+    if blocker.category == EntityCategory::Unit
+        && !unit_scatter_state_allows(blocker, timing.binary_frame)
+    {
         return false;
     }
     // MovementTarget is VERA's existing walking destination authority. Native
@@ -1418,6 +1450,10 @@ pub(super) fn infantry_damage_scatter_admitted(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+#[path = "unit_scatter_tests.rs"]
+mod unit_scatter_tests;
 
 #[cfg(test)]
 mod tests {
@@ -2982,6 +3018,16 @@ mod tests {
         );
     }
 
+    fn scatter_vehicle(id: u64, rx: u16, ry: u16) -> GameEntity {
+        let mut entity = vehicle(id, rx, ry);
+        entity.locomotor = Some(
+            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Drive,
+            ),
+        );
+        entity
+    }
+
     #[test]
     fn test_scatter_blocker_issues_movement() {
         let grid = PathGrid::new(10, 10);
@@ -2989,7 +3035,7 @@ mod tests {
         let mut rng = SimRng::new(42);
 
         let mut store = EntityStore::new();
-        let v = vehicle(1, 5, 5);
+        let v = scatter_vehicle(1, 5, 5);
         store.insert(v);
 
         let result = scatter_blocker(
@@ -3036,7 +3082,7 @@ mod tests {
         let mut rng = SimRng::new(42);
 
         let mut store = EntityStore::new();
-        let v = vehicle(1, 1, 1);
+        let v = scatter_vehicle(1, 1, 1);
         store.insert(v);
 
         let result = scatter_blocker(
@@ -3098,7 +3144,7 @@ mod tests {
         let rules = scatter_rules(false);
 
         let mut store = EntityStore::new();
-        let mut v = vehicle(1, 5, 5);
+        let mut v = scatter_vehicle(1, 5, 5);
         v.movement_target = Some(moving_target());
         set_mission(&mut v, crate::sim::mission::MissionType::Move);
         store.insert(v);
@@ -3345,7 +3391,7 @@ mod tests {
         let occupancy = OccupancyGrid::new();
 
         let mut store1 = EntityStore::new();
-        store1.insert(vehicle(1, 5, 5));
+        store1.insert(scatter_vehicle(1, 5, 5));
         let mut rng1 = SimRng::new(42);
         scatter_blocker(
             &mut store1,
@@ -3361,7 +3407,7 @@ mod tests {
         );
 
         let mut store2 = EntityStore::new();
-        store2.insert(vehicle(1, 5, 5));
+        store2.insert(scatter_vehicle(1, 5, 5));
         let mut rng2 = SimRng::new(42);
         scatter_blocker(
             &mut store2,

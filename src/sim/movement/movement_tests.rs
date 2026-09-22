@@ -3639,6 +3639,9 @@ fn test_friendly_scatter_issues_move_command() {
 
     // Stationary friendly blocker at (2,2).
     let mut blocker = GameEntity::test_default(1, "HTNK", "Americans", 2, 2);
+    blocker.locomotor = Some(locomotor::LocomotorState::for_test_kind(
+        crate::rules::locomotor_type::LocomotorKind::Drive,
+    ));
     blocker.lifecycle.in_limbo = false;
     blocker.lifecycle.cell_marked = true;
     entities.insert(blocker);

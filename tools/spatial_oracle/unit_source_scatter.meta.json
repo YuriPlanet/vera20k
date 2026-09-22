@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Source-aware Unit Scatter743A50 through observed QueueMission/SetDestination: original admission, RNG, heading, Foot navigation seed, numeric candidate entry and preferred/fallback selection. Not full class setter or movement parity.",
+  "assumptions": [
+    "Original Unit/Drive fixture from unit_scatter_state, only OS Interlocked imports substituted there.",
+    "Widened synthetic bounds, 32x32 allocated original Cell vtables, empty object lists/overlays, supplied raw masks/levels/bridge flags; all nine land0 speed rows1.0 and land1 rows0.0. Type native SpeedType row1, unrestricted land(-1), Foot tube index(-1); no weapon/radio consumers admitted by empty lists.",
+    "Original ScenarioRandom seed and direction-table startup execute. Nonnull source only; optional old NavCom/Target are pointer-identity sentinels compared but never dereferenced. No NULL-source FNPC coverage."
+  ],
+  "substitutions": [
+    "Candidate+1AC returns supplied per-direction answers unless live_entry=true, which executes original Unit73F0A0.",
+    "QueueMission and SetDestination are argument-checking observers without state effects."
+  ],
+  "entry_points": {
+    "scatter": "0x00743A50",
+    "unit_entry": "0x0073F0A0",
+    "foot_coord": "0x004DBDF0",
+    "random": "0x0065C7E0",
+    "projection": "0x006D6410",
+    "height": "0x005F5F00"
+  },
+  "payload_sha256": "0777af63df5e443345b40e091fbdcc2a1ef68ae7754929bb5f77fee58b82d0c1"
+}

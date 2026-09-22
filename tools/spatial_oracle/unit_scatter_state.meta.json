@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Unit743A50 entry through the unconditional state gates. Both force flags true; accepted rows stop at743BAC before source selection. No FNPC, entry, destination, or complete scatter parity claim.",
+  "assumptions": [
+    "Original Unit vtable, real Drive/Teleport constructors and COM QueryInterface/GetClassID/refcount calls. Supplied valid owner/type state; IsTrain=false as stock retail rules.",
+    "All three deploy-family bytes are separate supplied native prestates; their animation producers are not executed.",
+    "Current mission -1..31, queued fallbacks, original Facing SetROT/Set and time progression. Current MissionControl Scatter=false and optional existing NavCom are bypassed only by literal true flags.",
+    "Accepted stop retains the temporary IPersist reference; refusals return through native Release. Actor memory remains unchanged."
+  ],
+  "substitutions": [
+    "Only OS InterlockedIncrement/Decrement imports implement pointed integer increments/decrements. No gameplay callable is substituted."
+  ],
+  "entry_points": {
+    "scatter": "0x00743A50",
+    "eligible": "0x006F3280",
+    "facing_rotating": "0x004C9480",
+    "powered": "0x0055A930",
+    "drive_constructor": "0x004AF540",
+    "teleport_constructor": "0x00718000"
+  },
+  "payload_sha256": "7bd5418991f81e3a7fac048d7755220fe4f15ca8eae0c8753bd172830a770c89"
+}

@@ -1,0 +1,469 @@
+[
+  {
+    "admitted": true,
+    "input": {
+      "mission": -1
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "mission": 0
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 1
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 2
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 3
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 4
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 5
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "mission": 6
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 7
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 8
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 9
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 10
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 11
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 12
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 13
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 14
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 15
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "mission": 16
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 17
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 18
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 19
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 20
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 21
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 22
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 23
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 24
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 25
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 26
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 27
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 28
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 29
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 30
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": 31
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": -1,
+      "queued": -1
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "mission": -1,
+      "queued": 0
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": -1,
+      "queued": 1
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": -1,
+      "queued": 5
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "mission": -1,
+      "queued": 6
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "mission": -1,
+      "queued": 16
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "mission": -1,
+      "queued": 23
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "teleport": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "power_off": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "nav": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "deployed": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "deploying": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "undeploying": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elapsed": 0,
+      "rot": 0,
+      "turn": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elapsed": 1,
+      "rot": 0,
+      "turn": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elapsed": 12,
+      "rot": 0,
+      "turn": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elapsed": 64,
+      "rot": 0,
+      "turn": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elapsed": 0,
+      "rot": 1,
+      "turn": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elapsed": 1,
+      "rot": 1,
+      "turn": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elapsed": 12,
+      "rot": 1,
+      "turn": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elapsed": 64,
+      "rot": 1,
+      "turn": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elapsed": 0,
+      "rot": 5,
+      "turn": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elapsed": 1,
+      "rot": 5,
+      "turn": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elapsed": 12,
+      "rot": 5,
+      "turn": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elapsed": 64,
+      "rot": 5,
+      "turn": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elapsed": 0,
+      "rot": 127,
+      "turn": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elapsed": 1,
+      "rot": 127,
+      "turn": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elapsed": 12,
+      "rot": 127,
+      "turn": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elapsed": 64,
+      "rot": 127,
+      "turn": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elapsed": 0,
+      "rot": -1,
+      "turn": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elapsed": 1,
+      "rot": -1,
+      "turn": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elapsed": 12,
+      "rot": -1,
+      "turn": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elapsed": 64,
+      "rot": -1,
+      "turn": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elapsed": 0,
+      "frame": 4294967295,
+      "turn": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elapsed": 1,
+      "frame": 4294967295,
+      "turn": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elapsed": 12,
+      "frame": 4294967295,
+      "turn": true
+    }
+  }
+]
