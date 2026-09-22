@@ -106,7 +106,7 @@ fn make_trigger(
             "Neutral".to_string(),
             linked_trigger_id.unwrap_or("<none>").to_string(),
             name.to_string(),
-            if enabled { "1" } else { "0" }.to_string(),
+            if enabled { "0" } else { "1" }.to_string(),
             "1".to_string(),
             "1".to_string(),
             "1".to_string(),
@@ -145,6 +145,81 @@ fn spawn_type(sim: &mut Simulation, type_id: &str) -> u64 {
     );
     sim.substrate.entities.insert(ge);
     sid
+}
+
+#[test]
+fn parsed_map_trigger_flags_gate_production_frames_and_survive_restore() {
+    // Use actual map text, not hand-built MapTrigger booleans. The enabled
+    // and difficulty expectations are established by trigger_type_flags.json.
+    let map = crate::map::map_file::MapFile::from_bytes(
+        b"[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+          [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
+          [Triggers]\n\
+          ACTIVE=Neutral,<none>,Active,0,1,1,1,0\n\
+          DISABLED=Neutral,<none>,Disabled,1,1,1,1,0\n\
+          NO_MEDIUM=Neutral,<none>,Other difficulty,0,1,0,1,0\n\
+          MISSING=Neutral,<none>,Missing flags\n\
+          SHIFTED=Neutral,<none>,Empty token,,0,0,-2,0,0\n\
+          [Events]\n\
+          ACTIVE=1,47,0,0\nDISABLED=1,47,0,0\nNO_MEDIUM=1,47,0,0\n\
+          MISSING=1,47,0,0\nSHIFTED=1,47,0,0\n\
+          [Actions]\n\
+          ACTIVE=1,112,0,0,0,0,0,0,A\n\
+          DISABLED=1,112,0,0,0,0,0,0,B\n\
+          NO_MEDIUM=1,112,0,0,0,0,0,0,C\n\
+          MISSING=1,112,0,0,0,0,0,0,D\n\
+          SHIFTED=1,112,0,0,0,0,0,0,E\n",
+    )
+    .expect("map loader accepts trigger fixture");
+    let mut original = Simulation::new();
+    // Same initialization as app/loading/init.rs.
+    original.trigger_runtime = TriggerRuntime::from_map(&map.triggers, &map.local_variables);
+    assert_eq!(
+        original.trigger_runtime.disabled_triggers,
+        ["DISABLED", "MISSING", "NO_MEDIUM"]
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    );
+    let bytes = GameSnapshot::save(&original, 0, 0, "trigger_flags", 0);
+    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+    restored.restore_after_snapshot_load().unwrap();
+    for sim in [&mut original, &mut restored] {
+        let frame = sim
+            .advance_master_frame(
+                &[],
+                None,
+                &BTreeMap::new(),
+                None,
+                None,
+                67,
+                TickLane::Ordinary,
+                Some(TriggerInputs {
+                    graph: &map.trigger_graph,
+                    triggers: &map.triggers,
+                    events: &map.events,
+                    actions: &map.actions,
+                    waypoints: &map.waypoints,
+                    rules: None,
+                }),
+            )
+            .expect("production frame completes");
+        assert!(frame.frame_committed);
+        assert_eq!(
+            sim.drain_trigger_effects(),
+            vec![
+                TriggerEffect::CenterCameraAtWaypoint {
+                    waypoint: 0,
+                    immediate: true,
+                },
+                TriggerEffect::CenterCameraAtWaypoint {
+                    waypoint: 4,
+                    immediate: true,
+                },
+            ]
+        );
+    }
+    assert_eq!(original.trigger_runtime, restored.trigger_runtime);
 }
 
 #[test]

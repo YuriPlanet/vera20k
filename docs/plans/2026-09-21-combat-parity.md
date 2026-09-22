@@ -2,6 +2,9 @@
 
 ## Objective and acceptance
 
+User direction: the dependency map is retired. Do not consult or refresh it;
+this overrides stale map instructions on this owned branch.
+
 Make VERA20k combat reproduce active-retail `gamemd.exe`: targeting, attack
 execution, weapons, projectiles, damage, special warheads and destruction,
 including all required dependencies. Missing behavior and contradictory evidence
@@ -1355,6 +1358,62 @@ TeamTypeClass__Create_Team and saved/read back focused constructor/action/timer
 annotations. Native creation evidence excludes loading, Spring, membership,
 activation, recruitment and deletion; it does not complete this dependency.
 
+### Trigger loading prerequisite: flag correction
+
+Acceptance: native disabled/difficulty tokens must reach the existing map loader
+and Simulation trigger owner with their original polarity, missing-token and
+decimal conversion semantics. Parsed map input must produce the expected actions
+through a production frame, including continuation after save/restore. This
+bounded correction does not complete the required live Tag/Trigger migration.
+
+`trigger_type_flags` preserves64 original reader runs: ReadString512 and original
+CRT strtok/atoi followed by7273B9..72749B, with fresh and retained field priors.
+No gameplay instruction/callee is replaced; external CRT TLS imports are supplied.
+The first three tokens are consumed by original strtok; House/link/name resolution,
+Events/Actions and live lifecycle are excluded. All29 applied fresh-definition
+rows compare the four modeled Rust flags to native output. Token4 means disabled:
+enabled+9F is true only for a present token with atoi==0; difficulty+9C/D/E is
+true only for a present nonzero token. Missing tokens writefalse. Empty comma
+tokens are skipped, whitespace tokens consume a slot. The existing shared decimal
+scanner preserves CRT whitespace, prefixes and wrapping without another parser.
+
+Production `map::triggers` now uses the bounded ReadString owner and separates
+raw diagnostic fields from semantic tokens. `MapFile::from_bytes` regression
+initializes TriggerRuntime as the app loader does, advances a real master frame,
+and compares original/restored action effects. No snapshot layout changes.
+
+Residuals: TriggerType token8 setsA0 only for nonzero input and otherwise retains
+its prior value; it is NOT repetition. Current `MapTrigger.repeating` remains an
+explicit legacy approximation pending the instance migration. TagType reader
+6E6080 uses ReadString128: token1 atoi ->TagType+9C, token2 name, token3 TriggerType.
+Tag6E53A0 walks live Trigger instances, gates through7264C0 and springs7265C0.
+Mode2 repeats; mode1 springs/expires only withTag+2C==1; mode0 springs/expires.
+Source detach5F5B50/485250 and deferred tag/trigger deletion throughB0F698 remain
+required. Trigger7264C0 owns completion bits+40 and reset726400 before repeat
+Spring;726720 marks+30 and enqueues. Spring resolves the TriggerType's House and
+ORs action results. Do not reuse the definition-ID latches as instance state.
+Corrected the misleading TriggerActionEntry wording in Ghidra6E53A0 and annotated
+ctor726C9C with reader semantics; saved and read back both. No boundary edits.
+
+Validation: native `trigger_type_flags --check` passes all64 saved rows;33 focused
+trigger tests pass. Full `cargo test -p vera20k --lib`: **9,150 passed,0 failed,
+135 ignored**,13.06s (`.local/trigger-type-flags-full-tests.log`); existing replay
+hash pins pass unchanged. Library Clippy passes with1,030 existing warnings,
+22.48s (`.local/trigger-type-flags-clippy.log`). The flags corpus compares fields
+by native offset; only the existing medium-difficulty runtime selection is wired.
+Scenario difficulty selection and live-instance lifecycle still need their full
+production mapping. No critic or PR for this branch yet.
+
+Consumer audit for the instance port: `headless_scenario::load_with_launch`
+currently binds EMPTY graph/triggers/events/actions in SimResources and never
+initializes TriggerRuntime. It cannot validate map-trigger parity. MapEntity
+explicitly omits authored object tags; GameEntity has no live tag attachment.
+SimResources also has no TagMap/CellTagMap, and TeamTypeIni retains raw fields
+without a materialized Tag reference. Extend the shared simulation construction
+and resource owners, migrate app/headless/restore consumers together, and preserve
+native constructor/RNG ordering. The diagnostic TriggerGraph is currently reused
+for definition-wide polling; it is not a substitute for native Tag instances.
+
 Map-edge acceptance for the eventual production port: retained state and raw
 versus queued mission gates select the correct branch; reuse map Size/LocalSize,
 height-aware waypoint and scatter owners; preserve whole-lepton arithmetic,
@@ -1390,3 +1449,29 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 `.local/aircraft-mission-only-clippy.log`). All owned Cargo/native processes are
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
+
+### Latest validation: trigger flags and retail load (2026-09-22)
+
+The trigger flag correction above is the latest Rust increment, based on
+2ffb6031. Full lib:9,150 passed/0 failed/135 ignored; Clippy passes. Native64-row
+reader comparison and29 fresh-definition Rust comparisons pass, as does parsed
+map -> production master-frame -> save/restore continuation. Snapshot189 unchanged.
+
+Owned `target/release/vera20k.exe` built successfully in4m16s, SHA256
+`facc362d92f9901303f20e923b5427be541cb0bac491a70f0046f0fbc5f58693`.
+The sealed Soviet Fight.MAP launch loaded retail rules/art/theater/objects and
+transitioned to InGame, then ran its first gameplay frame. This supplies the
+previously pending post-FlightLevel/Carryall/trigger-reader release loader check.
+Retained output: `.local/trigger-type-flags-retail-soviet/{run.json,loader.log,
+capture/capture.json}`. All sealed inputs remained unchanged and the child exited.
+The **full tactical capture is INVALID**: AwaitFirstDeployResult tick1 observed
+MCV582 facing64 instead of128, identical to the preceding anim-display retail
+capture's recorded failure. No successful final-frame/visual parity claim; the
+deployment/facing mismatch remains open and was not hidden by changing its test.
+
+No critic or PR for `feature/combat-foot-speed` yet. Team/Tag/Trigger instance
+ownership, construction/RNG, source attachments, deferred cleanup and production
+admission remain required before the Team-dependent Fly map-edge chain can close.
+The consumer audit above records exact disconnected app/headless paths. Current
+Cargo/native/capture operations are terminal; `.local/` remains intentional and
+untracked. Goal remains active; this increment does not complete combat parity.
