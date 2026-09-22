@@ -40,14 +40,10 @@
 //! its state is absent, and families without a faithful mapping return `None`
 //! rather than a guess.
 //!
-//! Walk's blocked-phase exclusion carries a deliberate conservative floor,
-//! labelled VERA-internal at its definition. It compensates for a
-//! state-lifetime mismatch against native and errs toward "not moving".
-//!
-//! ## Parity status
-//! The predicate is VERIFIED (exhaustive over its input space). Drive and Ship
-//! are VERIFIED against their slot-4/slot-32 bodies, owner receiver, and active
-//! stock callsites. Other family mappings remain field-traced but UNCHECKED.
+//! Drive/Ship share their coordinate query with cell-entry and tube consumers.
+//! Walk reads its retained byte/head and the shared Foot speed fraction.
+//! Original query comparisons are in locomotor_moving.json; other family
+//! adapters and the cached Drive/Ship owner speed still have recorded limits.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on sim/ movement and entity state only.
@@ -57,9 +53,10 @@ use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::game_entity::GameEntity;
 use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 
-use super::locomotor::{GroundMovePhase, LocomotorState};
+use super::locomotor::LocomotorState;
 use super::locomotor_ready::LocomotorReadyState;
 use super::teleport_movement::TeleportPhase;
+use super::track_process::TrackFamily;
 
 /// Readiness inputs for one entity, or `None` when this family has no faithful
 /// producer yet (the gate then keeps its conservative "not moving" answer).
@@ -71,8 +68,8 @@ pub(crate) fn ready_state_for(
 ) -> Option<LocomotorReadyState> {
     let locomotor = entity.locomotor.as_ref()?;
     match locomotor.active_kind() {
-        LocomotorKind::Drive => Some(drive_family(entity, binary_frame, DriveFamily::Drive)),
-        LocomotorKind::Ship => Some(drive_family(entity, binary_frame, DriveFamily::Ship)),
+        LocomotorKind::Drive => Some(drive_family(entity, binary_frame, TrackFamily::Drive)),
+        LocomotorKind::Ship => Some(drive_family(entity, binary_frame, TrackFamily::Ship)),
         LocomotorKind::Teleport => Some(teleport(entity)),
         LocomotorKind::Jumpjet => Some(jumpjet(locomotor)),
         LocomotorKind::Walk => Some(walk(entity, locomotor)),
@@ -117,51 +114,17 @@ pub(crate) fn is_moving_for_unit_shp_draw(entity: &GameEntity) -> bool {
         return false;
     };
     match locomotor.active_kind() {
-        LocomotorKind::Drive => drive_family_motion_slot(entity, DriveFamily::Drive).0,
-        LocomotorKind::Ship => drive_family_motion_slot(entity, DriveFamily::Ship).0,
+        LocomotorKind::Drive => super::track_head::motion_state(entity, TrackFamily::Drive).0,
+        LocomotorKind::Ship => super::track_head::motion_state(entity, TrackFamily::Ship).0,
         _ => false,
     }
 }
 
-/// IEEE-754 binary64 bit patterns for the only two speed-fraction values the
-/// Walk family's native field ever holds.
-///
-/// Fed to the predicate directly rather than converting a `SimFixed` to float
-/// bits: a general fixed→IEEE754 conversion would introduce rounding decisions
-/// that must then be reproduced bit-for-bit across every machine in a lockstep
-/// match, for no gameplay benefit.
+/// Positive sign projection used by Walk's strict >0 query. The native
+/// fraction can take other values; only its sign affects this predicate.
 const F64_BITS_ONE: u64 = 0x3FF0_0000_0000_0000;
 /// The hover throttle request's third reachable value.
 const F64_BITS_HALF: u64 = 0x3FE0_0000_0000_0000;
-
-#[derive(Clone, Copy)]
-enum DriveFamily {
-    Drive,
-    Ship,
-}
-
-/// Produce the native slot-4 movement bit and slot-32 head-to-presence input
-/// from the same class-owned coordinates, so the two consumers cannot drift.
-fn drive_family_motion_slot(entity: &GameEntity, family: DriveFamily) -> (bool, bool) {
-    let (destination, head_to) = match family {
-        DriveFamily::Drive => entity
-            .drive_locomotion
-            .as_ref()
-            .map_or((None, None), |drive| (drive.destination, drive.head_to)),
-        DriveFamily::Ship => entity
-            .ship_locomotion
-            .as_ref()
-            .map_or((None, None), |ship| (ship.destination, ship.head_to)),
-    };
-
-    // Native compares X/Y leptons and deliberately ignores Z.
-    let current_x = i32::from(entity.position.rx) * 256 + entity.position.sub_x.to_num::<i32>();
-    let current_y = i32::from(entity.position.ry) * 256 + entity.position.sub_y.to_num::<i32>();
-    let slot_moving = destination.is_some()
-        || head_to.is_some_and(|point| (point.x, point.y) != (current_x, current_y));
-
-    (slot_moving, head_to.is_some())
-}
 
 /// Drive and Ship read the same four inputs through separate native slots.
 ///
@@ -184,14 +147,14 @@ fn drive_family_motion_slot(entity: &GameEntity, family: DriveFamily) -> (bool, 
 fn drive_family(
     entity: &GameEntity,
     binary_frame: u32,
-    family: DriveFamily,
+    family: TrackFamily,
 ) -> LocomotorReadyState {
     let turning_active = entity
         .body_facing
         .as_ref()
         .is_some_and(|facing| facing.is_rotating(binary_frame));
 
-    let (slot_moving, head_to_nonnull) = drive_family_motion_slot(entity, family);
+    let (slot_moving, head_to_nonnull) = super::track_head::motion_state(entity, family);
 
     // Existing adapter caches the signed speed after two truncations, retaining
     // the low-fraction DLPH/SQD frame where a positive fraction yields zero.
@@ -200,13 +163,13 @@ fn drive_family(
     let owner_speed = entity.foot_speed.cached_current_speed;
 
     match family {
-        DriveFamily::Drive => LocomotorReadyState::Drive {
+        TrackFamily::Drive => LocomotorReadyState::Drive {
             turning_active,
             slot_moving,
             head_to_nonnull,
             owner_speed,
         },
-        DriveFamily::Ship => LocomotorReadyState::Ship {
+        TrackFamily::Ship => LocomotorReadyState::Ship {
             turning_active,
             slot_moving,
             head_to_nonnull,
@@ -271,52 +234,21 @@ fn jumpjet(locomotor: &LocomotorState) -> LocomotorReadyState {
     }
 }
 
-/// Walk's readiness inputs.
-///
-/// Native predicate: `moving_byte != 0 && applied_speed > 0 && step_coord_nonnull`.
-/// All three conjuncts and their order are verified.
-///
-/// The third input is the locomotor's **next-step** coord, not its final
-/// destination, despite the enum field's name. Natively that coord is a
-/// *sub-cell* point, so it is null in two states our input is not:
-///
-/// 1. On the tick a move order is issued — the moving byte is set synchronously
-///    by the head-to call, but the coord is only filled by the next movement
-///    step.
-/// 2. When the next cell has no free infantry sub-cell to reserve.
-///
-/// In both, native answers not-moving and we answer moving. **This is DRIFT in
-/// the stall direction, recorded not fixed**: `LocomotorState::subcell_dest` is
-/// the structural match, but it is not cleared when a sub-cell reservation
-/// fails, so switching to it would trade an over-inclusive input for a stale
-/// one. Closing it means giving that field the native coord's lifetime.
-///
-/// The practical exposure is bounded by the first two conjuncts, which both key
-/// off `live_move` below: a walker that is blocked or has no movement target
-/// already reports not-moving regardless of this term. What is left is a
-/// one-tick disagreement on the tick an infantry move order is issued, and the
-/// sub-cell-contention case in a crowded cell.
-///
-/// The blocked-phase exclusion is **not** VERA-internal, as an earlier revision
-/// of this comment claimed. Native reaches the same answer for a blocked walker
-/// by a different mechanism — its next-step coord stays null, so the third
-/// conjunct fails — where we exclude the phase directly. Same outcome, different
-/// mechanism.
+/// Walk75AB40 calls IsMoving75AB30, reads Foot+578 >0, then tests the
+/// retained step XYZ. The Walk owner now retains all three inputs; NavCom,
+/// MovementTarget and GroundMovePhase are not authorities for this query.
+/// Project the fixed fraction's sign to 1/0 without a float conversion.
 fn walk(entity: &GameEntity, locomotor: &LocomotorState) -> LocomotorReadyState {
-    let live_move = entity.movement_target.is_some() && locomotor.phase != GroundMovePhase::Blocked;
-
     LocomotorReadyState::Walk {
-        moving_byte: u8::from(live_move),
-        // Native's speed fraction here is the owner's, written by the walk
-        // movement step from a range of values, not just 1.0 — so this two-value
-        // mapping is an approximation. It is sound for the *predicate*, which
-        // only asks `> 0.0`, and it is the conservative side: it reads zero
-        // whenever there is no live move.
-        applied_speed_bits: if live_move { F64_BITS_ONE } else { 0 },
-        destination_nonnull: entity
-            .movement_target
-            .as_ref()
-            .is_some_and(|target| target.path.get(target.next_index).is_some()),
+        moving_byte: u8::from(locomotor.walk_is_moving().unwrap_or(false)),
+        applied_speed_bits: if entity.foot_speed.applied_fraction > SIM_ZERO {
+            F64_BITS_ONE
+        } else {
+            0
+        },
+        destination_nonnull: locomotor
+            .step_head()
+            .is_some_and(|c| c.x != 0 || c.y != 0 || c.z != 0),
     }
 }
 

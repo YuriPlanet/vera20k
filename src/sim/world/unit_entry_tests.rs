@@ -30,6 +30,15 @@ fn unit_entry_matches_original_playfield_boundary_permissions() {
     );
 }
 
+#[test]
+fn unit_entry_reads_actual_blocker_movement_state() {
+    compare_rows(
+        include_str!("../../../tools/spatial_oracle/unit_entry_motion.json"),
+        56,
+        true,
+    );
+}
+
 fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
     let rows: serde_json::Value = serde_json::from_str(json).unwrap();
     let mut mismatches = Vec::new();
@@ -243,6 +252,53 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                 blocker.foot_occupation_enabled = node["occupation"].as_bool().unwrap_or(true);
                 if !building {
                     blocker.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+                }
+                if let Some(state) = node.get("motion") {
+                    use crate::sim::components::{
+                        DriveCoord, DriveLocomotionRuntime, ShipLocomotionRuntime,
+                    };
+                    use crate::sim::movement::locomotion::piggyback::LocomotorRuntimePayload;
+                    let coordinate = |v: &serde_json::Value| {
+                        let c = DriveCoord {
+                            x: v[0].as_i64().unwrap() as i32,
+                            y: v[1].as_i64().unwrap() as i32,
+                            z: v[2].as_i64().unwrap() as i32,
+                        };
+                        (c.x != 0 || c.y != 0 || c.z != 0).then_some(c)
+                    };
+                    blocker.position.sub_x = SimFixed::from_num(128);
+                    blocker.position.sub_y = SimFixed::from_num(128);
+                    let head = coordinate(&state["head"]);
+                    match state["family"].as_str().unwrap() {
+                        "drive" => {
+                            blocker.drive_locomotion = Some(DriveLocomotionRuntime {
+                                destination: coordinate(&state["destination"]),
+                                head_to: head,
+                                ..Default::default()
+                            })
+                        }
+                        "ship" => {
+                            blocker.locomotor =
+                                Some(LocomotorState::for_test_kind(LocomotorKind::Ship));
+                            blocker.ship_locomotion = Some(ShipLocomotionRuntime {
+                                destination: coordinate(&state["destination"]),
+                                head_to: head,
+                                ..Default::default()
+                            });
+                        }
+                        "walk" => {
+                            blocker.category = EntityCategory::Infantry;
+                            let mut loco = LocomotorState::for_test_kind(LocomotorKind::Walk);
+                            let LocomotorRuntimePayload::Walk(walk) = &mut loco.runtime_payload
+                            else {
+                                unreachable!()
+                            };
+                            walk.moving = state["moving"].as_bool().unwrap();
+                            walk.head = head;
+                            blocker.locomotor = Some(loco);
+                        }
+                        _ => unreachable!(),
+                    }
                 }
                 if node["nav"].as_bool().unwrap_or(false) {
                     blocker.navigation.nav_com = Some(NavTargetRef::cell(11, 10));

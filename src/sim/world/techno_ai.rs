@@ -5822,10 +5822,19 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
             .in_logic_vector = true;
     }
 
-    /// Drive the Walk readiness producer's inputs: a live movement target with a
-    /// remaining path step reads as moving, its absence as stopped.
+    /// Supply the retained Walk byte/head and shared Foot fraction read by
+    /// native75AB40; a compatibility path alone cannot establish readiness.
     fn set_walking(sim: &mut Simulation, id: u64, walking: bool) {
         let entity = sim.substrate.entities.get_mut(id).expect("fixture entity");
+        let head = walking.then(|| crate::sim::components::DriveCoord::cell(6, 5, 0));
+        let loco = entity.locomotor.as_mut().unwrap();
+        loco.set_step_head(head);
+        loco.set_walk_destination(head);
+        entity.foot_speed.applied_fraction = if walking {
+            crate::util::fixed_math::SIM_ONE
+        } else {
+            crate::util::fixed_math::SIM_ZERO
+        };
         entity.movement_target = walking.then(|| crate::sim::components::MovementTarget {
             path: vec![(5, 5), (6, 5)],
             next_index: 1,
@@ -5902,6 +5911,20 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
              test proves nothing"
         );
         assert_eq!(e.mission.current(), MissionId::NONE);
+
+        // Retiring the path adapter alone does not finish a paid Walk step.
+        sim.substrate.entities.get_mut(1).unwrap().movement_target = None;
+        sim.object_ai_post_movement_promote(Some(&rules));
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .mission
+                .queued()
+                .known(),
+            Some(MissionType::Move)
+        );
 
         // Movement ended during the tick's movement phases.
         set_walking(&mut sim, 1, false);

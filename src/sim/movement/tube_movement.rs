@@ -606,13 +606,18 @@ fn scatter_exit_blockers(
 }
 
 fn locomotor_is_moving(entity: &GameEntity) -> bool {
-    if entity.locomotor.as_ref().is_some_and(|loco| {
-        loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Drive
-    }) {
-        super::drive_locomotion::drive_locomotor_is_moving(entity)
-    } else {
-        entity.movement_target.is_some()
-            || crate::sim::movement::track_head::committed_track_head(entity).is_some()
+    use super::track_process::TrackFamily;
+    use crate::rules::locomotor_type::LocomotorKind;
+    match entity.locomotor.as_ref().map(|l| l.active_kind()) {
+        Some(LocomotorKind::Drive) => super::track_head::motion_state(entity, TrackFamily::Drive).0,
+        Some(LocomotorKind::Ship) => super::track_head::motion_state(entity, TrackFamily::Ship).0,
+        Some(LocomotorKind::Walk) => entity
+            .locomotor
+            .as_ref()
+            .and_then(|l| l.walk_is_moving())
+            .unwrap_or(false),
+        // Other families still require their retained-state/lifecycle migration.
+        _ => entity.movement_target.is_some(),
     }
 }
 
@@ -797,6 +802,48 @@ mod tests {
     use crate::sim::components::{DriveLocomotionRuntime, Health};
     use crate::sim::game_entity::GameEntity;
     use crate::sim::occupancy::CellListInsertion;
+
+    #[test]
+    fn tube_exit_scatter_skips_retained_walk_motion_without_an_order() {
+        use crate::rules::locomotor_type::LocomotorKind;
+        use crate::sim::movement::locomotor::LocomotorState;
+        let mut actor = GameEntity::test_default(2, "E1", "Americans", 5, 5);
+        actor.category = EntityCategory::Infantry;
+        let mut loco = LocomotorState::for_test_kind(LocomotorKind::Walk);
+        loco.set_walk_destination(Some(DriveCoord::cell(6, 5, 0)));
+        actor.locomotor = Some(loco);
+        let before = serde_json::to_value(&actor).unwrap();
+        let mut entities = EntityStore::new();
+        entities.insert(actor);
+        let mut occupancy = OccupancyGrid::new();
+        occupancy.add(
+            5,
+            5,
+            2,
+            MovementLayer::Ground,
+            Some(0),
+            CellListInsertion::PrependNonBuilding,
+        );
+        let mut rng = SimRng::new(42);
+        let before_rng = rng.state();
+        scatter_exit_blockers(
+            &mut entities,
+            1,
+            (5, 5),
+            Some(&PathGrid::new(10, 10)),
+            None,
+            &occupancy,
+            None,
+            &StringInterner::default(),
+            &mut rng,
+            crate::sim::movement::DestinationTiming::new(0, 60),
+        );
+        assert_eq!(rng.state(), before_rng);
+        assert_eq!(
+            serde_json::to_value(entities.get(2).unwrap()).unwrap(),
+            before
+        );
+    }
 
     fn flat_cell(rx: u16, ry: u16, tube_index: Option<TubeId>) -> ResolvedTerrainCell {
         let speed_costs = SpeedCostProfile::default();

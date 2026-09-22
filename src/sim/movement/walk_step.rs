@@ -20,7 +20,7 @@ pub(super) fn advance(
         .as_ref()
         .and_then(|loco| loco.step_head())
         .expect("paid Walk requires its admitted head");
-    entity.foot_speed.applied_fraction = SIM_ONE; // owner +544 / Foot4D3710
+    entity.foot_speed.applied_fraction = SIM_ONE; // owner +578 / Foot4D3710
     let speed = super::foot_speed::owner_current_speed_from_fraction(
         adjusted_speed,
         entity.foot_speed.applied_fraction,

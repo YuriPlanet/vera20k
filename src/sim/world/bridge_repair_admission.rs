@@ -886,11 +886,21 @@ fn damage_aggregate(live: &LivePublication<'_>, e: &GameEntity, obj: &ObjectType
 fn moving(e: &GameEntity) -> bool {
     match e.locomotor.as_ref().map(|l| l.kind) {
         Some(LocomotorKind::Drive) => crate::sim::movement::drive_locomotor_is_moving(e),
-        Some(LocomotorKind::Ship) => e
-            .ship_locomotion
+        Some(LocomotorKind::Ship) => {
+            crate::sim::movement::track_head::motion_state(
+                e,
+                crate::sim::movement::track_process::TrackFamily::Ship,
+            )
+            .0
+        }
+        Some(LocomotorKind::Walk) => e
+            .locomotor
             .as_ref()
-            .is_some_and(|s| s.destination.is_some() || s.head_to.is_some()),
-        Some(LocomotorKind::Walk | LocomotorKind::Hover) => {
+            .and_then(|l| l.walk_is_moving())
+            .unwrap_or(false),
+        // OPEN Hover514C30 reads retained destination OR head XYZ. The current
+        // payload retains only its head; NavCom remains the previous adapter.
+        Some(LocomotorKind::Hover) => {
             e.locomotor
                 .as_ref()
                 .is_some_and(|l| l.step_head().is_some())

@@ -1202,13 +1202,16 @@ pub fn scatter_blocker(
     {
         return false;
     }
-    // MovementTarget is VERA's existing walking destination authority. Native
-    // WalkLocomotion::Is_Moving (0x0075AB30) reads its moving byte, distinct
-    // from Is_Moving_Now; an installed target stands in for that byte here.
+    // Infantry51D16B queries IsMoving before demoting force. Walk75AB30 reads
+    // its retained byte, independently of NavCom, paid head or path adapter.
+    // Other families keep the prior adapter pending their state migration.
+    let moving = blocker
+        .locomotor
+        .as_ref()
+        .and_then(|l| l.walk_is_moving())
+        .unwrap_or_else(|| blocker.movement_target.is_some());
     let is_fraidycat = blocker_is_fraidycat(entities, blocker_id, rules, interner);
-    if blocker.movement_target.is_some()
-        && !moving_blocker_accepts_forced_scatter(blocker, rules, is_fraidycat)
-    {
+    if moving && !moving_blocker_accepts_forced_scatter(blocker, rules, is_fraidycat) {
         return false;
     }
     let bpos = (blocker.position.rx, blocker.position.ry);
@@ -2906,12 +2909,46 @@ mod tests {
             if flag("has_target") {
                 gi.attack_target = Some(crate::sim::combat::AttackTarget::new(9));
             }
-            let admitted = !flag("moving")
-                || moving_blocker_accepts_forced_scatter(&gi, Some(&rules), flag("fraidycat"));
-            assert_eq!(admitted, flag("gate_admitted"), "native case: {case}");
-            checked += 1;
+            for has_adapter in [false, true] {
+                let mut actor = gi.clone();
+                let mut loco = super::super::locomotor::LocomotorState::for_test_kind(
+                    crate::rules::locomotor_type::LocomotorKind::Walk,
+                );
+                loco.set_walk_destination(
+                    flag("moving").then(|| crate::sim::components::DriveCoord::cell(6, 5, 0)),
+                );
+                actor.locomotor = Some(loco);
+                actor.movement_target = has_adapter.then(moving_target);
+                let before = serde_json::to_value(&actor).unwrap();
+                let mut store = EntityStore::new();
+                store.insert(actor);
+                let mut rng = SimRng::new(42);
+                let before_rng = rng.state();
+                let admitted = scatter_blocker(
+                    &mut store,
+                    1,
+                    Some(&PathGrid::new(10, 10)),
+                    None,
+                    &OccupancyGrid::new(),
+                    MovementLayer::Ground,
+                    &mut rng,
+                    Some(&rules),
+                    &crate::sim::intern::test_interner(),
+                    crate::sim::movement::DestinationTiming::new(0, 60),
+                );
+                assert_eq!(
+                    admitted,
+                    flag("gate_admitted"),
+                    "native case: {case}; adapter={has_adapter}"
+                );
+                if !admitted {
+                    assert_eq!(rng.state(), before_rng);
+                    assert_eq!(serde_json::to_value(store.get(1).unwrap()).unwrap(), before);
+                }
+                checked += 1;
+            }
         }
-        assert_eq!(checked, 32);
+        assert_eq!(checked, 64);
     }
 
     #[test]

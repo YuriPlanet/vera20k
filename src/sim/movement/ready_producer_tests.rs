@@ -7,6 +7,7 @@ use super::*;
 use crate::sim::components::{
     DriveCoord, DriveLocomotionRuntime, MovementTarget, ShipLocomotionRuntime,
 };
+use crate::sim::movement::locomotor::GroundMovePhase;
 use crate::sim::movement::teleport_movement::TeleportState;
 use crate::util::fixed_math::{SIM_ONE, SimFixed};
 
@@ -182,14 +183,16 @@ fn idle_walker_reports_not_moving() {
 #[test]
 fn walking_infantry_reports_moving() {
     let mut entity = entity_with(LocomotorKind::Walk);
-    entity.movement_target = Some(moving_target(10));
+    let head = DriveCoord::cell(6, 5, 0);
+    let loco = entity.locomotor.as_mut().unwrap();
+    loco.set_walk_destination(Some(head));
+    loco.set_step_head(Some(head));
+    entity.foot_speed.applied_fraction = SIM_ONE;
     let state = ready_state_for(&entity, 100).expect("Walk has a producer");
     assert!(state.is_moving_now());
 }
 
-/// The stall case this family's conservative floor exists for: a walker that is
-/// blocked keeps its movement target while it waits for a repath. Reporting it
-/// as moving would defer its mission for as long as it stays blocked.
+/// An outstanding order without an admitted head cannot defer commencement.
 #[test]
 fn blocked_walker_reports_not_moving() {
     let mut entity = entity_with(LocomotorKind::Walk);
@@ -202,6 +205,106 @@ fn blocked_walker_reports_not_moving() {
         !state.is_moving_now(),
         "a blocked walker must not defer its mission indefinitely"
     );
+}
+
+#[test]
+fn walk_stop_keeps_paid_head_readiness_until_retirement_and_restore() {
+    let mut entity = entity_with(LocomotorKind::Walk);
+    let head = DriveCoord::cell(6, 5, 0);
+    let loco = entity.locomotor.as_mut().unwrap();
+    loco.set_walk_destination(Some(head));
+    loco.set_step_head(Some(head));
+    loco.set_walk_destination(None);
+    loco.phase = GroundMovePhase::Blocked;
+    entity.foot_speed.applied_fraction = SIM_ONE;
+    assert!(entity.movement_target.is_none());
+    assert!(is_moving_now_for(&entity, 100));
+    let mut restored: GameEntity =
+        serde_json::from_value(serde_json::to_value(&entity).unwrap()).unwrap();
+    assert!(is_moving_now_for(&restored, 100));
+    restored.locomotor.as_mut().unwrap().set_step_head(None);
+    assert!(!is_moving_now_for(&restored, 100));
+    assert_eq!(
+        restored.locomotor.as_ref().unwrap().walk_is_moving(),
+        Some(true)
+    );
+}
+
+#[test]
+fn retained_motion_and_walk_readiness_match_original_queries() {
+    use crate::sim::movement::locomotion::piggyback::LocomotorRuntimePayload;
+    let rows: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/locomotor_moving.json"
+    ))
+    .unwrap();
+    assert_eq!(rows.as_array().unwrap().len(), 84);
+    let coord = |v: &serde_json::Value| DriveCoord {
+        x: v[0].as_i64().unwrap() as i32,
+        y: v[1].as_i64().unwrap() as i32,
+        z: v[2].as_i64().unwrap() as i32,
+    };
+    let optional = |c: DriveCoord| (c.x != 0 || c.y != 0 || c.z != 0).then_some(c);
+    for row in rows.as_array().unwrap() {
+        let input = &row["input"];
+        let kind = match input["family"].as_str().unwrap() {
+            "drive" => LocomotorKind::Drive,
+            "ship" => LocomotorKind::Ship,
+            "walk" => LocomotorKind::Walk,
+            _ => unreachable!(),
+        };
+        let mut entity = entity_with(kind);
+        let current = coord(&input["current"]);
+        entity.position.rx = (current.x / 256) as u16;
+        entity.position.ry = (current.y / 256) as u16;
+        entity.position.sub_x = SimFixed::from_num(current.x % 256);
+        entity.position.sub_y = SimFixed::from_num(current.y % 256);
+        let head = optional(coord(&input["head"]));
+        match kind {
+            LocomotorKind::Drive => {
+                entity.drive_locomotion = Some(DriveLocomotionRuntime {
+                    destination: optional(coord(&input["destination"])),
+                    head_to: head,
+                    ..Default::default()
+                })
+            }
+            LocomotorKind::Ship => {
+                entity.ship_locomotion = Some(ShipLocomotionRuntime {
+                    destination: optional(coord(&input["destination"])),
+                    head_to: head,
+                    ..Default::default()
+                })
+            }
+            LocomotorKind::Walk => {
+                let LocomotorRuntimePayload::Walk(state) =
+                    &mut entity.locomotor.as_mut().unwrap().runtime_payload
+                else {
+                    unreachable!()
+                };
+                state.head = head;
+                state.moving = input["moving"].as_bool().unwrap();
+                entity.foot_speed.applied_fraction =
+                    SimFixed::from_num(input["speed"].as_f64().unwrap());
+            }
+            _ => unreachable!(),
+        }
+        // The compatibility path/order must not affect any represented query.
+        for has_order in [false, true] {
+            entity.movement_target = has_order.then(|| moving_target(20));
+            entity.navigation.nav_com =
+                has_order.then(|| crate::sim::components::NavTargetRef::cell(6, 5));
+            let moving = if kind == LocomotorKind::Walk {
+                assert_eq!(
+                    is_moving_now_for(&entity, 100),
+                    row["moving_now"].as_bool().unwrap(),
+                    "{row}"
+                );
+                entity.locomotor.as_ref().unwrap().walk_is_moving().unwrap()
+            } else {
+                is_moving_for_unit_shp_draw(&entity)
+            };
+            assert_eq!(moving, row["moving"].as_bool().unwrap(), "{row}");
+        }
+    }
 }
 
 /// A hover unit with no movement work is not moving, and a stale speed request

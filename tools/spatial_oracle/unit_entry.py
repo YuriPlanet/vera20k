@@ -114,6 +114,21 @@ def query(case):
                     u.mem_write(address + 0x368, b'\x00\x01')
             if not building:
                 call(0x4AF540, loco, [])
+                if 'motion' in node:
+                    state = node['motion']
+                    family = state['family']
+                    if family == 'walk':
+                        u.mem_write(address, dwords(0x7EB058))
+                        u.mem_write(address + 0x6C0, dwords(typ))
+                        u.mem_write(typ, dwords(0x7EB610))
+                        u.mem_write(loco + 4, dwords(0x7F69F8))
+                        u.mem_write(loco + 4 + 0x24, dwords(*state['head']))
+                        u.mem_write(loco + 4 + 0x30, bytes([state['moving']]))
+                    else:
+                        if family == 'ship':
+                            call(0x69EC50, loco, [])
+                        u.mem_write(loco + 4 + 0x30, dwords(*state['destination']))
+                        u.mem_write(loco + 4 + 0x3C, dwords(*state['head']))
                 u.mem_write(loco + 0xC, dwords(address))
                 u.mem_write(address + 0x674, dwords(loco + 4))
                 u.mem_write(address + 0x6B6, bytes([node.get('occupation', True)]))
@@ -136,6 +151,8 @@ def query(case):
         if address in (0x73F0A0, 0x4D9C10, 0x55ABF0, 0x73FC24, 0x47EBA0):
             seen.append(hex(address))
         elif case.get('trace_boundary') and address in (0x578540, 0x4DA1D0, 0x6EC300, 0x578460):
+            seen.append(hex(address))
+        elif case.get('trace_motion') and address in (0x4AFB80, 0x69F290, 0x75AB30):
             seen.append(hex(address))
     u.hook_add(UC_HOOK_CODE, observe)
     before = bytes(u.mem_read(EXTRA, 0x30000))

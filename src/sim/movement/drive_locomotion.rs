@@ -30,18 +30,7 @@ const DRIVE_DESTINATION_BRAKE_FLOOR: SimFixed = SimFixed::lit("0.3");
 /// additionally folds in hull rotation and the live per-frame speed — a Drive
 /// unit with a destination but zero speed is `Is_Moving`, not `Is_Moving_Now`.
 pub(crate) fn drive_locomotor_is_moving(entity: &GameEntity) -> bool {
-    let Some(drive) = entity.drive_locomotion.as_ref() else {
-        return false;
-    };
-    if drive.destination.is_some() {
-        return true;
-    }
-    let Some(head) = drive.head_to else {
-        return false;
-    };
-    let owner_x = i32::from(entity.position.rx) * 256 + entity.position.sub_x.to_num::<i32>();
-    let owner_y = i32::from(entity.position.ry) * 256 + entity.position.sub_y.to_num::<i32>();
-    head.x != owner_x || head.y != owner_y
+    super::track_head::motion_state(entity, super::track_process::TrackFamily::Drive).0
 }
 
 /// Unit -> Infantry NavCom refreshes among `candidates`, visited in ascending
