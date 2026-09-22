@@ -118,6 +118,13 @@ pub(crate) struct BaseDefenseResponseState {
     pub(crate) cooldown_duration_frames: i32,
 }
 
+impl BaseDefenseResponseState {
+    /// `TechnoClass::Set_ArchiveTarget @ 0x0070C610` (Techno+0x218).
+    pub(crate) fn set_archive_target(&mut self, target: Option<TargetKind>) {
+        self.archive_target = target;
+    }
+}
+
 impl Default for BaseDefenseResponseState {
     fn default() -> Self {
         Self {
@@ -1038,6 +1045,30 @@ pub struct GameEntity {
     /// money transfer. Hashed (v135) and persisted.
     #[serde(default)]
     pub draining_me: Option<u64>,
+    /// Foot+69C `ParasiteImUsing`: this owner's ParasiteClass, allocated by
+    /// `TechnoClass::Init_Managers @ 0x006F4145` for a weapon-0 Parasite
+    /// warhead (attack dog, Terror Drone). Hashed and persisted (v193).
+    #[serde(default)]
+    pub parasite: Option<Box<crate::sim::combat::parasite::ParasiteState>>,
+    /// Foot+694 `ParasiteEatingMe`: the owner whose parasite is attached to
+    /// this victim (AttachTo `0x0062AB2B`). Hashed and persisted (v193).
+    #[serde(default)]
+    pub parasite_eating_me: Option<u64>,
+    /// Foot+698: frame before which parasite shots at this Foot are refused
+    /// (`TechnoClass::Fire @ 0x006FF81F`, GetFireError `0x006FCAE1`).
+    #[serde(default)]
+    pub parasite_launch_lock: u32,
+    /// Foot+6A0 ParalysisTimer, read through [`Self::is_paralyzed`]. FootClass
+    /// ctor `0x004D33FC` starts it at the construction frame with zero
+    /// duration; ParasiteClass arms it (release, bites) and clears it.
+    #[serde(default)]
+    pub paralysis_timer: crate::sim::timer::CdTimer,
+    /// Techno+432 ReselectIfLimboed memo (`TechnoClass::Fire @ 0x006FF79C`),
+    /// consumed by a successful parasite release. Process-local like
+    /// `selected`: written only for the local player's selection, so it is
+    /// saved but never folded into the peer hash.
+    #[serde(default)]
+    pub limbo_reselect: bool,
     /// Debug event log — records movement/state transitions for the inspector panel.
     /// Only allocated when debug inspector is active (X hotkey). Not included in state hashing.
     #[serde(skip)]
@@ -1467,6 +1498,11 @@ impl GameEntity {
             ),
             drain_target: None,
             draining_me: None,
+            parasite: None,
+            parasite_eating_me: None,
+            parasite_launch_lock: 0,
+            paralysis_timer: crate::sim::timer::CdTimer::started(construction_frame as i32, 0),
+            limbo_reselect: false,
             debug_log: None,
         }
     }
@@ -1634,6 +1670,14 @@ impl GameEntity {
             5, // vision_range = 5 cells
             true,
         )
+    }
+
+    /// FootClass::IsParalyzed `0x004DE770` (vtable +0x380): the Foot+6A0
+    /// timer has time left. Readers: GetFireError `0x006FC623`/`0x006FCCD5`,
+    /// CloakingTick `0x006FB775`, ShouldUncloak `0x006FBCC0`, and the
+    /// locomotor movement setters.
+    pub fn is_paralyzed(&self, frame: u32) -> bool {
+        self.paralysis_timer.remaining(frame as i32) != 0
     }
 
     /// Whether this entity is alive (health > 0).

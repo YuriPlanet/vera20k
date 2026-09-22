@@ -181,6 +181,22 @@ impl Simulation {
                 obj,
             ));
         }
+        // InitManagers6F40FC..6F414E: a weapon-0 Parasite warhead owns its
+        // ParasiteClass (Foot+69C) from construction, not from the first shot.
+        if let Some(rules) = rules
+            && crate::sim::combat::parasite::type_allocates_parasite(
+                rules,
+                obj,
+                category,
+                ge.veterancy,
+            )
+        {
+            ge.parasite = Some(Box::new(
+                crate::sim::combat::parasite::ParasiteState::constructed(
+                    self.session.binary_frame,
+                ),
+            ));
+        }
         // Initialize aircraft mission for Fly-locomotor aircraft.
         if matches!(origin, ComponentOrigin::Runtime)
             && ge

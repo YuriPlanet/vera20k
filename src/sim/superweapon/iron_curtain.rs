@@ -74,6 +74,8 @@ pub fn launch(
                         );
                         sim.commit_direct_damage_receiver(rules, overlay_registry, event);
                     }
+                } else if matches!(category, EntityCategory::Unit | EntityCategory::Aircraft) {
+                    foot_iron_curtain(sim, rules, overlay_registry, id, duration);
                 } else if let Some(entity) = sim.substrate.entities.get_mut(id) {
                     // TechnoClass::IronCurtain 0x0070E2B0 has no health gate.
                     apply_invulnerability(entity, current_frame, duration, InvulnKind::IronCurtain);
@@ -103,7 +105,63 @@ pub fn launch(
     true
 }
 
-/// Spawn the invoke animation at the target cell.
+/// FootClass::IronCurtain `0x004DEAE0`, the Unit and Aircraft override
+/// (`vtable__UnitClass`/`vtable__AircraftClass` +0x154). An Organic type
+/// (retail DLPH, SQD) receives its authored Strength as C4Warhead damage with
+/// no source, no sourceHouse and ignoreDefenses=0 instead of the curtain.
+/// Otherwise a parasite eating the unit is forced off (suppression 50, then
+/// ExitUnit `0x0062A4A0`: a drone is deleted, a squid released), Foot+6A0 is
+/// cleared, and TechnoClass::IronCurtain `0x0070E2B0` applies.
+fn foot_iron_curtain(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    id: u64,
+    duration: u32,
+) {
+    let Some(object) = sim
+        .substrate
+        .entities
+        .get(id)
+        .and_then(|entity| rules.object(sim.interner.resolve(entity.type_ref())))
+    else {
+        return;
+    };
+    if object.organic {
+        let event = crate::sim::combat::EntityDamageEvent::direct_receiver(
+            id,
+            object.strength,
+            0,
+            crate::sim::combat::RAD_NO_ATTACKER,
+            None,
+            sim.interner.intern(&rules.bridge_warheads.c4_name),
+            crate::sim::combat::ReceiverCallFlags {
+                ignore_defenses: false,
+                arg6: false,
+            },
+        );
+        sim.commit_direct_damage_receiver(rules, overlay_registry, event);
+        return;
+    }
+    if let Some(eater) = sim
+        .substrate
+        .entities
+        .get(id)
+        .and_then(|entity| entity.parasite_eating_me)
+    {
+        sim.parasite_force_release(
+            eater,
+            crate::sim::combat::parasite::FORCED_RELEASE_SUPPRESSION_FRAMES,
+            rules,
+        );
+    }
+    let frame = sim.session.binary_frame;
+    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+        entity.paralysis_timer = crate::sim::timer::CdTimer::started(frame as i32, 0);
+        apply_invulnerability(entity, frame, duration, InvulnKind::IronCurtain);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

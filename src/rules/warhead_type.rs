@@ -203,9 +203,18 @@ pub struct WarheadType {
     pub radiation: bool,
     /// Squid finishing move — kills a weakened victim outright instead of
     /// dealing the parasite's per-cycle damage. `WarheadTypeClass+0x174`
-    /// (ReadINI `0x0075D949`, key string `0x00847D10`); consumed by
-    /// `ParasiteClass::AI @ 0x006297F0`, not by the detonation chain.
+    /// (ReadINI `0x0075D949`, key string `0x00847D10`); consumed by the
+    /// ParasiteClass squid grapple `0x006297F0` (run from ParasiteClass AI
+    /// `0x00629FD0`), not by the detonation chain.
     pub culling: bool,
+    /// Frames a parasite hit paralyzes its victim. `WarheadTypeClass+0x170`
+    /// (ReadInteger at `0x0075D92A`, key string `0x00847D18`); ParasiteClass
+    /// AI restarts the victim's Foot+6A0 timer with it on every bite/grapple.
+    pub paralyzes: i32,
+    /// `Sonic=` (`WarheadTypeClass+0x14B`, ReadINI `0x0075D5A4`, key string
+    /// `0x00847DF0`). FootClass ReceiveDamage `0x004D7330` ejects a parasite
+    /// from a victim hit by a Sonic warhead.
+    pub sonic: bool,
     /// Spy disguise warhead. `WarheadTypeClass+0x175` (ReadINI `0x0075D969`,
     /// key string `0x00847D00`), tested by the detonation chain at
     /// `BulletClass::DetonateAtCoord @ 0x00469a03`.
@@ -415,6 +424,8 @@ impl WarheadType {
             electric: section.get_bool("Electric").unwrap_or(false),
             radiation: section.get_bool("Radiation").unwrap_or(false),
             culling: section.get_bool("Culling").unwrap_or(false),
+            paralyzes: section.get_i32("Paralyzes").unwrap_or(0),
+            sonic: section.get_bool("Sonic").unwrap_or(false),
             makes_disguise: section.get_bool("MakesDisguise").unwrap_or(false),
             electric_assault: section.get_bool("ElectricAssault").unwrap_or(false),
             bomb_disarm: section.get_bool("BombDisarm").unwrap_or(false),

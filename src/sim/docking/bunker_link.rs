@@ -45,7 +45,8 @@ pub fn can_auto_deploy_here(sim: &Simulation, unit_id: u64, rules: &RuleSet) -> 
     let Some(obj) = sim.object_type(unit.type_ref(), rules) else {
         return false;
     };
-    obj.bunkerable && obj.primary.is_some()
+    // CanEnterBunker 0x0070FBAF..0x0070FBC3: an infected Foot is refused.
+    obj.bunkerable && obj.primary.is_some() && unit.parasite_eating_me.is_none()
 }
 
 /// Bunker install state 5 (459301..459337): reciprocal links, deselection,

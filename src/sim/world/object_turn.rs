@@ -474,6 +474,18 @@ impl Simulation {
             .is_some_and(|state| {
                 state.phase == crate::sim::movement::teleport_movement::TeleportPhase::Relocate
             });
+        // Teleport Process 0x007195BF..0x007195CF: the warp step ejects a
+        // parasite (ExitUnit, no suppression) before the relocation.
+        if teleport_relocating
+            && let Some(rules) = rules
+            && let Some(eater) = sim
+                .substrate
+                .entities
+                .get(stable_id)
+                .and_then(|entity| entity.parasite_eating_me)
+        {
+            sim.parasite_exit_unit(eater, rules);
+        }
         if let Some(rules) = rules {
             let warp_out_type = sim.interner.intern(&rules.general.warp_out.name);
             let mut warp_spawns = Vec::new();
@@ -550,6 +562,11 @@ impl Simulation {
             }
         }
         movement::tick_locomotor_piggyback_restore_one(&mut sim.substrate.entities, stable_id);
+        // FootClass::AI tail 0x004DAEE1..0x004DAEF3, after the piggyback swap:
+        // an infected Foot runs its eater's ParasiteClass AI in its own turn.
+        if let Some(rules) = rules {
+            sim.parasite_ai_for_victim(stable_id, rules, overlay_registry);
+        }
 
         let cell_after_movement = sim
             .substrate

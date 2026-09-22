@@ -917,7 +917,8 @@ pub enum SpecialDetonationAction {
     /// charger-vector append at `0x00452820`. UNIMPLEMENTED (M15d).
     ElectricAssault,
     /// `Parasite=` (`+0x159`), test `0x004693d3` ->
-    /// `ParasiteClass::AttachTo @ 0x0062a980`. UNIMPLEMENTED (M15b).
+    /// `ParasiteClass::AttachTo @ 0x0062a980`, ported in `combat/parasite.rs`
+    /// for visible projectiles (Inviso deliveries skip this dispatch).
     Parasite,
     /// `Temporal=` (`+0x15a`), test `0x00469423` ->
     /// `TemporalClass::InitiateWarp @ 0x0071af20`. UNIMPLEMENTED (M15d).

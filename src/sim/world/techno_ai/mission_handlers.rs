@@ -883,35 +883,74 @@ fn cell_land_type_is(
 ///   writer and meaning are UNKNOWN. Modelling it would be inventing a gate;
 ///   leaving it out can only make the selector run where the original skipped
 ///   it, and the skip case is unidentified.
-/// - the `Area Guard` arm of the no-destination branch. Choosing it over
-///   `Guard` turns on a weapon-ability flag and a type flag that are both
-///   unresolved; the ordinary arm for a player-controlled object is `Guard`,
-///   which is what [`move_arrival_evaluation`] already commits for the same
-///   unresolved branch. Keeping the two consistent matters more than guessing.
+/// - the `Area Guard` arm of the no-destination branch. Its inputs are now
+///   identified: the GUARD_AREA ability (`HasAbility(0x10)` at `0x0051CD4B`),
+///   Type+0xD39 `DefaultToGuardArea` (`0x0051CD5A`, Unit `0x00738B96`), team
+///   membership, and for AI houses CurrentIQ against Rules+0x1440 plus the
+///   slave links. Porting it is its own mechanism (recorded in
+///   `combat/parasite.rs`); until then this commits `Guard`, consistent with
+///   [`move_arrival_evaluation`].
 /// - the AI-only sub-arms, which need a live team and a house-threat field.
 pub(super) fn foot_enter_idle_mode_queue(
     rules: &RuleSet,
     input: MissionHandlerInput,
 ) -> Option<MissionType> {
+    foot_enter_idle_mode_selection(
+        rules,
+        input.category,
+        input.mission,
+        input.has_destination,
+        input.effective_mission,
+    )
+}
+
+/// The Foot Enter_Idle_Mode(0,1) selection on exactly the fields it reads,
+/// applied as a deferred Queue_Mission. Used by release paths outside the
+/// mission dispatcher (a parasite owner leaving its victim, `0x0062A7A3`).
+pub(crate) fn queue_foot_enter_idle_mode(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    let selection = foot_enter_idle_mode_selection(
+        rules,
+        entity.category,
+        entity.mission.current().known(),
+        entity.navigation.nav_com.is_some(),
+        entity.mission.effective().known(),
+    );
+    if let Some(mission) = selection
+        && let Some(entity) = sim.substrate.entities.get_mut(id)
+    {
+        crate::sim::mission::authority::queue_entity_mission_deferred(
+            entity,
+            MissionId::from_known(mission),
+        );
+    }
+}
+
+fn foot_enter_idle_mode_selection(
+    rules: &RuleSet,
+    category: EntityCategory,
+    mission: Option<MissionType>,
+    has_destination: bool,
+    effective_mission: Option<MissionType>,
+) -> Option<MissionType> {
     // The tail gate, evaluated on the committed selector.
     let committed_blocks_assign = matches!(
-        input.mission,
+        mission,
         Some(MissionType::Patrol) | Some(MissionType::AreaGuard)
-    ) || (input.category == EntityCategory::Unit
-        && matches!(
-            input.mission,
-            Some(MissionType::Unload) | Some(MissionType::Eaten)
-        ));
+    ) || (category == EntityCategory::Unit
+        && matches!(mission, Some(MissionType::Unload) | Some(MissionType::Eaten)));
     if committed_blocks_assign {
         return None;
     }
 
-    if input.has_destination {
+    if has_destination {
         return Some(MissionType::Move);
     }
 
     if matches!(
-        input.effective_mission,
+        effective_mission,
         Some(MissionType::Guard) | Some(MissionType::AreaGuard)
     ) {
         return None;
@@ -927,13 +966,13 @@ pub(super) fn foot_enter_idle_mode_queue(
     //
     // Trigger: a caller whose committed and effective missions differ, or one
     // that reaches here with both a destination and a frozen mission. Player
-    // effect: none today — the only live entry is the Attack handler's
-    // no-target exit, where committed == effective == Attack and `[Attack]`
-    // carries neither key. Frequency: zero. Downstream risk: a second producer
+    // effect: none today — the live entries are the Attack handler's no-target
+    // exit and the parasite releases (`queue_foot_enter_idle_mode`), where
+    // committed == effective == Attack and `[Attack]` carries neither key. Frequency: zero. Downstream risk: a second producer
     // would inherit both. (Curiosity for whoever ports it: with a current of -1
     // and only a queued mission, native indexes `MissionControl[-1]` — an
     // out-of-bounds read one entry below the array.)
-    let frozen = input.effective_mission.is_some_and(|mission| {
+    let frozen = effective_mission.is_some_and(|mission| {
         rules
             .mission_control
             .entry(mission)

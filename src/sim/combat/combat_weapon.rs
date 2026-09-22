@@ -213,7 +213,57 @@ pub(crate) enum TargetFacts<'a> {
         /// `HouseClass::Is_Ally_ByObject @ 0x004F9A90` of the attacker's
         /// owner against this target.
         is_ally: bool,
+        /// CanInfect `0x0062A8E0`'s victim-side gates, which GetFireError
+        /// `0x006FCA81..0x006FCAC2` applies to a Parasite warhead.
+        parasite: ParasiteVictimFacts,
     },
+}
+
+/// ParasiteClass CanInfect `0x0062A8E0`, the one implementation both callers
+/// use (AttachTo and GetFireError): a live, unlimboed, uninfected,
+/// Parasiteable Foot outside a tank bunker, plus the water-set cell a Naval
+/// owner requires. GetFireError returns ILLEGAL (5) otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ParasiteVictimFacts {
+    pub(crate) infectable: bool,
+    pub(crate) on_water_set: bool,
+}
+
+impl ParasiteVictimFacts {
+    /// An ordinary infectable land victim; fixtures that do not model parasites.
+    #[cfg(test)]
+    pub(crate) const INFECTABLE_ON_LAND: Self = Self {
+        infectable: true,
+        on_water_set: false,
+    };
+
+    /// A NULL victim cell passes the water gate (`0x00485060` is not reached).
+    pub(crate) fn of(
+        target: &GameEntity,
+        target_obj: &ObjectType,
+        terrain: Option<&ResolvedTerrainGrid>,
+    ) -> Self {
+        let on_water_set = terrain
+            .and_then(|grid| grid.cell(target.position.rx, target.position.ry))
+            .is_none_or(|cell| cell.is_water);
+        Self {
+            infectable: matches!(
+                target.category,
+                EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+            ) && !target.lifecycle.in_limbo
+                && target.lifecycle.object_alive
+                && target.health.current != 0
+                && target.parasite_eating_me.is_none()
+                && target_obj.parasiteable
+                && target.bunker_link.installed_in().is_none(),
+            on_water_set,
+        }
+    }
+
+    /// The owner half: a Naval owner also needs the water-set victim cell.
+    pub(crate) fn admits(self, naval_owner: bool) -> bool {
+        self.infectable && (!naval_owner || self.on_water_set)
+    }
 }
 
 impl TargetFacts<'_> {
@@ -840,6 +890,10 @@ fn targeting_fire_error_blocks(
         // explicit unsupported legality result instead of treating it as Cell.
         TargetFacts::Terrain => true,
         TargetFacts::Cell { land_type, .. } => {
+            // 0x006FCA81: CanInfect(NULL) refuses every cell target.
+            if warhead.parasite {
+                return true;
+            }
             // 0x006FC7EB..0x006FC812: a non-Techno target that is not
             // high-flying needs an AG projectile. `CellClass` vtable `+0x54`
             // (`0x00410530`) always returns 0, so for a cell this is exactly
@@ -863,8 +917,17 @@ fn targeting_fire_error_blocks(
             is_high_flying,
             on_bridge,
             cell_land_type,
+            parasite,
             ..
         } => {
+            // 0x006FCA81..0x006FCAC2: a Parasite warhead is ILLEGAL unless the
+            // firer's ParasiteClass could infect this target (CanInfect
+            // 0x0062A8E0; buildings reach it as NULL). The launch lock
+            // (0x006FCAE1) and Iron Curtain (0x006FCB21) gates read the frame
+            // and are applied at fire admission instead.
+            if warhead.parasite && !parasite.admits(obj.naval) {
+                return true;
+            }
             // 0x006FC705..0x006FC739: `IsHighFlying && !AA` → 5 (3 when the
             // target is this object's `DeployedFrom`; both block the shot).
             //
@@ -1171,8 +1234,8 @@ pub(crate) fn techno_target_facts<'a>(
     terrain: Option<&ResolvedTerrainGrid>,
     is_ally: bool,
 ) -> TargetFacts<'a> {
-    let cell_land_type = terrain
-        .and_then(|grid| grid.cell(target.position.rx, target.position.ry))
+    let cell = terrain.and_then(|grid| grid.cell(target.position.rx, target.position.ry));
+    let cell_land_type = cell
         .map(|cell| cell.yr_cell_land_type)
         .unwrap_or(LandType::Clear.as_index());
     TargetFacts::Techno {
@@ -1183,6 +1246,7 @@ pub(crate) fn techno_target_facts<'a>(
         cell_land_type,
         submerged: target.cloak.as_ref().is_some_and(|cloak| cloak.state != 0),
         is_ally,
+        parasite: ParasiteVictimFacts::of(target, target_obj, terrain),
     }
 }
 
@@ -1968,6 +2032,7 @@ IsLocomotor=yes
             cell_land_type: LandType::Clear.as_index(),
             submerged: false,
             is_ally: false,
+            parasite: ParasiteVictimFacts::INFECTABLE_ON_LAND,
         }
     }
 
@@ -1980,6 +2045,7 @@ IsLocomotor=yes
                 on_bridge,
                 submerged,
                 is_ally,
+                parasite,
                 ..
             } => TargetFacts::Techno {
                 obj,
@@ -1989,6 +2055,10 @@ IsLocomotor=yes
                 cell_land_type: LandType::Water.as_index(),
                 submerged,
                 is_ally,
+                parasite: ParasiteVictimFacts {
+                    on_water_set: true,
+                    ..parasite
+                },
             },
             cell => cell,
         }
@@ -2003,6 +2073,7 @@ IsLocomotor=yes
                 cell_land_type,
                 submerged,
                 is_ally,
+                parasite,
                 ..
             } => TargetFacts::Techno {
                 obj,
@@ -2012,6 +2083,7 @@ IsLocomotor=yes
                 cell_land_type,
                 submerged,
                 is_ally,
+                parasite,
             },
             cell => cell,
         }
@@ -2026,6 +2098,7 @@ IsLocomotor=yes
                 on_bridge,
                 cell_land_type,
                 submerged,
+                parasite,
                 ..
             } => TargetFacts::Techno {
                 obj,
@@ -2035,6 +2108,7 @@ IsLocomotor=yes
                 cell_land_type,
                 submerged,
                 is_ally: true,
+                parasite,
             },
             cell => cell,
         }
@@ -2182,6 +2256,10 @@ IsLocomotor=yes
             cell_land_type: LandType::Water.as_index(),
             submerged: true,
             is_ally: false,
+            parasite: ParasiteVictimFacts {
+                on_water_set: true,
+                ..ParasiteVictimFacts::INFECTABLE_ON_LAND
+            },
         };
         let sqd_t = techno(sqd, TechnoKind::Unit);
         let bsub_t = techno(bsub, TechnoKind::Unit);
@@ -2691,6 +2769,7 @@ IsLocomotor=yes
             cell_land_type,
             submerged,
             is_ally,
+            parasite,
             ..
         } = typhoon
         else {
@@ -2704,6 +2783,7 @@ IsLocomotor=yes
             cell_land_type,
             submerged,
             is_ally,
+            parasite,
         };
         assert_eq!(slot(&rules, "DEST", &dest, Some(&bridged)), 0);
     }
@@ -2732,6 +2812,10 @@ IsLocomotor=yes
             cell_land_type: LandType::Water.as_index(),
             submerged: true,
             is_ally: false,
+            parasite: ParasiteVictimFacts {
+                on_water_set: true,
+                ..ParasiteVictimFacts::INFECTABLE_ON_LAND
+            },
         };
         assert_eq!(
             selected(&rules, "HTNK", &facts(TechnoKind::Unit), &submerged),
@@ -2758,6 +2842,7 @@ IsLocomotor=yes
             cell_land_type: LandType::Beach.as_index(),
             submerged: false,
             is_ally: false,
+            parasite: ParasiteVictimFacts::INFECTABLE_ON_LAND,
         };
         assert_eq!(
             selected(&rules, "AEGIS", &facts(TechnoKind::Unit), &beach),

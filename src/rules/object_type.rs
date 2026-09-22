@@ -1172,8 +1172,27 @@ pub struct ObjectType {
     /// `Underwater=` (`TechnoTypeClass+0xD69`, ReadINI `0x00714D88`).
     pub underwater: bool,
 
-    /// `Organic=` (`TechnoTypeClass+0xD97`, ReadINI `0x0071503F`).
+    /// `Organic=` (`TechnoTypeClass+0xD97`, ReadINI `0x0071503F`). The
+    /// InfantryType constructor stores 1 (`0x00523911`); Unit, Aircraft and
+    /// Building constructors leave 0.
     pub organic: bool,
+
+    /// `Parasiteable=` (`TechnoTypeClass+0xD38`, ReadINI `0x00714F9A`),
+    /// read by ParasiteClass CanInfect `0x0062A8E0`. Infantry (`0x0052390A`),
+    /// Unit (`0x00747297`) and Aircraft (`0x0041C997`) constructors store 1;
+    /// BuildingType leaves 0.
+    pub parasiteable: bool,
+
+    /// `SuppressionThreshold=` (`TechnoTypeClass+0xD6C`, ReadINI `0x0071506D`).
+    /// FootClass ReceiveDamage `0x004D7330` arms the eater's suppression when
+    /// a third party's raw damage exceeds this eater-type value.
+    pub suppression_threshold: i32,
+
+    /// `ReselectIfLimboed=` (`TechnoTypeClass+0xD3C`, `0x007142C1`) and
+    /// `RejoinTeamIfLimboed=` (`+0xD3D`, `0x007142DB`): LimboLaunch memo gates
+    /// in TechnoClass::Fire `0x006FF763`/`0x006FF7A3`.
+    pub reselect_if_limboed: bool,
+    pub rejoin_team_if_limboed: bool,
 
     /// `Unnatural=` (`TechnoTypeClass+0x694`, ReadINI `0x0071496D`).
     pub unnatural: bool,
@@ -2162,7 +2181,16 @@ impl ObjectType {
             naval_targeting: section.get_i32("NavalTargeting").unwrap_or(0),
             land_targeting: section.get_i32("LandTargeting").unwrap_or(0),
             underwater: section.get_bool("Underwater").unwrap_or(false),
-            organic: section.get_bool("Organic").unwrap_or(false),
+            organic: section
+                .get_bool("Organic")
+                .unwrap_or(category == ObjectCategory::Infantry),
+            parasiteable: section.get_bool("Parasiteable").unwrap_or(matches!(
+                category,
+                ObjectCategory::Infantry | ObjectCategory::Vehicle | ObjectCategory::Aircraft
+            )),
+            suppression_threshold: section.get_i32("SuppressionThreshold").unwrap_or(0),
+            reselect_if_limboed: section.get_bool("ReselectIfLimboed").unwrap_or(false),
+            rejoin_team_if_limboed: section.get_bool("RejoinTeamIfLimboed").unwrap_or(false),
             unnatural: section.get_bool("Unnatural").unwrap_or(false),
             is_gattling: section.get_bool("IsGattling").unwrap_or(false),
             turret_count: section.get_i32("TurretCount").unwrap_or(0),

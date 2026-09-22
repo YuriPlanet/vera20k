@@ -16,6 +16,7 @@
 
 mod mission_handlers;
 pub(crate) use mission_handlers::harvester_enter_idle_mode_selector;
+pub(crate) use mission_handlers::queue_foot_enter_idle_mode;
 
 use mission_handlers::*;
 

@@ -73,12 +73,14 @@ fn stock_cloak_tick_facts(
     // - Player effect/frequency: not established for active-retail gameplay.
     // - Downstream risk: none structurally; the predicate is one boolean and
     //   drops into `emp_active` below the day an EMP timer lands.
-    // vt+0x380 (`FootClass 0x004DE770`) reads the `+0x6A0/+0x6A8` timer, whose
-    // duration is only ever written zero, so it is dormant and modelled false.
+    // vt+0x380 is FootClass::IsParalyzed `0x004DE770` (Foot+6A0), armed by
+    // ParasiteClass: a released owner for 3x its ROF, and bitten victims.
     let emp_active = false;
+    let paralyzed = entity.is_paralyzed(sim.session.binary_frame);
     let deploy_pending = entity.deploy_state.is_some();
     let state_zero_head_allows =
-        is_cloakable && !emp_active && !deploy_pending && !chrono_active || rank_cloak;
+        is_cloakable && !emp_active && !paralyzed && !deploy_pending && !chrono_active
+            || rank_cloak;
 
     // CloakingTick's pre-CanAuto destination exclusion is Contact_With_Whom(0)
     // resolving to a WeaponsFactory building (naval-yard repair contact), not
@@ -188,7 +190,12 @@ fn stock_cloak_tick_facts(
     // residuals on `can_auto_cloak` above — `object.cloakable` inside
     // `is_cloakable` is that byte's stock seed, and the crate-granted and
     // `CloakStop=`-while-moving halves are both unreachable in stock data.
-    let should_uncloak = if is_cloakable && !emp_active && !deploy_pending && !chrono_active {
+    let should_uncloak = if is_cloakable
+        && !emp_active
+        && !paralyzed
+        && !deploy_pending
+        && !chrono_active
+    {
         false
     } else if rank_cloak {
         false
@@ -359,8 +366,8 @@ pub(crate) fn sensor_reevaluate_stock_cloak(
 /// Running this after `CloakRuntime::tick` has written the new state instead of
 /// before it is output-equivalent: the admission test reads only the cloaker's
 /// cell, its owner and each receiver's house — never the cloak state.
-fn detach_targeters_on_cloak(sim: &mut Simulation, cloaker_id: u64) {
-    sim.detach_all_pointer_expired(cloaker_id);
+fn detach_targeters_on_cloak(sim: &mut Simulation, cloaker_id: u64, rules: &RuleSet) {
+    sim.detach_all_pointer_expired(cloaker_id, rules);
 }
 
 /// Clockwise-from-north neighbour offsets, native `g_DirectionOffsets`
@@ -652,7 +659,7 @@ pub(super) fn tick_stock_cloak_producer(sim: &mut Simulation, id: u64, rules: &R
         .map(|cloak| cloak.tick(facts, &mut sim.scenario_rng));
     if result.is_some_and(|result| result.began_cloaking) {
         // `StartCloaking @ 0x00703770` opens with `Detach_All(false)`.
-        detach_targeters_on_cloak(sim, id);
+        detach_targeters_on_cloak(sim, id, rules);
     }
     if result.is_some_and(|result| result.completed_cloak) {
         // The 1 → 2 completion at `0x006FBA98` snapshots the still-admitted
@@ -663,7 +670,7 @@ pub(super) fn tick_stock_cloak_producer(sim: &mut Simulation, id: u64, rules: &R
         // each receiver's passive-acquire provenance byte `+0x50C` first, which
         // `represented_assign_target` reproduces.
         let retained = sensor_targeters_in_native_dispatch_order(sim, id);
-        detach_targeters_on_cloak(sim, id);
+        detach_targeters_on_cloak(sim, id, rules);
         for targeter_id in retained {
             if let Some(targeter) = sim.substrate.entities.get_mut(targeter_id) {
                 represented_assign_target(targeter, Some(TargetKind::Entity(id)));

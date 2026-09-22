@@ -497,6 +497,11 @@ pub(crate) fn should_retaliate_from_damage(
     {
         return false;
     }
+    // 0x00708AAA..0x00708AC3: a Foot never retaliates against the parasite
+    // eating it (reachable for owners that stay visible while attached).
+    if victim.parasite_eating_me == Some(attacker_id) {
+        return false;
+    }
 
     selected.weapon.range > SimFixed::ZERO && verses_gate(selected.verses_pct) == VersesGate::Normal
 }

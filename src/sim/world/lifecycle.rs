@@ -3292,14 +3292,17 @@ impl Simulation {
     ///
     /// So a torpedo already in flight at a diving submarine falling to the sub's
     /// last cell instead of tracking it is native behavior, not an approximation.
-    pub(crate) fn detach_all_pointer_expired(&mut self, expired_id: u64) {
+    ///
+    /// The victim's FootClass parasite forward is control-insensitive too, so a
+    /// cloaking host releases its parasite; the rules place the released owner.
+    pub(crate) fn detach_all_pointer_expired(&mut self, expired_id: u64, rules: &RuleSet) {
         if !self.substrate.entities.contains(expired_id) {
             return;
         }
         self.broadcast_pointer_expired(
             expired_id,
             PointerExpiryControl::DetachAll,
-            UninitContext::default(),
+            UninitContext::with_rules(rules),
         );
     }
 
@@ -3401,6 +3404,9 @@ impl Simulation {
                 {
                     manager.pointer_expired(expired_id);
                 }
+                // FootClass::PointerExpired 0x004D998C..0x004D99CD follows the
+                // Techno body: the parasite link and its forward.
+                self.foot_parasite_pointer_expired(listener_id, expired_id, context.rules());
             } else if is_anim {
                 self.expire_anim_owner_reference(listener_id, expired_id);
             } else if is_particle {

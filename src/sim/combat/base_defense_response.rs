@@ -498,7 +498,9 @@ pub(crate) fn respond_to_base_attack(
             continue;
         };
         queue_entity_mission_deferred(responder_entity, MissionId::from_known(mission));
-        responder_entity.base_defense_response.archive_target = Some(TargetKind::Entity(victim_id));
+        responder_entity
+            .base_defense_response
+            .set_archive_target(Some(TargetKind::Entity(victim_id)));
         represented_assign_target(responder_entity, Some(TargetKind::Entity(attacker_id)));
         let (next, overshot) = add_assigned_cost(accumulated, responder_object.cost, budget);
         accumulated = next;

@@ -42,6 +42,7 @@ pub(crate) use receiver_fixture::{
     tick_combat_with_fog_and_main_rng_with_terrain_area,
 };
 pub(crate) mod line_of_fire;
+pub(crate) mod parasite;
 pub mod smudge_dispatch;
 pub(crate) mod threat_range;
 pub(crate) mod veterancy;

@@ -557,7 +557,9 @@ use crate::sim::world::Simulation;
 // 191 -> 192: Fly moving+34, the landing-effect latch +52, the linked
 // AirportBound+18 and Techno+2E8 flight attitude are saved and hashed. A 191
 // save cannot recover an in-progress landing effect or approach pitch.
-const SNAPSHOT_VERSION: u32 = 192;
+// 192 -> 193: ParasiteClass (Foot+69C) and the victim's Foot+694 link,
+// Foot+698 launch lock and Foot+6A0 paralysis timer are saved and hashed.
+const SNAPSHOT_VERSION: u32 = 193;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1861,6 +1863,19 @@ impl Simulation {
             projectile
                 .arm_timer
                 .start(self.session.binary_frame as i32, 0);
+        }
+        // ParasiteClass Load 6295DB..6295F3 does the same for its suppression
+        // and bite timers: a bite is due at once and suppression is dropped.
+        let frame = self.session.binary_frame;
+        for id in self.substrate.entities.keys_sorted() {
+            if let Some(parasite) = self
+                .substrate
+                .entities
+                .get_mut(id)
+                .and_then(|entity| entity.parasite.as_deref_mut())
+            {
+                parasite.restart_timers_after_load(frame);
+            }
         }
         self.rebuild_logic_membership();
         self.rebuild_building_anim_slot_indices();
@@ -3457,7 +3472,8 @@ mod tests {
         // 189 -> 190: Foot neighbor history and retained live counters.
         // 190 -> 191: Fly cruise mode survives save and locomotor suspension.
         // 191 -> 192: Fly moving/landing latch/AirportBound and flight attitude.
-        assert_eq!(super::SNAPSHOT_VERSION, 192);
+        // 192 -> 193: ParasiteClass and the victim's parasite/paralysis fields.
+        assert_eq!(super::SNAPSHOT_VERSION, 193);
     }
 
     #[test]
