@@ -64,9 +64,8 @@ fn shp_body_tint(
 /// Ground bodies, building bibs/anims, and building turret VXLs are emitted as
 /// one parent-owned group so the native global order cannot split their display
 /// call at an atlas boundary.
-/// `top_instances` and aligned `top_pages` receive SHP bodies whose locomotor
-/// puts them above the Ground
-/// band — in stock YR that is the Rocketeer at hover height, the one infantry
+/// `top_instances` and aligned `top_pages` receive SHP bodies registered above
+/// the Ground band — in stock YR that is the Rocketeer at hover height, the one infantry
 /// type on a Jumpjet locomotor.
 /// `parachute_body_depths` collects the sort key of every body currently under
 /// a parachute, keyed by entity — see [`ParachuteBodyDepths`].
@@ -116,6 +115,9 @@ pub(crate) fn build_shp_instances(
         if entity.is_voxel {
             continue;
         }
+        let Some(band) = entity_draw_band(sim.display_layers(), stable_id) else {
+            continue;
+        };
         // Common visibility, passenger, limbo, and DrawState admission is shared below.
         let owner_str = sim.interner.resolve(entity.owner());
         let active_disguise = entity.disguise.as_ref().filter(|state| state.disguised);
@@ -288,7 +290,6 @@ pub(crate) fn build_shp_instances(
 
         let final_x: f32 = sx + entry.offset_x;
         let final_y: f32 = sy + entry.offset_y;
-        let band = entity_draw_band(entity);
         let base_depth: f32 = match entity.category {
             EntityCategory::Structure => {
                 // `sy` already carries the render-coordinate lift, so it *is* the

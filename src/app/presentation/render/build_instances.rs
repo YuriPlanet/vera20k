@@ -260,8 +260,8 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
         std::mem::take(&mut state.match_state.match_presentation.cached_unit_pages);
     unit_pages.clear();
     // Residual: Air/Top VXL, SHP and effect buckets still need one interleaved
-    // Display traversal. Membership/history exists in sim, but legacy Fly
-    // resubmission writers and entity_draw_band are not fully migrated yet.
+    // Display traversal. Body buckets now consume retained membership;
+    // remaining Fly landing/resubmission writers are still required in sim.
     let mut top_unit: Vec<SpriteInstance> = Vec::new();
     let mut top_unit_pages: Vec<usize> = Vec::new();
     let transition_page_count = state

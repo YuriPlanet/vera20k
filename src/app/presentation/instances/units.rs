@@ -156,6 +156,7 @@ fn unit_render_slope_state(
     state: &AppState,
     entity: &crate::sim::game_entity::GameEntity,
     display_binary_frame: u32,
+    band: EntityDrawBand,
 ) -> UnitRenderSlopeState {
     // Drive/Ship Draw_Matrix reads the locomotor-owned cache even when the
     // cached slope is zero. Terrain is only a compatibility fallback for
@@ -171,7 +172,7 @@ fn unit_render_slope_state(
     // body on the stable-atlas path, which is the only path the Top stream
     // carries. (VERA-internal; no stock YR voxel unit uses Jumpjet, so the
     // gamemd equivalent for an airborne tilt is UNCHECKED.)
-    if entity_draw_band(entity) == EntityDrawBand::Top {
+    if band == EntityDrawBand::Top {
         return UnitRenderSlopeState::Stable(0);
     }
 
@@ -241,7 +242,7 @@ fn body_sort_depth(
 /// sprites: Body at body facing, Turret + Barrel at turret facing with screen
 /// offset computed from art.ini TurretOffset.
 ///
-/// `top_instances` receives the bodies whose locomotor puts them above the
+/// `top_instances` receives bodies registered in Display layers above the
 /// Ground band — an aircraft off its pad, a jumpjet at hover height, a missile
 /// in flight. That band is drawn after every ground object, so it is kept
 /// separate from `instances` rather than merged by depth.
@@ -291,6 +292,9 @@ pub(crate) fn build_unit_instances(
         if !entity.is_voxel {
             continue;
         }
+        let Some(band) = entity_draw_band(sim.display_layers(), stable_id) else {
+            continue;
+        };
         // Common visibility, passenger, limbo, and DrawState admission is shared below.
         let pos = &entity.position;
         let owner_str = sim.interner.resolve(entity.owner());
@@ -356,7 +360,7 @@ pub(crate) fn build_unit_instances(
         // Render slope comes from the locomotor's cached previous/current
         // slope during gamemd's 3-frame transition, then falls back to the
         // stable terrain slope path.
-        let slope_state = unit_render_slope_state(state, entity, display_binary_frame);
+        let slope_state = unit_render_slope_state(state, entity, display_binary_frame, band);
         let (sx, sy) = crate::render::locomotor_visual::screen_position(entity);
         let interp_z = pos.z;
         if !in_view(sx, sy, TILE_WIDTH, TILE_HEIGHT, cam_x, cam_y, sw, sh, 120.0) {
@@ -405,7 +409,6 @@ pub(crate) fn build_unit_instances(
         // Chrono teleport doesn't tint the unit — the visual effect is the
         // WarpOut animation overlay; the unit itself stays fully opaque.
         let alpha: f32 = 1.0;
-        let band = entity_draw_band(entity);
         // 0x73B140's split is inside the same native parent draw call.
         // Ground units, including those below bridges, keep LayerClass order.
         let collect_ground = band == EntityDrawBand::Ground;

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "29 full landing-phase calls on accepted ordinary aircraft: retained Top-to-Ground resubmission, threshold/latch, air removal, neighbor migration, destination clear, path timer, unchanged Scenario RNG and already-OnBridge landing. Excludes changed-layer phase suffixes, refusal/search/destruction, Carryall/type+C95 animation branches, AirportBound docking, complete Process, rendered output and Rust landing parity.",
+  "assumptions": [
+    "Real Aircraft and Fly vtables, original Fly constructor; initialized empty map and no Team, cargo, radio contacts, animations or target.",
+    "Landable ordinary non-AirportBound type, zero+C95 and Carryall flags, landing sound index-1. Positive/negative owner+2E8 samples are supplied, not proof of their producer.",
+    "Original air-tracker and Display constructor prefixes stop before CRT atexit; preallocated buffers avoid allocator growth.",
+    "Original Mark(PUT), Display submit and air Add establish initial membership. Supplied Z change models the preceding descent; full Process does not run.",
+    "Supplied Foot+55C neighbor source and Cell+122 seeds exercise wrapping and overlap; they are not constructor/lifecycle proofs. Rules+1768 path timer duration11, frame100."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "phase": "0x004CD2A0",
+    "landing": "0x004CE840",
+    "can_enter": "0x004196B0",
+    "air_remove": "0x004135D0",
+    "air_init": "0x00412870",
+    "neighbors_init": "0x0049F2F0",
+    "display_init": "0x004A8630",
+    "mark": "0x004D3780"
+  },
+  "payload_sha256": "ff8927508b5d2dc60c04de23a9215148f325e2e2e1a67603f2f961500533c980"
+}

@@ -1449,14 +1449,66 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): critic findings and command burst reset
+## Current checkpoint (2026-09-22): retained body layers and landing evidence
 
 Owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`;
 branch `feature/combat-foot-speed`. This increment is based on published
-`b950b964` and contains the command target-setter fix below. Trigger ownership
+`cd0015a4` and contains the retained body-layer migration and landing evidence below. Trigger ownership
 source is `7b83fc6c`; main integration is `d75dc8b6`. `.local/` is intentional
 untracked evidence. The combat goal remains active. Main's
 retirement of the dependency map is merged; never consult or refresh it.
+
+Current implementation: SHP and voxel instance builders, including voxel slope
+selection, consume retained `DisplayLayers::layer_of`; removed their competing
+altitude/locomotor classifier. A CPU regression reproduces the zero-altitude /
+retained-Top mismatch and checks a real conceal/reveal resubmission against
+NativeGroundOrder. This fixes the consumer conflict; it does NOT implement
+landing or prove the required takeoff -> landing -> reload instance-builder path.
+Air/Top interleaving across body/effect buckets remains open. Snapshot189 and
+simulation/replay baselines are unchanged.
+
+Validation of this candidate:
+- Focused instance suite:73 passed (`.local/display-body-focused.log`).
+- Full `cargo test -p vera20k --lib`: **9,149 passed,0 failed,135 ignored**,
+  13.16s (`.local/display-body-full-tests.log`). Six obsolete classifier tests
+  were replaced by one retained-history regression.
+- Library Clippy passes with1,029 warnings,22.41s (`.local/display-body-clippy.log`).
+- Four existing Ground GPU readbacks pass,0.77s (`.local/display-body-gpu.log`).
+  An initial filter omitted `merge_passes` and matched0; the corrected run ran4.
+  These cover lowering/replay, NOT the actual landing instance-builder sequence.
+- Native `python -m tools.spatial_oracle.fly_landing_phase` passes against29
+  newly saved original-executable histories; native SHA is pinned in its sidecar.
+  No new release/retail capture; the older executable results below predate this.
+
+Landing evidence: `tools/spatial_oracle/fly_landing_phase.{py,json,meta.json}`
+executes the entire4CD2A0 phase with real Fly/Aircraft/Mark/Display, air Add/Remove,
+CanEnterCell, destination and neighbor-counter calls; no gameplay substitution.
+Initial registration and air membership execute original calls, then supplied Z
+models prior descent. Ordinary non-AirportBound landings, thresholds299/300,
+health/phase/latch gates, owner+2E8 sign, old/new neighbor overlap and wrapping,
+already-OnBridge and null-building/null-radio equality are covered. Each admitted
+phase resubmits even when BOTH live queries are Ground but retained membership
+was Top. Completion removes air membership, clears both flags/speeds, migrates
+Foot+55C across eight Cell+122 bytes, clears destination and starts the existing
+path timer. Scenario RNG remains unchanged in all29 cases. Rust landing parity
+is still absent; these are supplied histories, not lifecycle or complete Process
+proof. Ghidra4CE840 is now `FlyLocomotionClass__Process_Landing`, with explanatory
+comment and alias `FlyLocomotionClass__Landing_Callback`; saved and read back.
+
+Next safe action: complete landing on the simulation owner, including its
+prerequisites. Extend the EXISTING OverlayGrid Cell+122 neighbor-count authority
+(currently named retained_wall_neighbor_counts), not a separate aircraft plane;
+trace Foot+55C initialization, takeoff/limbo cleanup and all writers. FlyRuntime
+also lacks+52 landing latch. Resolve owner+2E8 and owner virtual+544 roles before
+adding state. Preserve actual Aircraft4196B0 admission rather than the Winged
+Cell leaf. Changed-layer bridge landing additionally reaches Foot4DDC60 admission,
+radio24, owner+48C/+488 and map567DA0; a native probe reaches Tactical6DA8EE and
+faults without its initialized context, so this branch is deliberately excluded
+from the29-case corpus. Reproduce by calling execute with bridge=True,z=416,
+on_bridge=False. Complete this fixture/context rather than substituting answers.
+Refusal starts takeoff/search and can kill the owner; AirportBound radio/building
+and Carryall/type+C95 effects remain required. Hold PR/merge for the critic defects.
+All owned Cargo/native operations are terminal. No repeat critic.
 
 Trigger ownership implementation: Simulation owns trigger initialization and dispatch
 throughout actions. Removed the temporary `mem::take` runtime and detached app
@@ -1494,11 +1546,10 @@ Do not repeat the critic after fixes. It found three confirmed integration defec
    FindFireLocation/AssignDestination continuation is required before shipping.
    Stock ORCA/BEAG Ammo1 escape the zero-ammo gate, but multi/unlimited-ammo rules
    stall. Require a multi-release production regression, not only suffix samples.
-2. Pure Fly takeoff registers TOP, but landing does not resubmit GROUND. At zero
-   height, units/SHP derive a Ground band then reject the missing NativeGroundOrder
-   entry, so a landed/reloading aircraft can disappear. Complete native landing's
-   membership transaction and renderer routing through the same retained authority;
-   test takeoff -> landing -> reload through the actual instance builder.
+2. Pure Fly takeoff registers TOP, but landing does not resubmit GROUND. The
+   renderer conflict is fixed in this candidate by consuming retained membership.
+   The native landing transaction and actual takeoff -> landing -> reload instance
+   builder validation are STILL REQUIRED before closing this finding.
 3. Entity-owned WeaponBurst outlived direct command target clears. Event Stop4C75F8
    invokes Assign_Target(NULL), MegaMission4C7467 invokes the target setter, and
    Techno6FCF5B resets+3B8 only on a changed-null assignment. Raw pointer clearing

@@ -11,12 +11,10 @@ use crate::map::entities::EntityCategory;
 use crate::map::terrain;
 use crate::render::batch::DepthAxis;
 use crate::render::native_z;
-use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::components::Position;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
-use crate::util::fixed_math::SIM_ZERO;
 
 /// Tactical6D8F19..6D95A9 visits the five retained Display vectors forward.
 /// Store-only and Logic-only entities cannot become render/pick candidates.
@@ -195,74 +193,28 @@ pub(crate) enum CellVisibilityState {
     Shrouded,
 }
 
-/// Which display band an entity's body is drawn in.
-///
-/// gamemd keeps five display layers and asks each object which one it belongs
-/// to. `UnitClass`, `InfantryClass` and `AircraftClass` all forward that
-/// question straight to the attached locomotor, so the answer is a property of
-/// the locomotor rather than of the unit category:
-///
-/// * Drive, Walk, Hover, Ship, Mech and Teleport are Ground (layer 2)
-///   unconditionally — each of those locomotor slots is a two-instruction
-///   `return 2`.
-/// * Fly is Top (layer 4) the moment its object's height is above zero and
-///   Ground otherwise. It never consults the in-air flag, so a landed aircraft
-///   is an ordinary Ground object that sorts with the tanks around it.
-/// * Jumpjet is Ground while grounded, then Air (layer 3) climbing and Top once
-///   it reaches its own hover height.
-/// * Rocket is Air. So is DropPod, which is unreachable in stock YR.
-/// * A parachuting infantryman keeps its Walk locomotor, so it stays Ground
-///   despite hanging in the air — its altitude changes only where it is drawn.
-///
-/// Only layer 2 is kept sorted; the rest append and render in submission order,
-/// and every layer above 2 is drawn after all of layer 2. Air and Top are
-/// therefore indistinguishable as far as ground objects are concerned, and we
-/// have no separate Air object band, so both collapse into [`EntityDrawBand::Top`]
-/// here. The only ordering that collapse can disturb is Air-vs-Top against the
-/// layer-3 particle stream, which in stock YR is a takeoff's worth of frames.
+/// Presentation buckets for retained native Display membership.
+/// Air and Top still share an upper stream; their complete interleaving with
+/// effects remains a renderer migration, independent of membership authority.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EntityDrawBand {
-    /// gamemd layer 2 — the single Y-sorted band that holds buildings,
-    /// vehicles, infantry on foot and landed aircraft.
     Ground,
-    /// gamemd layers 3 and 4 — drawn after every Ground object.
     Top,
 }
 
-/// Which band this entity's body belongs to, per gamemd's per-locomotor answer.
-///
-/// The state read here mirrors what `render::locomotor_visual` reads to decide
-/// what is holding the entity up, because that is the same question: an entity
-/// is above the Ground band exactly when something has lifted it off the floor.
-pub(crate) fn entity_draw_band(entity: &GameEntity) -> EntityDrawBand {
-    // Object-level falling. The locomotor underneath is still Walk or Drive,
-    // both of which answer Ground, so a paradrop never leaves layer 2.
-    if entity.parachute_state.is_some() {
-        return EntityDrawBand::Ground;
-    }
-    // Scripted missiles fly on the Rocket locomotor, which answers Air.
-    if entity.rocket_state.is_some() {
-        return EntityDrawBand::Top;
-    }
-    let Some(loco) = entity.locomotor.as_ref() else {
-        return EntityDrawBand::Ground;
-    };
-    match loco.kind {
-        // The Rocket slot answers Air unconditionally — it has no height test
-        // of its own. Reachable only if a missile is ever built locomotor-first,
-        // since `rocket_state` answers above.
-        LocomotorKind::Rocket => EntityDrawBand::Top,
-        // The two flying locomotors gate on height, not on the locomotor's
-        // nominal layer: `MovementLayer::Air` is fixed at construction for these
-        // kinds, so a Harrier parked on its pad still carries it.
-        LocomotorKind::Fly | LocomotorKind::Jumpjet => {
-            if loco.altitude > SIM_ZERO {
-                EntityDrawBand::Top
-            } else {
-                EntityDrawBand::Ground
-            }
-        }
-        _ => EntityDrawBand::Ground,
+/// Tactical6D8F19..6D95A9 draws the retained Display vectors, not a fresh
+/// GetLayer query. Height/locomotor changes take effect here only after their
+/// simulation-owned remove/submit transaction (Fly phase4CD2A0, for example).
+/// Unregistered objects and layers without an entity body stream emit nothing.
+pub(crate) fn entity_draw_band(
+    display: &crate::sim::world::display_layers::DisplayLayers,
+    id: u64,
+) -> Option<EntityDrawBand> {
+    use crate::sim::world::display_layers::DisplayLayer;
+    match display.layer_of(id)? {
+        DisplayLayer::GROUND => Some(EntityDrawBand::Ground),
+        DisplayLayer::AIR | DisplayLayer::TOP => Some(EntityDrawBand::Top),
+        _ => None,
     }
 }
 
@@ -468,7 +420,8 @@ pub(crate) fn in_view(
 mod tests {
     use super::*;
     use crate::render::locomotor_visual::{ground_screen_position, screen_position};
-    use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
+    use crate::rules::locomotor_type::LocomotorKind;
+    use crate::sim::movement::locomotor::LocomotorState;
     use crate::util::fixed_math::SimFixed;
 
     /// Stock YR sets one global `FlightLevel=1500` for every aircraft.
@@ -699,101 +652,59 @@ mod tests {
     }
 
     #[test]
-    fn a_cruising_aircraft_leaves_the_ground_band() {
-        // Black Eagle at the stock flight level.
-        let beag = entity_with_locomotor(
-            "BEAG",
-            LocomotorKind::Fly,
-            STOCK_FLIGHT_LEVEL_LEPTONS,
-            40,
-            40,
-        );
-        assert_eq!(entity_draw_band(&beag), EntityDrawBand::Top);
-    }
+    fn body_band_follows_retained_display_until_resubmission() {
+        use crate::sim::world::Simulation;
+        use crate::sim::world::display_layers::DisplayLayer;
 
-    #[test]
-    fn an_aircraft_on_its_pad_is_an_ordinary_ground_object() {
-        // Fly answers the layer question from height alone and never looks at
-        // the in-air flag, and `MovementLayer::Air` is fixed at construction
-        // for the kind — so height is the only thing that may decide this.
-        let parked = entity_with_locomotor("BEAG", LocomotorKind::Fly, 0, 40, 40);
+        let mut sim = Simulation::new();
+        let mut aircraft = entity_with_locomotor("BEAG", LocomotorKind::Fly, 900, 40, 40);
+        aircraft.category = EntityCategory::Aircraft;
+        aircraft.lifecycle.in_limbo = true;
+        sim.entities_mut().insert(aircraft);
+        sim.reveal(1);
+        assert_eq!(sim.display_layers().layer_of(1), Some(DisplayLayer::TOP));
+
+        // Reproduce the stale-registration boundary: physical descent has
+        // reached the ground, but the phase transaction has not resubmitted.
+        // A fresh altitude classifier used to choose Ground and then lose the
+        // body because NativeGroundOrder correctly had no entry for this ID.
+        sim.entities_mut()
+            .get_mut(1)
+            .unwrap()
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .altitude = SimFixed::ZERO;
         assert_eq!(
-            parked.locomotor.as_ref().expect("locomotor").layer,
-            MovementLayer::Air,
-            "the nominal layer stays Air even parked; it must not be the predicate"
+            entity_draw_band(sim.display_layers(), 1),
+            Some(EntityDrawBand::Top)
         );
-        assert_eq!(entity_draw_band(&parked), EntityDrawBand::Ground);
-    }
-
-    #[test]
-    fn a_hovering_jumpjet_leaves_the_ground_band_and_a_landed_one_does_not() {
-        // ROCK, the Rocketeer — the one stock infantry type on a Jumpjet.
-        let hovering = entity_with_locomotor("ROCK", LocomotorKind::Jumpjet, 500, 12, 12);
-        let landed = entity_with_locomotor("ROCK", LocomotorKind::Jumpjet, 0, 12, 12);
-        assert_eq!(entity_draw_band(&hovering), EntityDrawBand::Top);
-        assert_eq!(entity_draw_band(&landed), EntityDrawBand::Ground);
-    }
-
-    #[test]
-    fn ground_locomotors_never_leave_the_ground_band() {
-        for kind in [
-            LocomotorKind::Drive,
-            LocomotorKind::Walk,
-            LocomotorKind::Hover,
-            LocomotorKind::Ship,
-            LocomotorKind::Mech,
-            LocomotorKind::Teleport,
-        ] {
-            let entity = entity_with_locomotor("MTNK", kind, 0, 5, 5);
-            assert_eq!(
-                entity_draw_band(&entity),
-                EntityDrawBand::Ground,
-                "{kind:?} answers Ground unconditionally in gamemd"
-            );
-        }
-    }
-
-    #[test]
-    fn a_paradropping_infantryman_stays_in_the_ground_band() {
-        // The locomotor underneath a parachute is still Walk, and Walk answers
-        // Ground unconditionally — the altitude only moves where it is drawn.
-        use crate::sim::entity_store::EntityStore;
-        use crate::sim::movement::parachute_descent::begin_parachute_descent;
-
-        let mut entities = EntityStore::default();
-        let mut gi = GameEntity::test_default(1, "E1", "Americans", 20, 20);
-        gi.category = crate::map::entities::EntityCategory::Infantry;
-        gi.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
-        entities.insert(gi);
-        assert!(begin_parachute_descent(
-            &mut entities,
-            1,
-            SimFixed::from_num(400)
-        ));
-        let gi = entities.get(1).expect("entity");
-
-        assert_eq!(entity_draw_band(gi), EntityDrawBand::Ground);
-        // ...but its key still has to come off the ground row, not the row it
-        // is drawn at 57 px above.
-        let (_, ground_y) = ground_screen_position(&gi.position);
-        let (_, drawn_y) = screen_position(gi);
-        assert_eq!(ground_y - drawn_y, 57.0);
-        assert_eq!(ground_sort_row(gi, drawn_y), ground_y);
-    }
-
-    /// The Rocket slot has no height test — it is a bare `return 3`. Today the
-    /// object-level `rocket_state` check answers first, so this arm is only
-    /// reachable if a missile is ever built locomotor-first; gating it on
-    /// altitude would then silently drop a launching missile into the ground
-    /// band.
-    #[test]
-    fn the_rocket_locomotor_is_above_the_ground_band_at_any_height() {
-        let launching = entity_with_locomotor("V3ROCKET", LocomotorKind::Rocket, 0, 8, 8);
+        let ground = crate::app::presentation::render::draw_plan_lowering::NativeGroundOrder::new(
+            sim.display_layers().members(DisplayLayer::GROUND),
+        );
         assert!(
-            launching.rocket_state.is_none(),
-            "this must exercise the locomotor arm, not the rocket_state shortcut"
+            ground
+                .object_draw(1, crate::render::tactical_draw_plan::SpriteEncoding::Voxel)
+                .is_none()
         );
-        assert_eq!(entity_draw_band(&launching), EntityDrawBand::Top);
+
+        // Exercise an existing real lifecycle resubmission. This establishes
+        // the render consumer contract, not the still-missing landing callback.
+        sim.conceal(1);
+        assert_eq!(entity_draw_band(sim.display_layers(), 1), None);
+        sim.reveal(1);
+        assert_eq!(
+            entity_draw_band(sim.display_layers(), 1),
+            Some(EntityDrawBand::Ground)
+        );
+        let ground = crate::app::presentation::render::draw_plan_lowering::NativeGroundOrder::new(
+            sim.display_layers().members(DisplayLayer::GROUND),
+        );
+        assert!(
+            ground
+                .object_draw(1, crate::render::tactical_draw_plan::SpriteEncoding::Voxel)
+                .is_some()
+        );
     }
 
     /// A parachute canopy takes its body's key rather than deriving one, and
