@@ -628,15 +628,11 @@ impl CrushTarget {
 /// The Iron Curtain test is the **last** gate of each block, after the ally
 /// test, which is why it cannot be hoisted to the top.
 ///
-/// The category exclusions below are **VERA-internal, gamemd equivalent
-/// UNCHECKED**. The original's class test sits in the omni block only; the
-/// ordinary block reads the type's crushable byte, an abstract flag, the deploy
-/// byte, the ally test and the Iron Curtain slot, and nothing else. Stock
-/// `rulesmd` marks sandbags and all three fence walls `Crushable=yes`, so a
-/// retail Crusher flattens them and VERA's category gate does not. That gate
-/// predates this function; it is recorded here rather than credited to the
-/// original. Aircraft never appear in the ground occupant list, so excluding
-/// them is outcome-identical.
+/// Object5F6CD0 restricts buildings only in the omni arm. Its ordinary arm
+/// has no class restriction and is also the fallback from a refused omni arm.
+/// All GameEntity categories carry the native Techno abstract bit; non-Techno
+/// objects and wall overlays use their own receivers. Native comparisons:
+/// tools/spatial_oracle/unit_entry and cell_entry_crush_tail.
 /// NO-DIFF (GSI-08.17) — pass 1's named gap is not one. A crushed unit's
 /// `DeathWeapon=` does not fire in gamemd either:
 /// `TechnoClass::Fire_Death_Weapon @ 0x0070D690` has exactly two callers,
@@ -661,29 +657,14 @@ impl CrushTarget {
 /// - **Mind-control release.** A crushed controller does not free its captives
 ///   here, so their ownership stays with a dead object.
 pub fn can_crush(capability: CrushCapability, target: CrushTarget) -> bool {
-    // Structures and aircraft are never crushed.
-    if matches!(
-        target.category,
-        EntityCategory::Structure | EntityCategory::Aircraft
-    ) {
-        return false;
-    }
-    // Omni path: OmniCrushResistant blocks it, Iron Curtain ends it.
-    if capability.omni_crusher {
-        return !target.omni_crush_resistant && !target.iron_curtained;
-    }
-    // Ordinary path. OmniCrushResistant is not read by this block in the
-    // original, but every stock OmniCrushResistant type is a vehicle and the
-    // ordinary block only ever passes infantry, so keeping the guard here is
-    // outcome-identical and cheaper than a category re-test.
-    if target.omni_crush_resistant {
-        return false;
-    }
+    capability.can_crush_units() && object_is_crushable_by(capability.omni_crusher, target)
+}
 
-    capability.regular_crusher
-        && target.category == EntityCategory::Infantry
-        && target.crushable
-        && !target.deploy_crush_immune
+/// Object5F6CD0 after the caller's capability gate and alliance check.
+/// The post-crush-latch Unit entry tail invokes this without retesting Crusher.
+pub(crate) fn object_is_crushable_by(omni_crusher: bool, target: CrushTarget) -> bool {
+    ((omni_crusher && target.category != EntityCategory::Structure && !target.omni_crush_resistant)
+        || (target.crushable && !target.deploy_crush_immune))
         && !target.iron_curtained
 }
 
@@ -2073,7 +2054,7 @@ mod tests {
     }
 
     #[test]
-    fn test_omni_crush_resistant_blocks_all() {
+    fn test_omni_resistance_and_deploy_immunity_refuse_both_arms() {
         assert!(!can_crush(
             CrushCapability::new(false, true),
             target(EntityCategory::Infantry, true, true, true, false),
@@ -2081,11 +2062,16 @@ mod tests {
     }
 
     #[test]
-    fn test_structures_never_crushable() {
-        assert!(!can_crush(
-            CrushCapability::new(false, true),
-            target(EntityCategory::Structure, true, false, false, false),
-        ));
+    fn test_omni_building_refusal_falls_back_to_explicit_crushable() {
+        for crushable in [false, true] {
+            assert_eq!(
+                can_crush(
+                    CrushCapability::new(false, true),
+                    target(EntityCategory::Structure, crushable, false, false, false),
+                ),
+                crushable
+            );
+        }
     }
 
     #[test]

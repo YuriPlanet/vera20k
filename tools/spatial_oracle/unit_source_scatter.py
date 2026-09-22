@@ -20,7 +20,7 @@ MAP, TABLE = 0x87F7E8, 0xC00000
 NEIGHBORS = [(10, 9), (11, 9), (11, 10), (11, 11), (10, 11), (9, 11), (9, 10), (9, 9)]
 
 
-def query(case):
+def make_source_fixture(case):
     u, call, read32 = make_fixture(case)
     u.mem_map(CELLS, 0x90000)
     u.reg_write(UC_X86_REG_FPCW, 0x0E7F)
@@ -73,6 +73,11 @@ def query(case):
     u.mem_write(0xB1CFB8, packed(0, 0))
     call(0x49F2F0, 0, [])
     call(0x65C6D0, SCENARIO + 0x218, [case.get('seed', 1)])
+    return u, call, read32
+
+
+def query(case):
+    u, call, read32 = make_source_fixture(case)
     events, checks = [], []
     destination, start_direction, pending, returning = None, None, None, None
 

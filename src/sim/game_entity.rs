@@ -935,7 +935,7 @@ pub struct GameEntity {
     pub bunker_link: BunkerLink,
     /// Runtime state for `Gate=yes` building passability.
     ///
-    /// Native `CanGarrison` accepts only mission `0x18` plus stable-open helper
+    /// Native gate passability4525F0 accepts only mission `0x18` plus stable-open helper
     /// state. Opening and closing gates are still blockers for the same check.
     #[serde(default)]
     pub building_gate: Option<BuildingGateRuntime>,

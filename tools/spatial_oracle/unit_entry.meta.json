@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Complete Unit73F0A0 numeric results with existing repair arguments(-1,-1,NULL,true): raw occupation, ordered Unit/Building lists, wall and Gate arms; excludes non-Drive locomotors, direction/height traversal and full repair/scatter effects.",
+  "assumptions": [
+    "Shared Unit/Drive/source map fixture; actual vtables and typed prestates. Type IsTrain=false, unrestricted land, no tubes; land speed1.0. Raw owner indices -1/0/1 and independent supplied lists. Optional Wall overlay/owner/Crushable, primary warhead Wall and MovementZone CrusherAll are supplied.",
+    "Objects are supplied Unit or Building nodes; Drive constructed, unpowered/turning/lifecycle producers excluded. Ordinary bodies/owner queries/GetWeapon/CrushableBy execute. No native scenario load.",
+    "Object and house memory remains unchanged. Source fixture QueueMission/SetDestination observer slots are never reached."
+  ],
+  "substitutions": [
+    "Only OS Interlocked imports from the shared Unit fixture. No gameplay callable substitution."
+  ],
+  "entry_points": {
+    "unit_entry": "0x0073F0A0",
+    "foot_entry": "0x004D9C10",
+    "drive_entry": "0x0055ABF0",
+    "tail": "0x0073FC24",
+    "get_unit": "0x0047EBA0"
+  },
+  "payload_sha256": "4584c6ec5ad48a3ef0a2677fab34f0231bd4fe093a81f70c1a7f915496d1d58b"
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "48 complete Foot4D9C10 calls: eight active retail ILocomotion+1C slots, three packed Cells and the caller flag. Original55ABF0 is XOR EAX,EAX;RET8. Constant-zero seed proof for these interfaces; excludes dormant TS Mech/Tunnel and full class entry.",
+  "assumptions": [
+    "Original immutable ILocomotion vtables, supplied Foot674 interface and Cell24 packed coordinate. No constructors needed: shared leaf reads no instance fields. Interface present; direction/height -1 and previous NULL are ignored by Foot4D9C10. Entire scratch memory unchanged."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "foot_entry": "0x004D9C10",
+    "shared_loco_entry": "0x0055ABF0"
+  },
+  "payload_sha256": "b5bb920c8c506d2e68f02f73ba0933001f9daf98eb63639c67141eddefc80bd4"
+}

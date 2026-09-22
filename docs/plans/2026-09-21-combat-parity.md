@@ -1449,110 +1449,113 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): Unit scatter state refusals
+## Current checkpoint (2026-09-22): numeric Unit cell entry
 
 Owned checkout: engine-ownership-boundaries/ra2-rust-game, branch
-feature/combat-foot-speed, published parent **00cbae96**. Combat goal stays active.
+feature/combat-foot-speed, published parent **d17dad7c**. Combat goal stays active.
 The sole critic already ran; no repeated critic or PR/merge while its required
 aircraft attack/flight joins remain unfinished. Preserve .local/ and prior work.
 
-Acceptance for this increment: apply Unit Scatter's unconditional represented
-state refusals to the shared production blocker receiver before RNG or any
-mission/destination/timer/power mutation. Read existing state owners and compare
-original execution. This does not complete Unit Scatter or aircraft CellScatter.
+Acceptance: preserve original Unit73F0A0 numeric outcomes in the shared live
+repair/class receiver, including ordered blockers, walls/gates and independent
+raw occupation. Repair still projects ==7; source Scatter requires ==0. Remove
+the boolean accumulator which incorrectly turned all soft outcomes into0.
 
-Implemented in movement/bump_crush::unit_scatter_state_allows: effective mission
-(current or queued) Sleep0/Sticky6/Unload16; ACTIVE Teleport locomotor; body
-Facing388 IsRotating at the caller's binary frame; any represented deploy phase;
-and locomotor IsPowered. The shared scatter_blocker uses it before its existing
-compatibility selection and setter. It covers movement occupancy, Drive track,
-tube exit and bunker blocker callers. Moving alone is not a Unit refusal; a
-Chrono Miner's active Drive is eligible despite its stashed Teleport. No added
-state/save format, duplicate latch or owner. IsTrain+C94 remains unparsed and
-absent from stock retail types. Deploy animation producers remain approximate.
+Implemented: bridge_repair_admission::foot_entry now uses one numeric accumulator
+for Infantry and Unit. Unit retains1 cloaked enemy,2 moving ally/raw vehicle or
+allied raw owner,3 closed allied Gate,4 allied wall,5 armed enemy/hostile wall,
+6 stationary allied mobile,7 hard refusal; terminal0 still precedes later
+blockers for Enter's exact NavCom. Unit effective mission includes queued
+fallback. Moving-ally admission checks NavCom/body turn before IsMoving.
+Self clears both the captured raw vehicle bit and local latch. A nonzero
+accumulator wins before raw occupation. Crush latch with raw vehicle bit asks
+the FIRST GROUND Unit, even when the selected list/byte is on the deck.
+Allied crushable walls now preserve4 without requiring a weapon; CrusherAll
+uses the same native wall route. Existing state owners, no save-format change.
 
-Native evidence: tools/spatial_oracle/unit_scatter_state.{py,json,meta.json}
-executes69 real Unit743A50 prefixes through refusal or the743BAC source split.
-Real Unit vtable, effective mission6F3280/+184, Drive/Teleport constructors,
-QueryInterface/GetClassID/refcounts, Facing SetROT/Set/IsRotating and IsPowered
-execute. Only OS Interlocked imports substituted. Both flags are true to bypass
-conditional mission Scatter/NavCom gates; IsTrain=false. Cases cover every
-current mission -1..31, queued fallbacks, all three deploy bytes, power/Teleport,
-rotation rates/elapsed frames and paused frameFFFFFFFF. Actor bytes unchanged;
-refcounts balance on returned refusals. --check passes. Rust compares all69
-rows; every rejected row also calls the production blocker receiver and checks
-whole serialized actor state and Scenario RNG remain unchanged. Separate active
-Drive/stashed Teleport and turret-vs-body test; prior scatter vehicle fixtures
-now install their required Drive instance instead of a null locomotor.
+The native comparison exposed a required shared dependency correction:
+bump_crush::can_crush incorrectly excluded non-infantry from the ordinary arm
+and returned early on a refused Omni arm. Shared object_is_crushable_by now
+matches Object5F6CD0: Omni excludes buildings/resistant targets; refusal falls
+through to explicit Crushable plus deploy-immunity/invulnerability gates.
+Capability and alliance remain caller gates. The already-native Unit crush-tail
+helper delegates to this predicate, removing its competing local formula.
+Unit73FB2A still requires Crusher/ability before calling Object5F6CD0; Omni alone
+does not bypass that specific entry caller's gate. Existing general crush
+consumers use the corrected shared predicate too.
 
-Validation: the focused scatter run passed47 tests and exposed one older fixture
-with a vehicle lacking a locomotor. Installed its required Drive instance.
-Final cargo test -p vera20k --lib passes **9185 tests,0 failures,135 ignored**
-(.local/unit-scatter-full.log,19.74s); cargo clippy -p vera20k --lib passes with
-1024 warnings, unchanged from the parent (.local/unit-scatter-clippy.log,23.00s).
-Both Cargo processes finished. No retail rendered/Linux/macOS claim.
+Evidence: tools/spatial_oracle/unit_entry.{py,json,meta.json} executes150 complete
+Unit73F0A0 calls with repair arguments(-1,-1,NULL,true), original Unit/Building
+tables, constructed Drive, real House/GetWeapon/CrushableBy/Foot readers.
+Only OS Interlocked imports are substituted. Cases cover all eight codes,
+independent raw bits/owners, ordered live lists, self/Enter exits, body turning,
+NavCom/in-transit, Gate open/closed and friendship/armament, Wall crush/owner/
+weapon and CrusherAll, and32 regular/Omni/Crushable/resistance/category cases.
+Prestates are supplied; no scenario load or lifetime producer claim. Body/house
+memory unchanged. Source fixture setup is shared with unit_source_scatter;
+its existing56 outputs remain unchanged. Unit corpus is compared to the actual
+shared receiver and repair projection, not a separate test implementation.
 
-Next-receiver evidence: unit_source_scatter.{py,json,meta.json} executes56
-original743A50 calls through argument-observing QueueMove/SetDestination. Native
-heading, ScenarioRandom, Foot4C seed, height/projection and selection execute;
-50 rows supply numeric entry responses, six execute original Unit73F0A0 on empty
-object lists with supplied raw occupation/terrain. Covers all refusal codes1..7,
-each sole legal direction, first legal bridge fallback, retained Drive head,
-Paralyzed/unloading/NavCom/turret flags, mission force and both outcomes of the
-unforced-target random gate. Raw vehicle occupation returns2 and refuses
-Scatter even though repair's ==7 projection would admit it. Original Unit entry
-also refuses occupied Infantry/zero speed rows with7. This corpus is not yet
-compared to Rust and does not claim setter/movement or occupied-list parity.
+Validation: final cargo test -p vera20k --lib passes **9186 tests,0 failures,
+135 ignored** (.local/unit-entry-full-validated.log,19.94s). Final cargo clippy
+-p vera20k --lib passes with1024 warnings, unchanged from the parent
+(.local/unit-entry-clippy.log,26.99s). Both processes finished. Native --check
+passes150 Unit entry rows,48 locomotor entry rows and56 unchanged Unit source
+Scatter rows. The comparison caught and corrected the shared crush-helper
+defect (native0, Rust5 for a Crushable Unit) and a stale ground vehicle latch
+after deck-byte selection. Final test-only failures came from duplicate INI
+sections hiding MovementZone/Gate; the corrected fixture declares each section
+once. Native references were not rebaselined to Rust. No retail rendered or
+Linux/macOS execution claim.
 
-Ghidra: original Unit vtable7F5C70+480 proves741970 is Unit's override; corrected
-false TechnoClass__Set_Destination label to UnitClass__Set_Destination. Updated
-743A50 plate to remove the old claim that every forced moving vehicle proceeds.
-Deploy6E1 producer739AC0 sets739C62 and clears739B70 while setting deployed6E0;
-undeploy6E2 producer739CD0 sets739E46 and clears739D28 with6E0. Both producers
-annotated, no prototype or function-boundary edits; saved/read back.69-case prefix does
-not execute/certify these deploy animation lifetimes.
+Ghidra: corrected false4525F0 CanGarrison label to BuildingClass__IsGatePassable.
+ReadINI4609EA..460A13 and literal81AA8C establish Gate at16B7; FirestormWall is
+separate16C0. Replaced73F0A0's false code1=Crushable/code3=generic-building
+annotation with exact accumulator/tail and bounded corpus evidence. Saved/read
+back. Updated the stale gate-identity paragraph in cell_entry.rs. Updated
+5F6CD0's annotation to preserve Omni fallthrough and distinguish Object targets
+from overlay crushing.
 
-Next required receiver work: Unit source branch743CA0 additionally tests current
-MissionControl Paralyzed(+7), Unit6D1 (existing miner.unload_active), NavCom and
-second flag plus6AF (existing turret_rotation_latch). If Target and !firstFlag,
-RandomRanged(1,4) admits only1. Away heading uses physical9C, jitter0..2 minus1;
-seed is Foot4C. Shared eight-neighbor fallback/projection policy matches Infantry
-but its numeric class entry is Unit73F0A0 (UnitVT+1AC), NOT Infantry51BF90.
-Existing bridge_repair_admission Unit branch currently preserves only ==7;
-source Scatter requires exact ==0. Port/migrate its numeric answers before reuse.
-QueueMove(false)744053 then Unit destination741970 at744070. NULL source uses
-FNPC56DC20 and SetDestination only, without QueueMove or immediate Process.
-The compatibility blocker selection/setter remains a residual, with flags and
-conditional gates still to migrate. Do not count this prefix as complete Scatter.
+Next required receiver work: Unit's shared live prelude is still repair-specific,
+with no general directional/height traversal. Native seed uncertainty resolved:
+foot_locomotor_entry.{py,json,meta.json} executes48 original Foot4D9C10 calls;
+Drive/Ship/Walk/Hover/Fly/Jumpjet/Rocket/Teleport all have actual+1C=55ABF0,
+XOR EAX,EAX;RET8, with no instance reads. Thus their initial0 is exact; dormant
+TS Mech/Tunnel are outside this proof. Port remaining gates before exposing
+the general receiver to source Scatter; do not substitute
+repair's !=7 projection or the legacy movement classifier for ==0.
+Unit source branch743CA0 additionally tests current MissionControl Paralyzed(+7),
+Unit6D1 (miner.unload_active), NavCom/second flag and6AF (turret_rotation_latch).
+Target with !firstFlag draws RandomRanged(1,4), only1 admits. Away heading uses
+physical9C, jitter0..2 minus1, seed Foot4C. Shared eight-neighbor fallback and
+projection can be reused with exact Unit73F0A0 entry. QueueMove(false)744053 then
+Unit destination741970 at744070. NULL source uses FNPC56DC20 and SetDestination
+only, without QueueMove/immediate Process. Existing blocker selection/setter
+remains a compatibility residual; complete class Scatter is not yet ported.
 
-Garrison shared-receiver migration investigated but NOT implemented: actual
-Building457DE0 calls occupant Scatter(building virtual+48 center, true,true) at
-45810A, following Unlimbo and AssignTarget(NULL). Current production_sell copy
-uses an inverted/coarse heading, simplified admission and direct movement.
-General Infantry flags need actual moving-byte demotion, human/Doing27..30 and
-true/true DoAction31, then shared class entry and Walk setter; non-Fraidycat
-human same-destination prone setter needs DoAction7 and TypeFearless+EAC proof.
-Accepted DoAction31 lifetime is already an explicit hut residual. Do not invent
-Doing/frame/undeploy lifetime or infer it from presentation. Original Unlimbo
-51DFF0 calls Foot4D7170 and writes wet-state6E8=2; no observed Doing reset.
-Propagate overlay registry to sale/red-HP/destruction callers before live entry.
+Published d17dad7c owns unconditional Unit Scatter state refusals before all
+blocker RNG/orders: effective Sleep0/Sticky6/Unload16, active Teleport, body
+rotation, any deploy phase, unpowered loco.69 original prefix comparisons;
+full9185 passed/135 ignored, Clippy1024 warnings. It also published56 native
+source-selection cases, including six live numeric Unit entry cases. No full
+Unit setter/Scatter claim. Native deploy animation producers remain approximate.
 
-Published00cbae96 owns the damage Scatter -> Infantry51AA40 -> Foot4D94B0 ->
-Walk75ACB0 handoff:18 full native setter rows,56 source rows,14 live entry rows;
-ordinary subsequent Process/search/head/motion and arrival regression. Full lib
-9183 passed,135 ignored; Clippy1024 warnings. Logs .local/scatter-destination-*
-are parent validation, not this WIP. Walk preserves paid head/facing/power and
-path backing; shared Foot admission serves Aircraft Attack too. Ghidra51AA40
-Doing correction,75ACB0 no-PowerOn, and70FEE0 renamed
-TechnoClass__DetachLinkedObject_2AC were saved/read back there.
+Garrison shared-receiver migration investigated, not implemented: Building457DE0
+calls Scatter(building center,true,true) after Unlimbo and AssignTarget(NULL).
+Current production_sell copy uses a coarse/inverted heading and direct movement.
+General Infantry flags need moving-byte demotion, human/Doing27..30 and true/true
+DoAction31 lifetime, then shared class entry/Walk setter. Same-destination prone
+human setter needs DoAction7 and TypeFearless+EAC proof. Overlay registry must
+reach sale/red-HP/destruction callers before live entry. Do not infer Doing
+lifetime from presentation or an Unlimbo reset.
 
-Remaining required prerequisites: non-Walk/JumpJet class-switching setters,
-DirectRocker2A8 reciprocal link, lifted-unit2AC/2B0 detach70FEE0, retained
-UseFireParticles304 release, Unit-produced6AC latch; Infantry NULL-source
-fallback/DoAction31; full Unit Scatter; Aircraft CellScatter and Attack5..9;
-real flight/landing/reload and whole-combat audit. The larger existing critic
-findings and goal residuals elsewhere in this file still apply.
-
+Parent00cbae96 owns damage Scatter->Infantry51AA40->Foot4D94B0->Walk75ACB0:
+18 original setter,56 source,14 live entry rows and subsequent movement/arrival
+regressions. Remaining dependencies: non-Walk/JumpJet class-switching setters,
+DirectRocker2A8 reciprocal link, lift2AC/2B0 detach70FEE0, retained UseFireParticles
+304 release, Unit6AC latch; Infantry NULL-source/DoAction31; full Unit Scatter;
+Aircraft CellScatter and Attack5..9; real flight/landing/reload and whole-combat
+audit. The existing critic findings and larger goal residuals remain required.
 
 ## Previous checkpoint (2026-09-22): Infantry damage-scatter admission
 
