@@ -1155,9 +1155,9 @@ pub struct Simulation {
     /// Admitted through `queue_command(s)` and drained each tick when
     /// `cmd.execute_tick <= current_tick + 1`.
     pending_commands: Vec<CommandEnvelope>,
-    /// Map trigger runtime state — tracks global/local variables, disabled triggers,
-    /// fired one-shot triggers, and elapsed scenario ticks. Initialized from map data.
-    pub trigger_runtime: TriggerRuntime,
+    /// Serialized map trigger state, initialized and mutated by trigger_runtime.
+    /// Remains installed while actions call other Simulation mechanisms.
+    pub(crate) trigger_runtime: TriggerRuntime,
 }
 
 impl Default for Simulation {
@@ -3383,32 +3383,6 @@ impl Simulation {
         }
     }
 
-    /// Advance map triggers by one tick. Uses `std::mem::take` to avoid
-    /// self-borrow conflict while actions read and mutate Simulation authority.
-    fn advance_triggers(
-        &mut self,
-        graph: &TriggerGraph,
-        triggers: &TriggerMap,
-        events: &EventMap,
-        actions: &ActionMap,
-        waypoints: &std::collections::HashMap<u32, crate::map::waypoints::Waypoint>,
-        rules: Option<&RuleSet>,
-    ) -> Vec<TriggerEffect> {
-        let mut rt = std::mem::take(&mut self.trigger_runtime);
-        let effects = rt.advance_at_frame(
-            self.session.binary_frame,
-            graph,
-            triggers,
-            events,
-            actions,
-            Some(self),
-            rules,
-            waypoints,
-        );
-        self.trigger_runtime = rt;
-        effects
-    }
-
     /// Install the initial normalized MapClass playfield authority.
     ///
     /// `MapClass::Set_Clipped_LocalSize @ 0x00567230` establishes the five
@@ -3627,14 +3601,7 @@ impl Simulation {
 
     fn poll_triggers_for_master_frame(&mut self, inputs: TriggerInputs<'_>) {
         // YR LogicClass::Update polls scenario triggers before the live-object walk.
-        let effects = self.advance_triggers(
-            inputs.graph,
-            inputs.triggers,
-            inputs.events,
-            inputs.actions,
-            inputs.waypoints,
-            inputs.rules,
-        );
+        let effects = self.advance_triggers(inputs);
         self.trigger_effects.extend(effects);
     }
 
@@ -3680,15 +3647,6 @@ impl Simulation {
     /// its configured value once at match install).
     pub(crate) fn set_input_delay_ticks(&mut self, ticks: u64) {
         self.input_delay_ticks = ticks;
-    }
-
-    /// Install the map trigger runtime state machine after load (F10 boundary
-    /// method; the immutable trigger definitions live in `SimResources`).
-    pub(crate) fn install_trigger_runtime(
-        &mut self,
-        runtime: crate::sim::trigger_runtime::TriggerRuntime,
-    ) {
-        self.trigger_runtime = runtime;
     }
 
     #[cfg(test)]

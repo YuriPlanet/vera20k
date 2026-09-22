@@ -69,7 +69,6 @@ use crate::render::unit_atlas::UnitAtlas;
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::trigger_runtime::TriggerRuntime;
 use crate::sim::world::Simulation;
 
 pub(crate) fn resolved_overlay_shp_ids(
@@ -1439,7 +1438,6 @@ pub struct ScenarioLoadInputs {
     pub events: EventMap,
     pub actions: ActionMap,
     pub trigger_graph: TriggerGraph,
-    pub trigger_runtime: TriggerRuntime,
     /// Overlay type registry — kept so wall placement can look up overlay_id by name.
     pub overlay_registry: OverlayTypeRegistry,
     pub house_roster: HouseRoster,
@@ -3408,7 +3406,6 @@ pub(crate) fn load_map_from_initial(
     } else {
         log::warn!("Software cursor NOT loaded (mouse.sha missing?) — using OS cursor");
     }
-    let trigger_runtime = TriggerRuntime::from_map(&map_data.triggers, &map_data.local_variables);
     let lighting_grid = rebuild_lighting_grid_from_sim(
         &resolved_terrain,
         &lighting_config,
@@ -3446,7 +3443,6 @@ pub(crate) fn load_map_from_initial(
             events: map_data.events,
             actions: map_data.actions,
             trigger_graph: map_data.trigger_graph,
-            trigger_runtime,
             overlay_registry,
             house_roster,
             height_map,

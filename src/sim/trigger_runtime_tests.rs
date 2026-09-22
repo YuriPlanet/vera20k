@@ -1,10 +1,10 @@
 use super::*;
 use std::collections::HashMap;
 
-use crate::map::actions::MapAction;
+use crate::map::actions::{ActionMap, MapAction};
 use crate::map::entities::EntityCategory;
 use crate::map::events::MapEvent;
-use crate::map::trigger_graph::build_trigger_graph;
+use crate::map::trigger_graph::{TriggerGraph, build_trigger_graph};
 use crate::map::triggers::{MapTrigger, TriggerDifficulty};
 use crate::map::variable_names::{LocalVariable, LocalVariableMap};
 use crate::sim::game_entity::GameEntity;
@@ -16,6 +16,29 @@ use crate::sim::replay::{ReplayHeader, ReplayLog, ReplayRunner};
 use crate::sim::snapshot::GameSnapshot;
 use crate::sim::world::{MasterFrameTestRung, Simulation, TickLane, TriggerInputs};
 use std::collections::BTreeMap;
+
+/// Drive the production dispatch owner at a chosen native frame without
+/// advancing unrelated simulation phases in focused action tests.
+fn advance_trigger_frame(
+    sim: &mut Simulation,
+    current_frame: u32,
+    graph: &TriggerGraph,
+    triggers: &TriggerMap,
+    events: &EventMap,
+    actions: &ActionMap,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    waypoints: &HashMap<u32, crate::map::waypoints::Waypoint>,
+) -> Vec<TriggerEffect> {
+    sim.session.binary_frame = current_frame;
+    sim.advance_triggers(TriggerInputs {
+        graph,
+        triggers,
+        events,
+        actions,
+        rules,
+        waypoints,
+    })
+}
 
 fn flat_trigger_playfield_terrain(
     width: u16,
@@ -208,7 +231,7 @@ fn parsed_event_records_match_native_list_and_production_predicates() {
         for (n, frame) in row.frames.iter().enumerate() {
             let mut sim = Simulation::new();
             sim.session.binary_frame = *frame;
-            sim.trigger_runtime = TriggerRuntime::from_map(&triggers, &HashMap::new());
+            sim.initialize_map_triggers(&triggers, &HashMap::new());
             sim.trigger_runtime.globals_set.insert(7);
             sim.trigger_runtime.locals_set.insert(9);
             let result = sim
@@ -284,7 +307,7 @@ fn parsed_variable_actions_match_native_reader_dispatch_and_restore() {
             &actions,
         );
         let mut original = Simulation::new();
-        original.trigger_runtime = TriggerRuntime::from_map(&triggers, &HashMap::new());
+        original.initialize_map_triggers(&triggers, &HashMap::new());
         original.trigger_runtime.globals_set = row.initial_globals;
         original.trigger_runtime.locals_set = row.initial_locals;
         let bytes = GameSnapshot::save(&original, 0, 0, "trigger_values", 0);
@@ -354,7 +377,7 @@ fn parsed_map_trigger_flags_gate_production_frames_and_survive_restore() {
     .expect("map loader accepts trigger fixture");
     let mut original = Simulation::new();
     // Same initialization as app/loading/init.rs.
-    original.trigger_runtime = TriggerRuntime::from_map(&map.triggers, &map.local_variables);
+    original.initialize_map_triggers(&map.triggers, &map.local_variables);
     assert_eq!(
         original.trigger_runtime.disabled_triggers,
         ["DISABLED", "MISSING", "NO_MEDIUM"]
@@ -494,7 +517,7 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
     let path_grid = PathGrid::from_resolved_terrain(&terrain);
     sim.resolved_terrain = Some(terrain);
     sim.rebuild_zone_grid(&path_grid);
-    sim.trigger_runtime = TriggerRuntime::from_map(&triggers, &HashMap::new());
+    sim.initialize_map_triggers(&triggers, &HashMap::new());
 
     let before_zone = sim
         .zone_grid
@@ -777,32 +800,32 @@ fn time_trigger_can_center_camera_at_waypoint() {
         &events,
         &actions,
     );
-    let mut runtime = TriggerRuntime::from_map(&triggers, &HashMap::new());
+    let mut sim = Simulation::new();
+    sim.initialize_map_triggers(&triggers, &HashMap::new());
 
     assert!(
-        runtime
-            .advance_at_frame(
-                44,
-                &graph,
-                &triggers,
-                &events,
-                &actions,
-                None,
-                None,
-                &HashMap::new(),
-            )
-            .is_empty()
+        advance_trigger_frame(
+            &mut sim,
+            44,
+            &graph,
+            &triggers,
+            &events,
+            &actions,
+            None,
+            &HashMap::new()
+        )
+        .is_empty()
     );
     assert_eq!(
-        runtime.advance_at_frame(
+        advance_trigger_frame(
+            &mut sim,
             45,
             &graph,
             &triggers,
             &events,
             &actions,
             None,
-            None,
-            &HashMap::new(),
+            &HashMap::new()
         ),
         vec![TriggerEffect::CenterCameraAtWaypoint {
             waypoint: 9,
@@ -810,18 +833,17 @@ fn time_trigger_can_center_camera_at_waypoint() {
         }]
     );
     assert!(
-        runtime
-            .advance_at_frame(
-                46,
-                &graph,
-                &triggers,
-                &events,
-                &actions,
-                None,
-                None,
-                &HashMap::new(),
-            )
-            .is_empty()
+        advance_trigger_frame(
+            &mut sim,
+            46,
+            &graph,
+            &triggers,
+            &events,
+            &actions,
+            None,
+            &HashMap::new()
+        )
+        .is_empty()
     );
 }
 
@@ -877,7 +899,7 @@ fn master_frame_polls_triggers_before_logic_houses_commit_and_delete() {
         &actions,
     );
     let mut sim = Simulation::new();
-    sim.trigger_runtime = TriggerRuntime::from_map(&triggers, &HashMap::new());
+    sim.initialize_map_triggers(&triggers, &HashMap::new());
 
     let tick = sim
         .advance_master_frame(
@@ -976,7 +998,7 @@ fn master_frame_save_load_continues_trigger_projectile_and_delete_state() {
     };
 
     let mut original = Simulation::new();
-    original.trigger_runtime = TriggerRuntime::from_map(&triggers, &HashMap::new());
+    original.initialize_map_triggers(&triggers, &HashMap::new());
     original
         .advance_master_frame(
             &[],
@@ -1109,7 +1131,7 @@ fn trigger_runtime_latches_participate_in_state_hash() {
 
 #[test]
 fn elapsed_time_uses_signed_current_frame_divided_by_fifteen() {
-    let runtime = TriggerRuntime::default();
+    let sim = Simulation::new();
     let one_second = EventCondition {
         kind: 47,
         value: 1,
@@ -1121,11 +1143,12 @@ fn elapsed_time_uses_signed_current_frame_divided_by_fifteen() {
         ..Default::default()
     };
 
-    assert!(runtime.evaluate_event(&zero_seconds, 0, None));
-    assert!(!runtime.evaluate_event(&one_second, 14, None));
-    assert!(runtime.evaluate_event(&one_second, 15, None));
+    assert!(sim.trigger_runtime.evaluate_event(&zero_seconds, 0, &sim));
+    assert!(!sim.trigger_runtime.evaluate_event(&one_second, 14, &sim));
+    assert!(sim.trigger_runtime.evaluate_event(&one_second, 15, &sim));
     assert!(
-        !runtime.evaluate_event(&one_second, 0x8000_0000, None),
+        !sim.trigger_runtime
+            .evaluate_event(&one_second, 0x8000_0000, &sim),
         "the native frame counter is divided as a signed 32-bit value"
     );
 }
@@ -1297,18 +1320,19 @@ fn global_actions_can_enable_and_force_followup_trigger() {
         &events,
         &actions,
     );
-    let mut runtime = TriggerRuntime::from_map(&triggers, &HashMap::new());
+    let mut sim = Simulation::new();
+    sim.initialize_map_triggers(&triggers, &HashMap::new());
 
     assert_eq!(
-        runtime.advance_at_frame(
+        advance_trigger_frame(
+            &mut sim,
             15,
             &graph,
             &triggers,
             &events,
             &actions,
             None,
-            None,
-            &HashMap::new(),
+            &HashMap::new()
         ),
         vec![TriggerEffect::CenterCameraAtWaypoint {
             waypoint: 3,
@@ -1440,18 +1464,19 @@ fn linked_trigger_field_queues_followup_trigger() {
         &events,
         &actions,
     );
-    let mut runtime = TriggerRuntime::from_map(&triggers, &HashMap::new());
+    let mut sim = Simulation::new();
+    sim.initialize_map_triggers(&triggers, &HashMap::new());
 
     assert_eq!(
-        runtime.advance_at_frame(
+        advance_trigger_frame(
+            &mut sim,
             15,
             &graph,
             &triggers,
             &events,
             &actions,
             None,
-            None,
-            &HashMap::new(),
+            &HashMap::new()
         ),
         vec![TriggerEffect::CenterCameraAtWaypoint {
             waypoint: 4,
@@ -1583,18 +1608,19 @@ fn forced_trigger_with_unmet_conditions_does_not_fire() {
         &events,
         &actions,
     );
-    let mut runtime = TriggerRuntime::from_map(&triggers, &HashMap::new());
+    let mut sim = Simulation::new();
+    sim.initialize_map_triggers(&triggers, &HashMap::new());
 
     assert_eq!(
-        runtime.advance_at_frame(
+        advance_trigger_frame(
+            &mut sim,
             15,
             &graph,
             &triggers,
             &events,
             &actions,
             None,
-            None,
-            &HashMap::new(),
+            &HashMap::new()
         ),
         Vec::<TriggerEffect>::new()
     );
@@ -1689,18 +1715,19 @@ fn mission_announce_then_force_end_emits_result_effects() {
         &events,
         &actions,
     );
-    let mut runtime = TriggerRuntime::from_map(&triggers, &HashMap::new());
+    let mut sim = Simulation::new();
+    sim.initialize_map_triggers(&triggers, &HashMap::new());
 
     assert_eq!(
-        runtime.advance_at_frame(
+        advance_trigger_frame(
+            &mut sim,
             15,
             &graph,
             &triggers,
             &events,
             &actions,
             None,
-            None,
-            &HashMap::new(),
+            &HashMap::new()
         ),
         vec![
             TriggerEffect::MissionAnnouncement {
@@ -1847,32 +1874,33 @@ fn local_variables_seed_and_gate_followup_triggers() {
         &events,
         &actions,
     );
-    let mut runtime = TriggerRuntime::from_map(&triggers, &local_variables);
+    let mut sim = Simulation::new();
+    sim.initialize_map_triggers(&triggers, &local_variables);
 
     assert_eq!(
-        runtime.advance_at_frame(
+        advance_trigger_frame(
+            &mut sim,
             0,
             &graph,
             &triggers,
             &events,
             &actions,
             None,
-            None,
-            &HashMap::new(),
+            &HashMap::new()
         ),
         Vec::<TriggerEffect>::new()
     );
-    assert!(runtime.locals_set.contains(&2));
+    assert!(sim.trigger_runtime.locals_set.contains(&2));
     assert_eq!(
-        runtime.advance_at_frame(
+        advance_trigger_frame(
+            &mut sim,
             0,
             &graph,
             &triggers,
             &events,
             &actions,
             None,
-            None,
-            &HashMap::new(),
+            &HashMap::new()
         ),
         vec![TriggerEffect::CenterCameraAtWaypoint {
             waypoint: 6,
@@ -2006,21 +2034,21 @@ fn techtype_exists_and_not_exists_query_simulation_world() {
         &events,
         &actions,
     );
-    let mut runtime = TriggerRuntime::from_map(&triggers, &HashMap::new());
     let mut sim = Simulation::new();
+    sim.initialize_map_triggers(&triggers, &HashMap::new());
     spawn_type(&mut sim, "GAPOWR");
     spawn_type(&mut sim, "GAPOWR");
 
     assert_eq!(
-        runtime.advance_at_frame(
+        advance_trigger_frame(
+            &mut sim,
             0,
             &graph,
             &triggers,
             &events,
             &actions,
-            Some(&mut sim),
             None,
-            &HashMap::new(),
+            &HashMap::new()
         ),
         vec![
             TriggerEffect::CenterCameraAtWaypoint {
@@ -2086,16 +2114,9 @@ fn run_waypoint_action(
         &events,
         &actions,
     );
-    let mut runtime = TriggerRuntime::from_map(&triggers, &HashMap::new());
-    runtime.advance_at_frame(
-        0,
-        &graph,
-        &triggers,
-        &events,
-        &actions,
-        Some(sim),
-        rules,
-        waypoints,
+    sim.initialize_map_triggers(&triggers, &HashMap::new());
+    advance_trigger_frame(
+        sim, 0, &graph, &triggers, &events, &actions, rules, waypoints,
     )
 }
 

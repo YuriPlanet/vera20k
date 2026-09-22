@@ -14,7 +14,6 @@ use crate::map::trigger_graph::TriggerGraph;
 use crate::render::minimap::MinimapRenderer;
 use crate::render::selection_overlay::SelectionOverlay;
 use crate::sidebar::SidebarTab;
-use crate::sim::trigger_runtime::TriggerRuntime;
 use crate::ui::game_screen::GameScreen;
 
 use crate::app::AppState;
@@ -71,7 +70,6 @@ pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
             events: HashMap::new(),
             actions: HashMap::new(),
             trigger_graph: TriggerGraph::default(),
-            trigger_runtime: TriggerRuntime::default(),
             overlay_registry: OverlayTypeRegistry::empty(),
             house_roster: HouseRoster::default(),
             height_map: BTreeMap::new(),
@@ -216,14 +214,6 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     state.match_state.match_presentation.waypoints = result.scenario.waypoints;
     state.match_state.match_presentation.cell_tags = result.scenario.cell_tags;
     state.match_state.match_presentation.tags = result.scenario.tags;
-    if let Some(sim) = state
-        .match_state
-        .sim_runtime
-        .as_mut()
-        .map(|rt| &mut rt.simulation)
-    {
-        sim.install_trigger_runtime(result.scenario.trigger_runtime);
-    }
     state.match_state.match_presentation.overlay_names = result.presentation.overlay_names;
     state.match_state.match_presentation.overlay_radar_colors =
         result.presentation.overlay_radar_colors;

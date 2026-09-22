@@ -12,18 +12,19 @@
 //! - Action 48/112: center camera at waypoint
 //! - Action 137/138: set/clear a House's alternate base cell
 //!
-//! The goal is to turn parsed trigger data into real runtime behavior without
-//! committing to a full mission-script system yet.
+//! Simulation owns construction and dispatch; TriggerRuntime stores its private
+//! serialized state. Live Tag instances, timers and native polling order remain
+//! to replace the legacy definition queue below.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 
-use crate::map::actions::{ActionEntry, ActionMap};
+use crate::map::actions::ActionEntry;
 use crate::map::events::{EventCondition, EventMap};
-use crate::map::trigger_graph::{LinkedTrigger, TriggerGraph};
+use crate::map::trigger_graph::LinkedTrigger;
 use crate::map::triggers::TriggerMap;
 use crate::map::variable_names::LocalVariableMap;
-use crate::sim::world::Simulation;
+use crate::sim::world::{Simulation, TriggerInputs};
 
 const ACTION_FORCE_TRIGGER: i32 = 22;
 const ACTION_SET_GLOBAL: i32 = 28;
@@ -67,10 +68,10 @@ enum MissionAnnouncementKind {
 pub struct TriggerRuntime {
     /// `BTreeSet` (not `HashSet`) so save files have a deterministic iteration
     /// order — required for replay/lockstep correctness.
-    pub globals_set: BTreeSet<u32>,
-    pub locals_set: BTreeSet<u32>,
-    pub disabled_triggers: BTreeSet<String>,
-    pub fired_one_shot_triggers: BTreeSet<String>,
+    globals_set: BTreeSet<u32>,
+    locals_set: BTreeSet<u32>,
+    disabled_triggers: BTreeSet<String>,
+    fired_one_shot_triggers: BTreeSet<String>,
     last_announcement: Option<MissionAnnouncementKind>,
 }
 
@@ -107,7 +108,7 @@ impl TriggerRuntime {
         }
     }
 
-    pub fn from_map(triggers: &TriggerMap, local_variables: &LocalVariableMap) -> Self {
+    fn from_map(triggers: &TriggerMap, local_variables: &LocalVariableMap) -> Self {
         let mut runtime = TriggerRuntime::default();
         for trigger in triggers.values() {
             if !trigger.enabled || !trigger.difficulty.medium {
@@ -122,99 +123,13 @@ impl TriggerRuntime {
         runtime
     }
 
-    /// Evaluate and apply trigger actions against one authoritative gameplay frame.
-    ///
-    /// `waypoints` is the complete immutable scenario table; action 137 cannot
-    /// resolve its native destination without that bound map input.
-    pub fn advance_at_frame(
-        &mut self,
-        current_frame: u32,
-        graph: &TriggerGraph,
-        triggers: &TriggerMap,
-        events: &EventMap,
-        actions: &ActionMap,
-        mut simulation: Option<&mut Simulation>,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
-        waypoints: &HashMap<u32, crate::map::waypoints::Waypoint>,
-    ) -> Vec<TriggerEffect> {
-        let linked_by_id: BTreeMap<&str, &LinkedTrigger> = graph
-            .triggers
-            .iter()
-            .map(|linked| (linked.trigger_id.as_str(), linked))
-            .collect();
-
-        let mut queue: VecDeque<String> = graph
-            .triggers
-            .iter()
-            .filter(|linked| {
-                self.is_trigger_ready(
-                    linked,
-                    triggers,
-                    events,
-                    current_frame,
-                    simulation.as_deref(),
-                )
-            })
-            .map(|linked| linked.trigger_id.clone())
-            .collect();
-        let mut queued: BTreeSet<String> = queue.iter().cloned().collect();
-        let mut effects: Vec<TriggerEffect> = Vec::new();
-
-        while let Some(trigger_id) = queue.pop_front() {
-            queued.remove(&trigger_id);
-            let Some(trigger) = triggers.get(&trigger_id) else {
-                continue;
-            };
-            let Some(linked) = linked_by_id.get(trigger_id.as_str()).copied() else {
-                continue;
-            };
-            if !self.is_trigger_ready(
-                linked,
-                triggers,
-                events,
-                current_frame,
-                simulation.as_deref(),
-            ) {
-                continue;
-            }
-
-            if let Some(action) = actions.get(&trigger_id) {
-                for entry in &action.entries {
-                    self.apply_action(
-                        entry,
-                        &mut effects,
-                        &mut queue,
-                        &mut queued,
-                        triggers,
-                        trigger,
-                        simulation.as_deref_mut(),
-                        rules,
-                        waypoints,
-                    );
-                }
-            }
-
-            if let Some(linked_trigger_id) = &trigger.linked_trigger_id {
-                if triggers.contains_key(linked_trigger_id) {
-                    enqueue_trigger(&mut queue, &mut queued, linked_trigger_id.clone());
-                }
-            }
-
-            if !trigger.repeating {
-                self.fired_one_shot_triggers.insert(trigger_id);
-            }
-        }
-
-        effects
-    }
-
     fn is_trigger_ready(
         &self,
         linked: &LinkedTrigger,
         triggers: &TriggerMap,
         events: &EventMap,
         current_frame: u32,
-        simulation: Option<&Simulation>,
+        simulation: &Simulation,
     ) -> bool {
         if self.disabled_triggers.contains(&linked.trigger_id) {
             return false;
@@ -244,7 +159,7 @@ impl TriggerRuntime {
         &self,
         condition: &EventCondition,
         current_frame: u32,
-        simulation: Option<&Simulation>,
+        simulation: &Simulation,
     ) -> bool {
         match condition.kind {
             EVENT_ELAPSED_SCENARIO_TIME => {
@@ -271,7 +186,7 @@ impl TriggerRuntime {
                     == matches!(condition.kind, EVENT_GLOBAL_IS_SET | EVENT_LOCAL_IS_SET)
             }
             EVENT_TECHTYPE_EXISTS => {
-                let Some(sim) = simulation else { return false };
+                let sim = simulation;
                 let min_count = condition.value;
                 let Some(type_id) = condition.type_name.as_deref() else {
                     return false;
@@ -285,7 +200,7 @@ impl TriggerRuntime {
                     && count_techtype(sim, type_id) as i64 >= i64::from(min_count)
             }
             EVENT_TECHTYPE_DOES_NOT_EXIST => {
-                let Some(sim) = simulation else { return false };
+                let sim = simulation;
                 let Some(type_id) = condition.type_name.as_deref() else {
                     return false;
                 };
@@ -297,8 +212,99 @@ impl TriggerRuntime {
             _ => false,
         }
     }
+}
 
-    fn apply_action(
+impl Simulation {
+    /// Seed map trigger state on the staged Simulation before objects are loaded.
+    /// App and headless construction share this call; replacing/restoring the
+    /// Simulation preserves its serialized state instead of reinitializing it.
+    pub(crate) fn initialize_map_triggers(
+        &mut self,
+        triggers: &TriggerMap,
+        local_variables: &LocalVariableMap,
+    ) {
+        self.trigger_runtime = TriggerRuntime::from_map(triggers, local_variables);
+    }
+
+    /// Execute map actions on the installed Simulation owner. Short runtime
+    /// borrows keep nested gameplay callbacks on this same authoritative state.
+    /// The live Tag/Trigger migration must replace the legacy definition queue
+    /// below without ever lifting TriggerRuntime out of Simulation.
+    pub(crate) fn advance_triggers(&mut self, inputs: TriggerInputs<'_>) -> Vec<TriggerEffect> {
+        let TriggerInputs {
+            graph,
+            triggers,
+            events,
+            actions,
+            waypoints,
+            rules,
+        } = inputs;
+        let current_frame = self.session.binary_frame;
+        let linked_by_id: BTreeMap<&str, &LinkedTrigger> = graph
+            .triggers
+            .iter()
+            .map(|linked| (linked.trigger_id.as_str(), linked))
+            .collect();
+
+        let mut queue: VecDeque<String> = graph
+            .triggers
+            .iter()
+            .filter(|linked| {
+                self.trigger_runtime
+                    .is_trigger_ready(linked, triggers, events, current_frame, self)
+            })
+            .map(|linked| linked.trigger_id.clone())
+            .collect();
+        let mut queued: BTreeSet<String> = queue.iter().cloned().collect();
+        let mut effects: Vec<TriggerEffect> = Vec::new();
+
+        while let Some(trigger_id) = queue.pop_front() {
+            queued.remove(&trigger_id);
+            let Some(trigger) = triggers.get(&trigger_id) else {
+                continue;
+            };
+            let Some(linked) = linked_by_id.get(trigger_id.as_str()).copied() else {
+                continue;
+            };
+            if !self
+                .trigger_runtime
+                .is_trigger_ready(linked, triggers, events, current_frame, self)
+            {
+                continue;
+            }
+
+            if let Some(action) = actions.get(&trigger_id) {
+                for entry in &action.entries {
+                    self.apply_trigger_action(
+                        entry,
+                        &mut effects,
+                        &mut queue,
+                        &mut queued,
+                        triggers,
+                        trigger,
+                        rules,
+                        waypoints,
+                    );
+                }
+            }
+
+            if let Some(linked_trigger_id) = &trigger.linked_trigger_id {
+                if triggers.contains_key(linked_trigger_id) {
+                    enqueue_trigger(&mut queue, &mut queued, linked_trigger_id.clone());
+                }
+            }
+
+            if !trigger.repeating {
+                self.trigger_runtime
+                    .fired_one_shot_triggers
+                    .insert(trigger_id);
+            }
+        }
+
+        effects
+    }
+
+    fn apply_trigger_action(
         &mut self,
         action: &ActionEntry,
         effects: &mut Vec<TriggerEffect>,
@@ -306,7 +312,6 @@ impl TriggerRuntime {
         queued: &mut BTreeSet<String>,
         triggers: &TriggerMap,
         trigger: &crate::map::triggers::MapTrigger,
-        simulation: Option<&mut Simulation>,
         rules: Option<&crate::rules::ruleset::RuleSet>,
         waypoints: &HashMap<u32, crate::map::waypoints::Waypoint>,
     ) {
@@ -331,9 +336,9 @@ impl TriggerRuntime {
                     return;
                 };
                 let values = if global {
-                    &mut self.globals_set
+                    &mut self.trigger_runtime.globals_set
                 } else {
-                    &mut self.locals_set
+                    &mut self.trigger_runtime.locals_set
                 };
                 if matches!(action.kind, ACTION_SET_GLOBAL | ACTION_SET_LOCAL) {
                     values.insert(index as u32);
@@ -346,15 +351,13 @@ impl TriggerRuntime {
                 // ParamType, Param3, then stores the four writer dwords at
                 // +0x34..+0x40. ActionEntry.params is chunk[1..], so these are
                 // exactly indices 2..5; params[0]/[1] must never leak in.
-                if let Some(sim) = simulation
-                    && let Some(raw_local_size) = parse_visible_map_area(&action.params)
-                {
-                    let _ = sim.change_visible_map_area(raw_local_size, rules);
+                if let Some(raw_local_size) = parse_visible_map_area(&action.params) {
+                    let _ = self.change_visible_map_area(raw_local_size, rules);
                 }
             }
             ACTION_ENABLE_TRIGGER => {
                 if let Some(target) = parse_trigger_id_param(&action.params, 0) {
-                    self.disabled_triggers.remove(&target);
+                    self.trigger_runtime.disabled_triggers.remove(&target);
                     if triggers.contains_key(&target) {
                         enqueue_trigger(queue, queued, target);
                     }
@@ -362,7 +365,7 @@ impl TriggerRuntime {
             }
             ACTION_DISABLE_TRIGGER => {
                 if let Some(target) = parse_trigger_id_param(&action.params, 0) {
-                    self.disabled_triggers.insert(target);
+                    self.trigger_runtime.disabled_triggers.insert(target);
                 }
             }
             ACTION_CENTER_CAMERA => {
@@ -382,8 +385,7 @@ impl TriggerRuntime {
                 }
             }
             ACTION_SET_ALTERNATE_BASE => {
-                let Some(sim) = simulation else { return };
-                let Some(house_id) = resolve_trigger_house(sim, trigger.owner.as_deref(), rules)
+                let Some(house_id) = resolve_trigger_house(self, trigger.owner.as_deref(), rules)
                 else {
                     return;
                 };
@@ -400,37 +402,36 @@ impl TriggerRuntime {
                 // case 137 calls `FUN_006E44E0`, which rejects the packed-zero
                 // waypoint and writes only `HouseClass+0x5494` through
                 // `FUN_0050DFE0`.
-                if let Some(house) = sim.houses.get_mut(&house_id) {
+                if let Some(house) = self.houses.get_mut(&house_id) {
                     house.alternate_base_center = (waypoint.rx, waypoint.ry);
                 }
             }
             ACTION_CLEAR_ALTERNATE_BASE => {
-                let Some(sim) = simulation else { return };
-                let Some(house_id) = resolve_trigger_house(sim, trigger.owner.as_deref(), rules)
+                let Some(house_id) = resolve_trigger_house(self, trigger.owner.as_deref(), rules)
                 else {
                     return;
                 };
                 // gamemd-derived: `TriggerAction__Execute @ 0x006DD8B0`
                 // case 138 calls `FUN_006E4540`, which writes packed zero only
                 // to `HouseClass+0x5494` through `FUN_0050DFF0`.
-                if let Some(house) = sim.houses.get_mut(&house_id) {
+                if let Some(house) = self.houses.get_mut(&house_id) {
                     house.alternate_base_center = (0, 0);
                 }
             }
             ACTION_ANNOUNCE_WIN => {
-                self.last_announcement = Some(MissionAnnouncementKind::Victory);
+                self.trigger_runtime.last_announcement = Some(MissionAnnouncementKind::Victory);
                 effects.push(TriggerEffect::MissionAnnouncement {
                     text: "Mission Accomplished".to_string(),
                 });
             }
             ACTION_ANNOUNCE_LOSE => {
-                self.last_announcement = Some(MissionAnnouncementKind::Defeat);
+                self.trigger_runtime.last_announcement = Some(MissionAnnouncementKind::Defeat);
                 effects.push(TriggerEffect::MissionAnnouncement {
                     text: "Mission Failed".to_string(),
                 });
             }
             ACTION_END_SCENARIO => {
-                let (title, detail) = match self.last_announcement {
+                let (title, detail) = match self.trigger_runtime.last_announcement {
                     Some(MissionAnnouncementKind::Victory) => (
                         "Mission Accomplished".to_string(),
                         "The scenario ended after a victory announcement.".to_string(),
