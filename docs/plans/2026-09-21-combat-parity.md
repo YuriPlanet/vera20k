@@ -1449,7 +1449,59 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): Cell Scatter eligibility dependency
+## Current checkpoint (2026-09-22): Infantry damage-scatter admission
+
+Owned checkout `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`,
+branch `feature/combat-foot-speed`, parent `2ade36cc` (published cell-eligibility
+increment). Preserve `.local/`. The combat goal remains active; no new critic,
+PR or merge while the required aircraft attack/flight loop is unfinished.
+
+Acceptance: direct Infantry ReceiveDamage Scatter(false,false) admits the same
+represented type/house/mission/Doing/team states as the original prefix, refuses
+before any RNG or destination write, and consumes live ownership in production.
+No claim for full class displacement, blocked candidates or aircraft scatter.
+
+Original51D0D0..51D226 confirms that unforced calls always require Fraidycat,
+including PlayerScatter/SCATTER/AI/Team cases. Human fallback reads Foot.Team+5D4
+(Add_Member6EA56E/Remove_Member6EA99D), not NavCom. House50B730 uses IsHuman or,
+in campaign, PlayerControl. Reuse HouseState::is_controlled_by_human,
+TeamScriptVm::team_for_member and veterancy::has_weapon_ability; no new state.
+The production selector previously missed the final Fraidycat gate, substituted
+NavCom for Team and received a duplicated ability check. These are behavior
+corrections, with the ability reader consolidation a structural change.
+
+Evidence: `tools/spatial_oracle/infantry_damage_scatter.{py,json,meta.json}`
+executes278 original entry-to-admission/refusal cases,146 admitted. No substituted
+calls: native Infantry/Walk vtables, mission table, house control and rank/ability
+readers execute. Stops before coordinate/RNG/destination work. `--check` passes.
+The Rust comparison covers260 represented cases;18 native rows use nine Doing
+actions without a Rust SequenceKind. The retained corpus includes those rows.
+The expanded world-receiver test covers civilian/soldier, AI/human/campaign
+PlayerControl, independent Team/NavCom, fatal/no-attacker and mission refusal.
+First focused run:42 passed,2 fixture failures. The native comparison captured
+the test interner before creating its entity; moved the capture after creation.
+The receiver fixture still expected ordinary fear100 after becoming Fraidycat;
+native518C7B and existing Rust both set300. Corrected that expectation.
+All44 focused scatter tests now pass (`.local/infantry-damage-scatter-tests2.log`).
+Final `cargo test -p vera20k --lib` passes **9,181 tests,0 failures,135 ignored**
+in17.49s (`.local/infantry-damage-scatter-full.log`).
+`cargo clippy -p vera20k --lib` passes with1,027 warnings, unchanged from the
+parent (`.local/infantry-damage-scatter-clippy.log`,33.24s). Native `--check`
+also passes. No retail rendered scenario or Linux/macOS execution in this increment.
+Team lookup now occurs inside the selector only after its
+type, ability and control gates require it, avoiding scans on ordinary soldiers.
+
+Ghidra corrected/saved/read back518C00's misleading `InfantryClass__SetFear`
+name to `InfantryReceiveDamage__SurvivorPostludeFragment`: it is an interior
+House50B730 call with the stack/registers of517FA0, not a callable fear setter.
+Original Infantry vtable7EB058+16C points at517FA0. Survivor518C56 passes
+coordinate/false/false to Scatter before fear; annotated that call. No function
+boundary changes. Also corrected the movement acceptance document's old claim
+of a ten-recipient Cell Scatter cap against the already published native corpus.
+Required aircraft source-aware scatter and states5..9 remain the next chain,
+with the detailed prerequisites in the following checkpoint.
+
+## Cell Scatter eligibility evidence (2026-09-22)
 
 Owned checkout `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`,
 branch `feature/combat-foot-speed`, parent `9985236c`. Resolve current HEAD from
@@ -1504,12 +1556,10 @@ Required next work:
   are `(Aircraft+9C copy,1,0,0)` to481670; first and second booleans have distinct
   class gates. The existing NullCoord blocker displacement cannot substitute.
 - Infantry51D0D0 demotes its first boolean when the locomotor reports moving.
-  Existing damage scatter also needs reconciliation: the final Fraidycat gate
-  51D212..220 is unconditional after a false effective first boolean, and the
-  human fallback reads Foot.Team+5D4, not the+5A4 NavCom currently used by that
-  helper. Identity is established by Add_Member6EA56E storing its Team receiver
-  and Remove_Member6EA99D clearing it. Use the existing
-  `TeamScriptVm::team_for_member`; do not introduce another membership owner.
+  The damage-scatter correction above now enforces the final Fraidycat gate
+  51D212..220 and uses Foot.Team+5D4 through `TeamScriptVm::team_for_member`.
+  The general source-aware aircraft caller still needs both boolean gates and
+  full displacement. Preserve the distinct forced and unforced semantics.
 - States5..9 still collapse to10 in the legacy dispatcher. Native states6..8
   accept GetFireError0/2/8/9, with8 assigning Target before fire; successful arms
   fire once, scatter, assign Target, advance state and return raw primary ROF.

@@ -3377,9 +3377,17 @@ mod tests {
             rng_changed: bool,
         }
 
-        fn run(mission: MissionType, attacker_present: bool, health: i32) -> Outcome {
-            let ini = IniFile::from_str(
-                "[InfantryTypes]\n0=E1\n\
+        fn run(
+            mission: MissionType,
+            attacker_present: bool,
+            health: i32,
+            fraidycat: bool,
+            human_control: Option<bool>,
+            team: bool,
+            nav: bool,
+        ) -> Outcome {
+            let ini = IniFile::from_str(&format!(
+                "[General]\nFixture=1\n[InfantryTypes]\n0=E1\n\
                  [VehicleTypes]\n0=ATTACKER\n\
                  [AircraftTypes]\n\
                  [BuildingTypes]\n\
@@ -3388,13 +3396,13 @@ mod tests {
                  [CombatDamage]\nPlayerScatter=no\nMaxDamage=10000\n\
                  [Guard]\nScatter=yes\n\
                  [Attack]\nScatter=no\n\
-                 [E1]\nStrength=125\nArmor=none\nSpeed=4\n\
-                 Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+                 [E1]\nStrength=125\nArmor=none\nSpeed=4\nFraidycat={fraidycat}\n\
+                 Locomotor={{4A582744-9839-11d1-B709-00A024DDAFD1}}\n\
                  MovementZone=Infantry\n\
                  [ATTACKER]\nStrength=100\nArmor=none\n\
                  [WH]\nCellSpread=0\nPercentAtMax=1\n\
                  Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-            );
+            ));
             let rules = RuleSet::from_ini(&ini).expect("damage-scatter fixture");
             let mut interner = test_interner();
             let attacker_house = interner.intern("AttackerHouse");
@@ -3416,6 +3424,9 @@ mod tests {
             victim.health.current = health;
             victim.sub_cell = Some(2);
             victim.infantry = Some(crate::sim::game_entity::InfantryRuntime::new());
+            if nav {
+                victim.navigation.nav_com = Some(crate::sim::components::NavTargetRef::cell(8, 8));
+            }
             victim.locomotor = Some(
                 crate::sim::movement::locomotor::LocomotorState::from_object_type(
                     rules.object("E1").expect("E1 type"),
@@ -3446,7 +3457,7 @@ mod tests {
             let cells = (0..10)
                 .flat_map(|ry| (0..10).map(move |rx| test_terrain_cell(rx, ry)))
                 .collect();
-            let mut terrain = ResolvedTerrainGrid::from_cells(10, 10, cells);
+            let terrain = ResolvedTerrainGrid::from_cells(10, 10, cells);
             let event = EntityDamageEvent::area(
                 2,
                 10,
@@ -3459,33 +3470,40 @@ mod tests {
                 attacker_present.then_some(attacker_house),
                 warhead_ref,
             );
-            let mut scenario_rng = SimRng::new(1);
-            let before_rng = scenario_rng.state();
-            let mut main_rng = SimRng::new(7);
-            let mut handled_deaths = Vec::new();
-            let mut houses = BTreeMap::new();
-            let mut fatal_lifecycle = None;
-            let mut sound_sink = None;
-            let _ = crate::sim::combat::commit_damage_events(
+            let mut world = crate::sim::world::Simulation::new();
+            world.substrate.entities = entities;
+            world.substrate.occupancy = occupancy;
+            world.interner = interner;
+            world.resolved_terrain = Some(terrain);
+            world.main_rng = SimRng::new(7);
+            world.scenario_rng = SimRng::new(1);
+            // Some(false) models campaign PlayerControl without IsHuman.
+            world.session.game_mode_nonzero = false;
+            let mut house =
+                HouseState::new(victim_house, 0, None, human_control == Some(true), 0, 10);
+            house.player_control = human_control.is_some();
+            world.houses.insert(victim_house, house);
+            if team {
+                let script = world.interner.intern("ScatterFixture");
+                world
+                    .team_script_vm
+                    .create_team(victim_house, script, vec![2], None, 0);
+            }
+            let before_rng = world.scenario_rng.state();
+            let mut receiver = crate::sim::combat::world_receiver::ReceiverRun::default();
+            crate::sim::combat::world_receiver::commit_entities(
+                &mut world,
+                &mut receiver,
                 std::slice::from_ref(&event),
-                &mut entities,
-                &mut occupancy,
+                None,
                 &rules,
-                &mut interner,
-                &mut houses,
-                &[],
-                &HouseAllianceMap::new(),
-                &mut main_rng,
-                &mut scenario_rng,
-                &mut handled_deaths,
                 None,
-                None,
-                Some(&mut terrain),
-                0,
-                &mut fatal_lifecycle,
-                &mut sound_sink,
             );
-            let victim = entities.get(2).expect("victim remains represented");
+            let victim = world
+                .substrate
+                .entities
+                .get(2)
+                .expect("victim remains represented");
             Outcome {
                 health: victim.health.current,
                 fear: victim
@@ -3498,35 +3516,55 @@ mod tests {
                     .as_ref()
                     .map(|movement| *movement.path.last().expect("direct move has destination")),
                 queued_mission: victim.mission.queued(),
-                rng_changed: scenario_rng.state() != before_rng,
+                rng_changed: world.scenario_rng.state() != before_rng,
             }
         }
 
         // Seed 1 yields RandomRanged(0,4)==1. With the attacker due west,
         // native base direction is E (2), so start=NE (1) and the first open
         // cell is (6,4). The Move/NavCom write is already visible when fear is
-        // subsequently latched to 100.
-        let guard = run(MissionType::Guard, true, 125);
+        // subsequently latched to 300 for Fraidycat (native518C7B).
+        let guard = run(MissionType::Guard, true, 125, true, None, false, false);
         assert_eq!(guard.health, 115);
         assert_eq!(guard.destination, Some((6, 4)));
         assert_eq!(
             guard.queued_mission,
             MissionId::from_known(MissionType::Move)
         );
-        assert_eq!(guard.fear, 100);
+        assert_eq!(guard.fear, 300);
         assert!(guard.rng_changed);
 
-        let null_attacker = run(MissionType::Guard, false, 125);
+        let null_attacker = run(MissionType::Guard, false, 125, true, None, false, false);
         assert_eq!(null_attacker.destination, None);
         assert!(!null_attacker.rng_changed);
 
-        let fatal = run(MissionType::Guard, true, 10);
+        let fatal = run(MissionType::Guard, true, 10, true, None, false, false);
         assert_eq!(fatal.health, 0);
         assert_eq!(fatal.destination, None);
 
-        let attack_mission = run(MissionType::Attack, true, 125);
+        let attack_mission = run(MissionType::Attack, true, 125, true, None, false, false);
         assert_eq!(attack_mission.destination, None);
         assert!(!attack_mission.rng_changed);
+
+        // Unforced damage must not make an ordinary combat infantryman flee,
+        // even if an AI owns it or its human owner has a Team and NavCom.
+        for control in [None, Some(true), Some(false)] {
+            let soldier = run(MissionType::Guard, true, 125, false, control, true, true);
+            assert_eq!(soldier.health, 115);
+            assert_eq!(soldier.destination, None);
+            assert!(!soldier.rng_changed, "{soldier:?}");
+        }
+        for control in [Some(true), Some(false)] {
+            let moving_civilian = run(MissionType::Guard, true, 125, true, control, false, true);
+            assert_eq!(moving_civilian.destination, None);
+            assert!(
+                !moving_civilian.rng_changed,
+                "NavCom cannot substitute for Team"
+            );
+            let team_civilian = run(MissionType::Guard, true, 125, true, control, true, false);
+            assert_eq!(team_civilian.destination, Some((6, 4)));
+            assert!(team_civilian.rng_changed);
+        }
     }
 
     fn bridge_layer_test_fixture() -> (

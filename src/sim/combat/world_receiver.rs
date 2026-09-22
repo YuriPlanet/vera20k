@@ -671,24 +671,16 @@ pub(crate) fn commit_entities(
             let scatter = if surviving_infantry_result {
                 attacker_coord.and_then(|attacker_coord| {
                     let target = world.substrate.entities.get(target_id)?;
-                    let target_type = rules.object(world.interner.resolve(target.type_ref()));
-                    let infantry_is_fraidycat = target_type.is_some_and(|object| object.fraidycat);
-                    let has_scatter_ability = target_type.is_some_and(|object| {
-                        (target.veterancy >= VETERAN_VETERANCY && object.veteran_scatter)
-                            || (target.veterancy >= ELITE_VETERANCY && object.elite_scatter)
-                    });
                     crate::sim::movement::bump_crush::select_infantry_damage_scatter(
                         target,
                         attacker_coord,
                         world.resolved_terrain.as_ref(),
                         &mut world.substrate.occupancy,
                         rules,
-                        world
-                            .houses
-                            .get(&target.owner())
-                            .is_some_and(|house| house.is_human),
-                        infantry_is_fraidycat,
-                        has_scatter_ability,
+                        world.houses.get(&target.owner()).is_some_and(|house| {
+                            house.is_controlled_by_human(world.session.game_mode_nonzero)
+                        }),
+                        &world.team_script_vm,
                         &mut world.scenario_rng,
                         &world.interner,
                     )

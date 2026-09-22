@@ -1352,9 +1352,8 @@ pub(crate) fn select_infantry_damage_scatter(
     terrain: Option<&ResolvedTerrainGrid>,
     occupancy: &OccupancyGrid,
     rules: &crate::rules::ruleset::RuleSet,
-    owner_is_human: bool,
-    infantry_is_fraidycat: bool,
-    has_scatter_ability: bool,
+    owner_controlled_by_human: bool,
+    teams: &crate::sim::team_script_vm::TeamScriptVm,
     rng: &mut SimRng,
     interner: &crate::sim::intern::StringInterner,
 ) -> Option<InfantryDamageScatter> {
@@ -1373,7 +1372,7 @@ pub(crate) fn select_infantry_damage_scatter(
     // With ReceiveDamage's literal false/false arguments, a player-owned man
     // in the four deploy-family actions returns at the entry branch. This is
     // independent of the permission-table byte (28..30 are otherwise allowed).
-    if owner_is_human && doing.is_some_and(|doing| (0x1b..=0x1e).contains(&doing)) {
+    if owner_controlled_by_human && doing.is_some_and(|doing| (0x1b..=0x1e).contains(&doing)) {
         return None;
     }
 
@@ -1390,11 +1389,6 @@ pub(crate) fn select_infantry_damage_scatter(
     if !mission_scatter {
         return None;
     }
-    // The unforced body refuses to interrupt an ordinary combat infantryman's
-    // current shoot-at target; Fraidycat types are the verified exception.
-    if !infantry_is_fraidycat && infantry.attack_target.is_some() {
-        return None;
-    }
     // Native indexes byte zero of the four-byte Doing record. -1 (no Rust
     // Animation) and action 0x1f are explicit bypasses; every represented
     // SequenceKind maps into the verified 42-entry table.
@@ -1404,14 +1398,26 @@ pub(crate) fn select_infantry_damage_scatter(
     }) {
         return None;
     }
-    // This direct virtual does not read CurrentIQ. Under stock
-    // PlayerScatter=no, its separate player-owned branch refuses an unforced
-    // unit with no SCATTER ability and a null NavTarget. The audited evidence
-    // explicitly does not support importing CellClass's IQ gate here.
+    // gamemd 51D212..51D220: every path with effective first flag=false
+    // requires Fraidycat, even with no combat target or with SCATTER ability.
+    // This also subsumes the earlier non-Fraidycat/Target test51D196..51D1A4.
+    // Evidence: tools/spatial_oracle/infantry_damage_scatter.{py,json,meta.json}.
+    let object = rules.object(interner.resolve(infantry.type_ref()))?;
+    if !object.fraidycat {
+        return None;
+    }
+    let has_scatter_ability = crate::sim::combat::veterancy::has_weapon_ability(
+        crate::sim::combat::veterancy::rank_from_u16(infantry.veterancy),
+        object,
+        crate::rules::object_type::Ability::Scatter,
+    );
+    // 51D200 tests Foot.Team+5D4, not NavCom+5A4: Add_Member6EA56E
+    // installs the Team receiver and Remove_Member6EA99D clears it. The world
+    // supplies live TeamScriptVm membership; CellClass's IQ gate is separate.
     if !rules.general.player_scatter
         && !has_scatter_ability
-        && owner_is_human
-        && infantry.navigation.nav_com.is_none()
+        && owner_controlled_by_human
+        && teams.team_for_member(infantry.stable_id()).is_none()
     {
         return None;
     }
@@ -2943,6 +2949,127 @@ mod tests {
     }
 
     #[test]
+    fn damage_scatter_admission_matches_original_execution() {
+        use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+        use crate::sim::animation::{Animation, SequenceKind};
+        use crate::sim::house_state::HouseState;
+        use SequenceKind::*;
+        let represented = [
+            Stand,
+            Prone,
+            Walk,
+            Attack,
+            Down,
+            Crawl,
+            Up,
+            FireProne,
+            Idle1,
+            Idle2,
+            Die1,
+            Die2,
+            Die3,
+            Die4,
+            Die5,
+            Tread,
+            Swim,
+            WetIdle1,
+            WetIdle2,
+            WetAttack,
+            Hover,
+            Fly,
+            FireFly,
+            Deploy,
+            Deployed,
+            DeployedFire,
+            DeployedIdle,
+            Undeploy,
+            Cheer,
+            Paradrop,
+            Panic,
+            SecondaryFire,
+            SecondaryProne,
+        ];
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/infantry_damage_scatter.json"
+        ))
+        .unwrap();
+        let mut checked = 0;
+        for row in corpus.as_array().unwrap() {
+            let input = &row["input"];
+            let flag = |name: &str, default: bool| input[name].as_bool().unwrap_or(default);
+            let doing = input["doing"].as_i64().unwrap_or(-1);
+            let sequence = represented
+                .iter()
+                .copied()
+                .find(|&kind| i64::from(crate::rules::infantry_sequence::action_id(kind)) == doing);
+            if doing != -1 && sequence.is_none() {
+                // Native-only actions remain in the corpus; Rust currently
+                // has no SequenceKind for nine of the 42 Doing records.
+                continue;
+            }
+            let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[General]\nFixture=1\n[InfantryTypes]\n0=E1\n[E1]\nSpeed=4\nFraidycat={}\nVeteranAbilities={}\nEliteAbilities={}\n[Guard]\nScatter={}\n[CombatDamage]\nPlayerScatter={}\n",
+                flag("fraidycat", true),
+                if flag("veteran_scatter", false) { "SCATTER" } else { "" },
+                if flag("elite_scatter", false) { "SCATTER" } else { "" },
+                flag("mission_scatter", true), flag("player_scatter", false),
+            ))).unwrap();
+            let mut victim = infantry(1, 5, 5, 2);
+            let interner = crate::sim::intern::test_interner();
+            victim.animation = sequence.map(Animation::new);
+            victim.veterancy = input["rank"].as_u64().unwrap_or(0) as u16 * 100;
+            victim.locomotor = Some(
+                crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                    crate::rules::locomotor_type::LocomotorKind::Walk,
+                ),
+            );
+            set_mission(&mut victim, crate::sim::mission::MissionType::Guard);
+            if flag("target", false) {
+                victim.attack_target = Some(crate::sim::combat::AttackTarget::new(9));
+            }
+            if flag("nav", false) {
+                victim.navigation.nav_com = Some(crate::sim::components::NavTargetRef::cell(9, 9));
+            }
+            if flag("moving", false) {
+                victim.movement_target = Some(crate::sim::components::MovementTarget {
+                    path: vec![(5, 5), (6, 5)],
+                    next_index: 1,
+                    speed: SimFixed::from_num(100),
+                    ..Default::default()
+                });
+            }
+            let mut house = HouseState::new(victim.owner(), 0, None, flag("human", false), 0, 10);
+            house.player_control = flag("player_control", false);
+            let mut teams = crate::sim::team_script_vm::TeamScriptVm::default();
+            if flag("team", false) {
+                teams.create_team(victim.owner(), victim.type_ref(), vec![1], None, 0);
+            }
+            let mut rng = SimRng::new(42);
+            let before_rng = rng.state();
+            let result = select_infantry_damage_scatter(
+                &victim,
+                (1000, 1000),
+                None,
+                &OccupancyGrid::new(),
+                &rules,
+                house.is_controlled_by_human(flag("game_mode_nonzero", true)),
+                &teams,
+                &mut rng,
+                &interner,
+            );
+            let admitted = row["admitted"].as_bool().unwrap();
+            assert_eq!(result.is_some(), admitted, "{input}");
+            assert_eq!(
+                rng.state() != before_rng,
+                admitted,
+                "refused call must not draw: {input}"
+            );
+            checked += 1;
+        }
+        assert_eq!(checked, 260);
+    }
+
+    #[test]
     fn damage_scatter_uses_the_same_normal_type_speed() {
         let rules = scatter_rules(true);
         let mut civilian = infantry(1, 5, 5, 2);
@@ -2961,8 +3088,7 @@ mod tests {
             &OccupancyGrid::new(),
             &rules,
             false,
-            true,
-            false,
+            &crate::sim::team_script_vm::TeamScriptVm::default(),
             &mut rng,
             &interner,
         )

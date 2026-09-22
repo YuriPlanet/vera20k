@@ -1,0 +1,3074 @@
+[
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 1,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 1,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 1,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 1,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 1,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 1,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 1,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 1,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 1,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 1,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 1,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 1,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 1,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 1,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 1,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 1,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": false,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 1,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 1,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 1,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 1,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 1,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 1,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 1,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 1,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": false,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 1,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 1,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 1,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 0,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 1,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 2,
+      "team": false,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 1,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": false,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 1,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": false,
+      "player_scatter": true,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 1,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": false,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 0,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 1,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": true,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "elite_scatter": false,
+      "fraidycat": true,
+      "human": true,
+      "nav": true,
+      "player_scatter": true,
+      "rank": 2,
+      "team": true,
+      "veteran_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": -1,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": -1,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 0,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 0,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 1,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 1,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 2,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 2,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 3,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 3,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 4,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 4,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 5,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 5,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 6,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 6,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 7,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 7,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 8,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 8,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 9,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 9,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 10,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 10,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 11,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 11,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 12,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 12,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 13,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 13,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 14,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 14,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 15,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 15,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 16,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 16,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 17,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 17,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 18,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 18,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 19,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 19,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 20,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 20,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 21,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 21,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 22,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 22,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 23,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 23,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 24,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 24,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 25,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 25,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 26,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 26,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 27,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 27,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 28,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 28,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 29,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 29,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 30,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 30,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 31,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 31,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 32,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 32,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 33,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 33,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 34,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 34,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 35,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 35,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 36,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "doing": 36,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 37,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 37,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 38,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 38,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 39,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 39,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 40,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 40,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 41,
+      "human": false,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "doing": 41,
+      "human": true,
+      "player_scatter": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "fraidycat": false,
+      "mission_scatter": false,
+      "moving": false,
+      "player_scatter": true,
+      "target": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "fraidycat": true,
+      "mission_scatter": false,
+      "moving": false,
+      "player_scatter": true,
+      "target": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "fraidycat": false,
+      "mission_scatter": false,
+      "moving": false,
+      "player_scatter": true,
+      "target": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "fraidycat": true,
+      "mission_scatter": false,
+      "moving": false,
+      "player_scatter": true,
+      "target": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "fraidycat": false,
+      "mission_scatter": true,
+      "moving": false,
+      "player_scatter": true,
+      "target": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "fraidycat": true,
+      "mission_scatter": true,
+      "moving": false,
+      "player_scatter": true,
+      "target": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "fraidycat": false,
+      "mission_scatter": true,
+      "moving": false,
+      "player_scatter": true,
+      "target": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "fraidycat": true,
+      "mission_scatter": true,
+      "moving": false,
+      "player_scatter": true,
+      "target": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "fraidycat": false,
+      "mission_scatter": false,
+      "moving": true,
+      "player_scatter": true,
+      "target": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "fraidycat": true,
+      "mission_scatter": false,
+      "moving": true,
+      "player_scatter": true,
+      "target": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "fraidycat": false,
+      "mission_scatter": false,
+      "moving": true,
+      "player_scatter": true,
+      "target": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "fraidycat": true,
+      "mission_scatter": false,
+      "moving": true,
+      "player_scatter": true,
+      "target": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "fraidycat": false,
+      "mission_scatter": true,
+      "moving": true,
+      "player_scatter": true,
+      "target": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "fraidycat": true,
+      "mission_scatter": true,
+      "moving": true,
+      "player_scatter": true,
+      "target": false
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "fraidycat": false,
+      "mission_scatter": true,
+      "moving": true,
+      "player_scatter": true,
+      "target": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "fraidycat": true,
+      "mission_scatter": true,
+      "moving": true,
+      "player_scatter": true,
+      "target": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "game_mode_nonzero": false,
+      "human": false,
+      "player_control": false,
+      "team": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "game_mode_nonzero": false,
+      "human": false,
+      "player_control": false,
+      "team": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "game_mode_nonzero": true,
+      "human": false,
+      "player_control": false,
+      "team": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "game_mode_nonzero": true,
+      "human": false,
+      "player_control": false,
+      "team": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "game_mode_nonzero": false,
+      "human": false,
+      "player_control": true,
+      "team": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "game_mode_nonzero": false,
+      "human": false,
+      "player_control": true,
+      "team": true
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "game_mode_nonzero": true,
+      "human": false,
+      "player_control": true,
+      "team": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "game_mode_nonzero": true,
+      "human": false,
+      "player_control": true,
+      "team": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "game_mode_nonzero": false,
+      "human": true,
+      "player_control": false,
+      "team": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "game_mode_nonzero": false,
+      "human": true,
+      "player_control": false,
+      "team": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "game_mode_nonzero": true,
+      "human": true,
+      "player_control": false,
+      "team": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "game_mode_nonzero": true,
+      "human": true,
+      "player_control": false,
+      "team": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "game_mode_nonzero": false,
+      "human": true,
+      "player_control": true,
+      "team": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "game_mode_nonzero": false,
+      "human": true,
+      "player_control": true,
+      "team": true
+    }
+  },
+  {
+    "admitted": false,
+    "input": {
+      "game_mode_nonzero": true,
+      "human": true,
+      "player_control": true,
+      "team": false
+    }
+  },
+  {
+    "admitted": true,
+    "input": {
+      "game_mode_nonzero": true,
+      "human": true,
+      "player_control": true,
+      "team": true
+    }
+  }
+]
