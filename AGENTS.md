@@ -157,6 +157,8 @@ Preserve unique/local data; use `sync` for complex cleanup.
 Choose validation appropriate to the change, considering native fidelity, connected
 production behavior and protection against regressions.
 
+Avoid tests that merely mirror the implementation or require maintaining a second implementation of the same logic.
+
 - Working Rust: `cargo check -p vera20k` as needed; focused
   `cargo test -p vera20k --lib <module_path>::`.
 - Rust PR readiness: one full `cargo test -p vera20k --lib` plus
