@@ -99,3 +99,48 @@ fn unbound_warp_art_relocates_without_an_anim() {
     assert_eq!((mover.position.rx, mover.position.ry), (8, 9));
     assert_eq!(sim.substrate.anims.len(), 0);
 }
+
+#[test]
+fn teleport_object_turn_moves_retained_foot_neighbor_counts() {
+    use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
+    use crate::sim::overlay_grid::OverlayGrid;
+    let rules = rules(false);
+    let mut sim = relocating_legionnaire((8, 9));
+    sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
+        32,
+        32,
+        (0..32)
+            .flat_map(|y| (0..32).map(move |x| test_flat_cell(x, y)))
+            .collect(),
+    ));
+    sim.overlay_grid = Some(OverlayGrid::new_with_retained_wall_plane(32, 32));
+    // This fixture's original reveal preceded its map installation. Establish
+    // that admitted Unlimbo's counters before executing the real object turn.
+    sim.foot_neighbors_after_unlimbo(1, Some(&rules));
+    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
+        .unwrap();
+    let plane = sim
+        .overlay_grid
+        .as_ref()
+        .unwrap()
+        .retained_neighbor_counts()
+        .unwrap();
+    assert_eq!(plane.iter().map(|v| u32::from(*v)).sum::<u32>(), 8);
+    assert_eq!(plane[4 * 32 + 4], 0, "released origin neighbors");
+    assert_eq!(
+        plane[8 * 32 + 7],
+        1,
+        "destination neighbors see the retained update"
+    );
+    sim.techno_limbo(1);
+    assert!(
+        sim.overlay_grid
+            .as_ref()
+            .unwrap()
+            .retained_neighbor_counts()
+            .unwrap()
+            .iter()
+            .all(|v| *v == 0),
+        "Limbo removes the destination source saved by Teleport's callback"
+    );
+}

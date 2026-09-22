@@ -1,0 +1,713 @@
+[
+  {
+    "announce": false,
+    "distances": [],
+    "factors": [],
+    "foot_speeds": [],
+    "initial_factors": [],
+    "input": {
+      "actors": [],
+      "name": "empty"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [],
+    "visits": []
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "name": "center"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [
+      15
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      766
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            767,
+            0,
+            0
+          ]
+        }
+      ],
+      "name": "inside"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [
+      15
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      768
+    ],
+    "factors": [
+      "3ff0000000000000"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            768,
+            0,
+            0
+          ]
+        }
+      ],
+      "name": "at_radius"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      768
+    ],
+    "factors": [
+      "3ff0000000000000"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            769,
+            0,
+            0
+          ]
+        }
+      ],
+      "name": "outside"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      766
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            542,
+            542,
+            0
+          ]
+        }
+      ],
+      "name": "diagonal_inside"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [
+      15
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      769
+    ],
+    "factors": [
+      "3ff0000000000000"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            544,
+            544,
+            0
+          ]
+        }
+      ],
+      "name": "diagonal_outside"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      766
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            0,
+            0,
+            767
+          ]
+        }
+      ],
+      "name": "vertical_inside"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [
+      15
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      768
+    ],
+    "factors": [
+      "3ff0000000000000"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            0,
+            0,
+            768
+          ]
+        }
+      ],
+      "name": "vertical_at_radius"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "kind": "infantry"
+        }
+      ],
+      "name": "infantry"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [
+      15
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "kind": "unit"
+        }
+      ],
+      "name": "unit"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [
+      1
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff0000000000000"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "kind": "aircraft"
+        }
+      ],
+      "name": "aircraft"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [
+      2
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "0000000000000000"
+    ],
+    "foot_speeds": [
+      0
+    ],
+    "initial_factors": [
+      "0000000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "factor": 0.0
+        }
+      ],
+      "name": "existing_0.0"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "initial_factors": [
+      "3ff3333333333333"
+    ],
+    "input": {
+      "actors": [
+        {
+          "factor": 1.2
+        }
+      ],
+      "name": "existing_1.2"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3fefffffffffffff"
+    ],
+    "foot_speeds": [
+      9
+    ],
+    "initial_factors": [
+      "3fefffffffffffff"
+    ],
+    "input": {
+      "actors": [
+        {
+          "factor": 0.9999999999999999
+        }
+      ],
+      "name": "existing_0.9999999999999999"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff0000000000001"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "initial_factors": [
+      "3ff0000000000001"
+    ],
+    "input": {
+      "actors": [
+        {
+          "factor": 1.0000000000000002
+        }
+      ],
+      "name": "existing_1.0000000000000002"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [],
+    "factors": [
+      "3ff0000000000000"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "flags": 1
+        }
+      ],
+      "name": "non_foot_mask"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0,
+      0
+    ],
+    "factors": [
+      "3ff3333333333333",
+      null,
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11,
+      null,
+      11
+    ],
+    "initial_factors": [
+      "3ff0000000000000",
+      null,
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "house": 0
+        },
+        null,
+        {
+          "house": 1
+        }
+      ],
+      "name": "distinct_owners_and_null"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [
+      15,
+      15
+    ],
+    "visits": [
+      0,
+      null,
+      2
+    ]
+  },
+  {
+    "announce": true,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "player_controlled": 1
+        }
+      ],
+      "name": "controlled_announcement"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [
+      15
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      768
+    ],
+    "factors": [
+      "3ff0000000000000"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            768,
+            0,
+            0
+          ],
+          "player_controlled": 1
+        }
+      ],
+      "name": "controlled_outside"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            0,
+            0,
+            208
+          ]
+        }
+      ],
+      "level": 2,
+      "name": "elevated_center"
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [
+      15
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff3333333333333"
+    ],
+    "foot_speeds": [
+      11
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {
+          "delta": [
+            0,
+            0,
+            260
+          ]
+        }
+      ],
+      "level": 2,
+      "name": "slope_center",
+      "slope": 1
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [
+      15
+    ],
+    "visits": [
+      0
+    ]
+  },
+  {
+    "announce": false,
+    "distances": [
+      0
+    ],
+    "factors": [
+      "3ff0000000000000"
+    ],
+    "foot_speeds": [
+      10
+    ],
+    "initial_factors": [
+      "3ff0000000000000"
+    ],
+    "input": {
+      "actors": [
+        {}
+      ],
+      "name": "zero_radius",
+      "radius": 0
+    },
+    "multiplier_bits": "3ff3333333333333",
+    "object_kinds": [],
+    "visits": [
+      0
+    ]
+  }
+]

@@ -223,7 +223,7 @@ impl Simulation {
             "shared object id {stable_id} collided before particle-system insertion"
         );
         self.particle_systems_mut().insert(sys);
-        self.reveal_particle_system(stable_id);
+        self.reveal_particle_system(stable_id, Some(rules));
         Some(stable_id)
     }
 

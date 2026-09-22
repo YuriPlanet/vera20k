@@ -461,7 +461,7 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
         let entity = sim.substrate.entities.get_mut(targeter).unwrap();
         let mut attack = AttackTarget::new(cloaker);
         attack.cooldown_ticks = 17;
-        attack.burst_remaining = 3;
+        entity.weapon_burst.complete_shot(4);
         attack.burst_delay_ticks = 4;
         entity.pending_building_fire = Some(PendingBuildingFire {
             remaining_ticks: 7,
@@ -500,7 +500,7 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
     let attack = entity.attack_target.as_ref().unwrap();
     assert_eq!(attack.target, TargetKind::Entity(cloaker));
     assert_eq!(attack.cooldown_ticks, 17);
-    assert_eq!(attack.burst_remaining, 3);
+    assert_eq!(entity.weapon_burst.index(), 1);
     assert_eq!(attack.burst_delay_ticks, 4);
     assert_eq!(
         entity.pending_building_fire,
@@ -607,6 +607,9 @@ fn a_non_allied_sensors_neighbour_surfaces_a_cloaked_mover_on_cell_entry() {
         &mut sim, id, &rules
     ));
     assert!(sim.sound_events.is_empty());
+    // Leave cell, Logic and display membership through their common owner
+    // before removing storage; raw erase left a dangling display identity.
+    sim.object_conceal(friendly);
     sim.substrate.entities.remove(friendly);
 
     // A hostile one with `Sensors=yes` forces the surface, with the cue.

@@ -273,7 +273,7 @@ pub fn try_drop(
                     cell.level
                         .wrapping_add(u8::from(landing_layer == MovementLayer::Bridge) * 4)
                 });
-            let reveal_outcome = sim.try_reveal_entity(
+            let reveal_outcome = sim.try_reveal_entity_with_context(
                 passenger_id,
                 RevealRequest {
                     position: RevealPosition {
@@ -286,6 +286,7 @@ pub fn try_drop(
                     placement: PlacementEvidence::MarkSucceeded,
                     logic_eligible: true,
                 },
+                crate::sim::world::UninitContext::with_rules(rules),
             );
             if !matches!(reveal_outcome, RevealOutcome::Revealed { .. }) {
                 return Err(DepartureFailure::ParachuteReveal(
@@ -297,6 +298,7 @@ pub fn try_drop(
             // `ObjectClass::Paradrop @ 0x005F5940` builds the canopy once it has
             // placed the object and set its coordinate.
             sim.attach_parachute_anim(rules, passenger_id);
+            sim.foot_neighbors_after_payload_drop(passenger_id, (drop_rx as i16, drop_ry as i16));
 
             // 7. ChuteSound at drop cell.
             sim.sound_events.push(SimSoundEvent::ChuteSound {
@@ -706,7 +708,7 @@ mod tests {
             let mut sim = Simulation::new();
             let rules = drop_test_rules();
             insert_loaded_paradrop_pair(&mut sim, 1, 2);
-            let mut loco = LocomotorState::from_object_type(rules.object("E1").unwrap(), 0, 0);
+            let mut loco = LocomotorState::from_object_type(rules.object("E1").unwrap(), 0);
             loco.layer = MovementLayer::Bridge;
             {
                 let passenger = sim.substrate.entities.get_mut(2).unwrap();

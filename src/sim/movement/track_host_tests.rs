@@ -75,7 +75,7 @@ fn terminal_horizontal_mismatch_does_not_query_missing_owner_locomotor() {
     e.drive_locomotion.as_mut().unwrap().destination = Some(DriveCoord::cell(20, 20, 0));
     e.locomotor = None;
     assert!(
-        !sim.track_reached_destination(1, TrackFamily::Drive)
+        !sim.track_reached_destination(1, TrackFamily::Drive, None)
             .unwrap()
     );
     sim.substrate
@@ -85,9 +85,92 @@ fn terminal_horizontal_mismatch_does_not_query_missing_owner_locomotor() {
         .navigation
         .nav_com = Some(NavTargetRef::cell(10, 10));
     assert!(
-        sim.track_reached_destination(1, TrackFamily::Drive)
+        sim.track_reached_destination(1, TrackFamily::Drive, None)
             .is_err()
     );
+}
+
+#[test]
+fn building_navigation_reaches_drive_and_ship_terminal_callbacks() {
+    use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
+    use crate::sim::components::NavTargetRef;
+    for family in [TrackFamily::Drive, TrackFamily::Ship] {
+        for contacted in [false, true] {
+            let (mut sim, invocation, budget) = fixture(family, 8);
+            let mut rules = RuleSet::from_ini(&IniFile::from_str(
+                "[VehicleTypes]\n0=MTNK\n[BuildingTypes]\n0=PAD\n[PAD]\nHelipad=yes\nNumberOfDocks=3\n",
+            )).unwrap();
+            rules.merge_art_data(&ArtRegistry::from_ini(&IniFile::from_str(
+                "[PAD]\nFoundation=3x3\nDockingOffset0=-256,0,0\nDockingOffset1=0,0,0\nDockingOffset2=256,0,0\n",
+            )));
+            let mut building = GameEntity::test_default(2, "PAD", "Americans", 8, 8);
+            building.category = EntityCategory::Structure;
+            building.foundation = "3x3".into();
+            building.radio_contacts.set_capacity(3);
+            for id in [100, 101, if contacted { 1 } else { 102 }] {
+                building.radio_contacts.insert(id);
+            }
+            building.radio_contacts.remove(101);
+            sim.substrate.entities.insert(building);
+            sim.interner = crate::sim::intern::test_interner();
+            let mover = sim.substrate.entities.get_mut(1).unwrap();
+            let destination = head(mover, family);
+            mover.navigation.nav_com = Some(NavTargetRef::Building { id: 2 });
+            match family {
+                TrackFamily::Drive => {
+                    mover.drive_locomotion.as_mut().unwrap().destination = Some(destination)
+                }
+                TrackFamily::Ship => {
+                    mover.ship_locomotion.as_mut().unwrap().destination = Some(destination)
+                }
+            }
+            progress_mut(mover, family).unwrap().cursor =
+                super::super::drive_track::raw_track_points(1).len() as i32;
+            let mut callbacks = 0;
+            sim.run_track_points_observed(
+                invocation,
+                budget,
+                Some(&rules),
+                None,
+                None,
+                &mut |world, _, event| {
+                    if event == TrackWorldEvent::PerCell {
+                        callbacks += 1;
+                        // The native caller keeps the earlier reached decision;
+                        // live radio changes here affect only subsequent queries.
+                        world
+                            .substrate
+                            .entities
+                            .get_mut(2)
+                            .unwrap()
+                            .radio_contacts
+                            .clear_all();
+                    }
+                },
+            );
+            assert_eq!(callbacks, 1);
+            let mover = sim.substrate.entities.get(1).unwrap();
+            assert_eq!(mover.navigation.nav_com.is_none(), contacted, "{family:?}");
+            assert_eq!(
+                match family {
+                    TrackFamily::Drive => mover
+                        .drive_locomotion
+                        .as_ref()
+                        .unwrap()
+                        .destination
+                        .is_none(),
+                    TrackFamily::Ship => mover
+                        .ship_locomotion
+                        .as_ref()
+                        .unwrap()
+                        .destination
+                        .is_none(),
+                },
+                contacted,
+                "{family:?}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -827,6 +910,38 @@ fn per_cell_promotes_queued_mission_before_tail_without_dispatching_handler() {
             assert_eq!(mission.handler_state(), 0);
             assert_eq!(mission.ai_counter(), 0);
             assert_eq!(mission.mission_start_frame(), 57);
+        }
+    }
+}
+
+#[test]
+fn idle_receiver_cancels_burst_through_the_shared_target_setter() {
+    use crate::sim::combat::{AttackTarget, TargetKind};
+    use crate::sim::components::NavTargetRef;
+    for family in [TrackFamily::Drive, TrackFamily::Ship] {
+        for has_destination in [false, true] {
+            let (mut sim, _, _) = fixture(family, 0);
+            let entity = sim.substrate.entities.get_mut(1).unwrap();
+            entity.attack_target = Some(AttackTarget::for_cell(12, 10));
+            entity.passively_acquired_target = true;
+            entity.weapon_burst.complete_shot(2);
+            entity.navigation.nav_com = has_destination.then(|| NavTargetRef::cell(12, 10));
+            sim.track_enter_idle_mode(1, None);
+            let entity = sim.substrate.entities.get(1).unwrap();
+            assert_eq!(entity.weapon_burst.index(), i32::from(has_destination));
+            assert_eq!(entity.passively_acquired_target, has_destination);
+            assert_eq!(
+                entity.attack_target.as_ref().map(|target| target.target),
+                has_destination.then_some(TargetKind::Cell(12, 10)),
+            );
+            assert_eq!(
+                entity.mission.queued(),
+                MissionId::from_known(if has_destination {
+                    MissionType::Move
+                } else {
+                    MissionType::Guard
+                }),
+            );
         }
     }
 }

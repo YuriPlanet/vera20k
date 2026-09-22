@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "100 complete Unit73F0A0 calls through original retained-Cell578540 and Foot4DA1D0: GameMode, retained3D4/3D5, current/queued Retreat, signed level/slope boundaries and non-action3 Team exits. Excludes IsTrain and active action3 Team waypoint/lifecycle branches.",
+  "assumptions": [
+    "Real Unit/Drive and map/type/house fixture from unit_entry. Map LocalSize fields are supplied raw, not clipped by a loader. Target Cell11,10 and retained flags/missions are supplied prestates.",
+    "Team cases execute original Script readers with one non-action3 record; outcomes are independent of7F. No production Team activation, waypoints, IsTrain or boundary-dummy proof."
+  ],
+  "substitutions": [
+    "Only OS Interlocked imports inherited from the Unit/Drive fixture. No gameplay substitution."
+  ],
+  "entry_points": {
+    "unit_entry": "0x0073F0A0",
+    "retained_cell_bounds": "0x00578540",
+    "foot_edge": "0x004DA1D0",
+    "team_edge": "0x006EC300"
+  },
+  "payload_sha256": "c52e7614bcbac927282ebbb36cd3da6ef7204ddf5989f6c102ddfcb0653db624"
+}

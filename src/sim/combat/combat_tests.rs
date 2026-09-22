@@ -84,7 +84,6 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
         TargetKind::Entity(999),
         0,
         0,
-        0,
         None,
         None,
         None,
@@ -5864,7 +5863,7 @@ fn crusher_driveover_destroys_wall_but_noncrusher_does_not() {
         veh.regular_crusher = obj.crusher;
         veh.omni_crusher = obj.omni_crusher;
         veh.locomotor =
-            Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(obj, 0, 0));
+            Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(obj, 0));
         veh.health = Health { current: 300 };
         sim.substrate.entities.insert(veh);
         sim.substrate.entities.rebuild_owner_index();
@@ -5962,7 +5961,7 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
         veh.type_ref = veh_type_id;
         veh.regular_crusher = obj.crusher;
         veh.locomotor =
-            Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(obj, 0, 0));
+            Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(obj, 0));
         sim.substrate.entities.insert(veh);
         sim.substrate.entities.rebuild_owner_index();
         sim
@@ -6464,6 +6463,69 @@ fn persistent_projectile_rules() -> RuleSet {
         "[InfantryTypes]\n\n[VehicleTypes]\n0=SHOOTER\n1=TARGET\n\n[AircraftTypes]\n\n[BuildingTypes]\n\n[SHOOTER]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=GUN\n\n[TARGET]\nStrength=500\nArmor=heavy\nSpeed=6\n\n[GUN]\nDamage=10\nROF=20\nRange=10\nSpeed=128\nProjectile=TESTPROJ\nWarhead=TESTWH\n\n[TESTPROJ]\nInviso=no\nImage=TESTBULLET\n\n[TESTWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     ))
     .expect("persistent projectile rules should parse")
+}
+
+#[test]
+fn fire_admission_preserves_flat_projectile_layer_through_save_and_retirement() {
+    use crate::sim::world::display_layers::DisplayLayer;
+    for flat in [false, true] {
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str("[VehicleTypes]\n0=SHOOTER\n1=TARGET\n\
+                [SHOOTER]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=GUN\n\
+                [TARGET]\nStrength=500\nArmor=heavy\nSpeed=6\n\
+                [GUN]\nDamage=10\nROF=20\nRange=10\nSpeed=128\nProjectile=TESTPROJ\nWarhead=TESTWH\n\
+                [TESTPROJ]\nImage=SHOT\nROT=0\nArcing=yes\n\
+                [TESTWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"),
+            &IniFile::from_str(&format!("[SHOT]\nFlat={}\n", if flat { "yes" } else { "no" })),
+        ).unwrap();
+        assert_eq!(rules.projectile("TESTPROJ").unwrap().flat, flat);
+        let mut entities = EntityStore::new();
+        entities.insert(make_entity(1, "SHOOTER", 5, 5, 300));
+        entities.insert(make_entity(2, "TARGET", 8, 5, 500));
+        let mut interner = test_interner();
+        issue_attack_command(&mut entities, 1, 2, None, &interner);
+        align_attackers_to_targets(&mut entities, &rules, &interner);
+        let fire = tick_combat(
+            &mut entities,
+            &mut OccupancyGrid::new(),
+            &rules,
+            &mut interner,
+            0,
+            100,
+            0,
+            &mut SimRng::new(1),
+        );
+        assert_eq!(fire.projectile_spawns.len(), 1);
+        assert_eq!(fire.projectile_spawns[0].flat, flat);
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.interner = interner;
+        // Preserve the real firer and target identities across the save.
+        assert_eq!(sim.allocate_stable_id(), 1);
+        assert_eq!(sim.allocate_stable_id(), 2);
+        sim.substrate.entities = entities;
+        let id = sim.allocate_stable_id();
+        sim.admit_projectile(id, fire.projectile_spawns[0]);
+        let layer = if flat {
+            DisplayLayer::SURFACE
+        } else {
+            DisplayLayer::AIR
+        };
+        assert_eq!(sim.substrate.display.members(layer), [id]);
+        let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "flat-shot", 0);
+        let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+            .unwrap()
+            .sim;
+        restored.restore_after_snapshot_load().unwrap();
+        assert_eq!(restored.substrate.display.members(layer), [id]);
+        assert!(restored.retire_non_entity_object(id));
+        assert_eq!(restored.substrate.display.layer_of(id), None);
+        assert!(
+            restored.projectiles.get(id).is_some(),
+            "display removal precedes deferred free"
+        );
+        restored.process_pending_delete();
+        assert!(restored.projectiles.get(id).is_none());
+    }
 }
 
 #[test]
@@ -8876,18 +8938,20 @@ fn gsi_08_08_kirov_vertical_bomb_falls_and_detonates() {
     kirov.category = EntityCategory::Aircraft;
     let zep_object = rules.object("ZEP").expect("ZEP object type");
     let mut locomotor =
-        crate::sim::movement::locomotor::LocomotorState::from_object_type(zep_object, 0, 0);
+        crate::sim::movement::locomotor::LocomotorState::from_object_type(zep_object, 0);
     // The hover altitude is NOT hand-set: `JumpjetHeight=750` has to arrive
-    // through `LocomotorState::air_params_from_object` as the hover target, and
+    // through the native Jumpjet Link_To_Object copy as the hover target, and
     // the airship is then placed at the top of its climb. Assert the rules hop
     // at its source so a broken parse fails here rather than downstream.
     assert_eq!(
-        locomotor.target_altitude,
-        crate::util::fixed_math::SimFixed::from_num(750),
+        locomotor.jumpjet_runtime().unwrap().params.height,
+        750,
         "`JumpjetHeight=750` must reach the locomotor's hover target; a 500 here \
          means the rules->locomotor hop is broken, not the flight model"
     );
-    locomotor.altitude = locomotor.target_altitude;
+    locomotor.altitude = crate::util::fixed_math::SimFixed::from_num(
+        locomotor.jumpjet_runtime().unwrap().params.height,
+    );
     kirov.locomotor = Some(locomotor);
     store.insert(kirov);
     let _ = test_intern("HTNK");
@@ -9527,7 +9591,7 @@ fn a_drive_crusher_without_crusherall_leaves_a_plain_wall_standing() {
         veh.type_ref = veh_type_id;
         veh.regular_crusher = obj.crusher;
         veh.locomotor =
-            Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(obj, 0, 0));
+            Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(obj, 0));
         sim.substrate.entities.insert(veh);
         sim.substrate.entities.rebuild_owner_index();
         sim

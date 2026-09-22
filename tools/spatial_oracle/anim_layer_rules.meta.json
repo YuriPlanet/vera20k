@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "19 Anim Layer reads including all native names, absent values, case folding, unknown/numeric tokens and lexical whitespace. Excludes file loading and complete AnimType construction.",
+  "assumptions": [
+    "Cached INI index with one Layer entry; lexical trimming/empty omission supplied.",
+    "Retained default Air3 established at AnimType constructor4276D4. Native128-byte reader and five-name lookup execute unchanged."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "read_layer": "0x00477050",
+    "name_to_layer": "0x0048E050",
+    "anim_reader_call": "0x00427DF2",
+    "constructor_default": "0x004276D4"
+  },
+  "payload_sha256": "26170f044c0c7f7ecdff1640374a8699df14402f798af27aaa0eddf1b817cb27"
+}

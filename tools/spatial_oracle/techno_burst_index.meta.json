@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "54 original signed object burst increment/remainder cases",
+  "assumptions": [
+    "Entry at normal FireAt rearm tail after shot effects; raw retained index and nonzero Burst supplied",
+    "No initialization, target assignment, spawn manager, FLH or complete firing parity claim"
+  ],
+  "substitutions": [
+    "Scratch GetROF returns20 and records the incremented index; original code bytes unchanged"
+  ],
+  "entry_points": {
+    "start": "0x006FF274",
+    "end_exclusive": "0x006FF2D1"
+  },
+  "original_slice": {
+    "start": "006FF274",
+    "end_exclusive": "006FF2D1",
+    "hex": "8b86b80300008b16408bce8986b80300008b450c50ff92180300008a8e9802000084c97405992bc2d1f88986f80200008b0d84eda8008d96ec02000033ff890a8b4c2434894a048942088b86b803000099f7bb9c0000008996b8030000",
+    "sha256": "d16e5fd7e2cdcc04eb725c4ec1e2f25b7d35a71085f7f3c46564a1541c045786"
+  },
+  "payload_sha256": "090259222ef421d1010a833650958af22623d1bf07bbb3eb79cbe2dffc0be82b"
+}

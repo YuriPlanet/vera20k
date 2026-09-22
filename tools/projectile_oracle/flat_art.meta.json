@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "38 original Image/Flat reader and subsequent layer queries. Covers missing keys, defaults, first-character booleans, missing Image/type-ID fallback and 25-byte truncation. Excludes complete Rules sweeps, file loading, pointer-cache alias histories and rendering.",
+  "assumptions": [
+    "Supplied retained BulletType fields and cold single-section INI indexes; empty lexical values omitted.",
+    "Original Image/Trailer/SpawnDelay/Rotates/Flat branch executes; unrelated ART keys absent so no animation allocation occurs.",
+    "Constructor false is separately established by 46BCE0; cases explicitly exercise both retained Flat values."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "image_art_read": "0x0046C1CC",
+    "flat_read": "0x0046C272",
+    "bullet_layer": "0x00468B90",
+    "read_string": "0x00528A10",
+    "read_bool": "0x005295F0"
+  },
+  "payload_sha256": "1090315230dbdc1ca48f07f6e75c692b1276991c580851310200a09b09a29640"
+}

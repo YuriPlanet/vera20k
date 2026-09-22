@@ -1007,11 +1007,7 @@ fn install_fly_aircraft(sim: &mut Simulation, stable_id: u64, altitude: SimFixed
     insert_entity(sim, stable_id, EntityCategory::Aircraft);
     let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Fly);
     locomotor.altitude = altitude;
-    locomotor.air_phase = if altitude <= SimFixed::from_num(0) {
-        AirMovePhase::Landed
-    } else {
-        AirMovePhase::Cruising
-    };
+    locomotor.set_fly_target_height(altitude.to_num::<i32>());
     sim.substrate
         .entities
         .get_mut(stable_id)
@@ -1536,9 +1532,8 @@ fn gsi_04_12_object_raw_occupation_production_fly_tick_unmarks_takeoff_and_marks
             .locomotor
             .as_mut()
             .unwrap();
-        locomotor.air_phase = AirMovePhase::Ascending;
-        locomotor.target_altitude = SimFixed::from_num(600);
-        locomotor.climb_rate = SimFixed::from_num(1500);
+
+        locomotor.set_fly_target_height(600);
     }
     sim.tick_air_movement_with_cell_lists_one(1, None);
 
@@ -1560,10 +1555,9 @@ fn gsi_04_12_object_raw_occupation_production_fly_tick_unmarks_takeoff_and_marks
             .locomotor
             .as_mut()
             .unwrap();
-        locomotor.air_phase = AirMovePhase::Descending;
+        locomotor.begin_fly_landing();
         locomotor.altitude = SimFixed::from_num(1);
-        locomotor.target_altitude = SimFixed::from_num(0);
-        locomotor.climb_rate = SimFixed::from_num(1500);
+        locomotor.set_fly_target_height(0);
     }
     // Supply the matching physical state for this independent landing visit.
     // Changing cached controller height cannot move an exact Object coordinate.
@@ -1607,9 +1601,8 @@ fn gsi_05_05_fly_takeoff_commits_absolute_z_after_remove_process() {
             .locomotor
             .as_mut()
             .unwrap();
-        locomotor.air_phase = AirMovePhase::Ascending;
-        locomotor.target_altitude = SimFixed::from_num(600);
-        locomotor.climb_rate = SimFixed::from_num(1500);
+
+        locomotor.set_fly_target_height(600);
     }
     sim.tick_air_movement_with_cell_lists_one(1, None);
 
@@ -1646,9 +1639,8 @@ fn gsi_05_05_fly_landing_on_bridge_uses_absolute_z_for_deck_put() {
             .locomotor
             .as_mut()
             .unwrap();
-        locomotor.air_phase = AirMovePhase::Descending;
-        locomotor.target_altitude = SimFixed::from_num(0);
-        locomotor.climb_rate = SimFixed::from_num(1500);
+        locomotor.begin_fly_landing();
+        locomotor.set_fly_target_height(0);
     }
     sim.tick_air_movement_with_cell_lists_one(1, None);
 
@@ -1719,7 +1711,11 @@ fn gsi_05_05_mapless_fly_uses_dummy_ground_then_bridge_height() {
     {
         let aircraft = sim.substrate.entities.get_mut(1).unwrap();
         aircraft.on_bridge = true;
-        aircraft.locomotor.as_mut().unwrap().target_altitude = SimFixed::from_num(100);
+        aircraft
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .set_fly_target_height(100);
     }
     let _ = sim.try_reveal_entity(1, common_raw_request(3, 4, 2, 128, 128));
 
@@ -1739,13 +1735,17 @@ fn gsi_04_07_damage_air_spatial_entry_crossing_and_exit_keep_vector_order() {
     sim.session.map_width = 40;
     sim.session.map_height = 40;
     install_common_raw_terrain(&mut sim, 40, 40, 0, None);
-    install_fly_aircraft(&mut sim, 20, SimFixed::from_num(4));
-    install_fly_aircraft(&mut sim, 10, SimFixed::from_num(4));
+    // Foot Unlimbo4D72B2 adds ConsideredAircraft only above the native
+    // high-flight threshold (208 leptons). The altitude cache uses leptons,
+    // whereas the Reveal request below uses coarse levels: four levels = 416.
+    install_fly_aircraft(&mut sim, 20, SimFixed::from_num(416));
+    install_fly_aircraft(&mut sim, 10, SimFixed::from_num(416));
 
     let _ = sim.try_reveal_entity(20, common_raw_request(2, 4, 4, 128, 128));
     let _ = sim.try_reveal_entity(10, common_raw_request(3, 4, 4, 128, 128));
     let first = sim.substrate.entities.get(20).unwrap();
     let second = sim.substrate.entities.get(10).unwrap();
+    assert!(first.air_spatial_bucket.is_some());
     assert_eq!(first.air_spatial_bucket, second.air_spatial_bucket);
     assert!(
         first.air_spatial_enter_order < second.air_spatial_enter_order,
@@ -1808,8 +1808,10 @@ fn insert_anim(sim: &mut Simulation, stable_id: u64, inactive: bool) {
         in_logic_vector: false,
         owner_entity: None,
         building_slot: None,
+        damage_fire_slot: None,
         start_sound_active: false,
         stop_sound_id: None,
+        display: Default::default(),
     };
     assert!(sim.substrate.anims.insert(anim).is_none());
 }
@@ -2052,7 +2054,7 @@ fn particle_logic_membership_uses_the_object_local_guard_and_rebuilds_it() {
     let mut sim = Simulation::new();
     insert_particle_system(&mut sim, 7);
 
-    assert!(sim.reveal_particle_system(7));
+    assert!(sim.reveal_particle_system(7, None));
     assert!(
         sim.substrate
             .particle_systems
@@ -2062,7 +2064,7 @@ fn particle_logic_membership_uses_the_object_local_guard_and_rebuilds_it() {
     );
     assert_eq!(sim.live_object_order_snapshot(), vec![7]);
 
-    assert!(sim.reveal_particle_system(7));
+    assert!(sim.reveal_particle_system(7, None));
     assert_eq!(sim.live_object_order_snapshot(), vec![7]);
 
     sim.substrate
@@ -2897,7 +2899,6 @@ fn pointer_expiry_clears_live_refs_and_preserves_retaliation_attacker() {
     listener.attack_target = Some(AttackTarget {
         target: TargetKind::Entity(2),
         cooldown_ticks: 0,
-        burst_remaining: 0,
         burst_delay_ticks: 0,
         pending_infantry_fire: None,
     });
@@ -3061,7 +3062,6 @@ fn infantry_target_expiry_clears_firing_action_before_target() {
     listener.attack_target = Some(AttackTarget {
         target: TargetKind::Entity(2),
         cooldown_ticks: 9,
-        burst_remaining: 3,
         burst_delay_ticks: 2,
         pending_infantry_fire: Some(PendingInfantryFire {
             sequence: SequenceKind::Attack,
@@ -4051,6 +4051,7 @@ fn lifecycle_authority_set_logic_order_for_test_synchronizes_all_membership_flag
 
 pub(super) fn gsi_05_02_projectile(source_id: u64, fuse_frames: Option<u16>) -> ProjectileSpawn {
     ProjectileSpawn {
+        flat: false,
         source_id,
         origin: ProjectileCoord::new(0, 0, 0),
         target: ProjectileTarget::Cell { rx: 16, ry: 0 },
@@ -4424,7 +4425,7 @@ fn gsi_05_02_mixed_fixture() -> (Simulation, [u64; 6]) {
             lifecycle: TerrainObjectLifecycle::Live,
         },
     );
-    assert!(sim.register_terrain_object(terrain_id));
+    assert!(sim.register_terrain_object(terrain_id, None));
 
     let projectile_id = sim.allocate_stable_id();
     sim.admit_projectile(projectile_id, gsi_05_02_projectile(entity_id, None));
@@ -4729,7 +4730,7 @@ fn gsi_05_02_lethal_terrain_unregisters_and_inactive_slot_cannot_roundtrip() {
     sim.production
         .terrain_object_cells
         .insert((5, 6), terrain_id);
-    assert!(sim.register_terrain_object(terrain_id));
+    assert!(sim.register_terrain_object(terrain_id, None));
 
     sim.commit_noncombat_aoe_receivers(
         &rules,
@@ -4805,7 +4806,7 @@ fn gsi_05_03_terminal_non_entities_remain_resolvable_until_common_drain() {
     sim.production
         .terrain_object_cells
         .insert((5, 6), terrain_id);
-    assert!(sim.register_terrain_object(terrain_id));
+    assert!(sim.register_terrain_object(terrain_id, None));
     sim.commit_noncombat_aoe_receivers(
         &rules,
         None,
@@ -5125,6 +5126,7 @@ fn gsi_05_04_intact_bridge_cell_target_reaches_shrapnel_consumer() {
         100,
         &[],
         &std::collections::BTreeSet::new(),
+        &std::collections::BTreeSet::new(),
         &[detonation],
         &[],
     );
@@ -5197,6 +5199,7 @@ fn gsi_05_04_combat_fatal_expiry_keeps_authoritative_cell_target() {
         None,
         100,
         &logic_order,
+        &std::collections::BTreeSet::new(),
         &std::collections::BTreeSet::new(),
         &[detonation],
         &[],
@@ -5319,6 +5322,7 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
         None,
         100,
         &logic_order,
+        &std::collections::BTreeSet::new(),
         &std::collections::BTreeSet::new(),
         &[detonation],
         &[],
@@ -5984,7 +5988,6 @@ fn gsi_01_05_terminal_wave_damages_once_before_single_current_removal() {
         .attack_target = Some(AttackTarget {
         target: TargetKind::Entity(victim_id),
         cooldown_ticks: 0,
-        burst_remaining: 0,
         burst_delay_ticks: 0,
         pending_infantry_fire: None,
     });
@@ -6071,7 +6074,6 @@ fn terminal_type_zero_wave_with_empty_recorded_vector_has_no_damage_area_tail() 
         firer.attack_target = Some(AttackTarget {
             target: TargetKind::Cell(4, 5),
             cooldown_ticks: 0,
-            burst_remaining: 0,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });
@@ -6155,7 +6157,6 @@ fn wave_elite_ambient_damage_carries_within_cell_and_resets_on_next_cell() {
         firer.attack_target = Some(AttackTarget {
             target: TargetKind::Entity(next_id),
             cooldown_ticks: 0,
-            burst_remaining: 0,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });
@@ -6289,7 +6290,6 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
             firer.attack_target = Some(AttackTarget {
                 target: TargetKind::Entity(building_id),
                 cooldown_ticks: 0,
-                burst_remaining: 0,
                 burst_delay_ticks: 0,
                 pending_infantry_fire: None,
             });
@@ -6378,7 +6378,6 @@ fn wave_tail_consumes_wall_roll_before_mandatory_cliff_chance_roll() {
         firer.attack_target = Some(AttackTarget {
             target: TargetKind::Cell(4, 1),
             cooldown_ticks: 0,
-            burst_remaining: 0,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });
@@ -6593,7 +6592,6 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         firer.attack_target = Some(AttackTarget {
             target: TargetKind::Cell(4, 1),
             cooldown_ticks: 0,
-            burst_remaining: 0,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });
@@ -6907,7 +6905,6 @@ fn gsi_01_05_wave_reselects_live_cell_list_after_fatal_receiver_unmark() {
         .attack_target = Some(AttackTarget {
         target: TargetKind::Entity(building_id),
         cooldown_ticks: 0,
-        burst_remaining: 0,
         burst_delay_ticks: 0,
         pending_infantry_fire: None,
     });
@@ -7616,12 +7613,15 @@ fn production_air_wrapper_keeps_fly_exact_producer_and_reads_live_dummy_for_lega
         e.position.z = 99;
         e.position.exact_z_leptons = exact;
         e.on_bridge = true;
-        e.locomotor.as_mut().unwrap().target_altitude = SimFixed::from_num(125);
+        e.locomotor.as_mut().unwrap().set_fly_target_height(125);
         let xy = crate::sim::movement::ground_pose::position_world_xy(&e.position);
         let ground = crate::util::lepton::ground_height_leptons(3, 1, xy[0], xy[1]).unwrap();
         let expected = exact.unwrap_or(ground + 416 + 125);
         // Keep the physical height steady despite the stale controller cache.
-        e.locomotor.as_mut().unwrap().target_altitude = SimFixed::from_num(expected - ground - 416);
+        e.locomotor
+            .as_mut()
+            .unwrap()
+            .set_fly_target_height((SimFixed::from_num(expected - ground - 416)).to_num::<i32>());
         sim.tick_air_movement_with_cell_lists_one(1, None);
         let e = sim.substrate.entities.get(1).unwrap();
         assert_eq!(e.position.exact_z_leptons, Some(expected));
@@ -7697,8 +7697,6 @@ fn production_air_wrapper_retains_native_jumpjet_result_even_when_height_cache_c
 
 #[test]
 fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
-    use crate::sim::movement::DestinationTiming;
-    use crate::sim::movement::air_movement::issue_air_move_command;
     use crate::util::fixed_math::SIM_ONE;
 
     // Fly4CDD07/4CDD1A: XY integration precedes physical-height feedback.
@@ -7725,19 +7723,12 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
         entity.facing = 0;
         let loco = entity.locomotor.as_mut().unwrap();
         loco.altitude = SimFixed::from_num(600);
-        loco.target_altitude = SimFixed::from_num(600);
-        loco.climb_rate = SimFixed::from_num(300);
-        loco.air_phase = AirMovePhase::Cruising;
+        loco.set_fly_target_height(600);
+
         loco.fly_current_speed = SIM_ONE;
         loco.speed_fraction = SIM_ONE;
         loco.rot = 0;
-        assert!(issue_air_move_command(
-            &mut sim.substrate.entities,
-            1,
-            (2, 2),
-            SimFixed::from_num(3840),
-            DestinationTiming::new(0, 60),
-        ));
+        assert!(sim.issue_air_cell_destination(1, (2, 2), SimFixed::from_num(3840), None,));
         sim.tick_air_movement_with_cell_lists_one(1, None);
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         assert_eq!((entity.position.rx, entity.position.ry), (2, 2));
@@ -7752,8 +7743,8 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
         );
         entity.movement_target = None;
         let loco = entity.locomotor.as_mut().unwrap();
-        loco.air_phase = AirMovePhase::Descending;
-        loco.target_altitude = SimFixed::from_num(0);
+        loco.begin_fly_landing();
+        loco.set_fly_target_height(0);
 
         let map_terrain = sim.resolved_terrain.as_ref().unwrap().clone();
         // In-scenario load reconstructs Scenario RNG from Seed0.
@@ -7773,7 +7764,7 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
             }
             assert_eq!(restored.state_hash(), sim.state_hash());
             let entity = sim.substrate.entities.get(1).unwrap();
-            if entity.locomotor.as_ref().unwrap().air_phase == AirMovePhase::Landed {
+            if entity.locomotor.as_ref().unwrap().air_phase() == AirMovePhase::Landed {
                 assert_eq!(entity.position.exact_z_leptons, Some(destination_ground));
                 assert_eq!(
                     sim.foot_navigation_coordinate(1).unwrap().z,
@@ -7785,4 +7776,318 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
         }
         assert!(landed, "Fly must finish its actual descent");
     }
+}
+
+#[test]
+fn display_lifecycle_is_independent_of_logic_and_survives_production_save() {
+    use super::display_layers::DisplayLayer;
+    let mut sim = Simulation::new();
+    for _ in 0..4 {
+        let id = sim.allocate_stable_id();
+        insert_entity(&mut sim, id, EntityCategory::Unit);
+        let mut req = common_raw_request(2 + id as u16, 3, 0, 128, 128);
+        req.logic_eligible = id != 2;
+        assert!(matches!(
+            sim.try_reveal_entity(id, req),
+            RevealOutcome::Revealed { .. }
+        ));
+    }
+    assert_eq!(sim.substrate.logic.as_slice(), [1, 3, 4]);
+    assert_eq!(
+        sim.substrate.display.members(DisplayLayer::GROUND),
+        [1, 2, 3, 4]
+    );
+    // Coordinates change without resubmitting. MainTick's single adjacent
+    // pass has a different result from either Logic order or a full sort.
+    for id in 1..=4 {
+        sim.substrate.entities.get_mut(id).unwrap().position.rx = 7 - id as u16;
+    }
+    let before_sort = sim.state_hash();
+    let before_sort_without_display =
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(182));
+    sim.sort_display_ground(None);
+    assert_ne!(sim.state_hash(), before_sort);
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(182)),
+        before_sort_without_display
+    );
+    assert_eq!(
+        sim.substrate.display.members(DisplayLayer::GROUND),
+        [2, 3, 4, 1]
+    );
+    let bytes = GameSnapshot::save(&sim, 0, 0, "display-order", 0);
+    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+    restored.restore_after_snapshot_load().unwrap();
+    assert_eq!(
+        restored.substrate.display.members(DisplayLayer::GROUND),
+        [2, 3, 4, 1]
+    );
+    restored.sort_display_ground(None);
+    assert_eq!(
+        restored.substrate.display.members(DisplayLayer::GROUND),
+        [3, 4, 2, 1]
+    );
+    let hash = restored.state_hash();
+    restored.object_conceal(2);
+    assert_eq!(
+        restored.substrate.display.members(DisplayLayer::GROUND),
+        [3, 4, 1]
+    );
+    assert_eq!(restored.substrate.logic.as_slice(), [1, 3, 4]);
+    assert_ne!(hash, restored.state_hash());
+    restored
+        .substrate
+        .display
+        .submit(999, Some(DisplayLayer::TOP), |_| 0);
+    assert!(matches!(
+        restored.restore_after_snapshot_load(),
+        Err(SnapshotRestoreError::MissingDisplayIdentity { object_id: 999 })
+    ));
+}
+
+#[test]
+fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
+    use super::display_layers::DisplayLayer;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+    use crate::rules::voxel_anim_type::{VoxelAnimType, VoxelAnimTypeId};
+    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/display_non_entity.json"
+    ))
+    .unwrap();
+    assert_eq!(rows.len(), 9);
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=TEST\n[TEST]\nStrength=100\nTurretAnimIsVoxel=yes\n",
+    ))
+    .unwrap();
+    let voxel_type = VoxelAnimType::from_ini_section(
+        "TIRE",
+        IniFile::from_str("[TIRE]\nDuration=150\n")
+            .section("TIRE")
+            .unwrap(),
+    );
+    for row in rows {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let actors = input["actors"].as_array().unwrap();
+        let mut sim = Simulation::new();
+        // Native Scenario Load reseeds Random(0). These display operations
+        // consume no Scenario draws, so the complete saved hash can match.
+        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        for (index, actor) in actors.iter().enumerate() {
+            let id = sim.allocate_stable_id();
+            assert_eq!(id, index as u64 + 1);
+            let xyz: [i32; 3] = std::array::from_fn(|i| actor["xyz"][i].as_i64().unwrap() as i32);
+            match actor["kind"].as_str().unwrap() {
+                "unit" | "building" => {
+                    let category = if actor["kind"] == "unit" {
+                        EntityCategory::Unit
+                    } else {
+                        EntityCategory::Structure
+                    };
+                    insert_entity(&mut sim, id, category);
+                    let entity = sim.substrate.entities.get_mut(id).unwrap();
+                    entity.position.rx = (xyz[0] / 256) as u16;
+                    entity.position.ry = (xyz[1] / 256) as u16;
+                    entity.position.sub_x = SimFixed::from_num(xyz[0] % 256);
+                    entity.position.sub_y = SimFixed::from_num(xyz[1] % 256);
+                    entity.position.exact_z_leptons = Some(xyz[2]);
+                }
+                "particle" => {
+                    insert_particle_system(&mut sim, id);
+                    sim.substrate.particle_systems.get_mut(id).unwrap().coords =
+                        IVec3::from_array(xyz);
+                }
+                "terrain" => {
+                    let terrain = TerrainObjectState {
+                        stable_id: id,
+                        native_unique_id: None,
+                        in_logic_vector: false,
+                        type_ref: sim.interner.intern("TREE"),
+                        rx: (xyz[0] / 256) as u16,
+                        ry: (xyz[1] / 256) as u16,
+                        health: 10,
+                        max_health: 10,
+                        occupation_bits: 0,
+                        lifecycle: TerrainObjectLifecycle::Live,
+                    };
+                    sim.production
+                        .terrain_object_cells
+                        .insert(terrain.cell(), id);
+                    sim.production.terrain_objects.insert(id, terrain);
+                }
+                "bullet" => {
+                    let mut shot = gsi_05_02_projectile(0, None);
+                    shot.flat = actor["flat"].as_bool().unwrap();
+                    shot.origin = ProjectileCoord::new(xyz[0], xyz[1], xyz[2]);
+                    sim.admit_projectile(id, shot);
+                }
+                "wave" => {
+                    sim.admit_wave(
+                        id,
+                        Wave::new(
+                            3,
+                            ProjectileCoord::new(xyz[0], xyz[1], xyz[2]),
+                            ProjectileCoord::new(xyz[0] + 256, xyz[1], xyz[2]),
+                        ),
+                    );
+                }
+                "voxel" => {
+                    let debris = crate::sim::voxel_anim::spawn_debris_piece(
+                        id,
+                        VoxelAnimTypeId(0),
+                        &voxel_type,
+                        None,
+                        IVec3::from_array(xyz),
+                        &mut crate::sim::rng::SimRng::new(1),
+                    )
+                    .unwrap();
+                    sim.substrate.voxel_anims.insert(debris);
+                }
+                kind => panic!("unexpected {kind}"),
+            }
+        }
+        for (step, expected) in input["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(row["after_steps"].as_array().unwrap())
+        {
+            let id = step["actor"].as_u64().map_or(0, |i| i + 1);
+            match step["op"].as_str().unwrap() {
+                "submit" => match actors[id as usize - 1]["kind"].as_str().unwrap() {
+                    "unit" | "building" => sim.submit_entity_display(id, Some(&rules), None),
+                    "particle" => {
+                        sim.reveal_particle_system(id, Some(&rules));
+                    }
+                    "terrain" => {
+                        sim.register_terrain_object(id, Some(&rules));
+                    }
+                    "bullet" => {
+                        sim.register_projectile(
+                            id,
+                            actors[id as usize - 1]["flat"].as_bool().unwrap(),
+                        );
+                    }
+                    "wave" => {
+                        sim.register_wave(id);
+                    }
+                    "voxel" => {
+                        sim.reveal_voxel_anim(id);
+                    }
+                    _ => unreachable!(),
+                },
+                "remove" => {
+                    sim.substrate.display.remove(id);
+                }
+                "sort" => sim.sort_display_ground(Some(&rules)),
+                "coordinates" => {
+                    let xyz: [i32; 3] =
+                        std::array::from_fn(|i| step["xyz"][i].as_i64().unwrap() as i32);
+                    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+                        entity.position.rx = (xyz[0] / 256) as u16;
+                        entity.position.ry = (xyz[1] / 256) as u16;
+                        entity.position.sub_x = SimFixed::from_num(xyz[0] % 256);
+                        entity.position.sub_y = SimFixed::from_num(xyz[1] % 256);
+                    } else {
+                        sim.substrate.particle_systems.get_mut(id).unwrap().coords =
+                            IVec3::from_array(xyz);
+                    }
+                }
+                _ => unreachable!(),
+            }
+            for layer in 0..5 {
+                let expected: Vec<u64> = expected[layer]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|i| i.as_u64().unwrap() + 1)
+                    .collect();
+                assert_eq!(
+                    sim.substrate
+                        .display
+                        .members(DisplayLayer::from_index(layer as u8).unwrap()),
+                    expected,
+                    "{name}: {step}"
+                );
+            }
+        }
+        let bytes = GameSnapshot::save(&sim, 0, 0, "mixed-display", 0);
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        assert_eq!(restored.state_hash(), sim.state_hash(), "{name}");
+        sim.sort_display_ground(Some(&rules));
+        restored.sort_display_ground(Some(&rules));
+        assert_eq!(restored.state_hash(), sim.state_hash(), "{name}: next sort");
+        for id in 1..=actors.len() as u64 {
+            if restored.substrate.entities.contains(id) {
+                // Corpus entities were submitted directly, independently of
+                // Reveal/Logic; their production Conceal is tested separately.
+                restored.substrate.display.remove(id);
+            } else {
+                restored.unregister_non_entity_object(id);
+            }
+            assert_eq!(restored.substrate.display.layer_of(id), None);
+        }
+    }
+}
+
+#[test]
+fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
+    use super::display_layers::DisplayLayer;
+    let mut sim = Simulation::new();
+    let id = sim.allocate_stable_id();
+    insert_entity(&mut sim, id, EntityCategory::Unit);
+    sim.substrate.entities.get_mut(id).unwrap().locomotor =
+        Some(LocomotorState::for_test_kind(LocomotorKind::Jumpjet));
+    sim.try_reveal_entity(id, common_raw_request(3, 3, 0, 128, 128));
+    // Explicit stale display cache witness. Native compares its two +74
+    // queries and leaves this history alone while the Process answer is stable.
+    sim.substrate
+        .display
+        .submit(id, Some(DisplayLayer::TOP), |_| 0);
+    sim.tick_air_movement_with_cell_lists_one(id, None);
+    assert_eq!(sim.substrate.display.layer_of(id), Some(DisplayLayer::TOP));
+
+    // A real changed query re-submits even if cached membership is absent.
+    sim.substrate.display.remove(id);
+    let before = sim.entity_display_layer(id, None).unwrap();
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .locomotor
+        .as_mut()
+        .unwrap()
+        .altitude = SimFixed::from_num(600);
+    sim.complete_jumpjet_display_process(id, before, None);
+    assert_eq!(sim.substrate.display.layer_of(id), Some(DisplayLayer::TOP));
+    // The native tail's alive gate prevents another submission after death.
+    let before = sim.entity_display_layer(id, None).unwrap();
+    let entity = sim.substrate.entities.get_mut(id).unwrap();
+    entity.lifecycle.object_alive = false;
+    entity.locomotor.as_mut().unwrap().altitude = SimFixed::ZERO;
+    sim.complete_jumpjet_display_process(id, before, None);
+    assert_eq!(sim.substrate.display.layer_of(id), Some(DisplayLayer::TOP));
+}
+
+/// Fly's phase tail (4CD4DE) resubmits Display after callbacks that may have
+/// UnInit an owner (landing retry's C4 receiver). Mark5F5850 refuses the
+/// Limbo owner; store removal expires the Display registration so the next
+/// Ground sort cannot meet a removed identity.
+#[test]
+fn display_registration_expires_with_a_resubmitted_uninit_owner() {
+    use super::display_layers::DisplayLayer;
+    let mut sim = Simulation::new();
+    let id = sim.allocate_stable_id();
+    insert_entity(&mut sim, id, EntityCategory::Unit);
+    sim.try_reveal_entity(id, common_raw_request(3, 3, 0, 128, 128));
+    sim.uninit(id);
+    assert!(sim.substrate.entities.get(id).unwrap().lifecycle.in_limbo);
+    sim.submit_entity_display(id, None, None);
+    assert_eq!(sim.substrate.display.layer_of(id), Some(DisplayLayer::GROUND));
+    sim.process_pending_delete();
+    assert!(!sim.substrate.entities.contains(id));
+    assert_eq!(sim.substrate.display.layer_of(id), None);
+    sim.sort_display_ground(None);
 }

@@ -18,10 +18,8 @@ use crate::render::bridge_atlas::is_high_bridge_body_identity;
 use crate::render::native_z::{self, ZGradient, pack_z_gradient};
 use crate::render::overlay_atlas::{CRATE_BODY_FRAME, OverlaySpriteKey};
 use crate::render::sprite_atlas::ShpSpriteKey;
-use crate::render::tactical_draw_plan::{
-    BlitPolicy, ObjectDraw, RenderZPolicy, SpriteEncoding, TacticalCoord,
-};
-use crate::rules::art_data::{AnimLayer, AnimTypeRuntimeConfig, anim_translucency_source_alpha};
+use crate::render::tactical_draw_plan::{BlitPolicy, ObjectDraw, RenderZPolicy, SpriteEncoding};
+use crate::rules::art_data::{AnimTypeRuntimeConfig, anim_translucency_source_alpha};
 use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::overlay_types::OverlayTypeFlags;
 use crate::sim::projectile::ProjectileCoord;
@@ -213,59 +211,22 @@ enum AnimRenderDestination {
 
 fn anim_render_destination(
     stable_id: u64,
-    owner_entity: Option<u64>,
-    world_coord: crate::sim::anim_class::AnimWorldCoord,
-    config: Option<&AnimTypeRuntimeConfig>,
+    layer: Option<crate::sim::world::display_layers::DisplayLayer>,
     ground_order: &crate::app::presentation::render::draw_plan_lowering::NativeGroundOrder,
 ) -> Option<AnimRenderDestination> {
-    // gamemd-derived: `AnimClass::GetLayer @ 0x00424CB0` forces layer 2
-    // (Ground) for ANY anim carrying an owner at `Anim+0xCC`, ahead of both the
-    // AnimType `Layer=` read and the Top default — so an attached anim joins the
-    // sorted ground layer whatever its type asked for. Layer 2 is the only
-    // sorted `DisplayClass` layer: `Submit_Object @ 0x004A9720` sets the sorted
-    // flag with `CMP EDI,0x2` at `0x004A9747` / `SETZ CL` at `0x004A974D`, and every other layer
-    // plain-appends, so a layer-2 member is inserted in ascending y-sort against
-    // the non-anim ground objects by `ObjectClass::YSortComparator @ 0x005F6220`
-    // keyed on vtable `+0xB8`. For an anim that key is
-    // `AnimClass::GetYSort @ 0x00422BC0` = `ObjectClass::GetYSort @ 0x005F6BD0`
-    // + AnimType `YSortAdjust`, and `ObjectClass::GetYSort` reads slot `+0xAC`
-    // (`ObjectClass::GetRenderCoords @ 0x0041BE00`, which AnimClass does not
-    // override) — that re-enters the anim's own virtual `+0x48`, so an attached
-    // anim sorts at its OWNER-RESOLVED absolute position, not at the stored
-    // relative delta. `coord` is already that resolved value.
-    let config_y_sort_adjust = config.map_or(0, |config| config.y_sort_adjust);
-    if owner_entity.is_some() {
-        return ground_order
-            .anim_object_draw(
-                stable_id,
-                TacticalCoord {
-                    x: world_coord.x,
-                    y: world_coord.y,
-                    z: world_coord.z,
-                },
-                config_y_sort_adjust,
-            )
-            .map(AnimRenderDestination::Ground);
-    }
-    let config = config?;
-    match config.layer {
-        AnimLayer::Ground => ground_order
-            .anim_object_draw(
-                stable_id,
-                TacticalCoord {
-                    x: world_coord.x,
-                    y: world_coord.y,
-                    z: world_coord.z,
-                },
-                config.y_sort_adjust,
-            )
+    use crate::sim::world::display_layers::DisplayLayer;
+    // Next424801 changes type without resubmitting. Tactical6D8F39 consumes
+    // retained membership, not the new type's Layer or current owner query.
+    match layer? {
+        DisplayLayer::GROUND => ground_order
+            .object_draw(stable_id, SpriteEncoding::Plain)
             .map(AnimRenderDestination::Ground),
-        AnimLayer::Top => Some(AnimRenderDestination::Top),
-        AnimLayer::Other(_) => Some(AnimRenderDestination::Existing),
+        DisplayLayer::TOP => Some(AnimRenderDestination::Top),
+        _ => Some(AnimRenderDestination::Existing),
     }
 }
 
-/// Build ordinary scheduler-owned `AnimClass` sprites.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_anim_class_instances(
     state: &AppState,
     paged: &mut [Vec<SpriteInstance>],
@@ -299,7 +260,7 @@ pub(crate) fn build_anim_class_instances(
         .rules()
         .and_then(|rules| rules.general.parachute_shp.as_deref())
         .and_then(|name| sim.interner.get(name));
-    for &stable_id in sim.tactical_registration_order() {
+    for &stable_id in sim.display_layers().ordered_ids() {
         let Some(anim) = sim.anim(stable_id) else {
             continue;
         };
@@ -444,9 +405,7 @@ pub(crate) fn build_anim_class_instances(
         };
         match anim_render_destination(
             anim.stable_id,
-            anim.owner_entity,
-            anim_coord,
-            config,
+            sim.display_layers().layer_of(anim.stable_id),
             ground_order,
         ) {
             Some(AnimRenderDestination::Ground(parent)) => ground_objects.push(
@@ -551,8 +510,8 @@ pub(crate) fn parachute_canopy_owners(
     else {
         return std::collections::HashSet::new();
     };
-    sim.tactical_registration_order()
-        .iter()
+    sim.display_layers()
+        .ordered_ids()
         .filter_map(|&id| sim.anim(id))
         .filter(|anim| !anim.runtime.inactive)
         .filter_map(|anim| parachute_canopy_owner(anim, parachute_type))
@@ -913,7 +872,7 @@ pub(crate) fn build_overlay_instances(
             crate::render::palette_light::PaletteLight::cell(light_grid, (obj.rx, obj.ry), false)
         };
 
-        let Some(parent) = ground_order.terrain_object_draw(obj.stable_id, obj.rx, obj.ry) else {
+        let Some(parent) = ground_order.object_draw(obj.stable_id, SpriteEncoding::Terrain) else {
             continue;
         };
         if let Some((body, shadow)) = atlas.native_static_terrain_pair(name) {
@@ -1212,7 +1171,7 @@ pub(crate) fn build_parachute_instances(
         return;
     };
 
-    for &anim_id in sim.tactical_registration_order() {
+    for &anim_id in sim.display_layers().ordered_ids() {
         let Some(anim) = sim.anim(anim_id) else {
             continue;
         };
@@ -1397,7 +1356,6 @@ mod tests {
     use crate::sim::overlay_grid::OverlayCell;
     use crate::sim::production::ProductionState;
     use crate::sim::terrain_object::{TerrainObjectLifecycle, TerrainObjectState};
-    use crate::util::fixed_math::SimFixed;
 
     #[test]
     fn numeric_high_bridge_identity_has_no_ordinary_overlay_instance_route() {
@@ -1409,130 +1367,29 @@ mod tests {
     }
 
     #[test]
-    fn gsi_05_12_owner_attached_anim_is_forced_onto_the_sorted_ground_layer() {
-        // `AnimClass::GetLayer @ 0x00424CB0` tests the owner at `Anim+0xCC`
-        // FIRST and returns 2 (Ground); only an ownerless anim reaches the
-        // AnimType `Layer=` read or the Top default. Layer 2 is the one sorted
-        // `DisplayClass` layer (`Submit_Object @ 0x004A9720`,
-        // `CMP EDI,0x2` at `0x004A9747` / `SETZ CL` at `0x004A974D`), so an attached anim is
-        // y-sorted against ordinary ground objects rather than appended.
-        let art = ArtRegistry::from_ini(&IniFile::from_str(
-            "[FIRE_TOP]\nLayer=top\nYSortAdjust=7\n\
-             [FIRE_AIR]\nLayer=air\n",
-        ));
+    fn animation_destination_uses_retained_display_membership() {
+        use crate::sim::world::display_layers::DisplayLayer;
         let order =
-            crate::app::presentation::render::draw_plan_lowering::NativeGroundOrder::new(&[
-                5, 10, 20, 30,
-            ]);
-        // The owner-resolved absolute, which is what
-        // `ObjectClass::GetRenderCoords @ 0x0041BE00` hands the y-sort: it
-        // re-enters the anim's own `GetCoords`, so the sort key is built from
-        // the absolute, never from the stored owner-relative delta.
-        let resolved = crate::sim::anim_class::AnimWorldCoord {
-            x: 2450,
-            y: 2653,
-            z: 0,
-        };
-
-        let top_config = art.anim_runtime_config("FIRE_TOP");
-        assert_eq!(
-            anim_render_destination(10, None, resolved, top_config, &order),
-            Some(AnimRenderDestination::Top),
-            "without an owner the type's Layer=top still wins"
-        );
-
+            crate::app::presentation::render::draw_plan_lowering::NativeGroundOrder::new(&[20, 10]);
         let Some(AnimRenderDestination::Ground(draw)) =
-            anim_render_destination(10, Some(77), resolved, top_config, &order)
+            anim_render_destination(10, Some(DisplayLayer::GROUND), &order)
         else {
-            panic!("an owner-attached anim must enter the sorted ground layer");
+            panic!("registered Ground animation");
         };
-        assert_eq!((draw.coord.x, draw.coord.y, draw.coord.z), (2450, 2653, 0));
-        assert_eq!(draw.y_sort_adjust, 7);
+        assert_eq!(draw.display_order, 1);
         assert_eq!(
-            draw.y_sort_key(),
-            2450 + 2653 + 7,
-            "ObjectClass::GetYSort @ 0x005F6BD0 returns coord.X + coord.Y, and \
-             AnimClass::GetYSort @ 0x00422BC0 adds the AnimType YSortAdjust"
-        );
-
-        // The override is unconditional on the type: air is pulled down too.
-        assert!(matches!(
-            anim_render_destination(
-                20,
-                Some(77),
-                resolved,
-                art.anim_runtime_config("FIRE_AIR"),
-                &order
-            ),
-            Some(AnimRenderDestination::Ground(_)),
-        ));
-        // And it does not need a known AnimType at all, because GetLayer
-        // returns before it reads `Anim+0xC8`.
-        assert!(matches!(
-            anim_render_destination(30, Some(77), resolved, None, &order),
-            Some(AnimRenderDestination::Ground(_)),
-        ));
-    }
-
-    #[test]
-    fn gsi_13_04_wa_top_and_tuntop_ground_use_native_layer_and_ysort_lowering() {
-        let art = ArtRegistry::from_ini(&IniFile::from_str(
-            "[WA_CUSTOM]\nYSortAdjust=7\n\
-             [TUNTOP_CUSTOM]\nLayer=ground\nYSortAdjust=1000\n",
-        ));
-        let order =
-            crate::app::presentation::render::draw_plan_lowering::NativeGroundOrder::new(&[
-                5, 10, 20,
-            ]);
-        let wa = art.anim_runtime_config("WA_CUSTOM");
-        let tuntop = art.anim_runtime_config("TUNTOP_CUSTOM");
-        let world = crate::sim::anim_class::AnimWorldCoord {
-            x: 400,
-            y: 600,
-            z: 208,
-        };
-
-        assert_eq!(
-            anim_render_destination(10, None, world, wa, &order),
+            anim_render_destination(10, Some(DisplayLayer::TOP), &order),
             Some(AnimRenderDestination::Top)
         );
-        let Some(AnimRenderDestination::Ground(tunnel_draw)) =
-            anim_render_destination(20, None, world, tuntop, &order)
-        else {
-            panic!("ground tile animation must enter TacticalDrawPlan");
-        };
-        assert_eq!(tunnel_draw.coord.x, 400);
-        assert_eq!(tunnel_draw.coord.y, 600);
-        assert_eq!(tunnel_draw.coord.z, 208);
-        assert_eq!(tunnel_draw.y_sort_adjust, 1000);
-        assert_eq!(tunnel_draw.y_sort_key(), 2000);
-
-        let ordinary = order
-            .object_draw(
-                5,
-                crate::render::tactical_draw_plan::TacticalCoord {
-                    x: 900,
-                    y: 900,
-                    z: 0,
-                },
-                crate::render::tactical_draw_plan::SpriteEncoding::Plain,
-            )
-            .unwrap();
-        let pieces = |parent| {
-            crate::app::presentation::render::draw_plan_lowering::PlannedGroundObjectInstance::object(
-                parent,
-                vec![crate::app::presentation::render::draw_plan_lowering::GroundPieceInstance {
-                    target: crate::app::presentation::render::draw_plan_lowering::GroundTexture::ShpPage(0),
-                    render_z: crate::render::tactical_draw_plan::RenderZPolicy::ReadOnly,
-                    instance: crate::render::batch::SpriteInstance::default(),
-                }],
-            )
-        };
-        let lowered =
-            crate::app::presentation::render::draw_plan_lowering::lower_ground_object_instances(
-                vec![pieces(tunnel_draw), pieces(ordinary)],
-            );
-        assert_eq!(lowered.owners, [5, 20]);
+        assert_eq!(
+            anim_render_destination(10, Some(DisplayLayer::AIR), &order),
+            Some(AnimRenderDestination::Existing)
+        );
+        assert_eq!(anim_render_destination(10, None, &order), None);
+        assert_eq!(
+            anim_render_destination(99, Some(DisplayLayer::GROUND), &order),
+            None
+        );
     }
 
     #[test]

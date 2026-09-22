@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Complete Unit73F0A0 admission with allied Unit Drive/Ship and Infantry Walk blockers",
+  "assumptions": [
+    "Shared unit_entry fixture; supplied allied ordered list and independent raw occupation.",
+    "Real Unit/Infantry/type/locomotor vtables. Drive/Ship constructed; Walk query fields supplied. Blocker NavCom absent and body turn idle.",
+    "No unlimbo, move/stop lifetime, full scatter or scenario load. Every row must execute the selected original IsMoving body and preserve object/house memory."
+  ],
+  "substitutions": [
+    "Only OS Interlocked imports from shared Unit fixture; no gameplay callable substitution."
+  ],
+  "entry_points": {
+    "unit_entry": "0x0073F0A0",
+    "drive": "0x004AFB80",
+    "ship": "0x0069F290",
+    "walk": "0x0075AB30"
+  },
+  "payload_sha256": "ef0fd164800be5def65001914441ec9eddbbcb113dd859c2d0d9bb7c92508237"
+}

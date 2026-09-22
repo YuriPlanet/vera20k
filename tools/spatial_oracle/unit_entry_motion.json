@@ -1,0 +1,1730 @@
+[
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              0,
+              0,
+              0
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              0,
+              0,
+              0
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              0,
+              0,
+              0
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              0,
+              0,
+              0
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              2944,
+              2688,
+              0
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              2944,
+              2688,
+              0
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              2944,
+              2688,
+              0
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              2944,
+              2688,
+              0
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              2944,
+              2688,
+              104
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              2944,
+              2688,
+              104
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              2944,
+              2688,
+              104
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              2944,
+              2688,
+              104
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              2945,
+              2688,
+              0
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              2945,
+              2688,
+              0
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              2945,
+              2688,
+              0
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              2945,
+              2688,
+              0
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              2945,
+              2688,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              0,
+              0,
+              0
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              2945,
+              2688,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              0,
+              0,
+              0
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              2945,
+              2688,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              0,
+              0,
+              0
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x4afb80",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              2945,
+              2688,
+              0
+            ],
+            "family": "drive",
+            "head": [
+              0,
+              0,
+              0
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              0,
+              0,
+              0
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              0,
+              0,
+              0
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              0,
+              0,
+              0
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              0,
+              0,
+              0
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              2944,
+              2688,
+              0
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              2944,
+              2688,
+              0
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              2944,
+              2688,
+              0
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              2944,
+              2688,
+              0
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              2944,
+              2688,
+              104
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              2944,
+              2688,
+              104
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              2944,
+              2688,
+              104
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              2944,
+              2688,
+              104
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              2945,
+              2688,
+              0
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              2945,
+              2688,
+              0
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              2945,
+              2688,
+              0
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              2945,
+              2688,
+              0
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              2945,
+              2688,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              0,
+              0,
+              0
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              2945,
+              2688,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              0,
+              0,
+              0
+            ]
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              2945,
+              2688,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              0,
+              0,
+              0
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x69f290",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "destination": [
+              2945,
+              2688,
+              0
+            ],
+            "family": "ship",
+            "head": [
+              0,
+              0,
+              0
+            ]
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x75ab30",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "family": "walk",
+            "head": [
+              0,
+              0,
+              0
+            ],
+            "moving": false
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x75ab30",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "family": "walk",
+            "head": [
+              0,
+              0,
+              0
+            ],
+            "moving": false
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x75ab30",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "family": "walk",
+            "head": [
+              0,
+              0,
+              0
+            ],
+            "moving": false
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x75ab30",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "family": "walk",
+            "head": [
+              0,
+              0,
+              0
+            ],
+            "moving": false
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x75ab30",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "family": "walk",
+            "head": [
+              2945,
+              2688,
+              0
+            ],
+            "moving": false
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x75ab30",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "family": "walk",
+            "head": [
+              2945,
+              2688,
+              0
+            ],
+            "moving": false
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x75ab30",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "family": "walk",
+            "head": [
+              2945,
+              2688,
+              0
+            ],
+            "moving": false
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x75ab30",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "family": "walk",
+            "head": [
+              2945,
+              2688,
+              0
+            ],
+            "moving": false
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x75ab30",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "family": "walk",
+            "head": [
+              0,
+              0,
+              0
+            ],
+            "moving": true
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x75ab30",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "family": "walk",
+            "head": [
+              0,
+              0,
+              0
+            ],
+            "moving": true
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x75ab30",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "family": "walk",
+            "head": [
+              0,
+              0,
+              0
+            ],
+            "moving": true
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x75ab30",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "family": "walk",
+            "head": [
+              0,
+              0,
+              0
+            ],
+            "moving": true
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x75ab30",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "family": "walk",
+            "head": [
+              2945,
+              2688,
+              0
+            ],
+            "moving": true
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x75ab30",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "family": "walk",
+            "head": [
+              2945,
+              2688,
+              0
+            ],
+            "moving": true
+          },
+          "occupation": false
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x75ab30",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "objects": [
+        {
+          "motion": {
+            "family": "walk",
+            "head": [
+              2945,
+              2688,
+              0
+            ],
+            "moving": true
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x75ab30",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "objects": [
+        {
+          "motion": {
+            "family": "walk",
+            "head": [
+              2945,
+              2688,
+              0
+            ],
+            "moving": true
+          },
+          "occupation": true
+        }
+      ],
+      "trace_motion": true
+    },
+    "result": 2
+  }
+]

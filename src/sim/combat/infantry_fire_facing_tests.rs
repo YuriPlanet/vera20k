@@ -344,9 +344,19 @@ fn production_zero_delay_shot_and_restore_use_new_heading() {
         .expect("production shot");
     assert_eq!(event.facing, 63);
     assert_eq!(event.origin_snapshot.facing, 63);
-    let delta =
-        crate::util::flh_transform::native_flh_world_delta(80, 20, 40, 0, facing, facing, 0)
-            .expect("bounded FLH");
+    let delta = crate::util::flh_transform::native_flh_world_delta(
+        80,
+        20,
+        40,
+        0,
+        crate::util::flh_transform::FlhFacings {
+            aim: facing,
+            body: facing,
+            matrix: facing,
+        },
+        0,
+    )
+    .expect("bounded FLH");
     assert_eq!(event.fire_coord.x, source_x + delta.0);
     assert_eq!(event.fire_coord.y, source_y + delta.1);
     assert_eq!(
@@ -451,6 +461,15 @@ fn production_pending_fire_restores_heading_and_reaches_emission() {
 
 #[test]
 fn production_attack_during_paid_walk_step_waits_before_turning_and_firing() {
+    production_attack_during_paid_walk_step_case(false);
+}
+
+#[test]
+fn live_speed_crate_survives_walk_attack_and_production_save_restore() {
+    production_attack_during_paid_walk_step_case(true);
+}
+
+fn production_attack_during_paid_walk_step_case(boosted: bool) {
     use crate::sim::command::Command;
 
     let rules = production_rules(0);
@@ -514,6 +533,18 @@ fn production_attack_during_paid_walk_step_waits_before_turning_and_firing() {
         .expect("accepted Walk step");
     let body = entity.body_facing.expect("Walk's heading owner");
     assert_eq!(entity.foot_speed.applied_fraction, SimFixed::ONE);
+    if boosted {
+        assert!(
+            sim.substrate
+                .entities
+                .get_mut(firer)
+                .unwrap()
+                .foot_speed
+                .accept_speed_crate(crate::util::native_x87::NativeF64Bits::from_bits(
+                    1.2_f64.to_bits()
+                ))
+        );
+    }
     command(
         &mut sim,
         Command::Attack {
@@ -553,6 +584,12 @@ fn production_attack_during_paid_walk_step_waits_before_turning_and_firing() {
             .iter()
             .any(|event| event.attacker_id == firer);
         if entity.foot_speed.applied_fraction > SimFixed::ONE / SimFixed::from_num(10) {
+            if boosted {
+                assert_eq!(
+                    entity.foot_speed.cached_current_speed, 11,
+                    "live native crate speed"
+                );
+            }
             assert!(!fired, "a retained paid step cannot fire");
             assert_eq!(
                 entity

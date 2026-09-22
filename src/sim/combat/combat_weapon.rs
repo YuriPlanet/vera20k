@@ -389,17 +389,72 @@ pub(crate) fn primary_warhead_wall_flags(
         .map_or((false, false), |wh| (wh.wall, wh.wood))
 }
 
+/// Aircraft auxiliary+18/41B7F0: the primary projectile selects the attack
+/// approach and release branches. All callers use the live weapon tier.
+pub(crate) fn aircraft_strafes(rules: &RuleSet, obj: &ObjectType, veterancy: u16) -> bool {
+    primary_for_tier(obj, veterancy)
+        .and_then(|name| rules.weapon(name))
+        .and_then(|weapon| weapon.projectile.as_deref())
+        .and_then(|name| rules.projectile(name))
+        .is_some_and(|projectile| projectile.rot <= 1 && !projectile.inviso)
+}
+
+/// Techno GetRange7012C0, used by Aircraft FindFireLocation4197C0. This is
+/// raw signed weapon range, capped by the shortest armed cargo weapon when
+/// OpenTopped. It deliberately excludes InRange's bonuses and range overrides.
+pub(crate) fn weapon_range(
+    entity: &GameEntity,
+    obj: &ObjectType,
+    index: i32,
+    entities: &crate::sim::entity_store::EntityStore,
+    rules: &RuleSet,
+    interner: &StringInterner,
+) -> i32 {
+    let Some(weapon) =
+        weapon_for_index(obj, entity.veterancy, index).and_then(|(name, _)| rules.weapon(name))
+    else {
+        return 0;
+    };
+    let mut range = weapon.range_leptons;
+    if obj.open_topped
+        && let Some(cargo) = entity.passenger_role.cargo()
+    {
+        // Cargo owns the native head/+30 sequence. Neither limbo nor death
+        // filters belong to this reader; boarded passengers are in limbo.
+        for &id in &cargo.passengers {
+            let Some(passenger) = entities.get(id) else {
+                break;
+            };
+            let Some(kind) = rules.object(interner.resolve(passenger.type_ref())) else {
+                continue;
+            };
+            let index = current_weapon_index(kind, attacker_facts(passenger, kind));
+            if let Some(weapon) = weapon_for_index(kind, passenger.veterancy, index)
+                .and_then(|(name, _)| rules.weapon(name))
+            {
+                range = range.min(weapon.range_leptons);
+            }
+        }
+    }
+    range
+}
+
+fn current_weapon_index(obj: &ObjectType, facts: AttackerFacts) -> i32 {
+    // GetCurrentWeapon70E1A0 reads CurrentWeaponNumber only with HasTurrets.
+    if obj.turret_count > 0 {
+        facts.current_weapon_number
+    } else {
+        0
+    }
+}
+
 fn is_armed_from_facts(obj: &ObjectType, facts: AttackerFacts) -> bool {
     // `BuildingClass::Is_Armed 0x00458DB0`: `IsOccupied() → 1`.
     if facts.is_occupied_building {
         return true;
     }
     // `GetCurrentWeapon 0x0070E1A0`: gunner slot iff `HasTurrets`, else slot 0.
-    let index = if obj.turret_count > 0 {
-        facts.current_weapon_number
-    } else {
-        0
-    };
+    let index = current_weapon_index(obj, facts);
     weapon_for_index(obj, facts.veterancy, index).is_some()
 }
 
@@ -890,22 +945,42 @@ fn resolve_index<'a>(
     index: i32,
     target: &TargetFacts,
 ) -> Option<SelectedWeapon<'a>> {
+    let selected = resolve_index_for_emission(rules, obj, veterancy, index, Some(target))?;
+    (!targeting_fire_error_blocks(rules, obj, selected.weapon, selected.warhead, target))
+        .then_some(selected)
+}
+
+/// GetWeapon/warhead resolution without repeating GetFireError. Mission_Attack
+/// 418432..418476 selects on each burst iteration after one admission only.
+pub(crate) fn select_weapon_for_emission<'a>(
+    rules: &'a RuleSet,
+    obj: &'a ObjectType,
+    attacker: &AttackerFacts,
+    target: Option<&TargetFacts>,
+) -> Option<SelectedWeapon<'a>> {
+    let index = what_weapon_should_i_use(rules, obj, attacker, target);
+    resolve_index_for_emission(rules, obj, attacker.veterancy, index, target)
+}
+
+fn resolve_index_for_emission<'a>(
+    rules: &'a RuleSet,
+    obj: &'a ObjectType,
+    veterancy: u16,
+    index: i32,
+    target: Option<&TargetFacts>,
+) -> Option<SelectedWeapon<'a>> {
     let (weapon_id, slot) = weapon_for_index(obj, veterancy, index)?;
-    // GetFireError: a null `GetWeapon(idx)` is CANNOT (6).
     let weapon = rules.weapon(weapon_id)?;
     let warhead = warhead_of(rules, weapon)?;
-    if targeting_fire_error_blocks(rules, obj, weapon, warhead, target) {
-        return None;
-    }
     let verses_pct = match target {
-        TargetFacts::Techno {
+        Some(TargetFacts::Techno {
             obj: target_obj, ..
-        } => warhead
+        }) => warhead
             .verses
             .get(armor_index(&target_obj.armor))
             .copied()
             .unwrap_or(100),
-        TargetFacts::Cell { .. } | TargetFacts::Terrain => 100,
+        _ => 100,
     };
     Some(SelectedWeapon {
         weapon_id,

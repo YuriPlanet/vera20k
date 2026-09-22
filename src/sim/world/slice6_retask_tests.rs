@@ -440,7 +440,24 @@ const SLICE6_BASELINE_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 0x8C50_893A_CF
 // E1 with ec27dc26's final state reproduces old current90DA2A8E0C06D5E3 and
 // pre174221E77F911A4FB24 exactly; tanks and RNG match on all16 frames. See
 // docs/research/COMBAT_WALK_REPLAY_ATTRIBUTION.md. Rust pins, not native goldens.
-const SLICE6_BASELINE_HASH: u64 = 0x3D7F_B762_F752_444A;
+const SLICE6_BASELINE_HASH_PRE_CRATE_SPEED_V181: u64 = 0x3D7F_B762_F752_444A;
+// v181 folds Foot+580, including default1.0. The pre-181 assertion below
+// proves this fixture's shift comes only from the added hash field.
+const SLICE6_BASELINE_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0x720D_C262_694D_3821;
+// Snapshot182 adds ordered display vectors. The pre-182 projection below
+// must reproduce the previous whole-fixture hash, including all RNG/state.
+const SLICE6_BEFORE_INFANTRY_ROT_HASH: u64 = 209154586170202422;
+// Infantry ctor517BBD supplies PrimaryFacing ROT127. The comparison below
+// changes only that retained rate back to0 and reproduces every previous pin.
+// Schema186 removes each entity's always-None aircraft release-tail fold. The
+// pre186 assertion retains this fixture's preceding current hash, independently
+// of the existing constructor-rate projection and native paid-Walk witnesses.
+const SLICE6_BASELINE_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 0x3AB4_0B61_DE3B_5224;
+// Schema187: the pre187 projection below preserves the preceding full pin.
+// Schema189 folds retained Techno+3D4; Before(189) below reproduces v188.
+// v190 adds saved Foot neighbor history. Before(190) reproduces the full v189
+// fixture; it has no retained counter plane. Route/RNG pins are unchanged.
+const SLICE6_BASELINE_HASH: u64 = 0x5F8D_EA7A_00CC_F03D;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -680,10 +697,61 @@ fn replay_hash_stable_through_slice6() {
             entity.foot_speed,
         );
     }
+    let infantry_facing = sim.substrate.entities.get(3).unwrap().body_facing.unwrap();
+    assert_eq!(infantry_facing.rot_per_frame(), 0x7F00);
+    sim.substrate
+        .entities
+        .get_mut(3)
+        .unwrap()
+        .body_facing
+        .as_mut()
+        .unwrap()
+        .set_rot(0);
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(186)),
+        SLICE6_BEFORE_INFANTRY_ROT_HASH,
+        "only the corrected Infantry constructor rate may differ from the preceding baseline"
+    );
     assert_eq!(
         sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(174)),
         SLICE6_BASELINE_HASH_PRE_RETIRED_TIBERIUM_STATE_V174,
         "pre-174 projection drifted from the documented paid Walk behavior"
+    );
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(181)),
+        SLICE6_BASELINE_HASH_PRE_CRATE_SPEED_V181,
+        "excluding only Foot+580 must preserve the pre-181 fixture"
+    );
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(182)),
+        SLICE6_BASELINE_HASH_PRE_DISPLAY_LAYERS_V182,
+        "excluding only display vectors must preserve the pre-182 fixture"
+    );
+    sim.substrate.entities.get_mut(3).unwrap().body_facing = Some(infantry_facing);
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(186)),
+        SLICE6_BASELINE_HASH_PRE_AIRCRAFT_RELEASE_V186,
+        "restoring only the absent release-tail fold must reproduce the prior fixture"
+    );
+    assert_eq!(
+        sim.state_hash(),
+        hash,
+        "restore the unmodified live facing state"
+    );
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(187)),
+        0xE1C1_EE70_4C71_ABA5,
+        "schema187 only replaces zero remaining-shot fields with the retained index in this fixture"
+    );
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
+        0x8A7D_7855_6AAF_1E46,
+        "v189 adds only the retained Techno+3D4 hash fold"
+    );
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
+        4363617451014381249,
+        "v190 changes only the Foot neighbor-history hash composition in this fixture"
     );
     assert_eq!(
         hash, SLICE6_BASELINE_HASH,

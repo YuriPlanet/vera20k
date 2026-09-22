@@ -135,17 +135,11 @@ impl JumpjetFlightParams {
     }
 
     /// The locomotor facing `Link_To_Object` builds (`FUN_004C91E0` then
-    /// `Set`/`UpdateFacing` to `0x4000`): the rate is `min(rate, 127)` taken as a
-    /// byte and shifted; a byte of `0x80` or more is a non-positive short rate,
-    /// which the facing treats as instant.
+    /// `Set`/`UpdateFacing` to `0x4000`). The rate constructor4C91E0 uses the
+    /// same signed clamp/low-byte shift as SetROT4C9680; preserve its raw word
+    /// even when the controller interprets it as non-positive (instant).
     pub fn linked_facing(&self) -> FacingClass {
-        let clamped = if self.turn_rate > 0x7E {
-            0x7F
-        } else {
-            self.turn_rate
-        };
-        let byte = clamped as u8;
-        FacingClass::new(0x4000, if byte >= 0x80 { 0 } else { byte })
+        FacingClass::new(0x4000, self.turn_rate)
     }
 }
 

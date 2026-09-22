@@ -20,7 +20,7 @@ pub(super) fn advance(
         .as_ref()
         .and_then(|loco| loco.step_head())
         .expect("paid Walk requires its admitted head");
-    entity.foot_speed.applied_fraction = SIM_ONE; // owner +544 / Foot4D3710
+    entity.foot_speed.applied_fraction = SIM_ONE; // owner +578 / Foot4D3710
     let speed = super::foot_speed::owner_current_speed_from_fraction(
         adjusted_speed,
         entity.foot_speed.applied_fraction,
@@ -40,13 +40,19 @@ pub(super) fn advance(
     );
     // Walk75AE00 snaps the body, but SI still supplies the desired direction to
     // the displacement even if snap's equality branch retains an old target.
+    // Class constructor owns ROT, independently of the selected locomotor.
+    let rot = if entity.category == crate::map::entities::EntityCategory::Infantry {
+        127 // Infantry ctor517BBD; Unit ctor735570 uses Type ROT.
+    } else {
+        entity.locomotor.as_ref().map_or(0, |loco| loco.rot)
+    };
     let body = entity
         .body_facing
-        .get_or_insert_with(|| super::FacingClass::new(u16::from(entity.facing) << 8, 0));
+        .get_or_insert_with(|| super::FacingClass::new(u16::from(entity.facing) << 8, rot));
     body.snap(desired, native_frame);
     entity.facing = (body.current(native_frame) >> 8) as u8;
     entity.facing_target = None;
-    let proposed = crate::util::native_trig::walk_step_world_xy(current, desired, speed);
+    let proposed = crate::util::native_trig::facing_step_world_xy(current, desired, speed);
     entity.position.sub_x = SimFixed::from_num(proposed[0] - i32::from(entity.position.rx) * 256);
     entity.position.sub_y = SimFixed::from_num(proposed[1] - i32::from(entity.position.ry) * 256);
     if proposed[0] / 256 == i32::from(entity.position.rx)

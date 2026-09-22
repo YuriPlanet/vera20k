@@ -378,6 +378,9 @@ impl Simulation {
         }
         if let Some(rules) = rules {
             self.refresh_unit_sensor_at_per_cell(id, rules);
+        }
+        self.foot_neighbors_at_per_cell(id);
+        if let Some(rules) = rules {
             crate::sim::world::techno_ai_cloak::uncloak_on_sensor_neighbour_after_cell_entry(
                 self, id, rules,
             );

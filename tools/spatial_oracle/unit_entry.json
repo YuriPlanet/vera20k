@@ -1,0 +1,2682 @@
+[
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 0,
+      "crusher": false,
+      "owner": -1
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": true,
+      "bits": 0,
+      "crusher": false,
+      "owner": -1
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": false,
+      "armed": true,
+      "bits": 0,
+      "crusher": false,
+      "owner": -1
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 0,
+      "crusher": true,
+      "owner": -1
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 0,
+      "crusher": false,
+      "owner": 0
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": true,
+      "bits": 0,
+      "crusher": false,
+      "owner": 0
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": false,
+      "armed": true,
+      "bits": 0,
+      "crusher": false,
+      "owner": 0
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 0,
+      "crusher": true,
+      "owner": 0
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 0,
+      "crusher": false,
+      "owner": 1
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": true,
+      "bits": 0,
+      "crusher": false,
+      "owner": 1
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": false,
+      "armed": true,
+      "bits": 0,
+      "crusher": false,
+      "owner": 1
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 0,
+      "crusher": true,
+      "owner": 1
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 32,
+      "crusher": false,
+      "owner": -1
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": true,
+      "bits": 32,
+      "crusher": false,
+      "owner": -1
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": false,
+      "armed": true,
+      "bits": 32,
+      "crusher": false,
+      "owner": -1
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 32,
+      "crusher": true,
+      "owner": -1
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 32,
+      "crusher": false,
+      "owner": 0
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": true,
+      "bits": 32,
+      "crusher": false,
+      "owner": 0
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": false,
+      "armed": true,
+      "bits": 32,
+      "crusher": false,
+      "owner": 0
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 32,
+      "crusher": true,
+      "owner": 0
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 32,
+      "crusher": false,
+      "owner": 1
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": true,
+      "bits": 32,
+      "crusher": false,
+      "owner": 1
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": false,
+      "armed": true,
+      "bits": 32,
+      "crusher": false,
+      "owner": 1
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 32,
+      "crusher": true,
+      "owner": 1
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 28,
+      "crusher": false,
+      "owner": -1
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": true,
+      "bits": 28,
+      "crusher": false,
+      "owner": -1
+    },
+    "result": 5
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": false,
+      "armed": true,
+      "bits": 28,
+      "crusher": false,
+      "owner": -1
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 28,
+      "crusher": true,
+      "owner": -1
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 28,
+      "crusher": false,
+      "owner": 0
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": true,
+      "bits": 28,
+      "crusher": false,
+      "owner": 0
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": false,
+      "armed": true,
+      "bits": 28,
+      "crusher": false,
+      "owner": 0
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 28,
+      "crusher": true,
+      "owner": 0
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 28,
+      "crusher": false,
+      "owner": 1
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": true,
+      "bits": 28,
+      "crusher": false,
+      "owner": 1
+    },
+    "result": 5
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": false,
+      "armed": true,
+      "bits": 28,
+      "crusher": false,
+      "owner": 1
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 28,
+      "crusher": true,
+      "owner": 1
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 63,
+      "crusher": false,
+      "owner": -1
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": true,
+      "bits": 63,
+      "crusher": false,
+      "owner": -1
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": false,
+      "armed": true,
+      "bits": 63,
+      "crusher": false,
+      "owner": -1
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 63,
+      "crusher": true,
+      "owner": -1
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 63,
+      "crusher": false,
+      "owner": 0
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": true,
+      "bits": 63,
+      "crusher": false,
+      "owner": 0
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": false,
+      "armed": true,
+      "bits": 63,
+      "crusher": false,
+      "owner": 0
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 63,
+      "crusher": true,
+      "owner": 0
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 63,
+      "crusher": false,
+      "owner": 1
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": true,
+      "bits": 63,
+      "crusher": false,
+      "owner": 1
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": false,
+      "armed": true,
+      "bits": 63,
+      "crusher": false,
+      "owner": 1
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "ag": true,
+      "armed": false,
+      "bits": 63,
+      "crusher": true,
+      "owner": 1
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "bits": 0,
+      "objects": [
+        {}
+      ]
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 0,
+      "objects": [
+        {}
+      ]
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "bits": 32,
+      "objects": [
+        {}
+      ]
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 32,
+      "objects": [
+        {}
+      ]
+    },
+    "result": 6
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "bits": 0,
+      "objects": [
+        {
+          "nav": true
+        }
+      ]
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 0,
+      "objects": [
+        {
+          "nav": true
+        }
+      ]
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "bits": 32,
+      "objects": [
+        {
+          "nav": true
+        }
+      ]
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 32,
+      "objects": [
+        {
+          "nav": true
+        }
+      ]
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "armed": false,
+      "bits": 0,
+      "objects": [
+        {
+          "enemy": true
+        }
+      ]
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 0,
+      "objects": [
+        {
+          "enemy": true
+        }
+      ]
+    },
+    "result": 5
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "armed": false,
+      "bits": 32,
+      "objects": [
+        {
+          "enemy": true
+        }
+      ]
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 32,
+      "objects": [
+        {
+          "enemy": true
+        }
+      ]
+    },
+    "result": 5
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "bits": 0,
+      "objects": [
+        {
+          "cloaked": true,
+          "enemy": true
+        }
+      ]
+    },
+    "result": 1
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 0,
+      "objects": [
+        {
+          "cloaked": true,
+          "enemy": true
+        }
+      ]
+    },
+    "result": 1
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "bits": 32,
+      "objects": [
+        {
+          "cloaked": true,
+          "enemy": true
+        }
+      ]
+    },
+    "result": 1
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 32,
+      "objects": [
+        {
+          "cloaked": true,
+          "enemy": true
+        }
+      ]
+    },
+    "result": 1
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "bits": 0,
+      "objects": [
+        {
+          "self": true
+        }
+      ]
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 0,
+      "objects": [
+        {
+          "self": true
+        }
+      ]
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "bits": 32,
+      "objects": [
+        {
+          "self": true
+        }
+      ]
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 32,
+      "objects": [
+        {
+          "self": true
+        }
+      ]
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "armed": false,
+      "bits": 0,
+      "objects": [
+        {
+          "building": true
+        }
+      ]
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 0,
+      "objects": [
+        {
+          "building": true
+        }
+      ]
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "armed": false,
+      "bits": 32,
+      "objects": [
+        {
+          "building": true
+        }
+      ]
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 32,
+      "objects": [
+        {
+          "building": true
+        }
+      ]
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 0,
+      "crusher": true,
+      "objects": [
+        {
+          "crushable": true,
+          "enemy": true
+        }
+      ]
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24",
+      "0x47eba0",
+      "0x47eba0"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 32,
+      "crusher": true,
+      "objects": [
+        {
+          "crushable": true,
+          "enemy": true
+        }
+      ]
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 0,
+      "crusher": true,
+      "objects": [
+        {
+          "crushable": true,
+          "enemy": true
+        },
+        {
+          "enemy": true
+        }
+      ]
+    },
+    "result": 5
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 32,
+      "crusher": true,
+      "objects": [
+        {
+          "crushable": true,
+          "enemy": true
+        },
+        {
+          "enemy": true
+        }
+      ]
+    },
+    "result": 5
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 0,
+      "crusher": true,
+      "objects": [
+        {
+          "enemy": true
+        },
+        {
+          "crushable": true,
+          "enemy": true
+        }
+      ]
+    },
+    "result": 5
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 32,
+      "crusher": true,
+      "objects": [
+        {
+          "enemy": true
+        },
+        {
+          "crushable": true,
+          "enemy": true
+        }
+      ]
+    },
+    "result": 5
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 0,
+      "crusher": true,
+      "objects": [
+        {
+          "crushable": true,
+          "enemy": true
+        },
+        {
+          "nav": true
+        }
+      ]
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "bits": 32,
+      "crusher": true,
+      "objects": [
+        {
+          "crushable": true,
+          "enemy": true
+        },
+        {
+          "nav": true
+        }
+      ]
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "bits": 32,
+      "mission": 7,
+      "nav_target": 0,
+      "objects": [
+        {},
+        {
+          "building": true
+        }
+      ]
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 0,
+      "deck": true,
+      "deck_bits": 32
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bits": 32,
+      "deck": true,
+      "deck_bits": 0
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "objects": [
+        {
+          "building": true,
+          "enemy": false,
+          "gate": true,
+          "open": false
+        }
+      ]
+    },
+    "result": 3
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "objects": [
+        {
+          "building": true,
+          "enemy": false,
+          "gate": true,
+          "open": false
+        }
+      ]
+    },
+    "result": 3
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "objects": [
+        {
+          "building": true,
+          "enemy": false,
+          "gate": true,
+          "open": true
+        }
+      ]
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "objects": [
+        {
+          "building": true,
+          "enemy": false,
+          "gate": true,
+          "open": true
+        }
+      ]
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "armed": false,
+      "objects": [
+        {
+          "building": true,
+          "enemy": true,
+          "gate": true,
+          "open": false
+        }
+      ]
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "objects": [
+        {
+          "building": true,
+          "enemy": true,
+          "gate": true,
+          "open": false
+        }
+      ]
+    },
+    "result": 5
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "objects": [
+        {
+          "building": true,
+          "enemy": true,
+          "gate": true,
+          "open": true
+        }
+      ]
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "objects": [
+        {
+          "building": true,
+          "enemy": true,
+          "gate": true,
+          "open": true
+        }
+      ]
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": false,
+      "crusher_all": false,
+      "wall": false,
+      "wall_owner": -1,
+      "wall_weapon": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "crusher": false,
+      "crusher_all": false,
+      "wall": false,
+      "wall_owner": -1,
+      "wall_weapon": true
+    },
+    "result": 5
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": true,
+      "crusher_all": false,
+      "wall": false,
+      "wall_owner": -1,
+      "wall_weapon": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": false,
+      "crusher_all": true,
+      "wall": false,
+      "wall_owner": -1,
+      "wall_weapon": false
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": false,
+      "crusher_all": false,
+      "wall": false,
+      "wall_owner": 0,
+      "wall_weapon": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "crusher": false,
+      "crusher_all": false,
+      "wall": false,
+      "wall_owner": 0,
+      "wall_weapon": true
+    },
+    "result": 4
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": true,
+      "crusher_all": false,
+      "wall": false,
+      "wall_owner": 0,
+      "wall_weapon": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": false,
+      "crusher_all": true,
+      "wall": false,
+      "wall_owner": 0,
+      "wall_weapon": false
+    },
+    "result": 4
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": false,
+      "crusher_all": false,
+      "wall": false,
+      "wall_owner": 1,
+      "wall_weapon": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "crusher": false,
+      "crusher_all": false,
+      "wall": false,
+      "wall_owner": 1,
+      "wall_weapon": true
+    },
+    "result": 5
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": true,
+      "crusher_all": false,
+      "wall": false,
+      "wall_owner": 1,
+      "wall_weapon": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": false,
+      "crusher_all": true,
+      "wall": false,
+      "wall_owner": 1,
+      "wall_weapon": false
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": false,
+      "crusher_all": false,
+      "wall": true,
+      "wall_owner": -1,
+      "wall_weapon": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "crusher": false,
+      "crusher_all": false,
+      "wall": true,
+      "wall_owner": -1,
+      "wall_weapon": true
+    },
+    "result": 5
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": true,
+      "crusher_all": false,
+      "wall": true,
+      "wall_owner": -1,
+      "wall_weapon": false
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": false,
+      "crusher_all": true,
+      "wall": true,
+      "wall_owner": -1,
+      "wall_weapon": false
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": false,
+      "crusher_all": false,
+      "wall": true,
+      "wall_owner": 0,
+      "wall_weapon": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "crusher": false,
+      "crusher_all": false,
+      "wall": true,
+      "wall_owner": 0,
+      "wall_weapon": true
+    },
+    "result": 4
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": true,
+      "crusher_all": false,
+      "wall": true,
+      "wall_owner": 0,
+      "wall_weapon": false
+    },
+    "result": 4
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": false,
+      "crusher_all": true,
+      "wall": true,
+      "wall_owner": 0,
+      "wall_weapon": false
+    },
+    "result": 4
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": false,
+      "crusher_all": false,
+      "wall": true,
+      "wall_owner": 1,
+      "wall_weapon": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "crusher": false,
+      "crusher_all": false,
+      "wall": true,
+      "wall_owner": 1,
+      "wall_weapon": true
+    },
+    "result": 5
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": true,
+      "crusher_all": false,
+      "wall": true,
+      "wall_owner": 1,
+      "wall_weapon": false
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": false,
+      "crusher": false,
+      "crusher_all": true,
+      "wall": true,
+      "wall_owner": 1,
+      "wall_weapon": false
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "objects": [
+        {
+          "turn": true
+        }
+      ]
+    },
+    "result": 2
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "objects": [
+        {
+          "nav": true,
+          "occupation": false
+        }
+      ]
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "armed": true,
+      "crusher": true,
+      "objects": [
+        {
+          "crushable": true,
+          "enemy": true
+        },
+        {
+          "cloaked": true,
+          "enemy": true
+        }
+      ]
+    },
+    "result": 1
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": false,
+      "objects": [
+        {
+          "building": false,
+          "crushable": false,
+          "enemy": true,
+          "resistant": false
+        }
+      ],
+      "omni": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": false,
+      "objects": [
+        {
+          "building": true,
+          "crushable": false,
+          "enemy": true,
+          "resistant": false
+        }
+      ],
+      "omni": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": false,
+      "objects": [
+        {
+          "building": false,
+          "crushable": false,
+          "enemy": true,
+          "resistant": true
+        }
+      ],
+      "omni": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": false,
+      "objects": [
+        {
+          "building": true,
+          "crushable": false,
+          "enemy": true,
+          "resistant": true
+        }
+      ],
+      "omni": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": false,
+      "objects": [
+        {
+          "building": false,
+          "crushable": true,
+          "enemy": true,
+          "resistant": false
+        }
+      ],
+      "omni": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": false,
+      "objects": [
+        {
+          "building": true,
+          "crushable": true,
+          "enemy": true,
+          "resistant": false
+        }
+      ],
+      "omni": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": false,
+      "objects": [
+        {
+          "building": false,
+          "crushable": true,
+          "enemy": true,
+          "resistant": true
+        }
+      ],
+      "omni": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": false,
+      "objects": [
+        {
+          "building": true,
+          "crushable": true,
+          "enemy": true,
+          "resistant": true
+        }
+      ],
+      "omni": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": false,
+      "objects": [
+        {
+          "building": false,
+          "crushable": false,
+          "enemy": true,
+          "resistant": false
+        }
+      ],
+      "omni": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": false,
+      "objects": [
+        {
+          "building": true,
+          "crushable": false,
+          "enemy": true,
+          "resistant": false
+        }
+      ],
+      "omni": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": false,
+      "objects": [
+        {
+          "building": false,
+          "crushable": false,
+          "enemy": true,
+          "resistant": true
+        }
+      ],
+      "omni": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": false,
+      "objects": [
+        {
+          "building": true,
+          "crushable": false,
+          "enemy": true,
+          "resistant": true
+        }
+      ],
+      "omni": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": false,
+      "objects": [
+        {
+          "building": false,
+          "crushable": true,
+          "enemy": true,
+          "resistant": false
+        }
+      ],
+      "omni": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": false,
+      "objects": [
+        {
+          "building": true,
+          "crushable": true,
+          "enemy": true,
+          "resistant": false
+        }
+      ],
+      "omni": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": false,
+      "objects": [
+        {
+          "building": false,
+          "crushable": true,
+          "enemy": true,
+          "resistant": true
+        }
+      ],
+      "omni": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": false,
+      "objects": [
+        {
+          "building": true,
+          "crushable": true,
+          "enemy": true,
+          "resistant": true
+        }
+      ],
+      "omni": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": true,
+      "objects": [
+        {
+          "building": false,
+          "crushable": false,
+          "enemy": true,
+          "resistant": false
+        }
+      ],
+      "omni": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": true,
+      "objects": [
+        {
+          "building": true,
+          "crushable": false,
+          "enemy": true,
+          "resistant": false
+        }
+      ],
+      "omni": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": true,
+      "objects": [
+        {
+          "building": false,
+          "crushable": false,
+          "enemy": true,
+          "resistant": true
+        }
+      ],
+      "omni": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": true,
+      "objects": [
+        {
+          "building": true,
+          "crushable": false,
+          "enemy": true,
+          "resistant": true
+        }
+      ],
+      "omni": false
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "crusher": true,
+      "objects": [
+        {
+          "building": false,
+          "crushable": true,
+          "enemy": true,
+          "resistant": false
+        }
+      ],
+      "omni": false
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "crusher": true,
+      "objects": [
+        {
+          "building": true,
+          "crushable": true,
+          "enemy": true,
+          "resistant": false
+        }
+      ],
+      "omni": false
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "crusher": true,
+      "objects": [
+        {
+          "building": false,
+          "crushable": true,
+          "enemy": true,
+          "resistant": true
+        }
+      ],
+      "omni": false
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "crusher": true,
+      "objects": [
+        {
+          "building": true,
+          "crushable": true,
+          "enemy": true,
+          "resistant": true
+        }
+      ],
+      "omni": false
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "crusher": true,
+      "objects": [
+        {
+          "building": false,
+          "crushable": false,
+          "enemy": true,
+          "resistant": false
+        }
+      ],
+      "omni": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": true,
+      "objects": [
+        {
+          "building": true,
+          "crushable": false,
+          "enemy": true,
+          "resistant": false
+        }
+      ],
+      "omni": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": true,
+      "objects": [
+        {
+          "building": false,
+          "crushable": false,
+          "enemy": true,
+          "resistant": true
+        }
+      ],
+      "omni": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0"
+    ],
+    "input": {
+      "crusher": true,
+      "objects": [
+        {
+          "building": true,
+          "crushable": false,
+          "enemy": true,
+          "resistant": true
+        }
+      ],
+      "omni": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "crusher": true,
+      "objects": [
+        {
+          "building": false,
+          "crushable": true,
+          "enemy": true,
+          "resistant": false
+        }
+      ],
+      "omni": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "crusher": true,
+      "objects": [
+        {
+          "building": true,
+          "crushable": true,
+          "enemy": true,
+          "resistant": false
+        }
+      ],
+      "omni": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "crusher": true,
+      "objects": [
+        {
+          "building": false,
+          "crushable": true,
+          "enemy": true,
+          "resistant": true
+        }
+      ],
+      "omni": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "crusher": true,
+      "objects": [
+        {
+          "building": true,
+          "crushable": true,
+          "enemy": true,
+          "resistant": true
+        }
+      ],
+      "omni": true
+    },
+    "result": 0
+  }
+]

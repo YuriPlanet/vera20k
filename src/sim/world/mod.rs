@@ -28,7 +28,13 @@ mod jumpjet_cruise;
 #[cfg(test)]
 pub(crate) use infantry_terminal::InfantryDeathSequence;
 pub(crate) use infantry_terminal::{InfantryDeathPostlude, InfantryTerminal};
+mod aircraft_attack;
+mod aircraft_fire_location;
 pub(crate) mod damage_consequences;
+pub(crate) mod display_layers;
+mod display_registry;
+mod fly_landing;
+mod fly_orders;
 mod frame_error;
 mod lifecycle;
 mod load_object_lifecycle;
@@ -56,9 +62,13 @@ mod world_orders;
 mod world_spawn;
 
 #[cfg(test)]
+mod aircraft_deployment_tests;
+#[cfg(test)]
 mod damage_consequence_tests;
 #[cfg(test)]
 mod eva_dispatch_tests;
+#[cfg(test)]
+mod fly_height_tests;
 #[cfg(test)]
 pub(crate) mod gap_generator_tests;
 #[cfg(test)]
@@ -281,6 +291,11 @@ pub enum SimSoundEvent {
     AnimationStopped {
         anim_id: crate::sim::anim_class::AnimId,
         stop_sound_id: Option<InternedId>,
+        world: crate::sim::anim_class::AnimWorldCoord,
+    },
+    /// Native Fly AuxSound1/AuxSound2 at the phase callback world coordinate.
+    AircraftPhase {
+        sound_id: InternedId,
         world: crate::sim::anim_class::AnimWorldCoord,
     },
     /// A weapon fired — play its Report= sound.
@@ -934,6 +949,11 @@ pub struct Simulation {
     /// the same tick.
     #[serde(skip)]
     pub(crate) pending_missile_detonations: Vec<crate::sim::spawn_manager::MissileDetonation>,
+    /// Aircraft whose Mission_Attack state4 visit, dispatched in their own
+    /// LogicVector slot, requested the combat receiver's release this frame.
+    /// Filled by the live pass, drained by combat in the same frame.
+    #[serde(skip)]
+    pub(crate) aircraft_fire_requests: std::collections::BTreeSet<u64>,
     /// BulletClass AI results produced in mixed Logic order and consumed at
     /// the existing combat receiver seam later in this master frame.
     #[serde(skip)]
@@ -1149,9 +1169,9 @@ pub struct Simulation {
     /// Admitted through `queue_command(s)` and drained each tick when
     /// `cmd.execute_tick <= current_tick + 1`.
     pending_commands: Vec<CommandEnvelope>,
-    /// Map trigger runtime state — tracks global/local variables, disabled triggers,
-    /// fired one-shot triggers, and elapsed scenario ticks. Initialized from map data.
-    pub trigger_runtime: TriggerRuntime,
+    /// Serialized map trigger state, initialized and mutated by trigger_runtime.
+    /// Remains installed while actions call other Simulation mechanisms.
+    pub(crate) trigger_runtime: TriggerRuntime,
 }
 
 impl Default for Simulation {
@@ -1686,6 +1706,7 @@ impl Simulation {
         tick_ms: u32,
         logic_order: &[u64],
         fire_suppressed: &BTreeSet<u64>,
+        aircraft_fire_requests: &BTreeSet<u64>,
         projectile_detonations: &[crate::sim::projectile::ProjectileDetonation],
         wave_damage_events: &[crate::sim::wave::WaveDamageEvent],
     ) -> crate::sim::combat::CombatTickResult {
@@ -1698,6 +1719,7 @@ impl Simulation {
             tick_ms,
             logic_order,
             fire_suppressed,
+            aircraft_fire_requests,
             projectile_detonations,
             wave_damage_events,
         );
@@ -2186,9 +2208,8 @@ impl Simulation {
                         // two row-major attempts at each of the 15 grid cells.
                         // Every representable allocation is successful, so
                         // each attempt consumes type, X, Y, and delay draws.
-                        let anim_types =
-                            crate::rules::effect_asset_catalog::CLIFF_COLLAPSE_ANIMS
-                                .map(|name| self.interner.intern(name));
+                        let anim_types = crate::rules::effect_asset_catalog::CLIFF_COLLAPSE_ANIMS
+                            .map(|name| self.interner.intern(name));
                         for &(cell_x, cell_y) in &mutation.animation_cells {
                             for _ in 0..2 {
                                 let type_index =
@@ -2776,11 +2797,7 @@ impl Simulation {
         type_ref: InternedId,
         rules: &'r RuleSet,
     ) -> Option<&'r ObjectType> {
-        match self.type_handles.handle_for(type_ref) {
-            Some(handle) => Some(rules.object_by_handle(handle)),
-            None if self.type_handles.is_empty() => rules.object(self.interner.resolve(type_ref)),
-            None => None,
-        }
+        self.type_handles.object(&self.interner, type_ref, rules)
     }
 
     /// Create a new empty simulation with an explicit deterministic seed.
@@ -2832,6 +2849,7 @@ impl Simulation {
             pending_lifecycle_requests: Vec::new(),
             pending_rocket_detonations: Vec::new(),
             pending_missile_detonations: Vec::new(),
+            aircraft_fire_requests: Default::default(),
             pending_projectile_detonations: Vec::new(),
             pending_wave_damage_requests: Vec::new(),
             #[cfg(test)]
@@ -2985,11 +3003,15 @@ impl Simulation {
         &self.substrate.entities
     }
 
-    /// Current ObjectClass registration order used by the tactical layer.
-    /// Presentation code may sort registered objects into LayerClass order,
-    /// but must not reconstruct equal-key ordering from EntityStore keys.
-    pub(crate) fn tactical_registration_order(&self) -> &[u64] {
+    /// Logic scheduling order, also consumed by the current radar pipeline.
+    pub(crate) fn logic_order(&self) -> &[u64] {
         self.substrate.logic.as_slice()
+    }
+
+    /// Retained Display membership and order. Tactical6D8F19..6D95A9 walks
+    /// these five vectors directly; it neither queries GetLayer nor re-sorts.
+    pub(crate) fn display_layers(&self) -> &display_layers::DisplayLayers {
+        &self.substrate.display
     }
 
     /// Mutable entity-store access for above-sim callers.
@@ -3372,32 +3394,6 @@ impl Simulation {
         }
     }
 
-    /// Advance map triggers by one tick. Uses `std::mem::take` to avoid
-    /// self-borrow conflict while actions read and mutate Simulation authority.
-    fn advance_triggers(
-        &mut self,
-        graph: &TriggerGraph,
-        triggers: &TriggerMap,
-        events: &EventMap,
-        actions: &ActionMap,
-        waypoints: &std::collections::HashMap<u32, crate::map::waypoints::Waypoint>,
-        rules: Option<&RuleSet>,
-    ) -> Vec<TriggerEffect> {
-        let mut rt = std::mem::take(&mut self.trigger_runtime);
-        let effects = rt.advance_at_frame(
-            self.session.binary_frame,
-            graph,
-            triggers,
-            events,
-            actions,
-            Some(self),
-            rules,
-            waypoints,
-        );
-        self.trigger_runtime = rt;
-        effects
-    }
-
     /// Install the initial normalized MapClass playfield authority.
     ///
     /// `MapClass::Set_Clipped_LocalSize @ 0x00567230` establishes the five
@@ -3616,14 +3612,7 @@ impl Simulation {
 
     fn poll_triggers_for_master_frame(&mut self, inputs: TriggerInputs<'_>) {
         // YR LogicClass::Update polls scenario triggers before the live-object walk.
-        let effects = self.advance_triggers(
-            inputs.graph,
-            inputs.triggers,
-            inputs.events,
-            inputs.actions,
-            inputs.waypoints,
-            inputs.rules,
-        );
+        let effects = self.advance_triggers(inputs);
         self.trigger_effects.extend(effects);
     }
 
@@ -3669,15 +3658,6 @@ impl Simulation {
     /// its configured value once at match install).
     pub(crate) fn set_input_delay_ticks(&mut self, ticks: u64) {
         self.input_delay_ticks = ticks;
-    }
-
-    /// Install the map trigger runtime state machine after load (F10 boundary
-    /// method; the immutable trigger definitions live in `SimResources`).
-    pub(crate) fn install_trigger_runtime(
-        &mut self,
-        runtime: crate::sim::trigger_runtime::TriggerRuntime,
-    ) {
-        self.trigger_runtime = runtime;
     }
 
     #[cfg(test)]
@@ -3732,7 +3712,7 @@ impl Simulation {
     ) -> u64 {
         self.projectiles
             .spawn_at(stable_id, self.session.binary_frame, spawn);
-        let registered = self.register_projectile(stable_id);
+        let registered = self.register_projectile(stable_id, spawn.flat);
         debug_assert!(registered);
         stable_id
     }
@@ -4394,6 +4374,7 @@ impl Simulation {
         if let Some(rules) = rules {
             self.change_owner_harvester_idle_arm(stable_id, rules);
         }
+        self.foot_neighbors_after_owner_change(stable_id, rules);
         self.refresh_waypoint_edge_from_committed_structure(stable_id);
         self.reveal_building_sight_after_owner_change(stable_id, rules);
         if let Some(rules) = rules {
@@ -5687,7 +5668,6 @@ impl Simulation {
         // Advance building-down (undeploy) animations; spawn units when done.
         *spawned_entities |= self.tick_building_down(rules, overlay_registry);
 
-
         // EventClass dispatch is a Main_Tick tail rung: the complete live
         // Logic walk observes frame N's pre-command state, so an accepted
         // command first changes that object's AI behavior on frame N+1.
@@ -6002,6 +5982,9 @@ impl Simulation {
         #[cfg(test)]
         self.trace_master_frame_rung(MasterFrameTestRung::SessionCommands);
 
+        // MainTick55DBC8 precedes Logic55DC9E (including trigger polling).
+        self.sort_display_ground(rules);
+
         // YR LogicClass::Update establishes trigger state before visiting the
         // live LogicVector, so object work in this frame observes its actions.
         #[cfg(test)]
@@ -6052,6 +6035,8 @@ impl Simulation {
         // before advancing its cursor; later phases need only these outcomes.
         #[cfg(test)]
         self.trace_master_frame_rung(MasterFrameTestRung::LogicVector);
+        // Receipts are frame-local: an aborted earlier frame must not leak one.
+        self.aircraft_fire_requests.clear();
         let object_pass = self.advance_live_object_pass(rules, path_grid, overlay_registry)?;
         spawned_entities |= std::mem::take(&mut self.mission_spawned_entities);
         let movement_stats = object_pass.movement;
@@ -6113,11 +6098,9 @@ impl Simulation {
             crate::sim::rocking::tick(&mut self.substrate.entities, rules, &mut hook);
         }
 
-        // Aircraft mission state machines — between movement and combat.
-        // Reads updated positions, controls firing and RTB decisions.
-        if let Some(rules) = rules {
-            crate::sim::aircraft::tick_aircraft_missions(self, rules, active_path_grid);
-        }
+        // Aircraft missions ran in their own LogicVector slots during the live
+        // pass; combat admits the state4 releases they requested.
+        let aircraft_fire_requests = std::mem::take(&mut self.aircraft_fire_requests);
 
         // Wake anims under moving units on water (native gate and cadence in
         // `spawn_wakes_for_frame`).
@@ -6261,6 +6244,7 @@ impl Simulation {
                 tick_ms,
                 &logic_order,
                 &fire_suppressed,
+                &aircraft_fire_requests,
                 &projectile_detonations,
                 &[],
             );

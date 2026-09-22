@@ -69,7 +69,6 @@ use crate::render::unit_atlas::UnitAtlas;
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::trigger_runtime::TriggerRuntime;
 use crate::sim::world::Simulation;
 
 pub(crate) fn resolved_overlay_shp_ids(
@@ -1439,7 +1438,6 @@ pub struct ScenarioLoadInputs {
     pub events: EventMap,
     pub actions: ActionMap,
     pub trigger_graph: TriggerGraph,
-    pub trigger_runtime: TriggerRuntime,
     /// Overlay type registry — kept so wall placement can look up overlay_id by name.
     pub overlay_registry: OverlayTypeRegistry,
     pub house_roster: HouseRoster,
@@ -2078,6 +2076,10 @@ impl MapLoadInitial {
             },
         )
         .expect("production generated-map construction funnel");
+        overlay_grid = simulation
+            .overlay_grid
+            .take()
+            .expect("populated generated CellClass grid");
         // The generator tail, where the match load runs it: growth and spread
         // queues from the painted densities, then the final germination
         // (`RandomMapGenerator::Generate @ 0x00598960` tail). The post-map
@@ -2099,6 +2101,7 @@ impl MapLoadInitial {
             map_data.header.width as u16,
             map_data.header.height as u16,
         );
+        simulation.overlay_grid = Some(overlay_grid.clone());
         crate::app::loading::init_helpers::bind_staged_app_scenario_metadata(
             &mut simulation,
             asset_manager,
@@ -2952,6 +2955,12 @@ pub(crate) fn load_map_from_initial(
                     );
                 },
             )?;
+            // Keep the live constructor mutations when running the final ore
+            // pass. The pre-population materialization copy has no Foot history.
+            overlay_grid = staged_simulation
+                .overlay_grid
+                .take()
+                .expect("populated generated CellClass grid");
             // `RandomMapGenerator::Generate @ 0x00598960` tail (`0x00599370..
             // 0x0059945B`): after the generator constructors and its final
             // whole-map Recalc (`0x0059937D`), `TiberiumClass::InitGrowthQueues_All
@@ -3000,6 +3009,7 @@ pub(crate) fn load_map_from_initial(
                     germination.unallocated_cells,
                 );
             }
+            staged_simulation.overlay_grid = Some(overlay_grid.clone());
             overlay_grid
         }
     };
@@ -3408,7 +3418,6 @@ pub(crate) fn load_map_from_initial(
     } else {
         log::warn!("Software cursor NOT loaded (mouse.sha missing?) — using OS cursor");
     }
-    let trigger_runtime = TriggerRuntime::from_map(&map_data.triggers, &map_data.local_variables);
     let lighting_grid = rebuild_lighting_grid_from_sim(
         &resolved_terrain,
         &lighting_config,
@@ -3446,7 +3455,6 @@ pub(crate) fn load_map_from_initial(
             events: map_data.events,
             actions: map_data.actions,
             trigger_graph: map_data.trigger_graph,
-            trigger_runtime,
             overlay_registry,
             house_roster,
             height_map,

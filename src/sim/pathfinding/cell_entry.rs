@@ -40,22 +40,14 @@
 //! does not, recorded rather than guessed and ordered by ordinary-skirmish
 //! impact:
 //!
-//! - **`Gate=` buildings take the garrison arm.** [`classify_blocker`] maps a
-//!   closed or opening `BuildingGateRuntime` to `ScatterRequired` (code 3), but
-//!   code 3 in gamemd is `BuildingTypeClass+0x16B7` plus
-//!   `!BuildingClass::CanGarrison()` — the garrison flag, read at `0x004525F9`.
-//!   `Gate=` is a different field, `+0x16C0` (read by
-//!   `BuildingClass::TogglePowerOrGate` @ `0x004471CB`), and its arm is its own
-//!   branch, and it never reads the gate's open/closed state at all: the
-//!   occupant is **skipped whole**, leaving the running code untouched, whenever
-//!   `occupant->Owner+0x1FA` is clear, and is **`return 7`** when it is set. A
-//!   gate never yields code 3. Trigger: any
-//!   move order whose path crosses a friendly gate. Player effect: VERA's code 3
-//!   routes into the scatter arm, which asks a *structure* to move out of the
-//!   way; retail either walks through or treats it as solid. Frequency: common
-//!   from mid-game on, in every walled base. Downstream risk: the test
-//!   `friendly_closed_or_opening_gate_returns_code_3_not_code_6` pins the wrong
-//!   mapping and must be re-baselined with the fix.
+//! - **Gate identity corrected (2026-09-22).** `BuildingType+16B7` is `Gate=`:
+//!   ReadINI4609EA..460A13 reads literal81AA8C. `4525F0` is gate passability,
+//!   requiring Open mission24 and stable-open animation state. Unit73F6E8
+//!   skips an open gate; a closed allied gate raises3, armed enemy raises5,
+//!   unarmed enemy returns7. The old garrison interpretation was false.
+//!   `+16C0` is the separate FirestormWall flag. Complete Unit-call evidence:
+//!   `tools/spatial_oracle/unit_entry`. This establishes classification, not
+//!   the downstream gate-opening/scatter response for every caller.
 //! - **The wall arm produces the wrong code, not no code.** `cell_rect`'s
 //!   `is_wall_overlay` / `WallBlocked` path is live and MovementZone-keyed, and
 //!   its Destroyer-class escape set matches native's `{2, 3, 8, 0xC}` at
@@ -1622,7 +1614,7 @@ pub(crate) fn classify_occupied_cell_with_occupation_and_slave_query(
 /// arms test mover-house alliance and the target's +160 invulnerability slot.
 /// A rejected Omni arm falls through to ordinary Crushable, which does not
 /// read OmniCrushResistant or the mover's regular-crusher flag.
-fn unit_tail_is_crushable_by(
+pub(crate) fn unit_tail_is_crushable_by(
     unit: &GameEntity,
     capability: bump_crush::CrushCapability,
     mover_considers_target_allied: bool,
@@ -1632,10 +1624,8 @@ fn unit_tail_is_crushable_by(
     let target = bump_crush::CrushTarget::from_entity(unit, current_frame);
     // Live Unit entities carry Techno abstract flag1. Deploy crush immunity
     // is written only by Infantry deploy; it is always clear on this subset.
-    ((capability.omni_crusher && !target.omni_crush_resistant)
-        || (target.crushable && !target.deploy_crush_immune))
-        && !mover_considers_target_allied
-        && !target.iron_curtained
+    !mover_considers_target_allied
+        && bump_crush::object_is_crushable_by(capability.omni_crusher, target)
 }
 
 #[cfg(test)]
@@ -1805,6 +1795,18 @@ fn classify_blocker(
     // `movement_target` test; native's NavCom/rotating/`Is_Moving` triple
     // (`0x0073F865..F8C0`) is a recorded gap, unchanged here. The head-on exit
     // that precedes this arm is `head_on_with_moving_ally` above.
+    //
+    // RESIDUAL (duplicate Unit73F0A0): `bridge_repair_admission::foot_entry`
+    // is the native-compared Unit CanEnterCell (unit_entry/traversal/boundary/
+    // air_motion corpora) and owns the triple via `motion_query`, but only
+    // Infantry and repair's ==7 projection reach it. Drive/Ship admission
+    // still classifies here. Trigger: a Drive/Ship mover meets an allied
+    // stationary blocker that is rotating its body or holds a NavCom without a
+    // VERA path. Effect: FriendlyStationary (scatter request) where native
+    // takes the moving arm (head-on 7 / raise 2 / skip). Frequency: allied
+    // traffic jams. Risk: vehicle routing/scatter order; no determinism or
+    // lifecycle effect. Consolidate onto `foot_entry` with the Drive/Ship
+    // Process path owner (wip/track-order-deferred-path).
     if blocker.movement_target.is_some() {
         // The head-on exit precedes the locomotor question and exists only in
         // the Unit implementation (`0x0073F8D4`); Infantry `+0x1AC` has none.
@@ -1833,18 +1835,17 @@ fn classify_blocker(
 /// 861" — is not an address or a named research doc and does not meet the
 /// provenance form; it is dropped rather than dressed up.
 ///
-/// The nearest native mechanism runs the other way round.
 /// `FootClass::LocomotorPassabilityCheck` @ `0x004D9C10` dispatches the mover's
-/// locomotor vtable `+0x1C` and **seeds** the running code before the occupant
-/// walk, is Unit-only, is gated on a caller flag byte, and can only be raised
-/// afterwards — nothing in either `Can_Enter_Cell` lowers an accumulated code at
-/// the end. What `JumpjetLocomotionClass+0x1C` returns is UNCHECKED. Trigger:
-/// any jumpjet mover meeting an occupied or soft-blocked cell. Player effect:
-/// jumpjets ignore ground traffic, which is the retail feel; whether they ignore
-/// it by this route is unverified. Frequency: every Rocketeer and Floating Disc
-/// order. Downstream risk: replacing this with the native seed changes where the
-/// locomotor hook sits relative to the walk, so it is a restructure rather than
-/// a swap.
+/// locomotor vtable `+0x1C` before Unit's occupant walk when the caller enables
+/// it. All eight active retail locomotors, including Jumpjet, point that slot
+/// at the constant-zero `0x0055ABF0`; the 48 original calls in
+/// `tools/spatial_oracle/foot_locomotor_entry.{py,json,meta.json}` reproduce it.
+/// That seed does not justify clearing an accumulated result after the walk.
+/// Trigger: any jumpjet mover meeting an occupied or soft-blocked cell. Player
+/// effect: this compatibility override ignores soft blockers. Frequency: every
+/// Rocketeer and Floating Disc order. Downstream risk: migrating these callers
+/// requires their native class entry and locomotor paths; the constant-zero
+/// seed alone does not establish the final movement decision.
 fn apply_overrides(result: CellEntryResult, locomotor: LocomotorKind) -> CellEntryResult {
     if locomotor == LocomotorKind::Jumpjet && !matches!(result, CellEntryResult::Impassable) {
         return CellEntryResult::Clear;

@@ -11,7 +11,7 @@
   "assumptions": [
     "Queried type, weapon, class, garrison/count and retained HouseROF are supplied inputs",
     "Original Scenario RNG seed constructor, range draws, veterancy predicates and ftol execute",
-    "Aircraft class1 and Type+6C4 branch is distinct from Infantry class15/Type+6C0",
+    "Original RTTI leaves establish Unit1, Aircraft2, Building6 and Infantry15; class1 Type+6C4 delays belong to Unit",
     "No caller FireAt scheduling, weapon selection, INI parsing or House factor construction claim"
   ],
   "substitutions": [
@@ -20,6 +20,36 @@
   "entry_points": {
     "get_rof": "0x006FCFA0"
   },
+  "original_classes": [
+    {
+      "name": "unit",
+      "vtable": "007F5C70",
+      "entry": "00746E20",
+      "value": 1,
+      "hex": "b801000000c3"
+    },
+    {
+      "name": "aircraft",
+      "vtable": "007E22A4",
+      "entry": "0041C180",
+      "value": 2,
+      "hex": "b802000000c3"
+    },
+    {
+      "name": "building",
+      "vtable": "007E3EBC",
+      "entry": "00459EC0",
+      "value": 6,
+      "hex": "b806000000c3"
+    },
+    {
+      "name": "infantry",
+      "vtable": "007EB058",
+      "entry": "00523340",
+      "value": 15,
+      "hex": "b80f000000c3"
+    }
+  ],
   "original_slices": [
     {
       "start": "006FCFA0",
@@ -28,5 +58,5 @@
       "sha256": "bac04a141dda1393f8df43ef9f3f7de0ea1a3bb7fce193764a87428e99e152b3"
     }
   ],
-  "payload_sha256": "5cc8e2c64ee1cbd5e204c5aab670f219b0bc9cf65cfd7996e586565f43bacc2e"
+  "payload_sha256": "7c13a26d0466ee75a0d01fda73e0c7a5fb1490834ed0003287db08a0d048f451"
 }

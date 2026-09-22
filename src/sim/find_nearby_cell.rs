@@ -431,7 +431,10 @@ fn is_direct_candidate(q: &NearbyQuery<'_>, cx: i32, cy: i32) -> bool {
 }
 
 fn project_candidate(q: &NearbyQuery<'_>, cx: i32, cy: i32) -> (i32, i32) {
-    project_candidate_with_lookup(cx, cy, |x, y| projection_cell_view(q, x, y))
+    let (cx, cy) = crate::map::cell_index::packed_cell_coord(cx, cy);
+    project_world_coordinate_with_lookup(cx * 256 + 128, cy * 256 + 128, |x, y| {
+        projection_cell_view(q, x, y)
+    })
 }
 
 fn projection_cell_view(q: &NearbyQuery<'_>, cx: i32, cy: i32) -> CellClassProjectionView {
@@ -449,7 +452,19 @@ fn projection_cell_view(q: &NearbyQuery<'_>, cx: i32, cy: i32) -> CellClassProje
     )
 }
 
-/// Instruction-faithful projection kernel. The lookup closure represents one
+/// 6D641B..6D643D consumes world XY, divides toward zero, then narrows to
+/// signed cell words. A negative cell's center can project from a different
+/// seed: center(-1)=-128, whose /256 quotient is zero. Scatter and FNPC must
+/// both pass through this conversion before the cell-based kernel.
+pub(crate) fn project_world_coordinate_with_lookup<F>(x: i32, y: i32, lookup: F) -> (i32, i32)
+where
+    F: FnMut(i32, i32) -> CellClassProjectionView,
+{
+    project_candidate_with_lookup(native_lepton_to_cell(x), native_lepton_to_cell(y), lookup)
+}
+
+/// Instruction-faithful projection kernel after world-to-cell conversion.
+/// The lookup closure represents one
 /// native `MapClass::Get_CellClass` call and must return level and flags together.
 fn project_candidate_with_lookup<F>(cx: i32, cy: i32, mut lookup: F) -> (i32, i32)
 where

@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original TriggerType ReadINI7273B9..72749B flag assignments with real ReadString512, strtok and atoi; no live trigger execution.",
+  "assumptions": [
+    "Supplied cached INI entry and explicit prior9C..A0 fields; first prior is the fresh constructor726C80 state.",
+    "Three original strtok calls skip the House/link/name tokens; their resolution/copy and Events/Actions loading are excluded.",
+    "Missing/empty ReadString follows the reader72727B early exit and retains fields.",
+    "Values are supplied INI entries, not physical-file input; physical line-length limits are separate."
+  ],
+  "substitutions": [
+    "Inherited fixture supplies external GetLastError/SetLastError/TlsGetValue imports and unused heap/lock imports. Original CRT/tokenization/numeric/flag instructions are unchanged."
+  ],
+  "entry_points": {
+    "read_string": "0x00528A10",
+    "strtok": "0x007C9CC2",
+    "atoi": "0x007C9BFD",
+    "flags": "0x007273B9"
+  },
+  "original_slice": {
+    "start": "007273B9",
+    "end_exclusive": "0072749B",
+    "hex": "68707f810053e8fe280a0083c4083bc3741650e82c280a0083c40485c07509c6859f00000001eb07c6859f0000000068707f810053e8cf280a0083c4083bc3741650e8fd270a0083c40485c07409c6859c00000001eb07c6859c0000000068707f810053e8a0280a0083c4083bc3741650e8ce270a0083c40485c07409c6859d00000001eb07c6859d0000000068707f810053e871280a0083c4083bc3741650e89f270a0083c40485c07409c6859e00000001eb07c6859e0000000068707f810053e842280a0083c4083bc3741450e870270a0083c40485c07407c685a000000001",
+    "sha256": "8fc8fff2d9a1576118d89ce9a05f3aec91d63f6b53cce528764438bc0a8800d9"
+  },
+  "payload_sha256": "0ffb7a2b33ffab43ea1d2a7e9415f24d73a6579f81557dc9b6d09d75c743ef01"
+}

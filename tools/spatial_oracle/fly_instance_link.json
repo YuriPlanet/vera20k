@@ -1,0 +1,30 @@
+[
+  {
+    "after_type_change": false,
+    "aircraft": false,
+    "linked": false,
+    "result": 0,
+    "type_airport_bound": false
+  },
+  {
+    "after_type_change": false,
+    "aircraft": false,
+    "linked": false,
+    "result": 0,
+    "type_airport_bound": true
+  },
+  {
+    "after_type_change": false,
+    "aircraft": true,
+    "linked": false,
+    "result": 0,
+    "type_airport_bound": false
+  },
+  {
+    "after_type_change": true,
+    "aircraft": true,
+    "linked": true,
+    "result": 0,
+    "type_airport_bound": true
+  }
+]

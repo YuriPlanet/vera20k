@@ -423,13 +423,16 @@ mod tests {
             in_logic_vector: false,
             owner_entity: None,
             building_slot: None,
+            damage_fire_slot: None,
             start_sound_active: false,
             stop_sound_id: None,
+            display: Default::default(),
         }
     }
 
     fn test_projectile(origin: ProjectileCoord) -> ProjectileSpawn {
         ProjectileSpawn {
+            flat: false,
             source_id: 0,
             origin,
             target: ProjectileTarget::Cell { rx: 0, ry: 0 },

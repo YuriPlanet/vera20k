@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Counted variable-width Event records, native reversed list order, literal/type-name materialization and bounded predicates. Excludes resolved Team references, nonempty TechnoType scans and live Trigger completion/timers.",
+  "assumptions": [
+    "Original ReadString512 on a supplied INI entry; empty TeamType/TechnoType registries; global7/local9 set.",
+    "Original reader loop prepends Events; input count is nonnegative and bounded by fixture capacity.",
+    "Predicate calls use incoming kind13, null House/Object, timer start0/duration30, explicit frame and no repeat.",
+    "Invalid variable indices are reader-only: native Get leaves the caller output byte untouched."
+  ],
+  "substitutions": [
+    "Operator-new supplies poisoned Event storage; inherited fixture supplies Windows CRT TLS/error and unused heap/lock imports. No gameplay callees or instructions are replaced."
+  ],
+  "entry_points": {
+    "read_string": "0x00528A10",
+    "counted_loop": "0x007274DC",
+    "constructor": "0x0071E6A0",
+    "read": "0x0071F4E0",
+    "evaluate": "0x0071E940"
+  },
+  "payload_sha256": "dd65d024997d4638fc909195248d1ed7191edf9b0d79fad05ba1c57c3fc3d440"
+}

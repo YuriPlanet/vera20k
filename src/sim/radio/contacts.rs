@@ -4,9 +4,9 @@
 //! array of `Option<u64>`. Inserts fill the first null slot (no append-grow);
 //! removals null a slot in place (no compaction, so slot positions are stable);
 //! a sender that finds itself full self-evicts slot 0. Capacity is
-//! `max(NumberOfDocks, 1)` for buildings, else 1. The only load-bearing reader
-//! is the `Can_Enter_Cell` membership test (`contains`); a slot index doubles as
-//! the dock-pad index for multi-pad docks, so slot position is hash-relevant.
+//! `max(NumberOfDocks, 1)` for buildings, else 1. Navigation uses the contact
+//! slot index to select a docking offset; admission reads membership through
+//! `contains`. Sparse slot positions are therefore hash-relevant.
 //! sim/ only — never render/ui/sidebar/audio/net.
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};

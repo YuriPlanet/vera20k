@@ -24,6 +24,19 @@ pub(crate) fn query_ground_height(
         .map_err(|error| format!("native ground query: {error:?}"))
 }
 
+/// Object5F5F00: signed current-cell level plus four for OnBridge. Its
+/// Object+1BC receiver5F6960 performs two map lookups from physical Object+9C;
+/// preserve their position in callers that retain the shared dummy Cell.
+pub(crate) fn query_object_cell_height(
+    cells: &NativeCellQuery<'_>,
+    physical: DriveCoord,
+    on_bridge: bool,
+) -> i32 {
+    let _ = cells.lookup_world(physical.x, physical.y);
+    let cell = cells.lookup_world(physical.x, physical.y);
+    i32::from(cells.ground_fields(cell).0 as i8) + if on_bridge { 4 } else { 0 }
+}
+
 /// Foot+BC4DDC40(false) -> Object5F6A70. The navigation coordinate can be a
 /// paid head; source bridge selection is independent of the cached path layer.
 /// Both ground samples precede the conditional structural-cell lookup.
@@ -73,6 +86,21 @@ pub(crate) fn position_world_coord(position: &Position) -> DriveCoord {
     }
 }
 
+/// Building render-coordinate459EF0 and GetYSort449410's type adjustment.
+/// Shared by display registration and presentation; neither uses center coords.
+pub(crate) fn building_render_order_parts(
+    mut location: DriveCoord,
+    turret_anim_is_voxel: bool,
+    gate: bool,
+) -> (DriveCoord, i32) {
+    location.x = location.x.wrapping_sub(128);
+    location.y = location.y.wrapping_sub(128);
+    (
+        location,
+        i32::from(turret_anim_is_voxel) * 32 - i32::from(gate) * 16,
+    )
+}
+
 /// Object virtual+48: Unit/Infantry/Aircraft5F65A0 copy retained XYZ;
 /// Building447AC0 adds the foundation-center XY offset and keeps raw Z.
 /// This is not Building+4C's optional dock/bunker approach-coordinate owner.
@@ -91,8 +119,7 @@ pub(crate) fn object_center_coord_with_foundation(
 ) -> DriveCoord {
     let mut coord = position_world_coord(&entity.position);
     if entity.category == crate::map::entities::EntityCategory::Structure {
-        let (width, height) =
-            crate::rules::foundation::foundation_dimensions(foundation);
+        let (width, height) = crate::rules::foundation::foundation_dimensions(foundation);
         coord.x = coord
             .x
             .wrapping_add(i32::from(width).wrapping_mul(128).wrapping_sub(128));

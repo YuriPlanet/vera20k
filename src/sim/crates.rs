@@ -15,14 +15,16 @@
 //!
 //! This module owns startup placement and its persistent slot/timer result.
 //! The [`runtime`] submodule owns the live slot clear, the identity-specific
-//! overlay removal, and the per-tick `CrateRegen` scan. Crate contents and
-//! pickup effects remain later crate-system mechanisms.
+//! overlay removal, and the per-tick `CrateRegen` scan. [`pickup`] owns outcome
+//! selection; pickup effects and their movement integration remain unfinished.
 //!
 //! ## Dependency rules
 //! Part of `sim/` — depends on `rules/`, `map/` grid types and other `sim/`
 //! modules only. Never on render/, ui/, sidebar/, audio/, net/.
 
+mod pickup;
 mod runtime;
+mod speed;
 mod state;
 
 pub(crate) use runtime::tick_crate_regeneration;

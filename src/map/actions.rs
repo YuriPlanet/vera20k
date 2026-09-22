@@ -20,6 +20,32 @@ pub struct ActionEntry {
     pub waypoint_index: Option<u32>,
 }
 
+impl ActionEntry {
+    /// Literal `TActionClass+0x90` value after `Read @ 0x006DD5B0`.
+    ///
+    /// Parameter type is params[0], not the action's numeric operand. Types
+    /// 0/11 read params[1]; types 5/9 replace the value with token 8. Other
+    /// literal types retain zero. Types 6/7/8 need sound/theme/speech registry
+    /// resolution and remain unsupported here, rather than becoming an index.
+    /// Native reader/dispatch comparisons: `trigger_action_values.json`.
+    pub fn literal_value(&self) -> Option<i32> {
+        let number = |index| {
+            self.params
+                .get(index)
+                .and_then(|value: &String| {
+                    crate::rules::ini_value::scan_decimal_i32(&mut value.as_bytes())
+                })
+                .unwrap_or(0)
+        };
+        match number(0) {
+            0 | 11 => Some(number(1)),
+            5 | 9 => Some(number(6)),
+            6..=8 => None,
+            _ => Some(0),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MapAction {
     pub id: String,
@@ -89,7 +115,16 @@ pub fn parse_actions(ini: &IniFile) -> ActionMap {
             .iter()
             .map(|part| part.trim().to_string())
             .collect();
-        let entries = parse_action_entries(&fields, &raw_fields);
+        // The native caller and Read share one strtok cursor. Empty fields
+        // disappear before grouping action chunks; whitespace-only fields
+        // still consume a token. Keep the original fields for diagnostics.
+        let tokens: Vec<&str> = raw_fields
+            .iter()
+            .copied()
+            .filter(|s| !s.is_empty())
+            .collect();
+        let values: Vec<String> = tokens.iter().map(|s| s.trim().to_string()).collect();
+        let entries = parse_action_entries(&values, &tokens);
         actions.insert(
             id.clone(),
             MapAction {

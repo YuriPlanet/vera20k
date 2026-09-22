@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "16 full original Mission_Attack state1 calls through live search, Aircraft/Foot destination setter, Fly MoveTo and mission delay/RNG. Supplied airborne flat-map states; not full attack or flight parity.",
+  "assumptions": [
+    "Original Aircraft, Unit, Cell and constructed Fly COM tables; owned reference count1.",
+    "Current Attack, no queued Enter, no repair-pad contact, linked lift, attached304 object or6AC latch; owner airborne500.",
+    "Inherited search fixture map and RNG; supplied frame100, timers, raw ammo flags and mission Rate.",
+    "Negative/null destination paths with live Attack target skip Fly Stop as in original Foot setter."
+  ],
+  "substitutions": [
+    "OS InterlockedIncrement/Decrement imports update their pointed count with stdcall cleanup; no gameplay call replaced."
+  ],
+  "entry_points": {
+    "attack": "0x00417FE0",
+    "search": "0x004197C0",
+    "aircraft_destination": "0x0041AA80",
+    "foot_destination": "0x004D94B0",
+    "fly_move": "0x004CCC80"
+  },
+  "payload_sha256": "301acde9f6c48aca5b28487d07059827bd8b2f6ec11a3b1b8a489e23a3a451bb"
+}

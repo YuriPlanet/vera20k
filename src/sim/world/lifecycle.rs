@@ -23,6 +23,7 @@ use crate::util::fixed_math::SimFixed;
 use crate::util::lepton::{LEPTONS_PER_LEVEL, ground_height_leptons};
 
 use super::Simulation;
+use super::display_layers::DisplayLayer;
 use super::substrate::ObjectKind;
 
 /// The control value `DispatchPointerExpiredCleanup @ 0x007258D0` forwards to
@@ -746,13 +747,13 @@ impl Simulation {
     /// It still executes the complete result-bearing Reveal transaction.
     pub(crate) fn reveal(&mut self, stable_id: u64) -> RevealOutcome {
         if self.substrate.anims.contains_key(stable_id) {
-            let registered = self.reveal_anim(stable_id);
+            let registered = self.reveal_anim(stable_id, None, None);
             return RevealOutcome::Revealed {
                 logic_registered: registered,
             };
         }
         if self.substrate.particle_systems.contains_key(stable_id) {
-            let registered = self.reveal_particle_system(stable_id);
+            let registered = self.reveal_particle_system(stable_id, None);
             return RevealOutcome::Revealed {
                 logic_registered: registered,
             };
@@ -767,6 +768,27 @@ impl Simulation {
                 placement: PlacementEvidence::MarkSucceeded,
                 logic_eligible: true,
             },
+        )
+    }
+
+    /// [`Self::reveal`] for an entity, with the rules context the type-reading
+    /// Unlimbo writers need (Aircraft Techno+3D4 retention, Ground sort keys).
+    pub(crate) fn reveal_entity_with_rules(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+    ) -> RevealOutcome {
+        let Some(position) = self.current_reveal_position(stable_id) else {
+            return RevealOutcome::Failed(RevealFailure::MissingObject);
+        };
+        self.try_reveal_entity_with_context(
+            stable_id,
+            RevealRequest {
+                position,
+                placement: PlacementEvidence::MarkSucceeded,
+                logic_eligible: true,
+            },
+            UninitContext::with_rules(rules),
         )
     }
 
@@ -907,6 +929,29 @@ impl Simulation {
         // +198(owner) next; only afterward Infantry51E0EF clears +41B for
         // exactly Sight=0. Never move these producers before the Mark call.
         self.record_foot_owner_discovery(stable_id);
+        let high_flight = self.foot_neighbors_after_unlimbo(stable_id, context.rules);
+        // Foot4D72B2/+54 requires high flight, then Type ConsideredAircraft
+        // (+D96) admits AirTrackerAdd4D72DB. Mark itself never adds Fly.
+        if self.substrate.entities.get(stable_id).is_some_and(|e| {
+            e.locomotor.as_ref().and_then(|l| l.fly_runtime()).is_some()
+                && high_flight
+                && context
+                    .rules
+                    .and_then(|r| r.object(self.interner.resolve(e.type_ref())))
+                    .map_or(e.category == EntityCategory::Aircraft, |o| {
+                        o.considered_aircraft
+                    })
+        }) {
+            self.register_fly_air_tracker(stable_id);
+        }
+        // Aircraft4143A8 follows successful Foot Unlimbo, including the dead
+        // Techno success arm. Failed placement above must not promote +3D4.
+        if let Some(rules) = context.rules
+            && let Some(entity) = self.substrate.entities.get_mut(stable_id)
+        {
+            let type_id = self.interner.resolve(entity.type_ref());
+            entity.retain_aircraft_unlimbo_control(rules, type_id);
+        }
         if let Some(entity) = self.substrate.entities.get_mut(stable_id)
             && entity.category == EntityCategory::Infantry
             && entity.sight_is_zero
@@ -929,6 +974,7 @@ impl Simulation {
             self.mark_building_base_reservation_with_arg(stable_id, false, context);
             self.fill_base_plan_from_successful_building_unlimbo(stable_id);
         }
+        self.submit_entity_display(stable_id, context.rules, context.terrain());
         self.lifecycle_outputs
             .push(LifecycleOutput::RevealDisplay { stable_id });
         #[cfg(test)]
@@ -1108,7 +1154,10 @@ impl Simulation {
         // Jumpjet high-flying5F6B90 reads this intermediate value.
         entity.lifecycle.cell_marked = true;
         let cells = entity_occupancy_cells(entity);
-        let layer = cell_list_layer_for_entity(entity);
+        let layer = cell_list_layer_for_entity(
+            entity,
+            context.terrain().or(self.resolved_terrain.as_ref()),
+        );
         let sub_cell = if entity.category == EntityCategory::Infantry {
             entity.sub_cell
         } else {
@@ -1128,15 +1177,24 @@ impl Simulation {
         };
         let exact_z_leptons = entity.position.exact_z_leptons;
         let inside_transport = entity.passenger_role.is_inside_transport();
-        let air_spatial_bucket =
-            (!inside_transport && air_spatial_tracks_entity(entity)).then(|| {
-                air_spatial_bucket_index(
-                    entity.position.rx,
-                    entity.position.ry,
-                    self.session.map_width,
-                    self.session.map_height,
-                )
-            });
+        let tracks_air = if entity
+            .locomotor
+            .as_ref()
+            .and_then(|l| l.fly_runtime())
+            .is_some()
+        {
+            entity.air_spatial_bucket.is_some()
+        } else {
+            air_spatial_tracks_entity(entity)
+        };
+        let air_spatial_bucket = (!inside_transport && tracks_air).then(|| {
+            air_spatial_bucket_index(
+                entity.position.rx,
+                entity.position.ry,
+                self.session.map_width,
+                self.session.map_height,
+            )
+        });
         let order = self.substrate.next_occupancy_enter_order.next();
 
         if category == EntityCategory::Structure {
@@ -1394,7 +1452,7 @@ impl Simulation {
             && entity.lifecycle.object_alive
             && !entity.lifecycle.in_limbo
             && entity.lifecycle.cell_marked
-            && cell_list_layer_for_entity(entity)
+            && cell_list_layer_for_entity(entity, self.resolved_terrain.as_ref())
                 == Some(crate::sim::movement::locomotor::MovementLayer::Ground))
         .then(|| {
             (
@@ -1422,8 +1480,10 @@ impl Simulation {
         };
         if entity.category != EntityCategory::Structure
             || !entity.lifecycle.cell_marked
-            || cell_list_layer_for_entity(entity)
-                != Some(crate::sim::movement::locomotor::MovementLayer::Ground)
+            || cell_list_layer_for_entity(
+                entity,
+                context.terrain().or(self.resolved_terrain.as_ref()),
+            ) != Some(crate::sim::movement::locomotor::MovementLayer::Ground)
         {
             return false;
         }
@@ -1501,7 +1561,10 @@ impl Simulation {
         // REMOVE5F5913 clears +74 before the same Foot +78 query.
         entity.lifecycle.cell_marked = false;
         let cells = entity_occupancy_cells(entity);
-        let layer = cell_list_layer_for_entity(entity);
+        let layer = cell_list_layer_for_entity(
+            entity,
+            context.terrain().or(self.resolved_terrain.as_ref()),
+        );
         let category = entity.category;
         let foundation = entity.foundation.clone();
         let hidden_profile = entity.building_hidden_occupancy;
@@ -1601,7 +1664,16 @@ impl Simulation {
                 && !entity.lifecycle.in_limbo
                 && entity.lifecycle.cell_marked
                 && !entity.passenger_role.is_inside_transport()
-                && air_spatial_tracks_entity(entity))
+                && if entity
+                    .locomotor
+                    .as_ref()
+                    .and_then(|l| l.fly_runtime())
+                    .is_some()
+                {
+                    entity.air_spatial_bucket.is_some()
+                } else {
+                    air_spatial_tracks_entity(entity)
+                })
             .then(|| {
                 air_spatial_bucket_index(
                     entity.position.rx,
@@ -1750,24 +1822,36 @@ impl Simulation {
     pub(crate) fn tick_air_movement_with_cell_lists_one(
         &mut self,
         stable_id: u64,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: Option<&RuleSet>,
     ) -> crate::sim::movement::air_movement::AirMovementTickStats {
         use crate::rules::locomotor_type::LocomotorKind;
         use crate::sim::movement::locomotor::MovementLayer;
 
+        let jumpjet_layer_before = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .filter(|entity| {
+                entity
+                    .locomotor
+                    .as_ref()
+                    .is_some_and(|l| l.active_kind() == LocomotorKind::Jumpjet)
+            })
+            .and_then(|_| self.entity_display_layer(stable_id, rules));
         let transact_fly = self
             .substrate
             .entities
             .get(stable_id)
             .is_some_and(|entity| {
-                entity.category == EntityCategory::Aircraft
-                    && entity.lifecycle.object_alive
+                entity.lifecycle.object_alive
                     && !entity.lifecycle.in_limbo
                     && entity.locomotor.as_ref().is_some_and(|locomotor| {
                         locomotor.kind == LocomotorKind::Fly
                             && locomotor.layer == MovementLayer::Air
                     })
             });
+        // Fly4CD600 dispatches owner Mark around movement independently of
+        // RTTI. Custom Fly Infantry/Unit must also leave their ground list.
         if transact_fly {
             self.unmark_entity_remove_impl(stable_id, false, UninitContext::default());
         }
@@ -1782,7 +1866,9 @@ impl Simulation {
                 &mut self.substrate.entities,
                 &[stable_id],
                 self.session.tick,
+                self.session.binary_frame,
                 self.resolved_terrain.as_ref(),
+                rules.map(|r| (r, &self.interner)),
             ),
         };
 
@@ -1795,8 +1881,207 @@ impl Simulation {
         {
             self.add_entity_occupancy(stable_id);
         }
+        self.complete_fly_phase(stable_id, rules);
         self.sync_air_spatial_membership(stable_id);
+        if let Some(before) = jumpjet_layer_before {
+            self.complete_jumpjet_display_process(stable_id, before, rules);
+        }
         stats
+    }
+
+    /// Fly4CCB40 ->4CD2A0 after4CD600's movement/height Mark pair.
+    /// Non-Landable aircraft return before the phase's OWN Mark/Display pair.
+    /// Landing runs first, then rechecks takeoff; both resubmit on equal layers.
+    /// Return whether the phase performed the Display transaction.
+    pub(super) fn complete_fly_phase(&mut self, id: u64, rules: Option<&RuleSet>) -> bool {
+        let admitted = self.substrate.entities.get(id).is_some_and(|entity| {
+            entity.lifecycle.object_alive
+                && entity.health.current > 0
+                && entity
+                    .locomotor
+                    .as_ref()
+                    .is_some_and(|l| l.powered && l.fly_runtime().is_some())
+        });
+        if !admitted {
+            return false;
+        }
+        let entity = self.substrate.entities.get(id).unwrap();
+        let non_landable_level = (entity.category == EntityCategory::Aircraft)
+            .then(|| {
+                rules.and_then(|r| {
+                    r.object(self.interner.resolve(entity.type_ref()))
+                        .filter(|object| !object.landable)
+                        .map(|object| object.flight_level(r.general.flight_level))
+                })
+            })
+            .flatten();
+        if let Some(flight_level) = non_landable_level {
+            self.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .locomotor
+                .as_mut()
+                .unwrap()
+                .fly_runtime_mut()
+                .unwrap()
+                .force_non_landable_flight(flight_level);
+            return false;
+        }
+        if !entity
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .fly_runtime()
+            .unwrap()
+            .has_phase_callback()
+        {
+            return false;
+        }
+        let before = self.entity_display_layer(id, rules);
+        self.unmark_entity_remove_impl(id, false, UninitContext::default());
+        self.substrate.display.remove(id);
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|e| e.locomotor.as_ref())
+            .and_then(|l| l.fly_runtime())
+            .is_some_and(|s| s.landing())
+        {
+            self.apply_fly_landing_callback(id, rules);
+        }
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|e| e.locomotor.as_ref())
+            .and_then(|l| l.fly_runtime())
+            .is_some_and(|s| s.taking_off())
+        {
+            self.apply_fly_takeoff_callback(id, rules);
+        }
+        let after = self.entity_display_layer(id, rules);
+        if before != after {
+            if after == Some(super::display_layers::DisplayLayer::GROUND)
+                && !self
+                    .substrate
+                    .entities
+                    .get(id)
+                    .and_then(|e| e.locomotor.as_ref())
+                    .and_then(|l| l.fly_runtime())
+                    .is_some_and(|s| s.taking_off())
+                && !self.fly_landing_cell_admitted(id, rules)
+            {
+                if let Some(entity) = self.substrate.entities.get_mut(id) {
+                    entity
+                        .locomotor
+                        .as_mut()
+                        .unwrap()
+                        .fly_runtime_mut()
+                        .unwrap()
+                        .reject_landing_cell();
+                    entity.on_bridge = false;
+                }
+                self.unmark_entity_remove_impl(id, false, UninitContext::default());
+                let height = crate::sim::movement::air_movement::current_fly_height(
+                    self.substrate.entities.get(id).unwrap(),
+                    self.resolved_terrain.as_ref(),
+                );
+                self.set_fly_owner_height(id, height.wrapping_add(10));
+                self.add_entity_occupancy(id);
+            } else {
+                self.finish_fly_layer_transition(id, after, rules);
+            }
+        }
+        // Display4A9720 has no limbo gate, so the tail resubmits even an owner
+        // the landing retry's C4 receiver just destroyed; store removal expires
+        // that registration. Object Mark5F5850 refuses a Limbo owner, so the
+        // cell lists never regain it.
+        self.submit_entity_display(id, rules, None);
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|e| !e.lifecycle.in_limbo)
+        {
+            self.add_entity_occupancy(id);
+        }
+        true
+    }
+
+    /// Admitted callback4CE680. The phase caller owns Mark/Display sequencing;
+    /// the callback owns flag clearing and the two existing facing controllers.
+    pub(super) fn apply_fly_takeoff_callback(&mut self, id: u64, rules: Option<&RuleSet>) {
+        use crate::sim::movement::{air_movement, fly_height::TakeoffFacing, ground_pose};
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .expect("admitted Fly callback");
+        let xy = ground_pose::position_world_xy(&entity.position);
+        let mut height = air_movement::current_fly_height(entity, self.resolved_terrain.as_ref());
+        //4CE696..4CE6DF: query structure even below416; bridge-normalize only
+        // when not already OnBridge and high enough above a structural deck.
+        if !entity.on_bridge {
+            let bridge = self.resolved_terrain.as_ref().is_some_and(|terrain| {
+                let cell =
+                    terrain.native_cell_identity(((xy[0] / 256) as i16, (xy[1] / 256) as i16));
+                terrain.native_cell_flags(cell) & 0x100 != 0
+            });
+            if bridge && height >= 416 {
+                height = height.wrapping_sub(416);
+            }
+        }
+        let landing_base = crate::sim::aircraft::landing_base::landing_base(
+            entity,
+            &self.substrate.entities,
+            rules.map(|r| (r, &self.interner)),
+        );
+        let entity = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .expect("admitted Fly callback");
+        air_movement::ensure_fly_facings(entity);
+        let state = entity
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .fly_runtime_mut()
+            .unwrap();
+        let destination = state.destination();
+        match state.complete_takeoff(height, landing_base) {
+            TakeoffFacing::Unchanged => {}
+            TakeoffFacing::SecondaryToPrimaryDestination => {
+                let desired = entity.body_facing.unwrap().destination();
+                entity
+                    .barrel_facing
+                    .as_mut()
+                    .unwrap()
+                    .set(desired, self.session.binary_frame);
+            }
+            TakeoffFacing::PrimaryToDestination => {
+                // Original also evaluates the zero delta; do not special-case
+                // it to the current heading. The shared native table owns it.
+                let desired = crate::util::direction_tables::facing16_from_delta(
+                    destination.x.wrapping_sub(xy[0]),
+                    destination.y.wrapping_sub(xy[1]),
+                );
+                entity
+                    .body_facing
+                    .as_mut()
+                    .unwrap()
+                    .set(desired, self.session.binary_frame);
+                entity.locomotor.as_mut().unwrap().speed_fraction =
+                    crate::util::fixed_math::SIM_ONE;
+            }
+        }
+        entity.facing = (entity
+            .body_facing
+            .unwrap()
+            .current(self.session.binary_frame)
+            >> 8) as u8;
     }
 
     /// Object-kind classification for the LogicVector dispatch (F13). Probes
@@ -1961,7 +2246,12 @@ impl Simulation {
         self.unregister_logic_object(stable_id)
     }
 
-    pub(crate) fn reveal_anim(&mut self, stable_id: u64) -> bool {
+    pub(crate) fn reveal_anim(
+        &mut self,
+        stable_id: u64,
+        rules: Option<&RuleSet>,
+        art: Option<&crate::rules::art_data::ArtRegistry>,
+    ) -> bool {
         if !self
             .substrate
             .anims
@@ -1970,10 +2260,14 @@ impl Simulation {
         {
             return false;
         }
+        self.mark_anim_display(stable_id, true);
+        self.submit_anim_display(stable_id, rules, art);
         self.register_logic_object(stable_id)
     }
 
     pub(crate) fn conceal_anim(&mut self, stable_id: u64) -> bool {
+        self.substrate.display.remove(stable_id);
+        self.mark_anim_display(stable_id, false);
         self.unregister_logic_object(stable_id)
     }
 
@@ -1983,37 +2277,74 @@ impl Simulation {
         if !self.substrate.voxel_anims.contains_key(stable_id) {
             return false;
         }
+        // VoxelAnim VT7F6318+78 ->74A960: always Air.
+        self.submit_object_display(stable_id, DisplayLayer::AIR, None);
         self.register_logic_object(stable_id)
     }
 
-    pub(crate) fn reveal_particle_system(&mut self, stable_id: u64) -> bool {
+    pub(crate) fn reveal_particle_system(
+        &mut self,
+        stable_id: u64,
+        rules: Option<&RuleSet>,
+    ) -> bool {
         if !self.substrate.particle_systems.contains_key(stable_id) {
             return false;
         }
+        // ParticleSystem VT7EFB9C+78 ->62FE80: always Ground. Rules resolve
+        // the existing Building peers' GetYSort adjustments during insertion.
+        self.submit_object_display(stable_id, DisplayLayer::GROUND, rules);
         self.register_logic_object(stable_id)
     }
 
     pub(crate) fn conceal_particle_system(&mut self, stable_id: u64) -> bool {
+        self.substrate.display.remove(stable_id);
         self.unregister_logic_object(stable_id)
     }
 
-    pub(crate) fn register_terrain_object(&mut self, stable_id: u64) -> bool {
-        self.production
+    pub(crate) fn register_terrain_object(
+        &mut self,
+        stable_id: u64,
+        rules: Option<&RuleSet>,
+    ) -> bool {
+        if !self
+            .production
             .terrain_objects
             .get(&stable_id)
             .is_some_and(|terrain| terrain.is_live())
-            && self.register_logic_object(stable_id)
+        {
+            return false;
+        }
+        // Terrain ctor71BC76 reveals at cell center/Z=0; Object5F4260 is
+        // Ground for this stationary surface object, including elevated cells.
+        self.submit_object_display(stable_id, DisplayLayer::GROUND, rules);
+        self.register_logic_object(stable_id)
     }
 
-    pub(crate) fn register_projectile(&mut self, stable_id: u64) -> bool {
-        self.projectiles.get(stable_id).is_some() && self.register_logic_object(stable_id)
+    pub(crate) fn register_projectile(&mut self, stable_id: u64, flat: bool) -> bool {
+        if self.projectiles.get(stable_id).is_none() {
+            return false;
+        }
+        // Bullet Fire468B6D ->Submit; GetLayer468B90 reads type+2F7.
+        let layer = if flat {
+            DisplayLayer::SURFACE
+        } else {
+            DisplayLayer::AIR
+        };
+        self.submit_object_display(stable_id, layer, None);
+        self.register_logic_object(stable_id)
     }
 
     pub(crate) fn register_wave(&mut self, stable_id: u64) -> bool {
-        self.waves.get(stable_id).is_some() && self.register_logic_object(stable_id)
+        if self.waves.get(stable_id).is_none() {
+            return false;
+        }
+        // Wave VT7F6BF4+78 ->75F890: always Air; Submit at75F952.
+        self.submit_object_display(stable_id, DisplayLayer::AIR, None);
+        self.register_logic_object(stable_id)
     }
 
     pub(crate) fn unregister_non_entity_object(&mut self, stable_id: u64) -> bool {
+        self.substrate.display.remove(stable_id);
         self.unregister_logic_object(stable_id)
     }
 
@@ -2030,7 +2361,7 @@ impl Simulation {
         if !represented {
             return false;
         }
-        let _ = self.unregister_logic_object(stable_id);
+        let _ = self.unregister_non_entity_object(stable_id);
         self.substrate.pending_delete.push(stable_id);
         #[cfg(test)]
         self.trace_lifecycle_for_test(LifecycleTestEvent::PendingDeleteQueued { stable_id });
@@ -2133,6 +2464,7 @@ impl Simulation {
             self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealUnmarked);
         }
 
+        self.substrate.display.remove(stable_id);
         self.lifecycle_outputs
             .push(LifecycleOutput::DisplayRemove { stable_id });
         #[cfg(test)]
@@ -2167,7 +2499,8 @@ impl Simulation {
         #[cfg(test)]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealClearDrawnStateBoundary);
 
-        // ObjectConceal5F4E98 invokes Techno6F4A40 here, before +8E Limbo.
+        // ObjectConceal5F4E98 invokes Techno6F4A40 here, before +81 Limbo
+        // is set at5F4E9E (the same byte tested by the5F4D45 entry guard).
         // Human ownership preserves +41B; +41A/+41C are never cleared here.
         let owner_controlled_by_human = self
             .substrate
@@ -2216,6 +2549,7 @@ impl Simulation {
         if !self.substrate.entities.contains(stable_id) {
             return ConcealOutcome::MissingOrDead;
         }
+        self.foot_neighbors_before_limbo(stable_id);
         self.release_track_occupation_before_foot_limbo(stable_id);
         self.release_walk_occupation_before_foot_limbo(stable_id);
         if self
@@ -2429,7 +2763,9 @@ impl Simulation {
 
     fn run_represented_uninit_pre_hook(&mut self, stable_id: u64) {
         self.clear_all_building_anim_slots(stable_id);
-        self.clear_building_damage_fire_slots(stable_id);
+        // Object UnInit5F6616 expires damage-fire owners before Building's
+        // destructor43BDE0 destroys the remaining slot Anims. Do not run the
+        // recovery path here: it converts coordinates and stops sounds early.
         self.release_owned_count_once(stable_id);
         crate::sim::docking::bunker_link::break_links_on_despawn(self, stable_id);
         #[cfg(test)]
@@ -3265,15 +3601,20 @@ impl Simulation {
     fn finalize_and_remove_common(&mut self, stable_id: u64) {
         self.release_house_base_tracking(stable_id);
         self.destroy_building_light(stable_id);
+        self.clear_building_damage_fire_slots(stable_id, None);
         if self.substrate.anims.contains_key(stable_id) {
+            self.clear_damage_fire_anim_reference(stable_id);
             self.conceal_anim(stable_id);
-            self.detach_anim_from_owner(stable_id);
+            self.release_anim_owner_reference(stable_id);
             self.clear_building_anim_reference(stable_id);
         }
         // A Jumpjet destroyed while hovering never reaches State 4's release,
         // so its cell AltObject slot (`CellClass+0xE0`) is dropped here rather
         // than leaving the cell permanently claimed against later hoverers.
         self.substrate.air_slots.release_owner(stable_id);
+        // Display registration never outlives the object. Fly's phase tail
+        // (4CD4DE) resubmits even an owner concealed earlier in the frame.
+        self.substrate.display.remove(stable_id);
         let entity = self.substrate.entities.remove(stable_id);
         let anim = self.substrate.anims.remove(stable_id);
         let particle_system = self.substrate.particle_systems.finalize_remove(stable_id);
@@ -3322,7 +3663,7 @@ impl Simulation {
     }
 
     fn finalize_multiplayer_feedback_anim(&mut self, stable_id: u64) {
-        self.detach_anim_from_owner(stable_id);
+        self.release_anim_owner_reference(stable_id);
         self.substrate.multiplayer_feedback_anims.remove(stable_id);
         #[cfg(test)]
         self.trace_lifecycle_for_test(LifecycleTestEvent::FinalizedCommon { stable_id });

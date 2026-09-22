@@ -5,10 +5,36 @@
 //! Original executable cases: tools/spatial_oracle/locomotor_head_coordinates.json.
 
 use super::drive_track::{self, DriveTrackPlan};
+use super::track_process::TrackFamily;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::components::{DriveCoord, DriveLocomotionRuntime, Position, ShipLocomotionRuntime};
 use crate::sim::game_entity::GameEntity;
 use crate::util::direction_tables::lepton::LEPTON_DELTAS;
+
+/// Drive4AFB80 / Ship69F290 IsMoving and their readiness head-presence input.
+/// A destination is sufficient; without one, a non-null head must differ from
+/// physical owner X/Y (Z is ignored). Read the selected instance even when a
+/// caller is testing a suspended Drive. Orders, power and track cursors are
+/// not inputs. Original comparisons: locomotor_moving.{py,json,meta.json}.
+pub(crate) fn motion_state(entity: &GameEntity, family: TrackFamily) -> (bool, bool) {
+    let (destination, head) = match family {
+        TrackFamily::Drive => entity
+            .drive_locomotion
+            .as_ref()
+            .map_or((None, None), |s| (s.destination, s.head_to)),
+        TrackFamily::Ship => entity
+            .ship_locomotion
+            .as_ref()
+            .map_or((None, None), |s| (s.destination, s.head_to)),
+    };
+    let nonnull = |c: &DriveCoord| c.x != 0 || c.y != 0 || c.z != 0;
+    let head = head.filter(nonnull);
+    let current = super::ground_pose::position_world_xy(&entity.position);
+    (
+        destination.is_some_and(|c| nonnull(&c)) || head.is_some_and(|c| [c.x, c.y] != current),
+        head.is_some(),
+    )
+}
 
 /// One original direction-table addition; no terrain or cell-center sampling.
 pub(super) fn offset_head(base: DriveCoord, direction: u8) -> DriveCoord {

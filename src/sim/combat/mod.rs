@@ -18,6 +18,7 @@
 //! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
 
 pub(crate) mod base_defense_response;
+pub mod burst;
 pub(crate) mod cell_spread;
 pub(crate) mod combat_aoe;
 pub(crate) mod combat_fire_gate;
@@ -29,10 +30,10 @@ pub(crate) mod fire_decision;
 pub(crate) mod greatest_threat;
 pub(crate) mod in_range;
 mod inviso_scatter;
+mod object_health;
 #[cfg(test)]
 pub(crate) mod receiver_fixture;
 mod receiver_health;
-mod object_health;
 #[cfg(test)]
 pub(crate) use receiver_fixture::{
     BaseDefenseResponseTraceEntry, FixtureTrace, commit_area_damage_receivers,
@@ -79,7 +80,6 @@ mod combat_cloak_damage_tests;
 mod delayed_building_fire_tests;
 
 use std::collections::{BTreeMap, BTreeSet};
-
 
 use self::combat_weapon::{WeaponSlot, select_weapon_against, select_weapon_slot};
 use crate::map::entities::EntityCategory;
@@ -756,8 +756,6 @@ pub struct AttackTarget {
     pub target: TargetKind,
     /// Simulation ticks remaining before the next shot (ROF cooldown).
     pub cooldown_ticks: u16,
-    /// Shots remaining in the current burst. When this reaches 0, ROF cooldown starts.
-    pub burst_remaining: u8,
     /// Ticks between individual burst shots (short inter-shot delay).
     pub burst_delay_ticks: u8,
     /// Infantry-only delayed shot latch. `None` for vehicles/buildings/aircraft.
@@ -825,7 +823,6 @@ impl AttackTarget {
         Self {
             target: TargetKind::Entity(target_stable_id),
             cooldown_ticks: 0,
-            burst_remaining: 0,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         }
@@ -836,7 +833,6 @@ impl AttackTarget {
         Self {
             target: TargetKind::Cell(rx, ry),
             cooldown_ticks: 0,
-            burst_remaining: 0,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         }
@@ -850,9 +846,8 @@ impl AttackTarget {
 ///   X = Location.X + (foundationWidth  - 1) * 128
 ///   Y = Location.Y + (foundationHeight - 1) * 128
 ///
-/// The vanilla game has bugs where some code paths use raw Location (NW corner)
-/// instead of foundation center — e.g. Destroyers mis-targeting Naval Yards
-/// from certain angles (Phobos bugfix at 0x70BCE6). We fix this from the start.
+/// Native virtual GetCoords: Object5F65A0 and Building447AC0. Callers which
+/// consume stored Location rather than this virtual point keep that distinction.
 fn target_coords(
     entity: &GameEntity,
     rules: Option<&RuleSet>,
@@ -870,8 +865,10 @@ fn target_coords(
             // (fw-1)*128 leptons in X, (fh-1)*128 leptons in Y.
             // sub_x/sub_y may exceed 256 — lepton_distance_sq_raw handles
             // this correctly since it computes cell*256+sub as a flat value.
-            let offset_x = (fw.saturating_sub(1) as i32) * 128;
-            let offset_y = (fh.saturating_sub(1) as i32) * 128;
+            //447AC0 subtracts1 as a signed integer, including the native0x0
+            //foundation: its GetCoords lies128 leptons before the raw anchor.
+            let offset_x = (i32::from(fw) - 1) * 128;
+            let offset_y = (i32::from(fh) - 1) * 128;
             let full_x: i32 = rx as i32 * 256 + sub_x.to_num::<i32>() + offset_x;
             let full_y: i32 = ry as i32 * 256 + sub_y.to_num::<i32>() + offset_y;
             rx = (full_x / 256) as u16;
@@ -912,6 +909,50 @@ pub(crate) fn resolve_target_coords(
         TargetKind::Entity(id) => entities.get(id).map(|t| target_coords(t, rules, interner)),
         TargetKind::Cell(rx, ry) => Some(cell_center_coords(rx, ry)),
     }
+}
+
+/// ObjectClass::Distance_To5F6440: planar GetCoords distance, then the target
+/// building's (foundation width + height)*64 discount, clamped to zero. This
+/// differs from the weapon CanFireAt/InRange gate and has no altitude bonus.
+/// Reuse the coordinate projection and deterministic native sqrt owner: exact
+/// integer sqrt changes observable lepton ties (1281 becomes1280 natively).
+/// Native comparisons: tools/spatial_oracle/aircraft_approach_range.{py,json}.
+pub(crate) fn object_distance_to(
+    source: &GameEntity,
+    target: &TargetKind,
+    entities: &EntityStore,
+    rules: &RuleSet,
+    interner: &StringInterner,
+) -> Option<i32> {
+    let planar = |(rx, ry, sx, sy): (u16, u16, SimFixed, SimFixed)| {
+        [
+            i32::from(rx) * 256 + sx.to_num::<i32>(),
+            i32::from(ry) * 256 + sy.to_num::<i32>(),
+            0,
+        ]
+    };
+    let from = planar(target_coords(source, Some(rules), interner));
+    let to = planar(resolve_target_coords(
+        target,
+        entities,
+        Some(rules),
+        interner,
+    )?);
+    let distance = crate::util::native_x87::distance_3d_leptons(from, to);
+    if let TargetKind::Entity(id) = *target
+        && let Some(building) = entities.get(id)
+        && building.category == EntityCategory::Structure
+    {
+        let object = rules.object(interner.resolve(building.type_ref()))?;
+        let (width, height) = foundation_dimensions(&object.foundation);
+        // Height query45ECA0 receives false: Bib never adds to this discount.
+        return Some(
+            distance
+                .wrapping_sub((i32::from(width) + i32::from(height)) * 64)
+                .max(0),
+        );
+    }
+    Some(distance)
 }
 
 /// Whether the attacker's normally selected weapon can currently reach this
@@ -1185,7 +1226,7 @@ pub fn issue_attack_command(
 /// Swing an existing attack onto a different entity WITHOUT restarting the
 /// weapon.
 ///
-/// The rearm countdown, the burst counter and the inter-shot delay all live on
+/// The rearm countdown and inter-shot delay still live on
 /// [`AttackTarget`] here, so replacing the whole record — which is what building
 /// a fresh `AttackTarget` does — zeroes them and hands the attacker a free shot
 /// on the spot. The original keeps its rearm timer on the OBJECT and its target
@@ -2638,8 +2679,8 @@ pub(crate) struct CombatEmit {
     pub(crate) retarget_events: Vec<(u64, u64)>,
     pub(crate) fire_events: Vec<SimFireEvent>,
     pub(crate) reveal_events: Vec<RevealEvent>,
-    /// (id, burst_rem, burst_delay, rof_cd)
-    pub(crate) burst_updates: Vec<(u64, u8, u8, u16)>,
+    /// (id, burst_delay, rof_cd)
+    pub(crate) burst_updates: Vec<(u64, u8, u16)>,
     /// aircraft that fired this tick
     pub(crate) ammo_deduct: Vec<u64>,
     /// building IDs to advance fire index
@@ -2901,6 +2942,7 @@ fn emit_projectile_shrapnel(
             }
         };
         out.projectile_spawns.push(ProjectileSpawn {
+            flat: child_projectile.flat,
             source_id: detonation.source_id,
             origin: detonation.impact,
             target,
@@ -2962,7 +3004,6 @@ pub(crate) fn build_attacker_snapshot(
     entity: &GameEntity,
     target: TargetKind,
     cooldown_ticks: u16,
-    burst_remaining: u8,
     burst_delay_ticks: u8,
     pending_infantry_fire: Option<PendingInfantryFire>,
     pending_building_fire: Option<PendingBuildingFire>,
@@ -2996,7 +3037,6 @@ pub(crate) fn build_attacker_snapshot(
         barrel_facing: entity.barrel_facing,
         hull_facing: entity.body_facing,
         turret_rotation_latch: entity.turret_rotation_latch,
-        burst_remaining,
         burst_delay_ticks,
         weapon_override: entity.weapon_override,
         garrison,

@@ -146,11 +146,7 @@ fn aircraft_attack_target_skipped_by_pursuit() {
     // touch its movement.
     let mut orca = make_unit(1, "ORCA", "Americans", 0, 0, 150);
     orca.attack_target = Some(AttackTarget::new(2));
-    orca.aircraft_mission = Some(AircraftMission::Attack {
-        sub_state: 3,
-        has_fired: false,
-        is_strafe: false,
-    });
+    orca.aircraft_mission = Some(AircraftMission::Attack { sub_state: 3 });
     orca.aircraft_ammo = Some(AircraftAmmo::new(2));
     let rhino = make_unit(2, "HTNK", "Soviet", 30, 0, 400);
     let (mut sim, grid) = make_sim(vec![orca, rhino]);
@@ -242,6 +238,7 @@ fn pursuit_uses_same_range_as_combat_no_oscillation() {
 fn sticky_drops_the_target_instead_of_chasing_it() {
     let mut civilian = make_unit(1, "MTNK", "Americans", 0, 0, 300);
     civilian.attack_target = Some(AttackTarget::new(2));
+    civilian.weapon_burst.complete_shot(2);
     civilian
         .mission
         .apply_test_fixture(crate::sim::mission::state::MissionTestFixture {
@@ -273,6 +270,7 @@ fn sticky_drops_the_target_instead_of_chasing_it() {
         "Sticky produces no pursuit cell"
     );
     assert!(entity.navigation.nav_com.is_none());
+    assert_eq!(entity.weapon_burst.index(), 0);
 }
 
 /// The same object on Guard — the mission Sticky shares its handler with —
@@ -698,15 +696,10 @@ fn walk_destination_search_observes_route_opened_before_process() {
     let (mut sim, _rules, actor, _) = walk_pursuit_scene();
     assert!(crate::sim::movement::prepare_walk_cell_destination(
         &mut sim.substrate.entities,
-        &closed_grid,
         actor,
         (14, 10),
         crate::util::fixed_math::SimFixed::from_num(4),
-        None,
         sim.resolved_terrain.as_ref(),
-        sim.zone_grid.as_ref(),
-        sim.playfield_bounds,
-        &mut sim.substrate.cell_occupation,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
     let e = sim.substrate.entities.get(actor).unwrap();
@@ -726,6 +719,7 @@ fn walk_cell_order_defers_queue_publication_and_first_head_motion() {
     };
     let entity = sim.substrate.entities.get_mut(actor).unwrap();
     entity.navigation.path_replay = queue.clone();
+    entity.locomotor.as_mut().unwrap().powered = false;
     entity.navigation.nav_queue = vec![NavTargetRef::Cell { rx: 25, ry: 10 }];
     let before = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
     walk_command(
@@ -740,6 +734,10 @@ fn walk_cell_order_defers_queue_publication_and_first_head_motion() {
         },
     );
     let entity = sim.substrate.entities.get(actor).unwrap();
+    assert!(
+        !entity.locomotor.as_ref().unwrap().powered,
+        "ordinary Walk destination also preserves native power state"
+    );
     let mut invalidated = queue;
     invalidated.clear_live_head();
     assert_eq!(

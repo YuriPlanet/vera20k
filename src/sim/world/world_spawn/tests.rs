@@ -54,6 +54,96 @@ fn install_american_house(sim: &mut Simulation) {
 }
 
 #[test]
+fn signed_rot_reaches_spawn_combat_turn_and_snapshot_restore() {
+    use crate::sim::combat::UnitFacingUpdate;
+    use crate::sim::snapshot::GameSnapshot;
+
+    let rows: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/spatial_oracle/facing_class.json"
+    ))
+    .unwrap();
+    for row in rows.as_array().unwrap().iter().filter(|row| {
+        row["input"]["rate_constructor"] == false
+            && row["input"]["start"] == 100
+            && row["input"]["operations"].as_array().unwrap().len() == 9
+    }) {
+        let rot = row["input"]["rot"].as_i64().unwrap() as i32;
+        let expected = &row["observations"][0];
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=6\nTurret=yes\nROT={rot}\n"
+        )))
+        .unwrap();
+        let mut sim = Simulation::with_seed(0);
+        install_constructor_test_playfield(&mut sim);
+        install_constructor_flat_terrain(&mut sim);
+        install_american_house(&mut sim);
+        let id = sim
+            .spawn_object_at_height("MTNK", "Americans", 6, 5, 64, 0, &rules)
+            .unwrap();
+        let barrel = sim
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .barrel_facing
+            .unwrap();
+        assert_eq!(
+            serde_json::json!(barrel.rot_per_frame()),
+            expected["rate"],
+            "ROT={rot}"
+        );
+
+        crate::sim::world::unit_post::apply_unit_facing(
+            &mut sim.substrate.entities,
+            &[UnitFacingUpdate {
+                entity_id: id,
+                turret_destination: Some(0xC000),
+                hull_destination: Some(0xC000),
+                turret_destination_is_idle_return: false,
+            }],
+            &rules,
+            &sim.interner,
+            100,
+        );
+        let entity = sim.substrate.entities.get(id).unwrap();
+        for facing in [entity.body_facing.unwrap(), entity.barrel_facing.unwrap()] {
+            assert_eq!(
+                serde_json::json!(facing.rot_per_frame()),
+                expected["rate"],
+                "ROT={rot}"
+            );
+            assert_eq!(
+                serde_json::json!(facing.current(100)),
+                expected["animated"],
+                "ROT={rot}"
+            );
+            assert_eq!(
+                serde_json::json!(facing.is_rotating(100)),
+                expected["rotating"],
+                "ROT={rot}"
+            );
+        }
+        assert_eq!(
+            serde_json::json!(entity.turret_rotation_latch),
+            expected["rotating"]
+        );
+        // Match the load-time RNG initialization before comparing whole state.
+        sim.scenario_rng = SimRng::new(0);
+        let hash = sim.state_hash();
+        let saved = GameSnapshot::save(&sim, 0, 0, "signed facing ROT", 0);
+        let mut restored = GameSnapshot::load(&saved).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        assert_eq!(restored.state_hash(), hash, "ROT={rot}");
+        let heights = BTreeMap::new();
+        for _ in 0..3 {
+            sim.advance_tick(&[], Some(&rules), &heights, None, None, 67);
+            restored.advance_tick(&[], Some(&rules), &heights, None, None, 67);
+            assert_eq!(sim.state_hash(), restored.state_hash(), "ROT={rot}");
+        }
+    }
+}
+
+#[test]
 fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
     use crate::sim::snapshot::GameSnapshot;
     let native: serde_json::Value = serde_json::from_str(include_str!(
@@ -947,7 +1037,7 @@ fn techno_constructor_routes_preserve_components_and_authored_overrides() {
                             .aircraft_ammo
                             .as_ref()
                             .map(|ammo| (ammo.current, ammo.max)),
-                        (route != 0).then_some((5, 5))
+                        Some((5, 5))
                     );
                 }
                 "GATE" => {
@@ -1660,6 +1750,109 @@ fn signed_constructor_and_authored_health_consume_original_corpus() {
             row["output"]["actual"].as_i64().unwrap() as i32,
             "{row}"
         );
+    }
+}
+
+#[test]
+fn aircraft_spawn_initializes_both_facings_without_a_turret_flag() {
+    // Native rate observations plus the traced Unlimbo snaps at6F6DAA/414417.
+    // Exercise both authored and runtime consumers of component construction.
+    let rows: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/spatial_oracle/facing_class.json"
+    ))
+    .unwrap();
+    for row in rows.as_array().unwrap().iter().filter(|row| {
+        row["input"]["rate_constructor"] == false
+            && row["input"]["start"] == 100
+            && row["input"]["operations"].as_array().unwrap().len() == 9
+    }) {
+        let rot = row["input"]["rot"].as_i64().unwrap();
+        let rate = &row["observations"][0]["rate"];
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[AircraftTypes]\n0=AIR\n[AIR]\nStrength=100\nTurret=no\nROT={rot}\n"
+        )))
+        .unwrap();
+        for direction in [0, 64, 255] {
+            let mut sim = Simulation::with_seed(7);
+            sim.session.binary_frame = 100;
+            let runtime = sim
+                .construct_runtime_techno(
+                    "AIR",
+                    "Americans",
+                    6,
+                    5,
+                    direction,
+                    0,
+                    &rules,
+                    TechnoConstructorInit::FreshScenario,
+                )
+                .unwrap()
+                .unwrap();
+            let mut placement = map_entity("AIR", EntityCategory::Aircraft, (6, 5));
+            placement.facing = direction;
+            assert_eq!(
+                sim.spawn_from_map(&[placement], Some(&rules), &BTreeMap::new()),
+                1
+            );
+            let authored = sim.substrate.entities.values().next().unwrap();
+            for entity in [&runtime, authored] {
+                for facing in [entity.body_facing.unwrap(), entity.barrel_facing.unwrap()] {
+                    assert_eq!(
+                        serde_json::json!(facing.rot_per_frame()),
+                        *rate,
+                        "ROT={rot}"
+                    );
+                    assert_eq!(facing.destination(), u16::from(direction) << 8);
+                    assert_eq!(facing.current(100), u16::from(direction) << 8);
+                    assert_eq!(facing.timer_start_frame(), Some(100));
+                    assert!(!facing.is_rotating(100));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn aircraft_ammo_initialization_matches_native_for_authored_and_runtime_objects() {
+    let corpus: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/spatial_oracle/aircraft_attack_release.json"
+    ))
+    .unwrap();
+    let rows = corpus["initialization"].as_array().unwrap();
+    assert_eq!(rows.len(), 21);
+    for row in rows {
+        let maximum = row["input"]["maximum"].as_i64().unwrap() as i32;
+        let initial = row["input"]["initial"].as_i64().unwrap() as i32;
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[AircraftTypes]\n0=AIR\n[AIR]\nStrength=150\nAmmo={maximum}\nInitialAmmo={initial}\n"
+        )))
+        .unwrap();
+        let mut sim = Simulation::with_seed(7);
+        let runtime = sim
+            .construct_runtime_techno(
+                "AIR",
+                "Americans",
+                6,
+                5,
+                0,
+                0,
+                &rules,
+                TechnoConstructorInit::FreshScenario,
+            )
+            .unwrap()
+            .unwrap();
+        let placement = map_entity("AIR", EntityCategory::Aircraft, (6, 5));
+        assert_eq!(
+            sim.spawn_from_map(&[placement], Some(&rules), &BTreeMap::new()),
+            1
+        );
+        let authored = sim.substrate.entities.values().next().unwrap();
+        for entity in [&runtime, authored] {
+            let ammo = entity.aircraft_ammo.as_ref().unwrap();
+            assert_eq!(ammo.current, row["ammo"].as_i64().unwrap() as i32, "{row}");
+            assert_eq!(ammo.max, maximum);
+            assert!(!ammo.release_pending());
+        }
     }
 }
 

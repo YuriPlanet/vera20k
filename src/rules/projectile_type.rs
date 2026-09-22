@@ -88,7 +88,8 @@ pub struct ProjectileType {
     pub scalable: bool,
     /// Launches vertically before turning toward target. (+0x2C0)
     pub vertical: bool,
-    /// Flat trajectory (read from Image section in art.ini). (+0x2F7)
+    /// ART Flat (+0x2F7), retained by the per-pass native rules processor.
+    /// BulletClass::GetLayer 0x00468B90 selects Surface when true, Air otherwise.
     pub flat: bool,
 
     // --- Integer fields ---

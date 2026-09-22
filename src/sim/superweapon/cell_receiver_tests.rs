@@ -309,14 +309,18 @@ fn infantry_terminal_custom_fly_missions_retire_without_death_announcement() {
         let victim = sim
             .spawn_object_at_height("E1", "Americans", 5, 5, 0, 0, &rules)
             .unwrap();
+        // Leave the initial ground list through the production Mark/movement
+        // transaction. Changing only the altitude cache after Unlimbo would
+        // leave a ground member behind without a native REMOVE producer.
+        assert!(sim.begin_fly_takeoff(victim, Some(&rules)));
+        sim.tick_air_movement_with_cell_lists_one(victim, Some(&rules));
         let entity = sim.substrate.entities.get_mut(victim).unwrap();
         assert!(entity.aircraft_mission.is_some(), "authored Fly admission");
         assert!(
             entity.aircraft_ammo.is_none(),
             "Infantry has no Aircraft ammo"
         );
-        entity.locomotor.as_mut().unwrap().altitude =
-            crate::util::fixed_math::SimFixed::from_num(100);
+        assert!(entity.locomotor.as_ref().unwrap().altitude > crate::util::fixed_math::SIM_ZERO);
         entity.aircraft_mission = Some(if silent_exit {
             AircraftMission::ParaDropOverfly {
                 exit_rx: 5,

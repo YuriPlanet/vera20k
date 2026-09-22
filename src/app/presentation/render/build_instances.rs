@@ -141,7 +141,7 @@ fn lookup_exact_terrain_variant<T>(
 
 /// Build all game-world sprite instances: terrain tiles, map overlays, bridges,
 /// VXL units, SHP buildings/infantry, AnimClass objects, damage fires.
-/// All instance vectors are Y-sorted (depth descending) for correct draw order.
+/// Ground parents retain Display order; residual effect buckets still sort depth.
 pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> WorldInstances {
     // Terrain tiles use the selected TMP owner exactly. A sparse/null cell in
     // a positive suffix remains absent instead of borrowing pristine UVs.
@@ -195,11 +195,11 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
     // objects join live Ground registrations below; low bridges (LOBRDG*) ride
     // in `overlay`, while high bridge bodies use instances::bridges.
     let ground_order = super::draw_plan_lowering::NativeGroundOrder::new(
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map_or(&[], |rt| rt.view().tactical_registration_order()),
+        state.match_state.sim_runtime.as_ref().map_or(&[], |rt| {
+            rt.view()
+                .display_layers()
+                .members(crate::sim::world::display_layers::DisplayLayer::GROUND)
+        }),
     );
     let mut ground_objects = Vec::new();
     let mut overlay: Vec<SpriteInstance> = std::mem::take(
@@ -259,11 +259,9 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
     let mut unit_pages: Vec<usize> =
         std::mem::take(&mut state.match_state.match_presentation.cached_unit_pages);
     unit_pages.clear();
-    // The band above Ground (gamemd layers 3 and 4). Deliberately NOT depth
-    // sorted: those layers append and render in submission order, so the
-    // engine's own intra-band order is "whichever object entered the layer
-    // first". We cannot reproduce that submission history from a per-frame
-    // rebuild, and emission order is as legitimate a submission order as any.
+    // Residual: Air/Top VXL, SHP and effect buckets still need one interleaved
+    // Display traversal. Body buckets now consume retained membership;
+    // remaining Fly landing/resubmission writers are still required in sim.
     let mut top_unit: Vec<SpriteInstance> = Vec::new();
     let mut top_unit_pages: Vec<usize> = Vec::new();
     let transition_page_count = state
@@ -306,8 +304,8 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
         &ground_order,
     );
     sort_by_depth_desc_with_pages(&mut unit, &mut unit_pages);
-    // Scheduler-owned AnimClass objects use their parsed native layer: Ground
-    // joins the integer plan, Top appends to the flat page-tagged stream.
+    // AnimClass objects use retained Display membership: Ground joins the
+    // parent plan, Top appends to the flat page-tagged stream.
     instances::build_anim_class_instances(
         state,
         &mut shp_paged,
@@ -317,15 +315,15 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
         &mut ground_objects,
         &ground_order,
     );
-    order_top_shp_by_registration(
+    order_top_shp_by_display(
         &mut top_shp,
         &mut top_shp_pages,
         &mut top_shp_ids,
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map_or(&[], |rt| rt.view().tactical_registration_order()),
+        state.match_state.sim_runtime.as_ref().map_or(&[], |rt| {
+            rt.view()
+                .display_layers()
+                .members(crate::sim::world::display_layers::DisplayLayer::TOP)
+        }),
     );
     // In-flight projectile sprites (e.g. Guardian GI DRAGON missile).
     instances::build_projectile_visual_instances(state, &mut shp_paged);
@@ -620,7 +618,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                 minimap.update_unit_dots(
                     &state.renderer.gpu,
                     view.entities(),
-                    view.tactical_registration_order(),
+                    view.logic_order(),
                     view.houses(),
                     &presentation.house_color_map,
                     view.session().tick,
@@ -1060,11 +1058,11 @@ fn sort_by_depth_desc_with_pages(instances: &mut Vec<SpriteInstance>, pages: &mu
 /// Restore native Top-layer append order after the disjoint SHP builders have
 /// emitted into one flat, page-tagged stream. Atlas identity remains aligned
 /// payload and never becomes an ordering authority.
-fn order_top_shp_by_registration(
+fn order_top_shp_by_display(
     instances: &mut Vec<SpriteInstance>,
     pages: &mut Vec<usize>,
     ids: &mut Vec<u64>,
-    registrations: &[u64],
+    display_members: &[u64],
 ) {
     assert_eq!(
         instances.len(),
@@ -1077,7 +1075,7 @@ fn order_top_shp_by_registration(
         "every Top SHP instance must carry one stable object id"
     );
 
-    let ranks: std::collections::BTreeMap<u64, usize> = registrations
+    let ranks: std::collections::BTreeMap<u64, usize> = display_members
         .iter()
         .enumerate()
         .map(|(rank, &id)| (id, rank))
@@ -1167,7 +1165,7 @@ mod tests {
         let mut pages = vec![2usize, 0, 1];
         let mut ids = vec![20u64, 10, 30];
 
-        order_top_shp_by_registration(&mut instances, &mut pages, &mut ids, &[10, 20, 30]);
+        order_top_shp_by_display(&mut instances, &mut pages, &mut ids, &[10, 20, 30]);
 
         assert_eq!(ids, vec![10, 20, 30]);
         assert_eq!(pages, vec![0, 2, 1]);

@@ -1605,7 +1605,7 @@ mod tests {
         let mut unit = entity(EntityCategory::Unit, GUARD);
         let mut active_target = AttackTarget::new(7);
         active_target.cooldown_ticks = 17;
-        active_target.burst_remaining = 3;
+        unit.weapon_burst.complete_shot(4);
         active_target.burst_delay_ticks = 2;
         active_target.pending_infantry_fire = Some(PendingInfantryFire {
             sequence: SequenceKind::Attack,
@@ -1665,7 +1665,10 @@ mod tests {
             .as_ref()
             .unwrap();
         assert_eq!(installed.cooldown_ticks, 17);
-        assert_eq!(installed.burst_remaining, 3);
+        assert_eq!(
+            sim.substrate.entities.get(1).unwrap().weapon_burst.index(),
+            1
+        );
         assert_eq!(installed.burst_delay_ticks, 2);
         assert_eq!(
             installed.pending_infantry_fire,

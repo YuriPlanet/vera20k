@@ -152,15 +152,19 @@ pub fn has_weapon_ability(rank: VeterancyRank, object: &ObjectType, ability: Abi
 /// The one arithmetic shape every rank multiplier uses:
 /// `FILD dword; FMUL double [Rules+off]; CALL ftol`.
 ///
-/// The product is formed at the process's 53-bit precision (see
-/// `util::native_x87`), so an `f64` multiply reproduces it bit-exactly; the
-/// truncating `ftol` is the `as i32` cast. The multiplier is what
-/// `CCINIClass::ReadDouble` stored — a `%f` single widened to a double
-/// (`rules::ini_value::read_double`) — so stock `VeteranROF=0.6` is
-/// `0.6000000238…` and `50 * 0.6` lands at `30.0000012`, clear of the
-/// integer boundary at every x87 precision.
+/// Evaluated under the process's startup control word (53-bit, chop), the
+/// same model the FASTER speed arm and the Speed crate use, then the low
+/// 32 bits of `ftol`. The multiplier is what `CCINIClass::ReadDouble` stored —
+/// a `%f` single widened to a double (`rules::ini_value::read_double`) — so
+/// stock `VeteranROF=0.6` is `0.6000000238…` and `50 * 0.6` lands at
+/// `30.0000012`; stock inputs sit clear of integer boundaries, where a
+/// round-to-nearest product would agree.
 pub fn ftol_scale(value: i32, multiplier: f64) -> i32 {
-    (f64::from(value) * multiplier) as i32
+    use crate::util::native_x87::{MaskedX87Chop53 as X, NativeF64Bits};
+    X::ftol_i32_low_masked(X::mul(
+        X::load_i32(value),
+        X::load_f64(NativeF64Bits::from_bits(multiplier.to_bits())),
+    ))
 }
 
 /// `ftol_scale` gated on `HasWeaponAbility`; the caller passes the rules
@@ -202,7 +206,12 @@ pub fn veteran_speed_leptons_per_second(
     const FRAMES_PER_SECOND: i32 = 15;
     let per_frame =
         (base_leptons_per_second / SimFixed::from_num(FRAMES_PER_SECOND)).to_num::<i32>();
-    SimFixed::from_num(ftol_scale(per_frame, veteran_speed) * FRAMES_PER_SECOND)
+    use crate::util::native_x87::{MaskedX87Chop53 as X, NativeF64Bits};
+    let adjusted = X::ftol_i32_low_masked(X::mul(
+        X::load_i32(per_frame),
+        X::load_f64(NativeF64Bits::from_bits(veteran_speed.to_bits())),
+    ));
+    SimFixed::from_num(adjusted) * SimFixed::from_num(FRAMES_PER_SECOND)
 }
 
 /// Which locomotors ask `FootClass::GetCurrentSpeed` for their movement speed.
@@ -242,19 +251,20 @@ pub fn locomotor_consults_current_speed(kind: Option<LocomotorKind>) -> bool {
 /// integer per-frame speed, then `HasWeaponAbility(0)` (`FASTER`) gates
 /// `ftol(speed * Rules.VeteranSpeed)`. Stage 3, the `[this+0x578]` locomotor
 /// fraction, is VERA's per-frame `MovementTarget::current_speed`, so this
-/// helper stops one stage short deliberately. The house and crate multipliers
-/// are separate open rows and are not applied here.
+/// helper stops one stage short deliberately. The crate factor is live Foot
+/// state. The country/house factor remains an open getter dependency.
 ///
 /// Call this instead of `ra2_speed_to_leptons_per_second` wherever a type
 /// `Speed=` becomes an entity's movement speed — native reaches the FASTER
 /// stage on every speed query a mover makes, so a resolver that skips it runs
 /// a promoted unit at rookie speed.
-pub fn mover_speed_leptons_per_second(
+fn mover_speed_leptons_per_second(
     raw_type_speed: i32,
     loco_kind: Option<LocomotorKind>,
     rank: VeterancyRank,
     object: Option<&ObjectType>,
     veteran_speed: f64,
+    crate_multiplier: crate::util::native_x87::NativeF64Bits,
 ) -> SimFixed {
     let base = crate::util::fixed_math::ra2_speed_to_leptons_per_second(raw_type_speed);
     let Some(object) = object else {
@@ -263,7 +273,25 @@ pub fn mover_speed_leptons_per_second(
     if !locomotor_consults_current_speed(loco_kind) {
         return base;
     }
-    veteran_speed_leptons_per_second(base, rank, object, veteran_speed)
+    if crate_multiplier == crate::util::native_x87::NativeF64Bits::ONE {
+        return veteran_speed_leptons_per_second(base, rank, object, veteran_speed);
+    }
+    // The stock crate factor 1.2 makes native type speed10 become11, not12:
+    // crate_speed_effect.json executes both the writer and original getter.
+    // Use the existing deterministic native arithmetic for this demonstrated
+    // gameplay rounding boundary; movement coordinates remain SimFixed.
+    use crate::util::native_x87::MaskedX87Chop53 as X;
+    let native_speed = (base / SimFixed::from_num(15)).to_num::<i32>();
+    let adjusted = X::ftol_i32_low_masked(X::mul(
+        X::load_i32(native_speed),
+        X::load_f64(crate_multiplier),
+    ));
+    veteran_speed_leptons_per_second(
+        SimFixed::from_num(adjusted) * SimFixed::from_num(15),
+        rank,
+        object,
+        veteran_speed,
+    )
 }
 
 /// [`mover_speed_leptons_per_second`] with the rank and locomotor read off the
@@ -280,6 +308,7 @@ pub fn entity_mover_speed_leptons_per_second(
         rank_of(entity.veterancy_raw),
         object,
         veteran_speed,
+        entity.foot_speed.crate_multiplier(),
     )
 }
 
@@ -646,11 +675,15 @@ mod tests {
     }
 
     /// The elite Grizzly's `105mmE` (`ROF=50`) reloads in 50..=52 frames before
-    /// `VeteranROF=0.6`; `ftol` of the binary64 products is 30, 30, 31 — never
-    /// 29, which a 64-bit-mantissa product of `50 * 0.6` would truncate to.
+    /// `VeteranROF`. A binary64 `0.6` is not the stock input: under the startup
+    /// chop53 control word (the model track_speed_native.json executes for the
+    /// same FILD/FMUL/ftol shape) `50 * 0.6` chops below 30. The stock
+    /// f32-widened `0.6000000238` gives 30, 30, 31 under either rounding model
+    /// (ruleset.rs asserts it against the loaded rules).
     #[test]
     fn gsi_08_05_veteran_rof_truncates_the_jittered_reload() {
-        assert_eq!(ftol_scale(50, 0.6), 30);
+        assert_eq!(ftol_scale(50, 0.6), 29);
+        assert_eq!(ftol_scale(50, f64::from(0.6f32)), 30);
         assert_eq!(ftol_scale(51, 0.6), 30);
         assert_eq!(ftol_scale(52, 0.6), 31);
         let object = object_with(&[Ability::Rof], &[]);
@@ -659,7 +692,13 @@ mod tests {
             50
         );
         assert_eq!(
-            scale_if_ability(50, VeterancyRank::Veteran, &object, Ability::Rof, 0.6),
+            scale_if_ability(
+                50,
+                VeterancyRank::Veteran,
+                &object,
+                Ability::Rof,
+                f64::from(0.6f32)
+            ),
             30
         );
     }
@@ -672,9 +711,10 @@ mod tests {
         assert_eq!(ftol_scale(25, 1.1), 27);
     }
 
-    /// `VeteranSpeed=1.2` on stock Rhino/Grizzly per-frame speeds: 15 -> 18
-    /// (the binary64 product of `15 * 1.2` rounds UP to 18.0 before `ftol`;
-    /// an extended-precision product would have given 17), 17 -> 20.
+    /// Original Foot4DB1F1..4DB200 under startup chop53 with a binary64 1.2
+    /// multiplier: Rhino15 ->17, Grizzly17 ->20 (track_speed_native.json rows).
+    /// This is not the stock input: the loader's f32-widened VeteranSpeed
+    /// (1.2000000476837158) gives Rhino15 ->18 (ruleset.rs asserts it).
     #[test]
     fn gsi_08_12_veteran_speed_scales_the_per_frame_integer() {
         use crate::util::fixed_math::ra2_speed_to_leptons_per_second;
@@ -687,13 +727,42 @@ mod tests {
         );
         assert_eq!(
             veteran_speed_leptons_per_second(rhino, VeterancyRank::Veteran, &object, 1.2),
-            SimFixed::from_num(18 * 15)
+            SimFixed::from_num(17 * 15)
         );
         let grizzly = ra2_speed_to_leptons_per_second(7);
         assert_eq!(
             veteran_speed_leptons_per_second(grizzly, VeterancyRank::Elite, &object, 1.2),
             SimFixed::from_num(20 * 15)
         );
+    }
+
+    #[test]
+    fn live_crate_and_faster_speed_match_original_staged_truncation() {
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/track_speed_native.json"
+        ))
+        .unwrap();
+        let object = object_with(&[Ability::Faster], &[]);
+        let mut compared = 0;
+        for case in corpus["getters"].as_array().unwrap() {
+            let Some(ini_speed) = case["state"]["ini_speed"].as_i64() else {
+                continue;
+            };
+            let mut actor = entity(100, 300, 300);
+            actor
+                .foot_speed
+                .accept_speed_crate(crate::util::native_x87::NativeF64Bits::from_bits(
+                    u64::from_str_radix(case["input"]["crate_bits"].as_str().unwrap(), 16).unwrap(),
+                ));
+            assert_eq!(
+                entity_mover_speed_leptons_per_second(&actor, Some(&object), ini_speed as i32, 1.2),
+                SimFixed::from_num(case["output"].as_i64().unwrap() * 15),
+                "{}",
+                case["state"]
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 6);
     }
 
     /// `VeteranSight`: multiplicative, gated on the ability AND on the value

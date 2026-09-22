@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Nine Carryall reads and249 MoveTo landing-base/takeoff decisions across cargo, sparse radio slots, Enter/queued mission, building type, health, phase, height, ramps, OnBridge and Dummy query cadence. Stops before BeginTakeoff: excludes preceding MoveTo refusal/destination writes, subsequent mode logic, phase callbacks and complete flight/combat behavior.",
+  "assumptions": [
+    "Cached INI entries supplied; original Carryall reader and constructor-default false are used.",
+    "Real Aircraft/Unit vtables, constructed Fly locomotor, supplied Aircraft auxiliary interface and sparse radio slots. Contact Building types supply UnitRepair+16A9/Helipad+16CB, as proven by460929/4604E0 readers.",
+    "Health, exact coordinates, current/queued mission, cargo head and locomotor phase bytes are supplied. No cargo object is dereferenced.",
+    "Map table AND length plus one real cell10,10 are initialized. Six missing-cell cases instead check the retained Dummy coordinate stamp and short-circuit query order; read-only observers assert the expected real/Dummy identity.104/416 ground/bridge scalars supplied."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "carryall_reader": "0x0041CC9B",
+    "landing_base": "0x0041B6A0",
+    "move_query": "0x004CCE71",
+    "takeoff_decision": "0x004CCEAA",
+    "aircraft_query_interface": "0x00414290",
+    "has_contact": "0x0065AE30",
+    "contact_at_slot": "0x0065AD40",
+    "effective_mission": "0x005B3040",
+    "get_height": "0x005F5F40"
+  },
+  "payload_sha256": "72bc30e2dee26cc339b63a2a0838c57933528529592092331b84417e5da06a19"
+}

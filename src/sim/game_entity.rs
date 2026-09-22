@@ -550,6 +550,13 @@ pub struct GameEntity {
     /// fact; a fresh bounds query would erase the native movement hysteresis.
     #[serde(default)]
     pub in_playfield: bool,
+    /// Retained Techno+3D4 (VERA name; historical native name unconfirmed).
+    /// Constructor6F2F55 clears it; special Aircraft Unlimbo4143EB and
+    /// reinforcement65E6BE promote it. Never infer it from current type,
+    /// mission, cargo or +3D5. Ordinary click action692766 reads this history;
+    /// forced ObjectSelect5F4578 has a separate virtual+A0 prerequisite.
+    #[serde(default)]
+    mission_only: bool,
     /// Explicit represented type fact for the native type `+0xAC` tactical-dirty
     /// branch. False unless a caller has positive evidence; never inferred from
     /// category or render representation.
@@ -592,6 +599,11 @@ pub struct GameEntity {
     /// Live Foot-owned applied speed; survives active locomotor replacement.
     #[serde(default)]
     pub foot_speed: crate::sim::components::FootSpeedState,
+    /// Techno+2E8, ctor6F2E00 zero, saved70C354. Fly approach writes it;
+    /// landing and Aircraft unload consume it. Independent of body rocking
+    /// and of the active/suspended locomotor. Deterministic fixed radians.
+    #[serde(default)]
+    pub(crate) flight_attitude: crate::sim::movement::fly_height::FlightAttitude,
     /// Foot+6B6 raw occupation enable; shared by Drive/Ship and world Mark.
     /// Foot ctor4D344A initializes1; Unit7353CE invokes that base ctor.
     pub(crate) foot_occupation_enabled: bool,
@@ -667,6 +679,9 @@ pub struct GameEntity {
     /// hash does fold.
     #[serde(default = "default_last_fire_frame")]
     pub last_fire_frame: i64,
+    /// Techno+3B8 survives target replacement and mission changes.
+    #[serde(default)]
+    pub weapon_burst: crate::sim::combat::burst::WeaponBurst,
     /// Building construction animation progress.
     pub building_up: Option<BuildingUp>,
     /// Reverse build-up animation — building is undeploying into a mobile unit.
@@ -808,16 +823,12 @@ pub struct GameEntity {
     /// or servicing at a repair depot.
     pub dock_state: Option<DockState>,
     /// Aircraft ammo tracking and airfield docking state.
-    /// Present on aircraft with finite `Ammo=` (>= 0) from rules.ini.
-    /// None for unlimited-ammo aircraft (`Ammo=-1`) and non-aircraft entities.
+    /// Present on all Aircraft, including signed negative native Ammo counts.
+    /// Non-aircraft entities have no aircraft ammo owner.
     pub aircraft_ammo: Option<AircraftAmmo>,
     /// Aircraft mission state machine — controls attack runs, guard, RTB, idle.
     /// Present on aircraft with Fly locomotor. None for non-aircraft and jumpjets.
     pub aircraft_mission: Option<AircraftMission>,
-    /// Final-release latches retained between consecutive `Mission_Attack`
-    /// entries. This stays separate from the broader, still-residual volley
-    /// cadence rather than borrowing RA2 strafe state.
-    pub aircraft_release_tail: Option<crate::sim::aircraft::runtime_contract::AircraftReleaseTail>,
     /// Infantry sub-cell position (0–4). Only meaningful for infantry.
     pub sub_cell: Option<u8>,
     /// Whether this entity can be crushed by vehicles (Crushable= in rules.ini).
@@ -924,7 +935,7 @@ pub struct GameEntity {
     pub bunker_link: BunkerLink,
     /// Runtime state for `Gate=yes` building passability.
     ///
-    /// Native `CanGarrison` accepts only mission `0x18` plus stable-open helper
+    /// Native gate passability4525F0 accepts only mission `0x18` plus stable-open helper
     /// state. Opening and closing gates are still blockers for the same check.
     #[serde(default)]
     pub building_gate: Option<BuildingGateRuntime>,
@@ -1034,6 +1045,36 @@ pub struct GameEntity {
 }
 
 impl GameEntity {
+    pub(crate) const fn is_mission_only(&self) -> bool {
+        self.mission_only
+    }
+
+    /// Native SET writers are monotonic for this object's lifetime.
+    pub(crate) fn mark_mission_only(&mut self) {
+        self.mission_only = true;
+    }
+
+    /// AircraftUnlimbo4143A8..4143F2, only after Foot placement succeeds.
+    /// GetWeapon(0) uses the same tier/slot authority as production combat.
+    pub(crate) fn retain_aircraft_unlimbo_control(
+        &mut self,
+        rules: &crate::rules::ruleset::RuleSet,
+        type_id: &str,
+    ) {
+        if self.category != EntityCategory::Aircraft {
+            return;
+        }
+        let Some(object) = rules.object(type_id) else {
+            return;
+        };
+        let camera = crate::sim::combat::combat_weapon::primary_for_tier(object, self.veterancy)
+            .and_then(|id| rules.weapon(id))
+            .is_some_and(|weapon| weapon.camera);
+        if !object.selectable || !object.landable || camera {
+            self.mark_mission_only();
+        }
+    }
+
     /// Immutable storage key. Construction and snapshot decoding establish it.
     pub fn stable_id(&self) -> u64 {
         self.stable_id
@@ -1293,6 +1334,7 @@ impl GameEntity {
             in_logic_vector: false,
             lifecycle: ObjectLifecycle::default(),
             in_playfield: false,
+            mission_only: false,
             dirty_rect_eligible: false,
             occupier: false,
             owned_count_released: false,
@@ -1306,6 +1348,7 @@ impl GameEntity {
                 ..NavigationState::default()
             },
             foot_speed: crate::sim::components::FootSpeedState::default(),
+            flight_attitude: Default::default(),
             foot_occupation_enabled: true,
             foot_locomotor_swap_active: false,
             attack_target: None,
@@ -1320,6 +1363,7 @@ impl GameEntity {
             barrel_facing: None,
             turret_rotation_latch: false,
             last_fire_frame: NATIVE_LAST_FIRE_FRAME_INIT,
+            weapon_burst: Default::default(),
             building_up: None,
             building_down: None,
             building_damage_state_active: false,
@@ -1364,7 +1408,6 @@ impl GameEntity {
             dock_state: None,
             aircraft_ammo: None,
             aircraft_mission: None,
-            aircraft_release_tail: None,
             // Infantry get sub-cell 2 (first distinct position) at spawn so
             // they don't all pile up at cell center when multiple are created.
             sub_cell: if category == EntityCategory::Infantry {
@@ -1920,7 +1963,6 @@ mod mission_shadow_tests {
         e.attack_target = Some(AttackTarget {
             target: TargetKind::Entity(2),
             cooldown_ticks: 0,
-            burst_remaining: 0,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });

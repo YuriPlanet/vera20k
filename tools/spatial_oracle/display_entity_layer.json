@@ -1,0 +1,825 @@
+[
+  {
+    "input": {
+      "kind": "walk",
+      "name": "walk_height_-1",
+      "z": -1
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "walk",
+      "name": "walk_height_0",
+      "z": 0
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "walk",
+      "name": "walk_height_1",
+      "z": 1
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "walk",
+      "name": "walk_height_207",
+      "z": 207
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "walk",
+      "name": "walk_height_208",
+      "z": 208
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "walk",
+      "name": "walk_height_399",
+      "z": 399
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "walk",
+      "name": "walk_height_400",
+      "z": 400
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "walk",
+      "name": "walk_height_416",
+      "z": 416
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "walk",
+      "name": "walk_height_499",
+      "z": 499
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "walk",
+      "name": "walk_height_500",
+      "z": 500
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "walk",
+      "name": "walk_height_600",
+      "z": 600
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "drive",
+      "name": "drive_height_-1",
+      "z": -1
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "drive",
+      "name": "drive_height_0",
+      "z": 0
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "drive",
+      "name": "drive_height_1",
+      "z": 1
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "drive",
+      "name": "drive_height_207",
+      "z": 207
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "drive",
+      "name": "drive_height_208",
+      "z": 208
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "drive",
+      "name": "drive_height_399",
+      "z": 399
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "drive",
+      "name": "drive_height_400",
+      "z": 400
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "drive",
+      "name": "drive_height_416",
+      "z": 416
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "drive",
+      "name": "drive_height_499",
+      "z": 499
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "drive",
+      "name": "drive_height_500",
+      "z": 500
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "drive",
+      "name": "drive_height_600",
+      "z": 600
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "fly",
+      "name": "fly_height_-1",
+      "z": -1
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "fly",
+      "name": "fly_height_0",
+      "z": 0
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "fly",
+      "name": "fly_height_1",
+      "z": 1
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "fly",
+      "name": "fly_height_207",
+      "z": 207
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "fly",
+      "name": "fly_height_208",
+      "z": 208
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "fly",
+      "name": "fly_height_399",
+      "z": 399
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "fly",
+      "name": "fly_height_400",
+      "z": 400
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "fly",
+      "name": "fly_height_416",
+      "z": 416
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "fly",
+      "name": "fly_height_499",
+      "z": 499
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "fly",
+      "name": "fly_height_500",
+      "z": 500
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "fly",
+      "name": "fly_height_600",
+      "z": 600
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "jumpjet",
+      "name": "jumpjet_height_-1",
+      "z": -1
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "jumpjet",
+      "name": "jumpjet_height_0",
+      "z": 0
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "jumpjet",
+      "name": "jumpjet_height_1",
+      "z": 1
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "jumpjet",
+      "name": "jumpjet_height_207",
+      "z": 207
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "jumpjet",
+      "name": "jumpjet_height_208",
+      "z": 208
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "kind": "jumpjet",
+      "name": "jumpjet_height_399",
+      "z": 399
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "kind": "jumpjet",
+      "name": "jumpjet_height_400",
+      "z": 400
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "kind": "jumpjet",
+      "name": "jumpjet_height_416",
+      "z": 416
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "kind": "jumpjet",
+      "name": "jumpjet_height_499",
+      "z": 499
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "kind": "jumpjet",
+      "name": "jumpjet_height_500",
+      "z": 500
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "jumpjet",
+      "name": "jumpjet_height_600",
+      "z": 600
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "building",
+      "name": "building_height_-1",
+      "z": -1
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "building",
+      "name": "building_height_0",
+      "z": 0
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "building",
+      "name": "building_height_1",
+      "z": 1
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "building",
+      "name": "building_height_207",
+      "z": 207
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "building",
+      "name": "building_height_208",
+      "z": 208
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "kind": "building",
+      "name": "building_height_399",
+      "z": 399
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "kind": "building",
+      "name": "building_height_400",
+      "z": 400
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "building",
+      "name": "building_height_416",
+      "z": 416
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "building",
+      "name": "building_height_499",
+      "z": 499
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "building",
+      "name": "building_height_500",
+      "z": 500
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "building",
+      "name": "building_height_600",
+      "z": 600
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_208_True_False_False",
+      "on_bridge": false,
+      "z": 208
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": false,
+      "name": "bridge_208_False_False_False",
+      "on_bridge": false,
+      "z": 208
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_208_True_True_False",
+      "on_bridge": true,
+      "z": 208
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": true,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_208_True_False_True",
+      "on_bridge": false,
+      "z": 208
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_415_True_False_False",
+      "on_bridge": false,
+      "z": 415
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": false,
+      "name": "bridge_415_False_False_False",
+      "on_bridge": false,
+      "z": 415
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_415_True_True_False",
+      "on_bridge": true,
+      "z": 415
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": true,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_415_True_False_True",
+      "on_bridge": false,
+      "z": 415
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_416_True_False_False",
+      "on_bridge": false,
+      "z": 416
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": false,
+      "name": "bridge_416_False_False_False",
+      "on_bridge": false,
+      "z": 416
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_416_True_True_False",
+      "on_bridge": true,
+      "z": 416
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": true,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_416_True_False_True",
+      "on_bridge": false,
+      "z": 416
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_417_True_False_False",
+      "on_bridge": false,
+      "z": 417
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": false,
+      "name": "bridge_417_False_False_False",
+      "on_bridge": false,
+      "z": 417
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_417_True_True_False",
+      "on_bridge": true,
+      "z": 417
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": true,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_417_True_False_True",
+      "on_bridge": false,
+      "z": 417
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_624_True_False_False",
+      "on_bridge": false,
+      "z": 624
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": false,
+      "name": "bridge_624_False_False_False",
+      "on_bridge": false,
+      "z": 624
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_624_True_True_False",
+      "on_bridge": true,
+      "z": 624
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": true,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_624_True_False_True",
+      "on_bridge": false,
+      "z": 624
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_915_True_False_False",
+      "on_bridge": false,
+      "z": 915
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": false,
+      "name": "bridge_915_False_False_False",
+      "on_bridge": false,
+      "z": 915
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_915_True_True_False",
+      "on_bridge": true,
+      "z": 915
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": true,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_915_True_False_True",
+      "on_bridge": false,
+      "z": 915
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_916_True_False_False",
+      "on_bridge": false,
+      "z": 916
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": false,
+      "name": "bridge_916_False_False_False",
+      "on_bridge": false,
+      "z": 916
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": false,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_916_True_True_False",
+      "on_bridge": true,
+      "z": 916
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "bridge": true,
+      "falling": true,
+      "kind": "jumpjet",
+      "marked": true,
+      "name": "bridge_916_True_False_True",
+      "on_bridge": false,
+      "z": 916
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "fly",
+      "level": 2,
+      "name": "slope_fly_on_surface",
+      "slope": 1,
+      "z": 260
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "kind": "fly",
+      "level": 2,
+      "name": "slope_fly_one_above",
+      "slope": 1,
+      "z": 261
+    },
+    "layer": 4
+  },
+  {
+    "input": {
+      "kind": "building",
+      "marked": false,
+      "name": "unmarked_high_building",
+      "z": 600
+    },
+    "layer": 2
+  },
+  {
+    "input": {
+      "global_cruise_height": 700,
+      "kind": "building",
+      "name": "global_threshold_building",
+      "z": 600
+    },
+    "layer": 3
+  },
+  {
+    "input": {
+      "global_cruise_height": 700,
+      "kind": "jumpjet",
+      "name": "global_does_not_replace_linked_height",
+      "z": 600
+    },
+    "layer": 4
+  }
+]

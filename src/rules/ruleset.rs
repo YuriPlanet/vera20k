@@ -323,8 +323,12 @@ pub struct GeneralRules {
     /// Default cruise altitude for Fly-locomotor aircraft (FlightLevel= in [General]).
     /// Fallback 500 leptons matches the engine constructor default; retail
     /// rulesmd.ini always supplies its own (1500), so the fallback only fires
-    /// for a non-retail INI missing the key. Per-type override not yet implemented.
+    /// for a non-retail INI missing the key. A type's own `FlightLevel=`
+    /// overrides it through `ObjectType::flight_level`.
     pub flight_level: i32,
+    /// Rules+420, [JumpjetControls] CruiseHeight. Object5F4260 uses this
+    /// global threshold; linked Jumpjets instead use their own +2C height.
+    pub display_cruise_height: i32,
     /// Hover locomotor cruise altitude in leptons (`[General] HoverHeight=`, default 120).
     /// The damped-spring vertical controller holds hover units at this height.
     pub hover_height: i32,
@@ -1144,6 +1148,7 @@ impl Default for GeneralRules {
             tunnel_speed: sim_from_f32(6.0),
             missile_rot_var: sim_from_f32(1.0),
             flight_level: 500,
+            display_cruise_height: 400, // Rules constructor665C3A
             hover_height: 120,
             hover_bob: sim_from_f32(0.04),
             hover_boost: sim_from_f32(1.5),
@@ -1619,6 +1624,12 @@ impl GeneralRules {
 
     fn from_ini(ini: &IniFile) -> Self {
         let defaults = Self::default();
+        // Separate ReadJumpjetControls674467..67447E, no General gate.
+        let display_cruise_height = ini
+            .section("JumpjetControls")
+            .map_or(defaults.display_cruise_height, |s| {
+                s.read_int("CruiseHeight", defaults.display_cruise_height)
+            });
         // gamemd-derived: `RulesClass__ReadIQ @ 0x00674240` reads signed
         // `[IQ] Production` into `Rules+0x143C` at `0x006742C1`, independently
         // of the `[General]` pass and without clamping the parsed dword.
@@ -1648,6 +1659,7 @@ impl GeneralRules {
         let Some(general) = ini.section("General") else {
             return Self {
                 iq_production,
+                display_cruise_height,
                 condition_yellow: condition_yellow_native,
                 condition_red: condition_red_native,
                 path_delay,
@@ -1824,6 +1836,7 @@ impl GeneralRules {
                 .map(sim_from_f32)
                 .unwrap_or(sim_from_f32(1.0)),
             flight_level: general.get_i32("FlightLevel").unwrap_or(500),
+            display_cruise_height,
             // Hover keys. gamemd reads these with the %-aware Get_Double (150% → 1.5),
             // which `get_percent` matches (it also passes bare floats like `.02` through).
             // The three time keys (bob/accel/brake) are in MINUTES; ×900 = ticks.
@@ -2867,21 +2880,7 @@ fn native_atoi_bytes(value: &[u8]) -> i32 {
 impl RuleSet {
     /// Build from the active ordered rules sources.
     pub fn from_rules_layers(layers: &RulesLayerStack) -> Result<Self, RulesError> {
-        let processed = layers.process()?;
-        let content_hash = processed.content_hash();
-        let crate_rules = processed.crate_rules().clone();
-        let powerups = processed.powerups().clone();
-        let anim_type_art_read_states = processed
-            .anim_type_art_read_states()
-            .map(|(name, read)| (name.to_owned(), read))
-            .collect();
-        let ini = processed.into_projection_discarding_native_receipt();
-        let mut rules = Self::from_projected_ini(&ini)?;
-        rules.crate_rules = crate_rules;
-        rules.powerups = powerups;
-        rules.anim_type_art_read_states = anim_type_art_read_states;
-        rules.source_ini_hash = content_hash;
-        Ok(rules)
+        Self::from_processed_rules(&layers.process()?)
     }
 
     pub(crate) fn from_processed_rules(
@@ -2894,6 +2893,17 @@ impl RuleSet {
             .anim_type_art_read_states()
             .map(|(name, read)| (name.to_owned(), read))
             .collect();
+        // The registry processor owns native read timing and retained values;
+        // the runtime definition receives that result, not another ART read.
+        for (name, flat) in processed.projectile_flat_states() {
+            if let Some(projectile) = rules
+                .projectiles
+                .values_mut()
+                .find(|projectile| projectile.id.eq_ignore_ascii_case(name))
+            {
+                projectile.flat = flat;
+            }
+        }
         rules.source_ini_hash = processed.content_hash();
         Ok(rules)
     }
@@ -3713,10 +3723,10 @@ impl RuleSet {
         // These effective ART values feed ordinary FireAt after load. Hash
         // consumed values in canonical type order, not ART insertion order,
         // authored-key presence, or unrelated presentation metadata.
-        b"art-projectile-launch-config-v1".hash(&mut hasher);
+        b"art-projectile-launch-config-v2".hash(&mut hasher);
         self.projectiles
             .iter()
-            .map(|(id, projectile)| (id.to_ascii_uppercase(), projectile.voxel))
+            .map(|(id, projectile)| (id.to_ascii_uppercase(), (projectile.voxel, projectile.flat)))
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
         self.object_list
@@ -7446,16 +7456,21 @@ Projectile=Invisible
             "[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=GUN\n[GUN]\nProjectile=SHOT\n[SHOT]\nImage=SHOTART\n[BuildingTypes]\n0=BUILD\n[BUILD]\nImage=BUILDART\n",
         );
         let make = |art: &str| {
-            let mut rules = RuleSet::from_ini(&ini).unwrap();
+            let mut rules =
+                RuleSet::from_ini_with_fixed_art_for_test(&ini, &IniFile::from_str(art)).unwrap();
             rules.merge_art_data(&ArtRegistry::from_ini(&IniFile::from_str(art)));
             rules
         };
-        let first = make("[SHOTART]\nVoxel=yes\n[BUILDART]\nHeight=4\n[UNUSED]\nHeight=9\n");
-        let reordered =
-            make("[UNUSED]\nHeight=200\nVoxel=yes\n[BUILDART]\nHeight=4\n[SHOTART]\nVoxel=yes\n");
-        let voxel_changed = make("[SHOTART]\nVoxel=no\n[BUILDART]\nHeight=4\n");
-        let height_changed = make("[SHOTART]\nVoxel=yes\n[BUILDART]\nHeight=5\n");
+        let first =
+            make("[SHOTART]\nVoxel=yes\nFlat=yes\n[BUILDART]\nHeight=4\n[UNUSED]\nHeight=9\n");
+        let reordered = make(
+            "[UNUSED]\nHeight=200\nVoxel=yes\nFlat=no\n[BUILDART]\nHeight=4\n[SHOTART]\nVoxel=yes\nFlat=yes\n",
+        );
+        let voxel_changed = make("[SHOTART]\nVoxel=no\nFlat=yes\n[BUILDART]\nHeight=4\n");
+        let height_changed = make("[SHOTART]\nVoxel=yes\nFlat=yes\n[BUILDART]\nHeight=5\n");
+        let flat_changed = make("[SHOTART]\nVoxel=yes\nFlat=no\n[BUILDART]\nHeight=4\n");
         assert!(first.projectile("SHOT").unwrap().voxel);
+        assert!(first.projectile("SHOT").unwrap().flat);
         assert_eq!(
             first.building_launch_height(first.object("BUILD").unwrap()),
             4
@@ -7465,7 +7480,7 @@ Projectile=Invisible
             reordered.simulation_config_hash(),
             "canonical consumed inputs ignore ART section order and unused metadata"
         );
-        for changed in [&voxel_changed, &height_changed] {
+        for changed in [&voxel_changed, &height_changed, &flat_changed] {
             assert_eq!(first.source_ini_hash(), changed.source_ini_hash());
             assert_ne!(
                 first.simulation_config_hash(),
@@ -7473,13 +7488,13 @@ Projectile=Invisible
             );
         }
         let absent = make("[UNUSED]\nHeight=999\n");
-        let explicit_default = make("[SHOTART]\nVoxel=no\n[BUILDART]\nHeight=2\n");
+        let explicit_default = make("[SHOTART]\nVoxel=no\nFlat=no\n[BUILDART]\nHeight=2\n");
         assert_eq!(
             absent.simulation_config_hash(),
             explicit_default.simulation_config_hash(),
             "authored presence alone is not a consumed launch input"
         );
-        let mut retained = make("[SHOTART]\nVoxel=yes\n[BUILDART]\nHeight=4\n");
+        let mut retained = make("[SHOTART]\nVoxel=yes\nFlat=yes\n[BUILDART]\nHeight=4\n");
         retained.merge_art_data(&ArtRegistry::from_ini(&IniFile::from_str(
             "[BUILDART]\nHeight=4\n",
         )));
@@ -7500,7 +7515,7 @@ Projectile=Invisible
             )
             .is_ok()
         );
-        for changed in [&voxel_changed, &height_changed] {
+        for changed in [&voxel_changed, &height_changed, &flat_changed] {
             assert!(matches!(
                 GameSnapshot::load_validated(
                     &bytes,

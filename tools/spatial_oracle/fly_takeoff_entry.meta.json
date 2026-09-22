@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "26 complete BeginTakeoff or enclosing non-null MoveTo calls: air add only when unregistered, height-zero Primary snap to Secondary destination, height/type reads, power versus health admission and final stored-coordinate ground-query order. Excludes complete Fly Process, docking/landing entry and rendered output.",
+  "assumptions": [
+    "Real Aircraft, Fly and spatial callees from landing fixture. No Team, cargo, target or contacts.",
+    "Supplied height, power, existing air membership and original Facing Snap/Set at frame90, observation frame100.",
+    "AuxSound1 index-1; no playback/asset claim. Warp, EMP and Foot+6A0 refusal producers excluded."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "begin_takeoff": "0x004CF950",
+    "move_to": "0x004CCC80",
+    "air_add": "0x004134A0",
+    "facing_snap": "0x004C9300"
+  },
+  "payload_sha256": "0f82df1053ad6f9ac98a9939847de0433638e562a349d978f43147623c7b9e5a"
+}

@@ -446,9 +446,7 @@ fn tick_production_impl(
                     })
                     .unwrap_or(1);
                 let assigned_pad = sim
-                    .production
-                    .airfield_docks
-                    .try_reserve(af_id, stable_id, max_slots)
+                    .reserve_airfield_pad(af_id, stable_id, max_slots)
                     .unwrap_or(0); // Fresh spawn on a single-pad helipad always wins pad 0.
                 if let Some(entity) = sim.substrate.entities.get_mut(stable_id) {
                     entity.aircraft_mission =

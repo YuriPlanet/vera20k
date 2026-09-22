@@ -1,0 +1,3072 @@
+[
+  {
+    "ammo": 2,
+    "aux": false,
+    "blocked": false,
+    "blocked_timer": [
+      100,
+      11
+    ],
+    "calls": [
+      {
+        "args": [
+          536879104,
+          1
+        ],
+        "entry": "0x41aa80"
+      },
+      {
+        "args": [
+          536879104,
+          1
+        ],
+        "entry": "0x4d94b0"
+      },
+      {
+        "args": [
+          537067524,
+          16512
+        ],
+        "entry": "0x4ccc80"
+      }
+    ],
+    "delay": 1,
+    "destination": [
+      16512,
+      18048,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 18880,
+        "duration": 14,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      10368,
+      16512,
+      500
+    ],
+    "height": 37,
+    "input": {
+      "fighter": false,
+      "inviso": false,
+      "name": "class_False_0_False_False",
+      "rot": 0,
+      "target": [
+        16512,
+        18048,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": "target",
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "fighter": false,
+      "inviso": false,
+      "name": "class_False_0_False_True",
+      "rot": 0,
+      "target": [
+        11000,
+        16512,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 4
+  },
+  {
+    "ammo": 2,
+    "aux": false,
+    "blocked": false,
+    "blocked_timer": [
+      100,
+      11
+    ],
+    "calls": [
+      {
+        "args": [
+          536879104,
+          1
+        ],
+        "entry": "0x41aa80"
+      },
+      {
+        "args": [
+          536879104,
+          1
+        ],
+        "entry": "0x4d94b0"
+      },
+      {
+        "args": [
+          537067524,
+          16512
+        ],
+        "entry": "0x4ccc80"
+      }
+    ],
+    "delay": 1,
+    "destination": [
+      16512,
+      18048,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 18880,
+        "duration": 14,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      10368,
+      16512,
+      500
+    ],
+    "height": 37,
+    "input": {
+      "fighter": false,
+      "inviso": false,
+      "name": "class_False_1_False_False",
+      "rot": 1,
+      "target": [
+        16512,
+        18048,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": "target",
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "fighter": false,
+      "inviso": false,
+      "name": "class_False_1_False_True",
+      "rot": 1,
+      "target": [
+        11000,
+        16512,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 4
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "fighter": false,
+      "inviso": true,
+      "name": "class_False_1_True_False",
+      "rot": 1,
+      "target": [
+        16512,
+        18048,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 1
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "fighter": false,
+      "inviso": true,
+      "name": "class_False_1_True_True",
+      "rot": 1,
+      "target": [
+        11000,
+        16512,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 1
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "fighter": false,
+      "inviso": false,
+      "name": "class_False_3_False_False",
+      "rot": 3,
+      "target": [
+        16512,
+        18048,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 1
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "fighter": false,
+      "inviso": false,
+      "name": "class_False_3_False_True",
+      "rot": 3,
+      "target": [
+        11000,
+        16512,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 1
+  },
+  {
+    "ammo": 2,
+    "aux": false,
+    "blocked": false,
+    "blocked_timer": [
+      100,
+      11
+    ],
+    "calls": [
+      {
+        "args": [
+          536879104,
+          1
+        ],
+        "entry": "0x41aa80"
+      },
+      {
+        "args": [
+          536879104,
+          1
+        ],
+        "entry": "0x4d94b0"
+      },
+      {
+        "args": [
+          537067524,
+          16512
+        ],
+        "entry": "0x4ccc80"
+      }
+    ],
+    "delay": 1,
+    "destination": [
+      16512,
+      18048,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 18880,
+        "duration": 14,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      10368,
+      16512,
+      500
+    ],
+    "height": 37,
+    "input": {
+      "fighter": true,
+      "inviso": false,
+      "name": "class_True_0_False_False",
+      "rot": 0,
+      "target": [
+        16512,
+        18048,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": "target",
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "fighter": true,
+      "inviso": false,
+      "name": "class_True_0_False_True",
+      "rot": 0,
+      "target": [
+        11000,
+        16512,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 4
+  },
+  {
+    "ammo": 2,
+    "aux": false,
+    "blocked": false,
+    "blocked_timer": [
+      100,
+      11
+    ],
+    "calls": [
+      {
+        "args": [
+          536879104,
+          1
+        ],
+        "entry": "0x41aa80"
+      },
+      {
+        "args": [
+          536879104,
+          1
+        ],
+        "entry": "0x4d94b0"
+      },
+      {
+        "args": [
+          537067524,
+          16512
+        ],
+        "entry": "0x4ccc80"
+      }
+    ],
+    "delay": 1,
+    "destination": [
+      16512,
+      18048,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 18880,
+        "duration": 14,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      10368,
+      16512,
+      500
+    ],
+    "height": 37,
+    "input": {
+      "fighter": true,
+      "inviso": false,
+      "name": "class_True_1_False_False",
+      "rot": 1,
+      "target": [
+        16512,
+        18048,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": "target",
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "fighter": true,
+      "inviso": false,
+      "name": "class_True_1_False_True",
+      "rot": 1,
+      "target": [
+        11000,
+        16512,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 4
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "fighter": true,
+      "inviso": true,
+      "name": "class_True_1_True_False",
+      "rot": 1,
+      "target": [
+        16512,
+        18048,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 4
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "fighter": true,
+      "inviso": true,
+      "name": "class_True_1_True_True",
+      "rot": 1,
+      "target": [
+        11000,
+        16512,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 4
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "fighter": true,
+      "inviso": false,
+      "name": "class_True_3_False_False",
+      "rot": 3,
+      "target": [
+        16512,
+        18048,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 4
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "fighter": true,
+      "inviso": false,
+      "name": "class_True_3_False_True",
+      "rot": 3,
+      "target": [
+        11000,
+        16512,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 4
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "moving": true,
+      "name": "speed_0_True",
+      "nav": [
+        45,
+        64
+      ],
+      "speed": 0
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      64
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 4
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "moving": false,
+      "name": "speed_0_False",
+      "nav": [
+        45,
+        64
+      ],
+      "speed": 0
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": false,
+    "nav": [
+      45,
+      64
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 4
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 16383,
+        "duration": 12,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      10368,
+      16512,
+      500
+    ],
+    "height": 37,
+    "input": {
+      "moving": false,
+      "name": "speed_1_False",
+      "nav": [
+        45,
+        64
+      ],
+      "speed": 1
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": false,
+    "nav": [
+      45,
+      64
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 16383,
+        "duration": 12,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      10368,
+      16512,
+      500
+    ],
+    "height": 37,
+    "input": {
+      "moving": true,
+      "name": "speed_-0.25_True",
+      "nav": [
+        45,
+        64
+      ],
+      "speed": -0.25
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      64
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": false,
+    "blocked": false,
+    "blocked_timer": [
+      100,
+      11
+    ],
+    "calls": [
+      {
+        "args": [
+          0,
+          1
+        ],
+        "entry": "0x41aa80"
+      },
+      {
+        "args": [
+          0,
+          1
+        ],
+        "entry": "0x4d94b0"
+      }
+    ],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 19355,
+        "duration": 15,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "aircraft": [
+        11648,
+        16512,
+        500
+      ],
+      "name": "nav_distance_0",
+      "nav": [
+        45,
+        64
+      ],
+      "target": [
+        16512,
+        18048,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 4
+  },
+  {
+    "ammo": 2,
+    "aux": false,
+    "blocked": false,
+    "blocked_timer": [
+      100,
+      11
+    ],
+    "calls": [
+      {
+        "args": [
+          0,
+          1
+        ],
+        "entry": "0x41aa80"
+      },
+      {
+        "args": [
+          0,
+          1
+        ],
+        "entry": "0x4d94b0"
+      }
+    ],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 19355,
+        "duration": 15,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "aircraft": [
+        11633,
+        16512,
+        500
+      ],
+      "name": "nav_distance_15",
+      "nav": [
+        45,
+        64
+      ],
+      "target": [
+        16512,
+        18048,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 4
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 19355,
+        "duration": 15,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "aircraft": [
+        11632,
+        16512,
+        500
+      ],
+      "name": "nav_distance_16",
+      "nav": [
+        45,
+        64
+      ],
+      "target": [
+        16512,
+        18048,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      64
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 19355,
+        "duration": 15,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "aircraft": [
+        11631,
+        16512,
+        500
+      ],
+      "name": "nav_distance_17",
+      "nav": [
+        45,
+        64
+      ],
+      "target": [
+        16512,
+        18048,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      64
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 19355,
+        "duration": 15,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "aircraft": [
+        11393,
+        16512,
+        500
+      ],
+      "name": "nav_distance_255",
+      "nav": [
+        45,
+        64
+      ],
+      "target": [
+        16512,
+        18048,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      64
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 19119,
+        "duration": 14,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "aircraft": [
+        11137,
+        16512,
+        500
+      ],
+      "name": "nav_distance_511",
+      "nav": [
+        45,
+        64
+      ],
+      "target": [
+        16512,
+        18048,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      64
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 16383,
+        "duration": 12,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      11136,
+      16512,
+      500
+    ],
+    "height": 37,
+    "input": {
+      "aircraft": [
+        11136,
+        16512,
+        500
+      ],
+      "name": "nav_distance_512",
+      "nav": [
+        45,
+        64
+      ],
+      "target": [
+        16512,
+        18048,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      64
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 16383,
+        "duration": 12,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      11135,
+      16512,
+      500
+    ],
+    "height": 37,
+    "input": {
+      "aircraft": [
+        11135,
+        16512,
+        500
+      ],
+      "name": "nav_distance_513",
+      "nav": [
+        45,
+        64
+      ],
+      "target": [
+        16512,
+        18048,
+        0
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      64
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "name": "gate_28",
+      "nav": [
+        45,
+        64
+      ],
+      "null_target": true
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      64
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 10
+  },
+  {
+    "ammo": 0,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "ammo": 0,
+      "name": "gate_29",
+      "nav": [
+        45,
+        64
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      64
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 10
+  },
+  {
+    "ammo": 0,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "ammo": 1,
+      "name": "gate_30",
+      "nav": [
+        45,
+        64
+      ],
+      "pending": true
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      64
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 10
+  },
+  {
+    "ammo": 1,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 16383,
+        "duration": 12,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      10368,
+      16512,
+      500
+    ],
+    "height": 37,
+    "input": {
+      "ammo": 2,
+      "name": "gate_31",
+      "nav": [
+        45,
+        64
+      ],
+      "pending": true
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      64
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": -1,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 16383,
+        "duration": 12,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      10368,
+      16512,
+      500
+    ],
+    "height": 37,
+    "input": {
+      "ammo": -1,
+      "name": "gate_32",
+      "nav": [
+        45,
+        64
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      64
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": false,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [
+      {
+        "args": [
+          536879104,
+          1
+        ],
+        "entry": "0x41aa80"
+      },
+      {
+        "args": [
+          536879104,
+          1
+        ],
+        "entry": "0x4d94b0"
+      }
+    ],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 16383,
+        "duration": 12,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      10368,
+      16512,
+      500
+    ],
+    "height": 37,
+    "input": {
+      "name": "gate_33",
+      "nav": [
+        45,
+        64
+      ],
+      "rot": 0,
+      "swap": true
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      64
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": false,
+    "blocked": false,
+    "blocked_timer": [
+      100,
+      11
+    ],
+    "calls": [
+      {
+        "args": [
+          536879104,
+          1
+        ],
+        "entry": "0x41aa80"
+      },
+      {
+        "args": [
+          0,
+          1
+        ],
+        "entry": "0x4d94b0"
+      }
+    ],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "name": "gate_34",
+      "nav": [
+        45,
+        64
+      ],
+      "rot": 0,
+      "target": [
+        16512,
+        16512,
+        208
+      ]
+    },
+    "latch": false,
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 1
+  },
+  {
+    "ammo": 2,
+    "aux": false,
+    "blocked": false,
+    "blocked_timer": [
+      100,
+      11
+    ],
+    "calls": [
+      {
+        "args": [
+          536879104,
+          1
+        ],
+        "entry": "0x41aa80"
+      },
+      {
+        "args": [
+          536879104,
+          1
+        ],
+        "entry": "0x4d94b0"
+      },
+      {
+        "args": [
+          537067524,
+          16512
+        ],
+        "entry": "0x4ccc80"
+      }
+    ],
+    "delay": 1,
+    "destination": [
+      16512,
+      16512,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 16383,
+        "duration": 12,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      10368,
+      16512,
+      500
+    ],
+    "height": 37,
+    "input": {
+      "name": "gate_35",
+      "nav": [
+        45,
+        64
+      ],
+      "rot": 0,
+      "target": [
+        16512,
+        16512,
+        208
+      ],
+      "target_marked": false
+    },
+    "latch": false,
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": "target",
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 12065,
+        "duration": 9,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      10337,
+      16337,
+      520
+    ],
+    "height": 37,
+    "input": {
+      "burst_index": 0,
+      "flh": [
+        150,
+        32,
+        20
+      ],
+      "name": "flh_0_0_0",
+      "nav": [
+        45,
+        61
+      ],
+      "primary": 0,
+      "secondary": 0,
+      "turret_offset": 25
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      61
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 16384,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 11645,
+        "duration": 9,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      10219,
+      16456,
+      520
+    ],
+    "height": 37,
+    "input": {
+      "burst_index": 1,
+      "flh": [
+        150,
+        32,
+        20
+      ],
+      "name": "flh_16384_0_1",
+      "nav": [
+        45,
+        61
+      ],
+      "primary": 16384,
+      "secondary": 0,
+      "turret_offset": 25
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      61
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 4660,
+        "duration": 0,
+        "previous": 4660,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 9957,
+        "duration": 18,
+        "previous": 51966,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      10375,
+      16657,
+      520
+    ],
+    "height": 37,
+    "input": {
+      "burst_index": 2,
+      "flh": [
+        150,
+        32,
+        20
+      ],
+      "name": "flh_4660_51966_2",
+      "nav": [
+        45,
+        61
+      ],
+      "primary": 4660,
+      "secondary": 51966,
+      "turret_offset": 25
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      61
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 32767,
+        "duration": 0,
+        "previous": 32767,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 9957,
+        "duration": 17,
+        "previous": 32768,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      10337,
+      16687,
+      520
+    ],
+    "height": 37,
+    "input": {
+      "burst_index": -1,
+      "flh": [
+        150,
+        32,
+        20
+      ],
+      "name": "flh_32767_32768_-1",
+      "nav": [
+        45,
+        61
+      ],
+      "primary": 32767,
+      "secondary": 32768,
+      "turret_offset": 25
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      61
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 12280,
+        "duration": 9,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": [
+      10329,
+      16312,
+      560
+    ],
+    "height": 37,
+    "input": {
+      "elite_flh": [
+        200,
+        40,
+        60
+      ],
+      "flh": [
+        100,
+        20,
+        30
+      ],
+      "name": "elite_flh",
+      "nav": [
+        45,
+        61
+      ],
+      "veterancy": 2
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": [
+      45,
+      61
+    ],
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 3
+  },
+  {
+    "ammo": 0,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "ammo": 0,
+      "name": "entry_False_0_False",
+      "null_target": false,
+      "pending": false,
+      "state": 0
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 1
+  },
+  {
+    "ammo": 0,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "ammo": 0,
+      "name": "entry_False_0_True",
+      "null_target": false,
+      "pending": true,
+      "state": 0
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": true,
+    "retry": 19,
+    "state": 1
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "ammo": 2,
+      "name": "entry_False_2_False",
+      "null_target": false,
+      "pending": false,
+      "state": 0
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 1
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "ammo": 2,
+      "name": "entry_False_2_True",
+      "null_target": false,
+      "pending": true,
+      "state": 0
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": true,
+    "retry": 19,
+    "state": 1
+  },
+  {
+    "ammo": 0,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "ammo": 0,
+      "name": "entry_True_0_False",
+      "null_target": true,
+      "pending": false,
+      "state": 0
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 10
+  },
+  {
+    "ammo": 0,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "ammo": 0,
+      "name": "entry_True_0_True",
+      "null_target": true,
+      "pending": true,
+      "state": 0
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": true,
+    "retry": 19,
+    "state": 10
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "ammo": 2,
+      "name": "entry_True_2_False",
+      "null_target": true,
+      "pending": false,
+      "state": 0
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": false,
+    "retry": 19,
+    "state": 10
+  },
+  {
+    "ammo": 2,
+    "aux": true,
+    "blocked": true,
+    "blocked_timer": [
+      9,
+      29
+    ],
+    "calls": [],
+    "delay": 1,
+    "destination": [
+      8192,
+      8192,
+      1500
+    ],
+    "facings": [
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      },
+      {
+        "destination": 0,
+        "duration": 0,
+        "previous": 0,
+        "rate": 1280,
+        "start": 100
+      }
+    ],
+    "flh": null,
+    "height": 37,
+    "input": {
+      "ammo": 2,
+      "name": "entry_True_2_True",
+      "null_target": true,
+      "pending": true,
+      "state": 0
+    },
+    "latch": false,
+    "movement_timer": [
+      7,
+      23
+    ],
+    "moving": true,
+    "nav": null,
+    "next_random": 2026076499,
+    "pending": true,
+    "retry": 19,
+    "state": 10
+  }
+]

@@ -339,16 +339,17 @@ pub(crate) fn current_weapon_is_omni_fire(
 ///   census over `BuildingClass::Update`, `Mission_Guard` and every idle path
 ///   finds no other `Set`/`UpdateFacing` of `+0x388`, so **a building turret
 ///   keeps its last aim** — it never swings back.
-/// - **Aircraft / Infantry** — unchanged legacy behaviour; how `+0x3A0` is
-///   driven for `AircraftClass` is UNCHECKED (see the residual below).
+/// - **Aircraft** — its mission/locomotor owns its secondary-facing writes.
+/// - **Infantry** — legacy target-else-body rule.
 ///
-/// RESIDUAL (GSI-08.14) — the aircraft turret destination is VERA's own
-/// "target, else body" rule. `AircraftClass::GetFireError @ 0x0041A9E0` proves
-/// the gate reads `+0x3A0` at `0x0800`, but the writers
-/// (`AircraftClass::AI @ 0x0041514C`, `Mission_Attack`, `Fire_At @ 0x00416041`)
-/// were not decoded. Trigger: any aircraft with `Turret=yes`. Player effect:
-/// unknown aim behaviour on those types. Frequency: no stock aircraft sets
-/// `Turret=`, so no stock entity reaches it. Downstream risk: none today.
+/// Aircraft initializes BOTH facings even
+/// without Turret=yes (413FD2..414015). Its self-writers belong to Mission_Attack
+/// and Fly steering/takeoff (4181BB..4185DF, 4CE680, 4CF285/4CF3C5).
+/// AI41514C instead READS its secondary facing and copies it into a Carryall
+/// passenger; FireAt416041 samples it for launch math. Neither writes its own
+/// facing. State4's two setters now run at the firing boundary. This generic
+/// sweep must not overwrite them. Other Mission_Attack and Fly secondary
+/// setters remain required residuals of those mechanisms.
 pub(crate) fn desired_turret_facing(
     entity: &GameEntity,
     entities: &EntityStore,
@@ -373,6 +374,7 @@ pub(crate) fn desired_turret_facing(
                 // takes no facing action at all. Hold.
                 None
             }),
+        crate::map::entities::EntityCategory::Aircraft => None,
         _ => Some(
             entity
                 .attack_target
@@ -386,7 +388,7 @@ pub(crate) fn desired_turret_facing(
 }
 
 /// Per-binary-frame turret rotation for the classes this sweep still owns —
-/// Aircraft and Buildings. Unit turrets are driven per-object by the combat
+/// Buildings and legacy Infantry. Unit turrets are driven per-object by the combat
 /// Phase-2 read window plus `unit_post::apply_unit_facing` while
 /// `L2_UNIT_POST_AUTHORITATIVE` holds.
 ///
@@ -442,7 +444,7 @@ pub fn tick_turret_rotation(
     // Phase 2: apply rotation via FacingClass::set. Idempotent — no-op when
     // target already equals current destination.
     for update in &updates {
-        let rot_byte: u8 = rules
+        let rot = rules
             .object(
                 interner.resolve(
                     entities
@@ -451,12 +453,12 @@ pub fn tick_turret_rotation(
                         .unwrap_or_default(),
                 ),
             )
-            .map(|obj| obj.turret_rot.clamp(0, 0xFF) as u8)
+            .map(|obj| obj.turret_rot)
             .unwrap_or(5);
         if let Some(entity) = entities.get_mut(update.id) {
             if let Some(ref mut barrel) = entity.barrel_facing {
                 // Refresh ROT in case rules changed (cheap; idempotent).
-                barrel.set_rot(rot_byte);
+                barrel.set_rot(rot);
                 barrel.set(update.target_facing, native_frame);
             }
         }

@@ -51,7 +51,7 @@ pub(crate) const L2_UNIT_POST_AUTHORITATIVE: bool = true;
 /// system writes Unit facings between the combat Phase-2 read window and this
 /// site, so the apply point within Phase 5 does not affect the resulting
 /// state. Idempotent — `set` is a no-op when the destination already matches.
-/// ROT byte refreshed from rules each apply, same as the legacy sweep.
+/// Signed ROT refreshed from rules each apply, same as the legacy sweep.
 ///
 /// Four writes land here, and their ORDER is native, not incidental:
 /// 1. the hull destination from `UnitClass::Fire_At_Target @ 0x00736DF0` case 2
@@ -93,9 +93,9 @@ pub(crate) fn apply_unit_facing(
 ) {
     for update in updates {
         let id = update.entity_id;
-        let rot_byte: u8 = rules
+        let rot = rules
             .object(interner.resolve(entities.get(id).map(|e| e.type_ref()).unwrap_or_default()))
-            .map(|obj| obj.turret_rot.clamp(0, 0xFF) as u8)
+            .map(|obj| obj.turret_rot)
             .unwrap_or(5);
         let Some(entity) = entities.get_mut(id) else {
             continue;
@@ -104,13 +104,13 @@ pub(crate) fn apply_unit_facing(
         //    `Facing_Update` is entered at all (`0x007365E1`/`0x007365E8`).
         if let Some(desired) = update.hull_destination {
             let hull = entity.body_facing.get_or_insert_with(|| {
-                crate::sim::movement::FacingClass::new(u16::from(entity.facing) << 8, rot_byte)
+                crate::sim::movement::FacingClass::new(u16::from(entity.facing) << 8, rot)
             });
-            hull.set_rot(rot_byte);
+            hull.set_rot(rot);
             hull.set(desired, binary_frame);
             let raw_destination = hull.destination();
             if let Some(ref mut barrel) = entity.barrel_facing {
-                barrel.set_rot(rot_byte);
+                barrel.set_rot(rot);
                 barrel.set(raw_destination, binary_frame);
             }
         }
@@ -119,7 +119,7 @@ pub(crate) fn apply_unit_facing(
             && !update.turret_destination_is_idle_return
             && let Some(ref mut barrel) = entity.barrel_facing
         {
-            barrel.set_rot(rot_byte);
+            barrel.set_rot(rot);
             barrel.set(desired, binary_frame);
         }
         // 3. the `+0x6AF` store (`0x00736B16`), evaluated on the barrel as it
@@ -138,7 +138,7 @@ pub(crate) fn apply_unit_facing(
             && update.turret_destination_is_idle_return
             && let Some(ref mut barrel) = entity.barrel_facing
         {
-            barrel.set_rot(rot_byte);
+            barrel.set_rot(rot);
             barrel.set(desired, binary_frame);
         }
         // Mirror the animated hull into the 8-bit heading. The movement tick

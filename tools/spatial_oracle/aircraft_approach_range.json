@@ -1,0 +1,5203 @@
+[
+  {
+    "distance": 0,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        0
+      ],
+      "veterancy": 0
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2689,
+        2688,
+        0
+      ],
+      "veterancy": 0
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1280,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3969,
+        2688,
+        0
+      ],
+      "veterancy": 0
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1534,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4223,
+        2688,
+        0
+      ],
+      "veterancy": 0
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        0
+      ],
+      "veterancy": 0
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4225,
+        2688,
+        0
+      ],
+      "veterancy": 0
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2302,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4991,
+        2688,
+        0
+      ],
+      "veterancy": 0
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2304,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        0
+      ],
+      "veterancy": 0
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2304,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4993,
+        2688,
+        0
+      ],
+      "veterancy": 0
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2172,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        4224,
+        0
+      ],
+      "veterancy": 0
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 3258,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        4992,
+        0
+      ],
+      "veterancy": 0
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1535,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3774,
+        3774,
+        0
+      ],
+      "veterancy": 0
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1537,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3775,
+        3775,
+        0
+      ],
+      "veterancy": 0
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        1152,
+        2688,
+        0
+      ],
+      "veterancy": 0
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        1152,
+        0
+      ],
+      "veterancy": 0
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        0
+      ],
+      "veterancy": 1
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2689,
+        2688,
+        0
+      ],
+      "veterancy": 1
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1280,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3969,
+        2688,
+        0
+      ],
+      "veterancy": 1
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1534,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4223,
+        2688,
+        0
+      ],
+      "veterancy": 1
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        0
+      ],
+      "veterancy": 1
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4225,
+        2688,
+        0
+      ],
+      "veterancy": 1
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2302,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4991,
+        2688,
+        0
+      ],
+      "veterancy": 1
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2304,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        0
+      ],
+      "veterancy": 1
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2304,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4993,
+        2688,
+        0
+      ],
+      "veterancy": 1
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2172,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        4224,
+        0
+      ],
+      "veterancy": 1
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 3258,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        4992,
+        0
+      ],
+      "veterancy": 1
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1535,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3774,
+        3774,
+        0
+      ],
+      "veterancy": 1
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1537,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3775,
+        3775,
+        0
+      ],
+      "veterancy": 1
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        1152,
+        2688,
+        0
+      ],
+      "veterancy": 1
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        1152,
+        0
+      ],
+      "veterancy": 1
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "elite"
+  },
+  {
+    "distance": 1,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2689,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "elite"
+  },
+  {
+    "distance": 1280,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3969,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "elite"
+  },
+  {
+    "distance": 1534,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4223,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "elite"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "elite"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4225,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "elite"
+  },
+  {
+    "distance": 2302,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4991,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "elite"
+  },
+  {
+    "distance": 2304,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "elite"
+  },
+  {
+    "distance": 2304,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4993,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "elite"
+  },
+  {
+    "distance": 2172,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        4224,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "elite"
+  },
+  {
+    "distance": 3258,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        4992,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "elite"
+  },
+  {
+    "distance": 1535,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3774,
+        3774,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "elite"
+  },
+  {
+    "distance": 1537,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3775,
+        3775,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "elite"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        1152,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "elite"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": true,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        1152,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "elite"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": false,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": false,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2689,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1280,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": false,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3969,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1534,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": false,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4223,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": false,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": false,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4225,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2302,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": false,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4991,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2304,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": false,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2304,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": false,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4993,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2172,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": false,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        4224,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 3258,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": false,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        4992,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1535,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "elite_weapon": false,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3774,
+        3774,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1537,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": false,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3775,
+        3775,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": false,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        1152,
+        2688,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "elite_weapon": false,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        1152,
+        0
+      ],
+      "veterancy": 2
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      1,
+      1
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 0,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1408,
+    "foundation_dimensions": [
+      1,
+      1
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 0,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2176,
+    "foundation_dimensions": [
+      1,
+      1
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 0,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      1,
+      1
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 0,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1408,
+    "foundation_dimensions": [
+      1,
+      1
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 0,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2176,
+    "foundation_dimensions": [
+      1,
+      1
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 0,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      2,
+      1
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 1,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1472,
+    "foundation_dimensions": [
+      2,
+      1
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 1,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2240,
+    "foundation_dimensions": [
+      2,
+      1
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 1,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      2,
+      1
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 1,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1472,
+    "foundation_dimensions": [
+      2,
+      1
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 1,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2240,
+    "foundation_dimensions": [
+      2,
+      1
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 1,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      1,
+      2
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 2,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1349,
+    "foundation_dimensions": [
+      1,
+      2
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 2,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2115,
+    "foundation_dimensions": [
+      1,
+      2
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 2,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      1,
+      2
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 2,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1349,
+    "foundation_dimensions": [
+      1,
+      2
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 2,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2115,
+    "foundation_dimensions": [
+      1,
+      2
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 2,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      2,
+      2
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 3,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1412,
+    "foundation_dimensions": [
+      2,
+      2
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 3,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2179,
+    "foundation_dimensions": [
+      2,
+      2
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 3,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      2,
+      2
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 3,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1412,
+    "foundation_dimensions": [
+      2,
+      2
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 3,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2179,
+    "foundation_dimensions": [
+      2,
+      2
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 3,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      2,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 4,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1363,
+    "foundation_dimensions": [
+      2,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 4,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2125,
+    "foundation_dimensions": [
+      2,
+      3
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 4,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      2,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 4,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1363,
+    "foundation_dimensions": [
+      2,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 4,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2125,
+    "foundation_dimensions": [
+      2,
+      3
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 4,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      3,
+      2
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 5,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1476,
+    "foundation_dimensions": [
+      3,
+      2
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 5,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2243,
+    "foundation_dimensions": [
+      3,
+      2
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 5,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      3,
+      2
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 5,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1476,
+    "foundation_dimensions": [
+      3,
+      2
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 5,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2243,
+    "foundation_dimensions": [
+      3,
+      2
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 5,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      3,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 6,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1426,
+    "foundation_dimensions": [
+      3,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 6,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2188,
+    "foundation_dimensions": [
+      3,
+      3
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 6,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      3,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 6,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1426,
+    "foundation_dimensions": [
+      3,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 6,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2188,
+    "foundation_dimensions": [
+      3,
+      3
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 6,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 60,
+    "foundation_dimensions": [
+      3,
+      5
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 7,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1351,
+    "foundation_dimensions": [
+      3,
+      5
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 7,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2098,
+    "foundation_dimensions": [
+      3,
+      5
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 7,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 60,
+    "foundation_dimensions": [
+      3,
+      5
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 7,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1351,
+    "foundation_dimensions": [
+      3,
+      5
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 7,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2098,
+    "foundation_dimensions": [
+      3,
+      5
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 7,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 20,
+    "foundation_dimensions": [
+      4,
+      2
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 8,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1540,
+    "foundation_dimensions": [
+      4,
+      2
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 8,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2307,
+    "foundation_dimensions": [
+      4,
+      2
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 8,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 20,
+    "foundation_dimensions": [
+      4,
+      2
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 8,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1540,
+    "foundation_dimensions": [
+      4,
+      2
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 8,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2307,
+    "foundation_dimensions": [
+      4,
+      2
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 8,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      3,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 9,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1426,
+    "foundation_dimensions": [
+      3,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 9,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2188,
+    "foundation_dimensions": [
+      3,
+      3
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 9,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      3,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 9,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1426,
+    "foundation_dimensions": [
+      3,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 9,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2188,
+    "foundation_dimensions": [
+      3,
+      3
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 9,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      1,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 10,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1301,
+    "foundation_dimensions": [
+      1,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 10,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2062,
+    "foundation_dimensions": [
+      1,
+      3
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 10,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      1,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 10,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1301,
+    "foundation_dimensions": [
+      1,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 10,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2062,
+    "foundation_dimensions": [
+      1,
+      3
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 10,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      3,
+      1
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 11,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": [
+      3,
+      1
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 11,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2304,
+    "foundation_dimensions": [
+      3,
+      1
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 11,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": [
+      3,
+      1
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 11,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": [
+      3,
+      1
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 11,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2304,
+    "foundation_dimensions": [
+      3,
+      1
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 11,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 13,
+    "foundation_dimensions": [
+      4,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 12,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1488,
+    "foundation_dimensions": [
+      4,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 12,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2252,
+    "foundation_dimensions": [
+      4,
+      3
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 12,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 13,
+    "foundation_dimensions": [
+      4,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 12,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1488,
+    "foundation_dimensions": [
+      4,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 12,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2252,
+    "foundation_dimensions": [
+      4,
+      3
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 12,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 64,
+    "foundation_dimensions": [
+      1,
+      4
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 13,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1263,
+    "foundation_dimensions": [
+      1,
+      4
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 13,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2015,
+    "foundation_dimensions": [
+      1,
+      4
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 13,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 64,
+    "foundation_dimensions": [
+      1,
+      4
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 13,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1263,
+    "foundation_dimensions": [
+      1,
+      4
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 13,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2015,
+    "foundation_dimensions": [
+      1,
+      4
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 13,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 128,
+    "foundation_dimensions": [
+      1,
+      5
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 14,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1235,
+    "foundation_dimensions": [
+      1,
+      5
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 14,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1976,
+    "foundation_dimensions": [
+      1,
+      5
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 14,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 128,
+    "foundation_dimensions": [
+      1,
+      5
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 14,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1235,
+    "foundation_dimensions": [
+      1,
+      5
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 14,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1976,
+    "foundation_dimensions": [
+      1,
+      5
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 14,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 140,
+    "foundation_dimensions": [
+      2,
+      6
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 15,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1270,
+    "foundation_dimensions": [
+      2,
+      6
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 15,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2002,
+    "foundation_dimensions": [
+      2,
+      6
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 15,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 140,
+    "foundation_dimensions": [
+      2,
+      6
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 15,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1270,
+    "foundation_dimensions": [
+      2,
+      6
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 15,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2002,
+    "foundation_dimensions": [
+      2,
+      6
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 15,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 79,
+    "foundation_dimensions": [
+      2,
+      5
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 16,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1292,
+    "foundation_dimensions": [
+      2,
+      5
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 16,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2037,
+    "foundation_dimensions": [
+      2,
+      5
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 16,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 79,
+    "foundation_dimensions": [
+      2,
+      5
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 16,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1292,
+    "foundation_dimensions": [
+      2,
+      5
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 16,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2037,
+    "foundation_dimensions": [
+      2,
+      5
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 16,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 60,
+    "foundation_dimensions": [
+      5,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 17,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1551,
+    "foundation_dimensions": [
+      5,
+      3
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 17,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2315,
+    "foundation_dimensions": [
+      5,
+      3
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 17,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 60,
+    "foundation_dimensions": [
+      5,
+      3
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 17,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1551,
+    "foundation_dimensions": [
+      5,
+      3
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 17,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2315,
+    "foundation_dimensions": [
+      5,
+      3
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 17,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 31,
+    "foundation_dimensions": [
+      4,
+      4
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 18,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1446,
+    "foundation_dimensions": [
+      4,
+      4
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 18,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2203,
+    "foundation_dimensions": [
+      4,
+      4
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 18,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 31,
+    "foundation_dimensions": [
+      4,
+      4
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 18,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1446,
+    "foundation_dimensions": [
+      4,
+      4
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 18,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2203,
+    "foundation_dimensions": [
+      4,
+      4
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 18,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 13,
+    "foundation_dimensions": [
+      3,
+      4
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 19,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1384,
+    "foundation_dimensions": [
+      3,
+      4
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 19,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2140,
+    "foundation_dimensions": [
+      3,
+      4
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 19,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 13,
+    "foundation_dimensions": [
+      3,
+      4
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 19,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1384,
+    "foundation_dimensions": [
+      3,
+      4
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 19,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2140,
+    "foundation_dimensions": [
+      3,
+      4
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 19,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 106,
+    "foundation_dimensions": [
+      6,
+      4
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 20,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1569,
+    "foundation_dimensions": [
+      6,
+      4
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 20,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2328,
+    "foundation_dimensions": [
+      6,
+      4
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 20,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 106,
+    "foundation_dimensions": [
+      6,
+      4
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 20,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1569,
+    "foundation_dimensions": [
+      6,
+      4
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 20,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2328,
+    "foundation_dimensions": [
+      6,
+      4
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 20,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 181,
+    "foundation_dimensions": [
+      0,
+      0
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 21,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1413,
+    "foundation_dimensions": [
+      0,
+      0
+    ],
+    "in_range": true,
+    "input": {
+      "bib": false,
+      "foundation": 21,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2179,
+    "foundation_dimensions": [
+      0,
+      0
+    ],
+    "in_range": false,
+    "input": {
+      "bib": false,
+      "foundation": 21,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 181,
+    "foundation_dimensions": [
+      0,
+      0
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 21,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1413,
+    "foundation_dimensions": [
+      0,
+      0
+    ],
+    "in_range": true,
+    "input": {
+      "bib": true,
+      "foundation": 21,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4224,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2179,
+    "foundation_dimensions": [
+      0,
+      0
+    ],
+    "in_range": false,
+    "input": {
+      "bib": true,
+      "foundation": 21,
+      "kind": "building",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        4992,
+        2688,
+        9000
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "cell": [
+        10,
+        10
+      ],
+      "kind": "cell",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        0,
+        0,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1536,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "cell": [
+        16,
+        10
+      ],
+      "kind": "cell",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        0,
+        0,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2304,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "cell": [
+        19,
+        10
+      ],
+      "kind": "cell",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        0,
+        0,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2172,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "cell": [
+        16,
+        16
+      ],
+      "kind": "cell",
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        0,
+        0,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": -1,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 0,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 0,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 1,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2688,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 0,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2689,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 1,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2689,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 2,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2689,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 1,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2690,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 2,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2690,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 2,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 3,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2690,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 127,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 126,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2815,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 127,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 127,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2815,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 127,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 128,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2815,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 128,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 127,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2816,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 128,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 128,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2816,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 128,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 129,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2816,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 128,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 128,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2817,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 128,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 129,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2817,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 128,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 130,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        2817,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 512,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 511,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3200,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 512,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 512,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3200,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 512,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 513,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3200,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 512,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 512,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3201,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 512,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 513,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3201,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 512,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 514,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3201,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1280,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 1279,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3968,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1280,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 1280,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3968,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1280,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 1281,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3968,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1280,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 1280,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3969,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1280,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 1281,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3969,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1280,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 1282,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3969,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1281,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 1281,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3970,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1281,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 1282,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3970,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 1281,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 1283,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        3970,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 12800,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 12800,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        15489,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 12800,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 12801,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        15489,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 12800,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 12802,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        15489,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 129999,
+    "foundation_dimensions": null,
+    "in_range": false,
+    "input": {
+      "range": 129999,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        132688,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 129999,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 130000,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        132688,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  },
+  {
+    "distance": 129999,
+    "foundation_dimensions": null,
+    "in_range": true,
+    "input": {
+      "range": 130001,
+      "source": [
+        2688,
+        2688,
+        1500
+      ],
+      "target": [
+        132688,
+        2688,
+        0
+      ]
+    },
+    "weapon": "primary"
+  }
+]

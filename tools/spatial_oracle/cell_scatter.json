@@ -1,0 +1,1577 @@
+[
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [],
+    "input": {
+      "name": "rank0_v0_e0_iq-1",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": -1,
+          "rank": 0,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [],
+    "input": {
+      "name": "rank0_v0_e0_iq1",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 1,
+          "rank": 0,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank0_v0_e0_iq2",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 2,
+          "rank": 0,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank0_v0_e0_iq5",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 5,
+          "rank": 0,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [],
+    "input": {
+      "name": "rank0_v0_e1_iq-1",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": -1,
+          "rank": 0,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [],
+    "input": {
+      "name": "rank0_v0_e1_iq1",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 1,
+          "rank": 0,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank0_v0_e1_iq2",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 2,
+          "rank": 0,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank0_v0_e1_iq5",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 5,
+          "rank": 0,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [],
+    "input": {
+      "name": "rank0_v1_e0_iq-1",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": -1,
+          "rank": 0,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [],
+    "input": {
+      "name": "rank0_v1_e0_iq1",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 1,
+          "rank": 0,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank0_v1_e0_iq2",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 2,
+          "rank": 0,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank0_v1_e0_iq5",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 5,
+          "rank": 0,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [],
+    "input": {
+      "name": "rank0_v1_e1_iq-1",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": -1,
+          "rank": 0,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [],
+    "input": {
+      "name": "rank0_v1_e1_iq1",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 1,
+          "rank": 0,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank0_v1_e1_iq2",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 2,
+          "rank": 0,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank0_v1_e1_iq5",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 5,
+          "rank": 0,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [],
+    "input": {
+      "name": "rank1_v0_e0_iq-1",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": -1,
+          "rank": 1,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [],
+    "input": {
+      "name": "rank1_v0_e0_iq1",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 1,
+          "rank": 1,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank1_v0_e0_iq2",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 2,
+          "rank": 1,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank1_v0_e0_iq5",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 5,
+          "rank": 1,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [],
+    "input": {
+      "name": "rank1_v0_e1_iq-1",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": -1,
+          "rank": 1,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [],
+    "input": {
+      "name": "rank1_v0_e1_iq1",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 1,
+          "rank": 1,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank1_v0_e1_iq2",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 2,
+          "rank": 1,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank1_v0_e1_iq5",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 5,
+          "rank": 1,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank1_v1_e0_iq-1",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": -1,
+          "rank": 1,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank1_v1_e0_iq1",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 1,
+          "rank": 1,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank1_v1_e0_iq2",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 2,
+          "rank": 1,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank1_v1_e0_iq5",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 5,
+          "rank": 1,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank1_v1_e1_iq-1",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": -1,
+          "rank": 1,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank1_v1_e1_iq1",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 1,
+          "rank": 1,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank1_v1_e1_iq2",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 2,
+          "rank": 1,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank1_v1_e1_iq5",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 5,
+          "rank": 1,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank2_v0_e0_iq-1",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": -1,
+          "rank": 2,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank2_v0_e0_iq1",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 1,
+          "rank": 2,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank2_v0_e0_iq2",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 2,
+          "rank": 2,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank2_v0_e0_iq5",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 5,
+          "rank": 2,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank2_v0_e1_iq-1",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": -1,
+          "rank": 2,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank2_v0_e1_iq1",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 1,
+          "rank": 2,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank2_v0_e1_iq2",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 2,
+          "rank": 2,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank2_v0_e1_iq5",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 5,
+          "rank": 2,
+          "veteran_scatter": false
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank2_v1_e0_iq-1",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": -1,
+          "rank": 2,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank2_v1_e0_iq1",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 1,
+          "rank": 2,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank2_v1_e0_iq2",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 2,
+          "rank": 2,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank2_v1_e0_iq5",
+      "objects": [
+        {
+          "elite_scatter": false,
+          "id": 7,
+          "iq": 5,
+          "rank": 2,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank2_v1_e1_iq-1",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": -1,
+          "rank": 2,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank2_v1_e1_iq1",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 1,
+          "rank": 2,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank2_v1_e1_iq2",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 2,
+          "rank": 2,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7
+    ],
+    "input": {
+      "name": "rank2_v1_e1_iq5",
+      "objects": [
+        {
+          "elite_scatter": true,
+          "id": 7,
+          "iq": 5,
+          "rank": 2,
+          "veteran_scatter": true
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [],
+    "input": {
+      "dispatch_all": false,
+      "name": "cell_000",
+      "objects": [
+        {
+          "id": 7,
+          "techno": false
+        },
+        {
+          "id": 3
+        },
+        {
+          "id": 9,
+          "rank": 0
+        }
+      ],
+      "player_scatter": false
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7,
+      3,
+      9
+    ],
+    "input": {
+      "dispatch_all": false,
+      "name": "cell_001",
+      "objects": [
+        {
+          "id": 7,
+          "techno": false
+        },
+        {
+          "id": 3
+        },
+        {
+          "id": 9,
+          "rank": 2
+        }
+      ],
+      "player_scatter": false
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7,
+      3,
+      9
+    ],
+    "input": {
+      "dispatch_all": false,
+      "name": "cell_010",
+      "objects": [
+        {
+          "id": 7,
+          "techno": false
+        },
+        {
+          "id": 3
+        },
+        {
+          "id": 9,
+          "rank": 0
+        }
+      ],
+      "player_scatter": true
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7,
+      3,
+      9
+    ],
+    "input": {
+      "dispatch_all": false,
+      "name": "cell_011",
+      "objects": [
+        {
+          "id": 7,
+          "techno": false
+        },
+        {
+          "id": 3
+        },
+        {
+          "id": 9,
+          "rank": 2
+        }
+      ],
+      "player_scatter": true
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7,
+      3,
+      9
+    ],
+    "input": {
+      "dispatch_all": true,
+      "name": "cell_100",
+      "objects": [
+        {
+          "id": 7,
+          "techno": false
+        },
+        {
+          "id": 3
+        },
+        {
+          "id": 9,
+          "rank": 0
+        }
+      ],
+      "player_scatter": false
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7,
+      3,
+      9
+    ],
+    "input": {
+      "dispatch_all": true,
+      "name": "cell_101",
+      "objects": [
+        {
+          "id": 7,
+          "techno": false
+        },
+        {
+          "id": 3
+        },
+        {
+          "id": 9,
+          "rank": 2
+        }
+      ],
+      "player_scatter": false
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7,
+      3,
+      9
+    ],
+    "input": {
+      "dispatch_all": true,
+      "name": "cell_110",
+      "objects": [
+        {
+          "id": 7,
+          "techno": false
+        },
+        {
+          "id": 3
+        },
+        {
+          "id": 9,
+          "rank": 0
+        }
+      ],
+      "player_scatter": true
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      7,
+      3,
+      9
+    ],
+    "input": {
+      "dispatch_all": true,
+      "name": "cell_111",
+      "objects": [
+        {
+          "id": 7,
+          "techno": false
+        },
+        {
+          "id": 3
+        },
+        {
+          "id": 9,
+          "rank": 2
+        }
+      ],
+      "player_scatter": true
+    }
+  },
+  {
+    "allocations": [
+      40,
+      80
+    ],
+    "dispatch": [
+      23,
+      19,
+      17,
+      15,
+      13,
+      11,
+      9,
+      7,
+      5,
+      3,
+      1,
+      21,
+      25
+    ],
+    "input": {
+      "bridge": false,
+      "first_flag": false,
+      "name": "ordered_0_0",
+      "objects": [
+        {
+          "bridge": false,
+          "id": 23,
+          "iq": 5
+        },
+        {
+          "bridge": true,
+          "id": 4,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 19,
+          "iq": 5
+        },
+        {
+          "bridge": true,
+          "id": 8,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 17,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 15,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 13,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 11,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 9,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 7,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 5,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 3,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 1,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 21,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 25,
+          "iq": 5
+        }
+      ],
+      "unlink_on_first": false
+    }
+  },
+  {
+    "allocations": [
+      40,
+      80
+    ],
+    "dispatch": [
+      23,
+      19,
+      17,
+      15,
+      13,
+      11,
+      9,
+      7,
+      5,
+      3,
+      1,
+      21,
+      25
+    ],
+    "input": {
+      "bridge": false,
+      "first_flag": false,
+      "name": "ordered_0_1",
+      "objects": [
+        {
+          "bridge": false,
+          "id": 23,
+          "iq": 5
+        },
+        {
+          "bridge": true,
+          "id": 4,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 19,
+          "iq": 5
+        },
+        {
+          "bridge": true,
+          "id": 8,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 17,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 15,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 13,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 11,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 9,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 7,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 5,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 3,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 1,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 21,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 25,
+          "iq": 5
+        }
+      ],
+      "unlink_on_first": true
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      4,
+      8
+    ],
+    "input": {
+      "bridge": true,
+      "first_flag": false,
+      "name": "ordered_1_0",
+      "objects": [
+        {
+          "bridge": false,
+          "id": 23,
+          "iq": 5
+        },
+        {
+          "bridge": true,
+          "id": 4,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 19,
+          "iq": 5
+        },
+        {
+          "bridge": true,
+          "id": 8,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 17,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 15,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 13,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 11,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 9,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 7,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 5,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 3,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 1,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 21,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 25,
+          "iq": 5
+        }
+      ],
+      "unlink_on_first": false
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [
+      4,
+      8
+    ],
+    "input": {
+      "bridge": true,
+      "first_flag": false,
+      "name": "ordered_1_1",
+      "objects": [
+        {
+          "bridge": false,
+          "id": 23,
+          "iq": 5
+        },
+        {
+          "bridge": true,
+          "id": 4,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 19,
+          "iq": 5
+        },
+        {
+          "bridge": true,
+          "id": 8,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 17,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 15,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 13,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 11,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 9,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 7,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 5,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 3,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 1,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 21,
+          "iq": 5
+        },
+        {
+          "bridge": false,
+          "id": 25,
+          "iq": 5
+        }
+      ],
+      "unlink_on_first": true
+    }
+  },
+  {
+    "allocations": [
+      40
+    ],
+    "dispatch": [],
+    "input": {
+      "name": "elite_other_layer",
+      "objects": [
+        {
+          "id": 1
+        },
+        {
+          "bridge": true,
+          "id": 2,
+          "rank": 2
+        }
+      ]
+    }
+  },
+  {
+    "allocations": [],
+    "dispatch": [],
+    "input": {
+      "name": "empty",
+      "objects": []
+    }
+  }
+]

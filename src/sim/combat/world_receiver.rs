@@ -6,6 +6,9 @@
 use super::*;
 use crate::sim::world::Simulation;
 
+#[path = "aircraft_release.rs"]
+mod aircraft_release;
+
 fn respond_to_base_attack(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -667,28 +670,11 @@ pub(crate) fn commit_entities(
                 });
             let scatter = if surviving_infantry_result {
                 attacker_coord.and_then(|attacker_coord| {
-                    let target = world.substrate.entities.get(target_id)?;
-                    let target_type = rules.object(world.interner.resolve(target.type_ref()));
-                    let infantry_is_fraidycat = target_type.is_some_and(|object| object.fraidycat);
-                    let has_scatter_ability = target_type.is_some_and(|object| {
-                        (target.veterancy >= VETERAN_VETERANCY && object.veteran_scatter)
-                            || (target.veterancy >= ELITE_VETERANCY && object.elite_scatter)
-                    });
-                    crate::sim::movement::bump_crush::select_infantry_damage_scatter(
-                        target,
-                        attacker_coord,
-                        world.resolved_terrain.as_ref(),
-                        &mut world.substrate.occupancy,
-                        rules,
-                        world
-                            .houses
-                            .get(&target.owner())
-                            .is_some_and(|house| house.is_human),
-                        infantry_is_fraidycat,
-                        has_scatter_ability,
-                        &mut world.scenario_rng,
-                        &world.interner,
-                    )
+                    world.select_infantry_damage_scatter(
+                        target_id, attacker_coord, rules, overlay_registry,
+                    ).unwrap_or_else(|cause| {
+                        panic!("damage Scatter requires valid live infantry entry state for {target_id}: {cause}")
+                    })
                 })
             } else {
                 None
@@ -696,6 +682,22 @@ pub(crate) fn commit_entities(
             if let Some(scatter) = scatter {
                 if let Some(target) = world.substrate.entities.get_mut(target_id) {
                     queue_entity_mission_deferred(target, MissionId::from_known(MissionType::Move));
+                }
+                let walk = world
+                    .assign_damage_scatter_walk_destination(
+                        target_id,
+                        scatter,
+                        rules,
+                        overlay_registry,
+                    )
+                    .unwrap_or_else(|cause| {
+                        panic!("damage Scatter destination for {target_id}: {cause}")
+                    });
+                if !walk {
+                    // Residual: non-Walk and JumpJet's class-switching setter
+                    // still use the prior compatibility handoff. This is not
+                    // a second implementation of the migrated Walk branch.
+                    let target = world.substrate.entities.get_mut(target_id).unwrap();
                     crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
                         target,
                         Some(crate::sim::components::NavTargetRef::cell(
@@ -703,17 +705,17 @@ pub(crate) fn commit_entities(
                             scatter.destination.1,
                         )),
                     );
+                    crate::sim::movement::issue_direct_move(
+                        &mut world.substrate.entities,
+                        target_id,
+                        scatter.destination,
+                        scatter.speed,
+                        crate::sim::movement::DestinationTiming::from_rules(
+                            world.session.binary_frame,
+                            Some(rules),
+                        ),
+                    );
                 }
-                let _ = crate::sim::movement::issue_direct_move(
-                    &mut world.substrate.entities,
-                    target_id,
-                    scatter.destination,
-                    scatter.speed,
-                    crate::sim::movement::DestinationTiming::from_rules(
-                        world.session.binary_frame,
-                        Some(rules),
-                    ),
-                );
             }
 
             let Some(target) = world.substrate.entities.get_mut(target_id) else {
@@ -1807,11 +1809,35 @@ pub(super) fn resolve_attacker_fire(
     has_active_wave: bool,
     out: &mut CombatEmit,
 ) {
+    if let Some(shot) = admit_attacker_fire(
+        world,
+        rules,
+        overlay_registry,
+        snap,
+        fog,
+        require_playfield_membership,
+        binary_frame,
+        _tick_ms,
+        has_active_wave,
+        out,
+    ) {
+        emit_admitted_fire(world, rules, overlay_registry, shot, binary_frame, out);
+    }
+}
+
+fn admit_attacker_fire<'r>(
+    world: &mut Simulation,
+    rules: &'r RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    snap: &AttackerSnapshot,
+    fog: Option<&FogState>,
+    require_playfield_membership: bool,
+    binary_frame: u32,
+    _tick_ms: u32,
+    has_active_wave: bool,
+    out: &mut CombatEmit,
+) -> Option<AdmittedFire<'r>> {
     let sound_enabled = sound_enabled(world);
-
-    let handles = world.rule_handles;
-    let scenario_no_damage = world.session.no_damage;
-
     let delayed_building_slot = snap
         .pending_building_fire
         .map(|pending| pending.weapon_slot);
@@ -1833,7 +1859,7 @@ pub(super) fn resolve_attacker_fire(
             if delayed_building_slot.is_none() {
                 out.remove_attack.push(snap.stable_id);
             }
-            return;
+            return None;
         }
     };
 
@@ -1847,7 +1873,7 @@ pub(super) fn resolve_attacker_fire(
             .and_then(|weapon_id| rules.weapon(weapon_id))
             .is_some_and(|weapon| weapon.is_sonic)
     {
-        return;
+        return None;
     }
 
     // Check if target is alive and get its data.
@@ -1922,7 +1948,7 @@ pub(super) fn resolve_attacker_fire(
         }
         _ => {
             if delayed_building_slot.is_some() {
-                return;
+                return None;
             }
             if let Some(new_target) = acquire_best_target(
                 &mut world.substrate.entities,
@@ -1951,7 +1977,7 @@ pub(super) fn resolve_attacker_fire(
             } else {
                 out.remove_attack.push(snap.stable_id);
             }
-            return;
+            return None;
         }
     };
 
@@ -1965,7 +1991,7 @@ pub(super) fn resolve_attacker_fire(
             .get(snap.stable_id)
             .is_some_and(|attacker| attacker.drain_target == Some(target_id))
     {
-        return;
+        return None;
     }
 
     let target_armor: String = rules
@@ -1988,7 +2014,7 @@ pub(super) fn resolve_attacker_fire(
                 if delayed_building_slot.is_none() {
                     out.remove_attack.push(snap.stable_id);
                 }
-                return;
+                return None;
             };
             let is_ally = combat_weapon::is_ally_by_object(
                 fog.map(|fog_state| &fog_state.alliances),
@@ -2013,7 +2039,7 @@ pub(super) fn resolve_attacker_fire(
     let (selected, is_garrison) = if let Some(saved_slot) = delayed_building_slot {
         match select_weapon_slot(rules, obj, snap.veterancy, saved_slot, &target_facts) {
             Some(selected) => (selected, false),
-            None => return,
+            None => return None,
         }
     } else if let Some(ref gs) = snap.garrison {
         match combat_weapon::select_garrison_weapon(
@@ -2026,7 +2052,7 @@ pub(super) fn resolve_attacker_fire(
             Some(s) => (s, true),
             None => {
                 out.remove_attack.push(snap.stable_id);
-                return;
+                return None;
             }
         }
     } else {
@@ -2040,7 +2066,7 @@ pub(super) fn resolve_attacker_fire(
             Some(s) => (s, false),
             None => {
                 out.remove_attack.push(snap.stable_id);
-                return;
+                return None;
             }
         }
     };
@@ -2050,7 +2076,7 @@ pub(super) fn resolve_attacker_fire(
     // and that return precedes every shot/cooldown/report/current-weapon side
     // effect owned below. Type-3's local effect check is not this gate.
     if weapon.is_sonic && has_active_wave {
-        return;
+        return None;
     }
     if delayed_building_slot.is_none() {
         out.current_weapon_updates.push((
@@ -2073,7 +2099,7 @@ pub(super) fn resolve_attacker_fire(
         let target_owner_str = world.interner.resolve(target_owner);
         if !is_cell_target && fog_state.is_friendly(snap_owner_str, target_owner_str) {
             if delayed_building_slot.is_some() {
-                return;
+                return None;
             }
             if let Some(new_target) = acquire_best_target(
                 &mut world.substrate.entities,
@@ -2102,11 +2128,11 @@ pub(super) fn resolve_attacker_fire(
             } else {
                 out.remove_attack.push(snap.stable_id);
             }
-            return;
+            return None;
         }
         if !is_cell_target && !fog_state.is_cell_visible(snap.owner, target_rx, target_ry) {
             if delayed_building_slot.is_some() {
-                return;
+                return None;
             }
             if let Some(new_target) = acquire_best_target(
                 &mut world.substrate.entities,
@@ -2135,7 +2161,7 @@ pub(super) fn resolve_attacker_fire(
             } else {
                 out.remove_attack.push(snap.stable_id);
             }
-            return;
+            return None;
         }
     }
 
@@ -2187,7 +2213,7 @@ pub(super) fn resolve_attacker_fire(
         let allied = fog
             .is_some_and(|fog_state| fog_state.is_friendly(attacker_owner_str, target_owner_str));
         if weapon.range > SimFixed::ZERO || !allied {
-            return;
+            return None;
         }
     }
 
@@ -2202,10 +2228,10 @@ pub(super) fn resolve_attacker_fire(
                     snap.stable_id,
                     infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
                 ));
-                return;
+                return None;
             }
             if snap.animation_frame != Some(pending.fire_frame) {
-                return;
+                return None;
             }
             pending_at_fire_frame = true;
         }
@@ -2236,7 +2262,7 @@ pub(super) fn resolve_attacker_fire(
                     &world.substrate.entities,
                     t,
                 ) else {
-                    return;
+                    return None;
                 };
                 in_range::compute_in_range(
                     attacker_entity,
@@ -2307,7 +2333,7 @@ pub(super) fn resolve_attacker_fire(
                 infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
             ));
         }
-        return;
+        return None;
     }
 
     // `TechnoClass::GetFireError` 0x006FC0B0 refuses the shot with error 5 when
@@ -2337,7 +2363,7 @@ pub(super) fn resolve_attacker_fire(
                 infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
             ));
         }
-        return;
+        return None;
     }
 
     // Burst / cooldown state machine.
@@ -2349,7 +2375,7 @@ pub(super) fn resolve_attacker_fire(
                 infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
             ));
         }
-        return;
+        return None;
     }
 
     // InfantryClass::GetFireError 0051C9B8..0051C9C9: after common legality,
@@ -2375,7 +2401,7 @@ pub(super) fn resolve_attacker_fire(
                 infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
             ));
         }
-        return;
+        return None;
     }
 
     // TechnoClass::GetFireError @ 0x006FC0B0 returns 9 after the ordinary
@@ -2415,7 +2441,7 @@ pub(super) fn resolve_attacker_fire(
                     &entity.position,
                 ));
             }
-            return;
+            return None;
         }
     }
 
@@ -2466,7 +2492,7 @@ pub(super) fn resolve_attacker_fire(
         // gattling spin-up. `FireDecision` has no variant for it and no
         // producer at all — that gap is the residual recorded on the enum in
         // `fire_decision.rs`, not something this return introduces.
-        return;
+        return None;
     }
 
     // ---- Facing arm of the fire gate ------------------------------------
@@ -2489,23 +2515,18 @@ pub(super) fn resolve_attacker_fire(
     // firing becomes possible and applies no test. A turretless STRUCTURE gets
     // no gate either (`0x00447FE3` requires `HasTurret`, vtable `+0x3FC`).
     //
-    // RESIDUAL (GSI-08.04) — an AIRCRAFT is gated only when it carries a turret.
-    // `AircraftClass::GetFireError @ 0x0041A9E0` reads `+0x3A0` unconditionally
-    // at `0x0041AA22`, but behind an embedded-interface predicate
-    // (`AircraftClass+0x6C0`, slot `+0x1C`) whose identity is UNCHECKED and
-    // whose `+0x3A0` writers were not decoded. Trigger: any aircraft attack.
-    // Player effect: unknown; no stock aircraft sets `Turret=`, so no stock
-    // entity has an interpolator to test and the arm is unreachable today.
-    // Frequency: zero in stock. Downstream risk: none until the writers land.
+    // Aircraft41A9E0 compares SecondaryFacing even without Turret. Fighter
+    // bypasses only that class-specific arc; OmniFire/homing do not widen it.
     let facing_gate_applies = match snap.category {
         EntityCategory::Unit => true,
         // `0x00447FE3` requires `HasTurret` (vtable `+0x3FC`) before the
         // building facing test — a turretless structure is never angle-gated.
-        EntityCategory::Structure | EntityCategory::Aircraft => snap.barrel_facing.is_some(),
+        EntityCategory::Structure => snap.barrel_facing.is_some(),
+        EntityCategory::Aircraft => !obj.fighter,
         // Infantry are gated by their FIRE sequence, never by angle.
         EntityCategory::Infantry => false,
     };
-    if facing_gate_applies && !weapon.omni_fire {
+    if facing_gate_applies && (snap.category == EntityCategory::Aircraft || !weapon.omni_fire) {
         let desired: u16 = crate::sim::movement::turret::facing_toward_lepton(
             snap.pos_rx,
             snap.pos_ry,
@@ -2531,7 +2552,9 @@ pub(super) fn resolve_attacker_fire(
         // when the PROJECTILE homes (`BulletTypeClass+0x2DC != 0`).
         let is_voxel_turret_building =
             snap.category == EntityCategory::Structure && obj.turret_anim_is_voxel;
-        let tolerance: i32 = if is_voxel_turret_building {
+        let tolerance: i32 = if snap.category == EntityCategory::Aircraft {
+            0x800
+        } else if is_voxel_turret_building {
             NATIVE_FIRE_FACING_TOLERANCE_VOXEL_TURRET
         } else if projectile_homes {
             NATIVE_FIRE_FACING_TOLERANCE_HOMING
@@ -2549,14 +2572,11 @@ pub(super) fn resolve_attacker_fire(
         // Cannon at `ROT=1` fires on the tick it comes within one step instead
         // of waiting a further frame.
         if !aligned && is_voxel_turret_building {
-            // VERA-internal, gamemd equivalent UNCHECKED: native builds the step
-            // as `abs((i16)(ROT << 8))`, which wraps for `ROT >= 0x80`; this
-            // clamps instead. Trigger: a building type authoring `ROT=` at or
-            // above 128. Player effect: none observed — the highest stock
-            // building `ROT=` is `[GTGCAN] ROT=1` — so frequency is zero in
-            // stock. Downstream risk: none; the clamp only bounds the retry
-            // window of a refusal that is re-evaluated next tick anyway.
-            let rot_step: i32 = i32::from(obj.turret_rot.clamp(0, 0x7F) as u8) << 8;
+            // 44B068..44B0A4 uses abs(low-byte ROT << 8 interpreted as
+            // signed16), WITHOUT FacingClass SetROT's upper clamp. Keep this
+            // native difference: ROT128 allows a half-turn retry; ROT256 only
+            // an exact match. Original decisions: building_fire_turn.json.
+            let rot_step = i32::from(((obj.turret_rot as u8 as u16) << 8) as i16).abs();
             if obj.turret_rot == 0 || delta.abs() <= rot_step {
                 if let Some(barrel) = world
                     .substrate
@@ -2598,7 +2618,7 @@ pub(super) fn resolve_attacker_fire(
             }
             // FireDecision::Facing — drives gattling spin-up via
             // drives_gattling_spinup() == true.
-            return;
+            return None;
         }
     }
 
@@ -2631,7 +2651,7 @@ pub(super) fn resolve_attacker_fire(
                 }
                 // SpecialAnim presentation and its Report cue are app-layer
                 // residuals; they do not authorize early weapon emission.
-                return;
+                return None;
             }
         }
     }
@@ -2654,13 +2674,12 @@ pub(super) fn resolve_attacker_fire(
             target_sub_y,
         );
         let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) else {
-            return;
+            return None;
         };
         let body = entity.body_facing.get_or_insert_with(|| {
-            crate::sim::movement::FacingClass::new(
-                u16::from(entity.facing) << 8,
-                obj.turret_rot.clamp(0, 0xFF) as u8,
-            )
+            // Infantry ctor517BBD..517BC5 seeds PrimaryFacing with127,
+            // independently of Type ROT (Unit/Aircraft use the type value).
+            crate::sim::movement::FacingClass::new(u16::from(entity.facing) << 8, 127)
         });
         body.snap(desired, binary_frame);
         entity.facing = (body.current(binary_frame) >> 8) as u8;
@@ -2686,11 +2705,61 @@ pub(super) fn resolve_attacker_fire(
                     fire_frame,
                 }),
             ));
-            return;
+            return None;
         }
     }
     if pending_at_fire_frame {
         out.pending_infantry_updates.push((snap.stable_id, None));
+    }
+
+    Some(AdmittedFire {
+        snap: snap.clone(),
+        obj,
+        selected,
+        target_coords: (target_rx, target_ry, target_sub_x, target_sub_y),
+        target_type_ref,
+        is_garrison,
+    })
+}
+
+/// Call-local result of admission and fire-action work.
+/// This is call-local data, never a saved permission to fire on a later frame.
+/// Native Mission_Attack418403 checks legality once before its burst loop;
+/// separating emission lets the aircraft caller reselect from live state
+/// without repeating admission for every FireAt call.
+struct AdmittedFire<'a> {
+    snap: AttackerSnapshot,
+    obj: &'a ObjectType,
+    selected: combat_weapon::SelectedWeapon<'a>,
+    target_coords: (u16, u16, SimFixed, SimFixed),
+    target_type_ref: InternedId,
+    is_garrison: bool,
+}
+
+/// Existing FireAt delivery and bookkeeping, shared by the world receiver.
+/// The caller still owns legality, fire-action timing and inline damage commit.
+fn emit_admitted_fire(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    shot: AdmittedFire<'_>,
+    binary_frame: u32,
+    out: &mut CombatEmit,
+) {
+    let AdmittedFire {
+        snap,
+        obj,
+        selected,
+        target_coords: (target_rx, target_ry, target_sub_x, target_sub_y),
+        target_type_ref,
+        is_garrison,
+    } = shot;
+    let snap = &snap;
+    let weapon = selected.weapon;
+    let handles = world.rule_handles;
+    let scenario_no_damage = world.session.no_damage;
+    if weapon.is_sonic && world.active_wave_links.contains_key(&snap.stable_id) {
+        return;
     }
 
     // Spawner weapon: gamemd's Fire_At short-circuits here. It calls
@@ -2769,14 +2838,14 @@ pub(super) fn resolve_attacker_fire(
     // The burst index is needed twice — the fire coordinate mirrors its lateral
     // offset on odd shots, and the burst state machine advances on it — so it is
     // resolved once here.
-    let weapon_burst: u8 = weapon.burst.max(1) as u8;
-    let burst_index = if weapon_burst <= 1 || snap.burst_remaining == 0 {
-        0
-    } else {
-        weapon_burst
-            .saturating_sub(snap.burst_remaining)
-            .min(weapon_burst.saturating_sub(1))
-    };
+    let burst = world
+        .substrate
+        .entities
+        .get(snap.stable_id)
+        .map(|entity| entity.weapon_burst)
+        .unwrap_or_default();
+    // FLH uses only odd/even parity; retain the signed dword in its owner.
+    let burst_index = (burst.index() & 1) as u8;
     // One fire coordinate per shot: the bullet origin, the muzzle animation and
     // the report sound all take it (`combat::fire_coord`).
     let fire = super::fire_coord::fire_coordinate(
@@ -3050,6 +3119,7 @@ pub(super) fn resolve_attacker_fire(
                 })
                 .unwrap_or_else(|| ProjectileVisualState::new(0, 0, 0));
             out.projectile_spawns.push(ProjectileSpawn {
+                flat: projectile_type.is_some_and(|projectile| projectile.flat),
                 source_id: snap.stable_id,
                 origin,
                 target,
@@ -3249,18 +3319,15 @@ pub(super) fn resolve_attacker_fire(
         });
     }
 
-    let current_remaining: u8 = if snap.burst_remaining == 0 {
-        weapon_burst.saturating_sub(1)
-    } else {
-        snap.burst_remaining.saturating_sub(1)
-    };
-    if current_remaining > 0 {
+    let next_index = burst.next_index();
+    let mid_burst = next_index < weapon.burst;
+    if mid_burst {
         // gamemd-derived: `TechnoClass::GetROF @ 0x006FCFA0`, mid-burst branch.
         // The gap between shots inside a burst is drawn, not fixed.
         //
-        // RESIDUAL (GSI-08.05) — the infantry override ahead of the draw is not
-        // modelled. Native checks `InfantryTypeClass::BurstDelay{1..4}`
-        // (`+0xE44 + idx*4`, sentinel `-1`) first for an infantry firer and
+        // RESIDUAL (GSI-08.05) — the Unit override ahead of the draw is not
+        // modelled. Native checks UnitType's per-burst delays
+        // (`+0xE44 + idx*4`, sentinel `-1`) first for a Unit firer and
         // returns the authored value without drawing. No stock section authors
         // any `BurstDelay%d=`, so every stock burst reaches the draw and the
         // draw count is unchanged; a mod that authors one would diverge, and
@@ -3269,8 +3336,7 @@ pub(super) fn resolve_attacker_fire(
             BURST_INTER_SHOT_DELAY_MIN as u32,
             BURST_INTER_SHOT_DELAY_MAX as u32,
         ) as u8;
-        out.burst_updates
-            .push((snap.stable_id, current_remaining, burst_delay, 0));
+        out.burst_updates.push((snap.stable_id, burst_delay, 0));
     } else {
         let mut rof_ticks = rof_to_cooldown_frames(weapon.rof, &mut world.scenario_rng);
         // `GetROF @ 0x006FCFA0`, `0x006FD0E2..0x006FD14C`: a ROF-ability
@@ -3295,17 +3361,188 @@ pub(super) fn resolve_attacker_fire(
             }
             rof_ticks = rof_ticks.max(1);
         }
-        out.burst_updates.push((snap.stable_id, 0, 0, rof_ticks));
+        out.burst_updates.push((snap.stable_id, 0, rof_ticks));
     }
 
     // Aircraft ammo deduction: one ammo per burst completion (not per shot).
-    if current_remaining == 0 {
+    if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
+        entity.weapon_burst.complete_shot(weapon.burst.max(1));
+    }
+    if !mid_burst
+        && !world
+            .substrate
+            .entities
+            .get(snap.stable_id)
+            .and_then(|entity| entity.aircraft_mission.as_ref())
+            .is_some_and(|mission| mission.is_attacking())
+    {
         out.ammo_deduct.push(snap.stable_id);
     }
 
     // Track garrison buildings that fired for round-robin advancement.
     if is_garrison {
         out.garrison_advance.push(snap.stable_id);
+    }
+}
+
+fn commit_fire_bookkeeping(world: &mut Simulation, emit: &mut CombatEmit) {
+    let binary_frame = world.session.binary_frame;
+    let spawn_target_updates = std::mem::take(&mut emit.spawn_target_updates);
+    let drain_links = std::mem::take(&mut emit.drain_links);
+    let burst_updates = std::mem::take(&mut emit.burst_updates);
+    // Spawner weapons: hand the fire target to the parent's spawn manager.
+    // `SpawnManagerClass::SetTarget` only queues a target that differs from the
+    // live one; the manager's own AI pass promotes it.
+    for &(parent_id, target) in &spawn_target_updates {
+        if let Some(manager) = world
+            .substrate
+            .entities
+            .get_mut(parent_id)
+            .and_then(|e| e.spawn_manager.as_mut())
+        {
+            manager.set_target(Some(target));
+        }
+    }
+    // Drain weapons: `0x0070FD70` installs the reciprocal
+    // `DrainTarget`/`DrainingMe` pair when the drainer sits over the victim.
+    // `Fire_At @ 0x006FDF93..0x006FDF97` then calls `[vtable+0x3C8]` =
+    // `TechnoClass::Assign_Target @ 0x006FCDB0` with NULL unconditionally
+    // (the install's own cell gate does not feed back), which clears the
+    // Target (`+0x2B4`), the passive-acquire byte (`+0x50C`), the burst index
+    // (`+0x3B8`) and, when a SpawnManager (`+0x2D0`) exists, its target. The
+    // disc therefore leaves `Fire_At` with no target and its Attack mission
+    // takes the no-target exit into idle mode on its next dispatch. The
+    // `+0x304` link the setter also releases is not modelled (identity
+    // UNCHECKED; no stock drainer carries a SpawnManager or that link).
+    for &(drainer_id, victim_id) in &drain_links {
+        crate::sim::credit_income::install_drain_link(
+            &mut world.substrate.entities,
+            drainer_id,
+            victim_id,
+        );
+        if let Some(drainer) = world.substrate.entities.get_mut(drainer_id) {
+            represented_assign_target(drainer, None);
+            if let Some(manager) = drainer.spawn_manager.as_mut() {
+                manager.set_target(None);
+            }
+        }
+    }
+
+    for &(attacker_id, burst_delay, rof_cd) in &burst_updates {
+        if let Some(entity) = world.substrate.entities.get_mut(attacker_id) {
+            // gamemd-derived: `TechnoClass::Fire_At @ 0x006FF743` stores
+            // `g_CurrentFrameCounter` into `+0x120` once the shot is committed.
+            // With the constructor at `0x006F2B9C` that is the ONLY writer of
+            // that field on a TechnoClass in the image, which is what makes
+            // `UnitClass::Facing_Update`'s idle dwell a since-my-last-shot
+            // timer rather than a since-target-loss one. `burst_updates` carries
+            // exactly one entry per committed shot, so this is that store.
+            entity.last_fire_frame = i64::from(binary_frame);
+            if let Some(ref mut attack) = entity.attack_target {
+                attack.burst_delay_ticks = burst_delay;
+                attack.cooldown_ticks = rof_cd;
+            }
+            // `TechnoClass::Fire_At @ 0x006FDD50` writes the SAME rearm
+            // countdown into `TechnoClass+0x2EC/+0x2F4` (stores at 0x006FE4B0
+            // and 0x006FF2AA), and `CanAutoCloak @ 0x006FBDC0` reads that timer
+            // as its first gate after the `CloakState == 2` early-out
+            // (`param_1[0xbb]`/`[0xbd]`). VERA keeps the rearm counter on the
+            // attack record instead of the object, so the cloak runtime carries
+            // its own copy of the same value; without it a Typhoon that
+            // surfaced to fire could re-dive on the very next tick.
+            //
+            // The duration native stores is `CALL [EDX+0x318]` at 0x006FE49E
+            // — `TechnoClass::GetROF @ 0x006FCFA0` (vtable slot read at
+            // 0x007F4C78) — whose MID-BURST branch returns the inter-shot gap,
+            // not zero. Native keeps one timer; VERA splits it into
+            // `cooldown_ticks` (armed on the burst's last shot) and
+            // `burst_delay_ticks` (armed between burst shots). The two
+            // decrement together and the fire gate is their union, so the
+            // native `+0x2F4` value is whichever of the two this shot armed.
+            // With `[BoomerTorpedo] Burst=2` on a `Cloakable=yes` BSUB, taking
+            // the union is what stops a re-dive between the two torpedoes.
+            let rearm_gate_frames = i32::from(rof_cd).max(i32::from(burst_delay));
+            if let Some(cloak) = entity.cloak.as_mut() {
+                cloak.arm_rearm_gate(binary_frame as i32, rearm_gate_frames);
+            }
+        }
+    }
+}
+
+/// Boundaries of one synchronous FireAt transaction in the event accumulator.
+struct FireCommitBoundary {
+    damage_start: usize,
+    explosion_start: usize,
+    smudge_start: usize,
+    current_weapon_start: usize,
+    fire_event_start: usize,
+}
+
+impl FireCommitBoundary {
+    fn capture(emit: &CombatEmit) -> Self {
+        Self {
+            damage_start: emit.damage_events.len(),
+            explosion_start: emit.effects.explosion_effects.len(),
+            smudge_start: emit.effects.smudge_spawn_requests.len(),
+            current_weapon_start: emit.current_weapon_updates.len(),
+            fire_event_start: emit.fire_events.len(),
+        }
+    }
+
+    fn commit(
+        self,
+        world: &mut Simulation,
+        run: &mut ReceiverRun,
+        rules: &RuleSet,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        emit: &mut CombatEmit,
+        under_attack_events: &mut Vec<UnderAttackEvent>,
+    ) {
+        let Self {
+            damage_start,
+            explosion_start,
+            smudge_start,
+            current_weapon_start,
+            fire_event_start,
+        } = self;
+        let outer_explosion_effects = emit.effects.explosion_effects.split_off(explosion_start);
+        let outer_anim_requests = emit.effects.smudge_spawn_requests.split_off(smudge_start);
+        for &(entity_id, weapon_index, weapon_ref) in
+            &emit.current_weapon_updates[current_weapon_start..]
+        {
+            if let Some(entity) = world.substrate.entities.get_mut(entity_id) {
+                entity.current_weapon_index = weapon_index;
+                entity.current_weapon_ref = Some(weapon_ref);
+            }
+        }
+        let (inline_death, mut pings) = commit_area(
+            world,
+            run,
+            &emit.damage_events[damage_start..],
+            rules,
+            overlay_registry,
+        );
+        emit.effects.append(inline_death);
+        emit.effects
+            .explosion_effects
+            .extend(outer_explosion_effects);
+        commit_smudges(
+            world,
+            rules,
+            overlay_registry,
+            outer_anim_requests,
+            &mut emit.effects.smudge_spawn_requests,
+        );
+        under_attack_events.append(&mut pings);
+        commit_fire_bookkeeping(world, emit);
+        let wave_fire_events = emit.fire_events[fire_event_start..].to_vec();
+        for event in &wave_fire_events {
+            {
+                if callbacks_enabled(world) {
+                    world.commit_fired_wave(rules, event);
+                }
+            }
+        }
     }
 }
 
@@ -3317,6 +3554,7 @@ pub(crate) fn tick_combat(
     tick_ms: u32,
     live_order: &[u64],
     fire_suppressed: &BTreeSet<u64>,
+    aircraft_fire_requests: &BTreeSet<u64>,
     projectile_detonations: &[ProjectileDetonation],
     wave_damage_events: &[WaveDamageEvent],
 ) -> CombatTickResult {
@@ -3636,7 +3874,6 @@ pub(crate) fn tick_combat(
         let (
             attack_target,
             cooldown_ticks,
-            burst_remaining,
             burst_delay_ticks,
             pending_infantry_fire,
             pending_building_fire,
@@ -3661,7 +3898,6 @@ pub(crate) fn tick_combat(
                 (
                     attack.target,
                     attack.cooldown_ticks,
-                    attack.burst_remaining,
                     attack.burst_delay_ticks,
                     attack.pending_infantry_fire,
                 )
@@ -3679,13 +3915,8 @@ pub(crate) fn tick_combat(
                 // GetFireError @ 0x00447F10 blocks ordinary fire while armed.
                 continue;
             }
-            let Some((
-                attack_target,
-                cooldown_ticks,
-                burst_remaining,
-                burst_delay_ticks,
-                pending_infantry_fire,
-            )) = attack_state
+            let Some((attack_target, cooldown_ticks, burst_delay_ticks, pending_infantry_fire)) =
+                attack_state
             else {
                 // Expiry reads only the live target. A missing target clears
                 // the latch and does not acquire or drop another target.
@@ -3695,7 +3926,13 @@ pub(crate) fn tick_combat(
                 continue;
             };
             // Skip snapshot for entities blocked by locomotor state (cooldowns still tick).
-            if fire_blocked.contains(&id) {
+            if fire_blocked.contains(&id)
+                || (entity
+                    .aircraft_mission
+                    .as_ref()
+                    .is_some_and(|mission| mission.is_attacking())
+                    && !aircraft_fire_requests.contains(&id))
+            {
                 // Delayed expiry rechecks fire admissibility and clears on any
                 // failure rather than postponing until the building is usable.
                 if pending_building_fire.is_some() {
@@ -3723,7 +3960,6 @@ pub(crate) fn tick_combat(
             (
                 attack_target,
                 cooldown_ticks,
-                burst_remaining,
                 burst_delay_ticks,
                 pending_infantry_fire,
                 pending_building_fire,
@@ -3759,7 +3995,6 @@ pub(crate) fn tick_combat(
             entity,
             attack_target,
             cooldown_ticks,
-            burst_remaining,
             burst_delay_ticks,
             pending_infantry_fire,
             pending_building_fire,
@@ -3831,7 +4066,6 @@ pub(crate) fn tick_combat(
                     (
                         attack.target,
                         attack.cooldown_ticks,
-                        attack.burst_remaining,
                         attack.burst_delay_ticks,
                         attack.pending_infantry_fire,
                         entity.pending_building_fire,
@@ -3844,66 +4078,48 @@ pub(crate) fn tick_combat(
         let mut live_snap = snap.clone();
         live_snap.target = live_attack.0;
         live_snap.cooldown_ticks = live_attack.1;
-        live_snap.burst_remaining = live_attack.2;
-        live_snap.burst_delay_ticks = live_attack.3;
-        live_snap.pending_infantry_fire = live_attack.4;
-        live_snap.pending_building_fire = live_attack.5;
+        live_snap.burst_delay_ticks = live_attack.2;
+        live_snap.pending_infantry_fire = live_attack.3;
+        live_snap.pending_building_fire = live_attack.4;
 
         let n_retarget = emit.retarget_events.len();
         let n_remove = emit.remove_attack.len();
-        let damage_start = emit.damage_events.len();
-        let explosion_start = emit.effects.explosion_effects.len();
-        let smudge_start = emit.effects.smudge_spawn_requests.len();
-        let current_weapon_start = emit.current_weapon_updates.len();
-        let fire_event_start = emit.fire_events.len();
-        resolve_attacker_fire(
-            world,
-            rules,
-            overlay_registry,
-            &live_snap,
-            fog,
-            require_playfield_membership,
-            binary_frame,
-            tick_ms,
-            active_wave_owners.contains(&live_snap.stable_id),
-            &mut emit,
-        );
-        let outer_explosion_effects = emit.effects.explosion_effects.split_off(explosion_start);
-        let outer_anim_requests = emit.effects.smudge_spawn_requests.split_off(smudge_start);
-        for &(entity_id, weapon_index, weapon_ref) in
-            &emit.current_weapon_updates[current_weapon_start..]
-        {
-            if let Some(entity) = world.substrate.entities.get_mut(entity_id) {
-                entity.current_weapon_index = weapon_index;
-                entity.current_weapon_ref = Some(weapon_ref);
-            }
-        }
-        let (inline_death, mut pings) = commit_area(
-            world,
-            run,
-            &emit.damage_events[damage_start..],
-            rules,
-            overlay_registry,
-        );
-        emit.effects.append(inline_death);
-        emit.effects
-            .explosion_effects
-            .extend(outer_explosion_effects);
-        commit_smudges(
-            world,
-            rules,
-            overlay_registry,
-            outer_anim_requests,
-            &mut emit.effects.smudge_spawn_requests,
-        );
-        under_attack_events.append(&mut pings);
-        let wave_fire_events = emit.fire_events[fire_event_start..].to_vec();
-        for event in &wave_fire_events {
-            {
-                if callbacks_enabled(world) {
-                    world.commit_fired_wave(rules, event);
-                }
-            }
+        let boundary = FireCommitBoundary::capture(&emit);
+        if aircraft_fire_requests.contains(&live_snap.stable_id) {
+            aircraft_release::fire(
+                world,
+                run,
+                rules,
+                overlay_registry,
+                &live_snap,
+                fog,
+                require_playfield_membership,
+                binary_frame,
+                tick_ms,
+                &mut emit,
+                &mut under_attack_events,
+            );
+        } else {
+            resolve_attacker_fire(
+                world,
+                rules,
+                overlay_registry,
+                &live_snap,
+                fog,
+                require_playfield_membership,
+                binary_frame,
+                tick_ms,
+                active_wave_owners.contains(&live_snap.stable_id),
+                &mut emit,
+            );
+            boundary.commit(
+                world,
+                run,
+                rules,
+                overlay_registry,
+                &mut emit,
+                &mut under_attack_events,
+            );
         }
         // S3: only this Unit's explicit retarget/remove may replace its seeded
         // destination. Synchronous target expiry from VERA's immediate-delivery
@@ -4011,57 +4227,19 @@ pub(crate) fn tick_combat(
         retarget_events,
         fire_events,
         reveal_events,
-        burst_updates,
+        burst_updates: _,
         ammo_deduct,
         garrison_advance,
         pending_infantry_updates,
         animation_switches,
         current_weapon_updates: _,
         unit_facing,
-        spawn_target_updates,
-        drain_links,
+        spawn_target_updates: _,
+        drain_links: _,
     } = emit;
 
-    // Spawner weapons: hand the fire target to the parent's spawn manager.
-    // `SpawnManagerClass::SetTarget` only queues a target that differs from the
-    // live one; the manager's own AI pass promotes it.
-    for &(parent_id, target) in &spawn_target_updates {
-        if let Some(manager) = world
-            .substrate
-            .entities
-            .get_mut(parent_id)
-            .and_then(|e| e.spawn_manager.as_mut())
-        {
-            manager.set_target(Some(target));
-        }
-    }
-    // Drain weapons: `0x0070FD70` installs the reciprocal
-    // `DrainTarget`/`DrainingMe` pair when the drainer sits over the victim.
-    // `Fire_At @ 0x006FDF93..0x006FDF97` then calls `[vtable+0x3C8]` =
-    // `TechnoClass::Assign_Target @ 0x006FCDB0` with NULL unconditionally
-    // (the install's own cell gate does not feed back), which clears the
-    // Target (`+0x2B4`), the passive-acquire byte (`+0x50C`), the burst index
-    // (`+0x3B8`) and, when a SpawnManager (`+0x2D0`) exists, its target. The
-    // disc therefore leaves `Fire_At` with no target and its Attack mission
-    // takes the no-target exit into idle mode on its next dispatch. The
-    // `+0x304` link the setter also releases is not modelled (identity
-    // UNCHECKED; no stock drainer carries a SpawnManager or that link).
-    for &(drainer_id, victim_id) in &drain_links {
-        crate::sim::credit_income::install_drain_link(
-            &mut world.substrate.entities,
-            drainer_id,
-            victim_id,
-        );
-        if let Some(drainer) = world.substrate.entities.get_mut(drainer_id) {
-            represented_assign_target(drainer, None);
-            if let Some(manager) = drainer.spawn_manager.as_mut() {
-                manager.set_target(None);
-            }
-        }
-    }
-
-    // Phase 3: apply retargets and burst/cooldown updates.
-    // Auto-retargets only ever produce Entity targets (acquire_best_target
+    // Phase 3: apply retargets. Burst and rearm writes already happened in
+    // each attacker's `commit_fire_bookkeeping` boundary. Auto-retargets only ever produce Entity targets (acquire_best_target
     // scans hostile entities), so this wraps the u64 in TargetKind::Entity.
     for &(attacker_id, new_target_sid) in &retarget_events {
         if let Some(entity) = world.substrate.entities.get_mut(attacker_id) {
@@ -4085,52 +4263,13 @@ pub(crate) fn tick_combat(
             }
         }
     }
-    for &(attacker_id, burst_rem, burst_delay, rof_cd) in &burst_updates {
-        if let Some(entity) = world.substrate.entities.get_mut(attacker_id) {
-            // gamemd-derived: `TechnoClass::Fire_At @ 0x006FF743` stores
-            // `g_CurrentFrameCounter` into `+0x120` once the shot is committed.
-            // With the constructor at `0x006F2B9C` that is the ONLY writer of
-            // that field on a TechnoClass in the image, which is what makes
-            // `UnitClass::Facing_Update`'s idle dwell a since-my-last-shot
-            // timer rather than a since-target-loss one. `burst_updates` carries
-            // exactly one entry per committed shot, so this is that store.
-            entity.last_fire_frame = i64::from(binary_frame);
-            if let Some(ref mut attack) = entity.attack_target {
-                attack.burst_remaining = burst_rem;
-                attack.burst_delay_ticks = burst_delay;
-                attack.cooldown_ticks = rof_cd;
-            }
-            // `TechnoClass::Fire_At @ 0x006FDD50` writes the SAME rearm
-            // countdown into `TechnoClass+0x2EC/+0x2F4` (stores at 0x006FE4B0
-            // and 0x006FF2AA), and `CanAutoCloak @ 0x006FBDC0` reads that timer
-            // as its first gate after the `CloakState == 2` early-out
-            // (`param_1[0xbb]`/`[0xbd]`). VERA keeps the rearm counter on the
-            // attack record instead of the object, so the cloak runtime carries
-            // its own copy of the same value; without it a Typhoon that
-            // surfaced to fire could re-dive on the very next tick.
-            //
-            // The duration native stores is `CALL [EDX+0x318]` at 0x006FE49E
-            // — `TechnoClass::GetROF @ 0x006FCFA0` (vtable slot read at
-            // 0x007F4C78) — whose MID-BURST branch returns the inter-shot gap,
-            // not zero. Native keeps one timer; VERA splits it into
-            // `cooldown_ticks` (armed on the burst's last shot) and
-            // `burst_delay_ticks` (armed between burst shots). The two
-            // decrement together and the fire gate is their union, so the
-            // native `+0x2F4` value is whichever of the two this shot armed.
-            // With `[BoomerTorpedo] Burst=2` on a `Cloakable=yes` BSUB, taking
-            // the union is what stops a re-dive between the two torpedoes.
-            let rearm_gate_frames = i32::from(rof_cd).max(i32::from(burst_delay));
-            if let Some(cloak) = entity.cloak.as_mut() {
-                cloak.arm_rearm_gate(binary_frame as i32, rearm_gate_frames);
-            }
-        }
-    }
-
     // Phase 3b: deduct ammo from aircraft that completed a burst this tick.
     for &attacker_id in &ammo_deduct {
         if let Some(entity) = world.substrate.entities.get_mut(attacker_id) {
             if let Some(ref mut ammo) = entity.aircraft_ammo {
-                ammo.current = (ammo.current - 1).max(0);
+                if ammo.current > 0 {
+                    ammo.current -= 1;
+                }
             }
         }
     }

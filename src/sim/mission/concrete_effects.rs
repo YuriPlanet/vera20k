@@ -166,20 +166,20 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects {
 
 /// The represented `Assign_Target` write set, entity-local.
 ///
-/// Every write the target setter performs lands on the receiving object and
-/// nothing else, so this is the whole setter. It is a free function rather than
-/// a method body so the phases that hold a bare `EntityStore` — the movement
-/// tick, which is where the ground locomotors run — reach the *same*
-/// implementation the Mission authority transactions use instead of an
-/// open-coded copy that can drift from it.
+/// The currently represented target/burst/Infantry-action writes share this
+/// owner. Native Techno6FCDB0 also validates/redirects targets and tears down
+/// linked effects; Infantry51B1F0 has class-specific branches not all represented
+/// here. This is not the whole native setter. The free function lets a bare
+/// `EntityStore`, including movement, reach the same implementation as Mission
+/// transactions without an open-coded copy.
 pub(crate) fn represented_assign_target(
     entity: &mut crate::sim::game_entity::GameEntity,
     requested: Option<TargetKind>,
 ) {
     // The original's target assignment clears the passive-acquire flag as
     // its first statement, ahead of any same-target short-circuit, so a
-    // target arriving from an order, a retaliation or a pointer expiry can
-    // never inherit the provenance of one the scanner picked. The scanner
+    // target assigned by an order or retaliation cannot inherit the provenance
+    // of one the scanner picked. The scanner
     // re-sets the flag itself after calling this.
     entity.passively_acquired_target = false;
     if entity.attack_target.as_ref().map(|target| target.target) == requested {
@@ -208,6 +208,9 @@ pub(crate) fn represented_assign_target(
         }
     }
 
+    if requested.is_none() {
+        entity.weapon_burst.clear_target();
+    }
     entity.attack_target = requested.map(|target| match target {
         TargetKind::Entity(id) => crate::sim::combat::AttackTarget::new(id),
         TargetKind::Cell(rx, ry) => crate::sim::combat::AttackTarget::for_cell(rx, ry),

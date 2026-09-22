@@ -3735,9 +3735,7 @@ fn retained_wall_plane_runtime_placement_and_damage_update_once() {
     ));
     let mut grid = sim.overlay_grid.take().unwrap();
     let mut terrain = sim.resolved_terrain.take().unwrap();
-    let placed = grid
-        .retained_wall_neighbor_counts()
-        .expect("retained authority");
+    let placed = grid.retained_neighbor_counts().expect("retained authority");
     for index in [6usize, 7, 8, 11, 13, 16, 17, 18] {
         assert_eq!(placed[index], 1);
     }
@@ -3745,7 +3743,7 @@ fn retained_wall_plane_runtime_placement_and_damage_update_once() {
 
     let mut rng = crate::sim::rng::SimRng::new(1);
     let before_partial = grid
-        .retained_wall_neighbor_counts()
+        .retained_neighbor_counts()
         .expect("retained authority")
         .to_vec();
     let _ = grid.take_synchronous_navigation_cells();
@@ -3766,7 +3764,7 @@ fn retained_wall_plane_runtime_placement_and_damage_update_once() {
         "partial damage returns before native's direct-removal Recalc"
     );
     assert_eq!(
-        grid.retained_wall_neighbor_counts(),
+        grid.retained_neighbor_counts(),
         Some(before_partial.as_slice()),
         "nonterminal damage must not change retained counts"
     );
@@ -3787,7 +3785,7 @@ fn retained_wall_plane_runtime_placement_and_damage_update_once() {
         "direct removal publishes its Recalc before cleanup completes"
     );
     assert!(
-        grid.retained_wall_neighbor_counts()
+        grid.retained_neighbor_counts()
             .expect("retained authority")
             .iter()
             .all(|&count| count == 0)
@@ -3824,14 +3822,14 @@ fn retained_wall_plane_placement_reaches_fixed_stride_alias() {
     );
     assert_eq!(
         alias_grid
-            .retained_wall_neighbor_counts()
+            .retained_neighbor_counts()
             .expect("retained authority")[511],
         1,
         "west fixed-stride alias resolves to real slot 511"
     );
     assert_eq!(
         alias_grid
-            .retained_wall_neighbor_counts()
+            .retained_neighbor_counts()
             .expect("retained authority")
             .iter()
             .map(|&count| u32::from(count))

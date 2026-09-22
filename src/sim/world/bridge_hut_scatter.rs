@@ -176,19 +176,9 @@ impl Simulation {
         }
         // 51D103 passes (31,false,false), so Doing27 cannot change through
         // its permission gate; it is rejected by the Scatter table below.
-        let moving = e
-            .locomotor
-            .as_ref()
-            .and_then(|loco| {
-                loco.walk_is_moving()
-                    .or_else(|| loco.jumpjet_runtime().map(|state| state.moving))
-            })
-            .ok_or_else(|| {
-                self.hut_callback_error(
-                    id,
-                    "hut Scatter requires active locomotor Is_Moving".into(),
-                )
-            })?;
+        let moving = crate::sim::movement::motion_query::is_moving(e).ok_or_else(|| {
+            self.hut_callback_error(id, "hut Scatter requires active locomotor Is_Moving".into())
+        })?;
         let mission_scatter = if moving {
             e.mission
                 .current()
@@ -312,15 +302,10 @@ impl Simulation {
             .ok_or_else(|| self.hut_callback_error(id, "hut Process requires navigation".into()))?;
         movement::prepare_walk_cell_destination(
             &mut self.substrate.entities,
-            grid,
             id,
             destination,
             move_info.speed,
-            self.terrain_costs.get(&speed_type),
             self.resolved_terrain.as_ref(),
-            self.zone_grid.as_ref(),
-            self.playfield_bounds,
-            &mut self.substrate.cell_occupation,
             crate::sim::movement::DestinationTiming::new(
                 self.session.binary_frame,
                 rules.general.blockage_path_delay_ticks,

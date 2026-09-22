@@ -1,0 +1,277 @@
+[
+  {
+    "input": {
+      "name": "clear"
+    },
+    "result": true,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "land_cost": 0,
+      "name": "blocked_land"
+    },
+    "result": false,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "infantry_bit",
+      "occupation": 1
+    },
+    "result": false,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "unit_bit",
+      "occupation": 32
+    },
+    "result": false,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "generic_object_bit",
+      "occupation": 64
+    },
+    "result": false,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "occupant_self",
+      "occupant": "self"
+    },
+    "result": true,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "occupant_other",
+      "occupant": "other"
+    },
+    "result": false,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "occupant_contact",
+      "occupant": "contact"
+    },
+    "result": true,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "spawned_False_manager_False_other_False",
+      "occupant": "other",
+      "occupant_spawned": false,
+      "spawn_manager": false,
+      "spawned": false
+    },
+    "result": false,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "spawned_False_manager_False_other_True",
+      "occupant": "other",
+      "occupant_spawned": true,
+      "spawn_manager": false,
+      "spawned": false
+    },
+    "result": false,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "spawned_False_manager_True_other_False",
+      "occupant": "other",
+      "occupant_spawned": false,
+      "spawn_manager": true,
+      "spawned": false
+    },
+    "result": false,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "spawned_False_manager_True_other_True",
+      "occupant": "other",
+      "occupant_spawned": true,
+      "spawn_manager": true,
+      "spawned": false
+    },
+    "result": false,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "spawned_True_manager_False_other_False",
+      "occupant": "other",
+      "occupant_spawned": false,
+      "spawn_manager": false,
+      "spawned": true
+    },
+    "result": false,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "spawned_True_manager_False_other_True",
+      "occupant": "other",
+      "occupant_spawned": true,
+      "spawn_manager": false,
+      "spawned": true
+    },
+    "result": true,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "spawned_True_manager_True_other_False",
+      "occupant": "other",
+      "occupant_spawned": false,
+      "spawn_manager": true,
+      "spawned": true
+    },
+    "result": true,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "spawned_True_manager_True_other_True",
+      "occupant": "other",
+      "occupant_spawned": true,
+      "spawn_manager": true,
+      "spawned": true
+    },
+    "result": true,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "alive": false,
+      "limbo": false,
+      "name": "reserved_alive_False_limbo_False",
+      "reservation": [
+        64,
+        64
+      ]
+    },
+    "result": true,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "alive": false,
+      "limbo": true,
+      "name": "reserved_alive_False_limbo_True",
+      "reservation": [
+        64,
+        64
+      ]
+    },
+    "result": true,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "alive": true,
+      "limbo": false,
+      "name": "reserved_alive_True_limbo_False",
+      "reservation": [
+        64,
+        64
+      ]
+    },
+    "result": false,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "alive": true,
+      "limbo": true,
+      "name": "reserved_alive_True_limbo_True",
+      "reservation": [
+        64,
+        64
+      ]
+    },
+    "result": true,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "other_reservation",
+      "reservation": [
+        65,
+        64
+      ]
+    },
+    "result": true,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "self_reservation",
+      "reservation": [
+        64,
+        64
+      ],
+      "reservation_self": true
+    },
+    "result": true,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "alias_clear",
+      "query": [
+        576,
+        63
+      ]
+    },
+    "result": true,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "alias_occupied",
+      "occupant": "other",
+      "query": [
+        576,
+        63
+      ]
+    },
+    "result": false,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "alias_reservation",
+      "reservation": [
+        576,
+        63
+      ]
+    },
+    "result": false,
+    "rng_changed": false
+  },
+  {
+    "input": {
+      "name": "alias_current_reservation",
+      "query": [
+        576,
+        63
+      ],
+      "reservation": [
+        64,
+        64
+      ]
+    },
+    "result": false,
+    "rng_changed": false
+  }
+]

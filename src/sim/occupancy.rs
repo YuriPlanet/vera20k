@@ -150,16 +150,23 @@ pub(crate) fn air_spatial_query_bucket_order(
 }
 
 /// Object-list layer after the native display-layer eligibility gate.
-/// Aircraft use Fly height rather than their Air path layer; every other
-/// category retains the existing locomotor-layer gate and OnBridge selector.
-pub(crate) fn cell_list_layer_for_entity(entity: &GameEntity) -> Option<MovementLayer> {
-    if entity.category != EntityCategory::Aircraft {
+/// Active Fly owners use physical height rather than their Air path layer;
+/// other locomotors retain the existing gate and OnBridge selector.
+pub(crate) fn cell_list_layer_for_entity(
+    entity: &GameEntity,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+) -> Option<MovementLayer> {
+    let fly = entity
+        .locomotor
+        .as_ref()
+        .is_some_and(|l| l.active_kind() == crate::rules::locomotor_type::LocomotorKind::Fly);
+    if !fly && entity.category != EntityCategory::Aircraft {
         return entity.occupancy_list_layer();
     }
-    let locomotor = entity.locomotor.as_ref()?;
-    if locomotor.kind != crate::rules::locomotor_type::LocomotorKind::Fly
-        || locomotor.altitude > SIM_ZERO
-    {
+    // Foot/Aircraft +78 -> Fly4CFCF0 reads physical GetHeight5F5F40, not
+    // the bounded compatibility altitude cache. All active Fly owners share
+    // this gate, including a Unit using that locomotor.
+    if !fly || crate::sim::movement::air_movement::current_fly_height(entity, terrain) > 0 {
         return None;
     }
     Some(if entity.on_bridge {
@@ -1554,7 +1561,7 @@ impl OccupancyGrid {
             if entity.passenger_role.is_inside_transport() {
                 continue;
             }
-            let Some(layer) = cell_list_layer_for_entity(entity) else {
+            let Some(layer) = cell_list_layer_for_entity(entity, None) else {
                 continue;
             };
             let sid = entity.stable_id();

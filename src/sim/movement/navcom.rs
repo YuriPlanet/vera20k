@@ -24,6 +24,12 @@ pub(crate) fn set_walk_destination_coord(
     coord: DriveCoord,
     terrain: Option<&ResolvedTerrainGrid>,
 ) {
+    // Walk75ACBD/75ACD0/75ACE3 checks EMP and both owner warp bytes.
+    // The teleport owner represents the latter; the native EMP timer still
+    // lacks its production writer. There is deliberately no power gate here.
+    if super::locomotor_owner::owner_is_warping(entity) {
+        return;
+    }
     let Some(loco) = entity
         .locomotor
         .as_mut()
@@ -58,7 +64,7 @@ fn is_ship_locomotor(entity: &GameEntity) -> bool {
         .is_some_and(|loco| matches!(loco.kind, LocomotorKind::Ship))
 }
 
-pub(super) fn target_cell_coord(
+pub(crate) fn target_cell_coord(
     rx: u16,
     ry: u16,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
@@ -101,9 +107,9 @@ pub(super) fn target_cell_coord(
 fn adjusted_destination(
     mut coord: DriveCoord,
     terrain: Option<&ResolvedTerrainGrid>,
-) -> DriveCoord {
+) -> Option<DriveCoord> {
     if coord == (DriveCoord { x: 0, y: 0, z: 0 }) {
-        return coord;
+        return None;
     }
     if let Some(terrain) = terrain {
         let rx = (coord.x / 256) as i16;
@@ -116,7 +122,7 @@ fn adjusted_destination(
                 .wrapping_add(crate::util::lepton::BRIDGE_HEIGHT_DELTA_LEPTONS as i32);
         }
     }
-    coord
+    Some(coord)
 }
 
 /// Native4B05D0..0638 compares the raw target XYZ before calling SetDestination.
@@ -129,19 +135,24 @@ pub(super) fn refresh_drive_destination_coord(
     let Some(drive) = entity.drive_locomotion.as_ref() else {
         return false;
     };
-    if drive.destination == Some(coord) {
+    let requested = (coord != (DriveCoord { x: 0, y: 0, z: 0 })).then_some(coord);
+    if drive.destination == requested {
         return false;
     }
-    drive_set_destination(entity, coord, terrain);
-    true
+    drive_set_destination(entity, coord, terrain)
 }
 
 /// Resolve the live receiver behind a non-null NavCom. The Rust reference tag
 /// does not change the native virtual receiver, and a dangling ID is not NULL.
-pub(super) fn nav_target_coordinate(
+pub(crate) fn nav_target_coordinate(
     target: NavTargetRef,
+    requester: Option<u64>,
     entities: &EntityStore,
     terrain: Option<&ResolvedTerrainGrid>,
+    rules: Option<(
+        &crate::rules::ruleset::RuleSet,
+        &crate::sim::intern::StringInterner,
+    )>,
 ) -> Result<DriveCoord, String> {
     let id = match target {
         NavTargetRef::Cell { rx, ry } => return Ok(target_cell_coord(rx, ry, terrain)),
@@ -153,12 +164,35 @@ pub(super) fn nav_target_coordinate(
         .get(id)
         .ok_or_else(|| format!("NavCom coordinate target {id} disappeared"))?;
     if entity.category == crate::map::entities::EntityCategory::Structure {
-        // Building447E90 is requester-dependent for Helipad/UnitRepair/Bunker.
-        // Its full receiver and signed dock metadata remain required; do not
-        // silently turn a live Building target into native navigation failure.
-        return Err(format!(
-            "Building {id} navigation coordinate requires its +4C receiver"
-        ));
+        let (rules, interner) =
+            rules.ok_or_else(|| format!("Building {id} navigation requires type data"))?;
+        let object = rules
+            .object(interner.resolve(entity.type_ref()))
+            .ok_or_else(|| format!("Building {id} navigation type disappeared"))?;
+        return super::building_coordinate::navigation_coordinate(
+            super::ground_pose::position_world_coord(&entity.position),
+            super::ground_pose::object_center_coord(entity, object),
+            object,
+            &entity.radio_contacts,
+            requester,
+            || {
+                let id = requester.expect("Bunker only reads a non-null requester");
+                let entity = entities
+                    .get(id)
+                    .ok_or_else(|| format!("Navigation requester {id} disappeared"))?;
+                Ok(rules
+                    .object(interner.resolve(entity.type_ref()))
+                    .map_or_else(
+                        || {
+                            super::ground_pose::object_center_coord_with_foundation(
+                                entity,
+                                &entity.foundation,
+                            )
+                        },
+                        |object| super::ground_pose::object_center_coord(entity, object),
+                    ))
+            },
+        );
     }
     super::foot_coordinate::navigation_coordinate(entity, terrain)
 }
@@ -369,13 +403,21 @@ fn drive_set_destination(
     entity: &mut GameEntity,
     destination: DriveCoord,
     terrain: Option<&ResolvedTerrainGrid>,
-) {
+) -> bool {
+    // Drive4AFD40 checks owner+270/+271 before any destination or map read.
+    // Track MoveTo refusal leaves Foot's accepted NavCom/timer writes intact.
+    // EMP/Unit+6D8 and Foot+6A0 producers remain separate unported gates.
+    // Original whole-call comparisons: tools/spatial_oracle/track_destination.
+    if super::locomotor_owner::owner_is_warping(entity) {
+        return false;
+    }
     let destination = adjusted_destination(destination, terrain);
     let drive = entity
         .drive_locomotion
         .get_or_insert_with(DriveLocomotionRuntime::default);
     // Native4AFD40 writes destination only. Accepted movement owns Head_To.
-    drive.destination = Some(destination);
+    drive.destination = destination;
+    true
 }
 
 fn drive_stop_moving(entity: &mut GameEntity) {
@@ -401,13 +443,18 @@ fn ship_set_destination(
     destination: DriveCoord,
     terrain: Option<&ResolvedTerrainGrid>,
 ) {
+    // Ship69F450 has the same owner warp refusal before its map lookup.
+    // Use the existing warp owner, independent of power and locomotor stash.
+    if super::locomotor_owner::owner_is_warping(entity) {
+        return;
+    }
     let destination = adjusted_destination(destination, terrain);
     let ship = entity
         .ship_locomotion
         .get_or_insert_with(ShipLocomotionRuntime::default);
     // Ship's Move_To slot writes only +0x30. The committed +0x3C head is
     // selected later by Process_Movement from the owner's path.
-    ship.destination = Some(destination);
+    ship.destination = destination;
 }
 
 fn ship_stop_moving(entity: &mut GameEntity) {
@@ -431,6 +478,47 @@ fn ship_stop_moving(entity: &mut GameEntity) {
         entity.foot_speed.cached_current_speed = 0;
     }
 }
+
+impl crate::sim::world::Simulation {
+    /// Foot4D94B0 clears NavComAux before its three nonnull admission gates.
+    /// Class preprocessing precedes this call; publication, locomotor dispatch
+    /// and accepted timers follow it. Linked-lift and retained-particle cleanup
+    /// still require their missing native owners and are not implied here.
+    pub(crate) fn begin_foot_destination(
+        &mut self,
+        id: u64,
+        nonnull: bool,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> bool {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let open_transport = match entity.passenger_role {
+            crate::sim::passenger::PassengerRole::Inside { transport_id } => self
+                .substrate
+                .entities
+                .get(transport_id)
+                .and_then(|e| rules.object(self.interner.resolve(e.type_ref())))
+                .is_some_and(|o| o.open_topped),
+            _ => false,
+        };
+        let refused = nonnull
+            && (entity.foot_locomotor_swap_active
+                || open_transport
+                || entity.bunker_link.installed_in().is_some());
+        self.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .navigation
+            .nav_com_aux = None;
+        !refused
+    }
+}
+
+#[cfg(test)]
+#[path = "track_destination_tests.rs"]
+mod native_destination_tests;
 
 #[cfg(test)]
 mod tests {
@@ -590,10 +678,13 @@ mod tests {
         target.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
         entities.insert(target);
 
-        let first = nav_target_coordinate(NavTargetRef::Entity { id: 2 }, &entities, None).unwrap();
+        let first =
+            nav_target_coordinate(NavTargetRef::Entity { id: 2 }, None, &entities, None, None)
+                .unwrap();
         entities.get_mut(2).unwrap().position.rx += 1;
         let second =
-            nav_target_coordinate(NavTargetRef::Entity { id: 2 }, &entities, None).unwrap();
+            nav_target_coordinate(NavTargetRef::Entity { id: 2 }, None, &entities, None, None)
+                .unwrap();
 
         assert_ne!(first, second);
     }
@@ -602,7 +693,7 @@ mod tests {
     fn nav_target_coordinate_dispatches_cells_and_rejects_dangling_objects() {
         let entities = EntityStore::new();
         assert_eq!(
-            nav_target_coordinate(NavTargetRef::cell(12, 34), &entities, None).unwrap(),
+            nav_target_coordinate(NavTargetRef::cell(12, 34), None, &entities, None, None).unwrap(),
             DriveCoord::cell(12, 34, 0)
         );
         for target in [
@@ -611,7 +702,7 @@ mod tests {
             NavTargetRef::Building { id: 7 },
         ] {
             assert!(
-                nav_target_coordinate(target, &entities, None)
+                nav_target_coordinate(target, None, &entities, None, None)
                     .unwrap_err()
                     .contains("disappeared")
             );

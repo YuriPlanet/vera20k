@@ -200,7 +200,20 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 398787009
 // id. It is not a general reconstruction; a scenario finalized by the map
 // loader held Some(first TIB* id). The projection must still equal the previous
 // current pin, asserted below. Rust hash-composition ratchet, not a native golden.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 6311521725375046682;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 6311521725375046682;
+// v181 folds Foot+580, including default1.0. The pre-181 assertion below
+// reproduces the previous whole fixture hash; path and RNG pins are unchanged.
+const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 6927658555461959538;
+// Snapshot182 adds ordered display vectors. The pre-182 projection below
+// must reproduce the previous whole-fixture hash, including all RNG/state.
+// Schema186 removes the always-None release-tail byte. No aircraft participate;
+// pre186 below must reproduce the preceding full hash, with route/RNG unchanged.
+// Schema187: the pre187 projection below preserves the preceding full pin.
+// Schema189 folds retained Techno+3D4; Before(189) below reproduces v188.
+// v190 adds saved Foot neighbor history. Before(190) reproduces the full v189
+// fixture; its legacy grid has no retained plane. Route/RNG pins are unchanged.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x8179_79E2_8FBC_8D79;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 121431099463487950;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
@@ -781,6 +794,36 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(174)),
         BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174,
         "the pre-174 composition must reproduce the previous current pin"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(181)),
+        BRIDGE_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181,
+        "excluding only Foot+580 must preserve the pre-181 fixture"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(182)),
+        BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182,
+        "excluding only display vectors must preserve the pre-182 fixture"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(186)),
+        BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186,
+        "restoring only the absent release-tail fold must reproduce the prior fixture"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(187)),
+        4657864725764756298,
+        "schema187 only replaces zero remaining-shot fields with the retained index in this fixture"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
+        17815022180346188402,
+        "v189 adds only the retained Techno+3D4 hash fold"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
+        2395935886825451856,
+        "v190 changes only the Foot neighbor-history hash composition in this fixture"
     );
     assert_eq!(
         final_hash, BRIDGE_HARNESS_FINAL_HASH,

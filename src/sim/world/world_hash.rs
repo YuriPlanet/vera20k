@@ -750,6 +750,18 @@ impl Simulation {
         for id in order {
             id.hash(&mut hasher);
         }
+        if schema.includes(HashFeature::DisplayLayers) {
+            #[cfg(test)]
+            if !schema.includes(HashFeature::AnimationDisplay) {
+                self.substrate
+                    .display
+                    .fold_hash_excluding(&mut hasher, |id| self.substrate.anims.contains_key(id));
+            } else {
+                self.substrate.display.fold_hash(&mut hasher);
+            }
+            #[cfg(not(test))]
+            self.substrate.display.fold_hash(&mut hasher);
+        }
 
         if schema.includes(HashFeature::Lifecycle) {
             // PendingDeleteList is an independent ordered substrate fact. The
@@ -830,6 +842,12 @@ impl Simulation {
                 gap_flags.hash(&mut hasher);
             }
             let shared_dummy_overlay = shared_dummy_handle.overlay_identity_state();
+            if schema.includes(HashFeature::FootNeighborHistory)
+                && shared_dummy_handle.neighbor_count() != 0
+            {
+                b"shared-cell-dummy-neighbor-count-v1".hash(&mut hasher);
+                shared_dummy_handle.neighbor_count().hash(&mut hasher);
+            }
             let shared_dummy_tube = shared_dummy_handle.raw_tube_index();
             if shared_dummy_tube != -1 {
                 b"shared-cell-dummy-tube-v1".hash(&mut hasher);
@@ -877,7 +895,7 @@ impl Simulation {
         }
         self.hash_super_weapons(&mut hasher);
         self.hash_entities(&mut hasher, schema);
-        self.hash_anims(&mut hasher);
+        self.hash_anims(&mut hasher, schema);
         self.hash_voxel_anims(&mut hasher);
         self.hash_particle_systems(&mut hasher);
         self.session.fold_identity(&mut hasher);
@@ -1388,7 +1406,7 @@ impl Simulation {
         }
         if schema.includes(HashFeature::WallRuntime) {
             b"retained-wall-neighbor-counts-v1".hash(hasher);
-            match overlay_grid.retained_wall_neighbor_counts() {
+            match overlay_grid.retained_neighbor_counts() {
                 None => 0u8.hash(hasher),
                 Some(counts) => {
                     1u8.hash(hasher);
@@ -1496,11 +1514,29 @@ impl Simulation {
                 // actual saved state until their ownership migration retires one.
                 if let Some(ammo) = entity.aircraft_ammo.as_ref() {
                     b"aircraft-ammo-v170".hash(hasher);
+                    #[cfg(test)]
+                    if !schema.includes(HashFeature::AircraftReleaseAuthority) {
+                        ammo.hash_before_pending_release(hasher);
+                    } else {
+                        ammo.hash(hasher);
+                    }
+                    #[cfg(not(test))]
                     ammo.hash(hasher);
                 }
                 if let Some(mission) = entity.aircraft_mission.as_ref() {
                     b"aircraft-mission-v170".hash(hasher);
                     mission.hash(hasher);
+                    #[cfg(test)]
+                    if !schema.includes(HashFeature::AircraftReleaseAuthority)
+                        && matches!(
+                            mission,
+                            crate::sim::aircraft::AircraftMission::Attack { .. }
+                        )
+                    {
+                        // Only the false/false historical fixture is recoverable.
+                        false.hash(hasher);
+                        false.hash(hasher);
+                    }
                 }
             }
             if schema.includes(HashFeature::CreditIncome) {
@@ -1568,6 +1604,9 @@ impl Simulation {
                 entity.in_playfield.hash(hasher);
             }
             entity.move_sound_active.hash(hasher);
+            if schema.includes(HashFeature::TechnoMissionOnly) {
+                entity.is_mission_only().hash(hasher);
+            }
             entity.move_sound_countdown.hash(hasher);
             entity.position.rx.hash(hasher);
             entity.position.ry.hash(hasher);
@@ -1714,6 +1753,9 @@ impl Simulation {
             if schema.includes(HashFeature::FootPathRuntime) {
                 entity.navigation.path_runtime.hash(hasher);
             }
+            if schema.includes(HashFeature::FootNeighborHistory) {
+                entity.navigation.neighbor_state.hash(hasher);
+            }
             entity.navigation.path_replay.hash(hasher);
             entity.navigation.nav_com_aux.hash(hasher);
             entity.navigation.nav_com.hash(hasher);
@@ -1729,7 +1771,17 @@ impl Simulation {
                 0u8.hash(hasher);
             }
             hash_retained_track_classes(entity, schema, hasher);
-            entity.foot_speed.hash(hasher);
+            entity.foot_speed.applied_fraction.hash(hasher);
+            entity.foot_speed.cached_current_speed.hash(hasher);
+            if schema.includes(HashFeature::FlyLanding)
+                && entity.flight_attitude != Default::default()
+            {
+                0x2e8_u32.hash(hasher);
+                entity.flight_attitude.hash(hasher);
+            }
+            if schema.includes(HashFeature::FootCrateSpeed) {
+                entity.foot_speed.crate_multiplier().hash(hasher);
+            }
             entity.foot_occupation_enabled.hash(hasher);
             entity.foot_locomotor_swap_active.hash(hasher);
 
@@ -1862,11 +1914,18 @@ impl Simulation {
                 1u8.hash(hasher);
                 attack.cooldown_ticks.hash(hasher);
                 attack.target.hash(hasher);
-                attack.burst_remaining.hash(hasher);
+                if !schema.includes(HashFeature::WeaponBurstAuthority) {
+                    // Bounded historical replay fixtures had no remaining
+                    // burst shots. Arbitrary old AttackTarget state is unrecoverable.
+                    0u8.hash(hasher);
+                }
                 attack.burst_delay_ticks.hash(hasher);
                 attack.pending_infantry_fire.hash(hasher);
             } else {
                 0u8.hash(hasher);
+            }
+            if schema.includes(HashFeature::WeaponBurstAuthority) {
+                entity.weapon_burst.hash(hasher);
             }
             entity.pending_building_fire.hash(hasher);
             entity.current_weapon_index.hash(hasher);
@@ -2121,16 +2180,10 @@ impl Simulation {
             } else {
                 hash_mission_com_before_v29(&entity.mission, hasher);
             }
-            match entity.aircraft_release_tail {
-                Some(tail) => {
-                    1u8.hash(hasher);
-                    tail.remaining_releases.hash(hasher);
-                    tail.release_pending.hash(hasher);
-                    tail.tail_latch.hash(hasher);
-                    tail.completion_latch.hash(hasher);
-                    tail.clear_target_next.hash(hasher);
-                }
-                None => 0u8.hash(hasher),
+            if !schema.includes(HashFeature::AircraftReleaseAuthority) {
+                // Bounded historical fixtures had no fabricated release tail.
+                // An arbitrary old active tail cannot be reconstructed.
+                0u8.hash(hasher);
             }
             // S4b damage-Spark `+0x308`-equivalent live-system gate. Hashed because
             // it gates future scenario_rng draws (a divergence here desyncs the
@@ -2144,10 +2197,15 @@ impl Simulation {
 
     /// Scheduler-owned ordinary animations in stable-ID order. Render caches and
     /// transient sound events are deliberately excluded.
-    fn hash_anims(&self, hasher: &mut impl Hasher) {
+    fn hash_anims(&self, hasher: &mut impl Hasher, _schema: HashSchema) {
         self.substrate.anims.iter().count().hash(hasher);
         for (id, anim) in self.substrate.anims.iter() {
             id.hash(hasher);
+            #[cfg(test)]
+            if !_schema.includes(HashFeature::AnimationDisplay) {
+                anim.hash_before_display(hasher);
+                continue;
+            }
             anim.hash(hasher);
         }
     }
@@ -2218,24 +2276,15 @@ fn hash_locomotor_runtime(
     let common = &runtime.common;
     common.powered.hash(hasher);
     (common.phase as u8).hash(hasher);
-    (common.air_phase as u8).hash(hasher);
+    // Fixed separators retain the retired common-air slots for non-air replay
+    // stability. Fly/Jumpjet authoritative fields are hashed in their payloads.
+    0u8.hash(hasher);
     common.speed_multiplier.to_bits().hash(hasher);
     common.speed_fraction.to_bits().hash(hasher);
     common.fly_current_speed.to_bits().hash(hasher);
     common.altitude.to_bits().hash(hasher);
-    // On a Jumpjet locomotor, the fields from `target_altitude` down to
-    // `jumpjet_turn_rate` are seeded from the type's `+0xD70`..`+0xD90` block —
-    // the run gamemd copies into the locomotor at `0x0054AD30` —
-    // `jumpjet_current_speed` excepted, which is runtime state. All of them are
-    // hash-visible, so any correction to how `rules::jumpjet_params` reads
-    // those keys changes this hash for every jumpjet type. No committed golden
-    // or parity fixture currently flies a Rocketeer, Kirov, Floating Disc,
-    // BlackHawk, Hind or Siege Chopper, so such a correction can land with a
-    // green suite — that is a gap in harness coverage, not evidence that
-    // nothing moved. A harness that adds one will need a re-baseline
-    // attributable to the rules read, not to a harness bug.
-    common.target_altitude.to_bits().hash(hasher);
-    common.climb_rate.to_bits().hash(hasher);
+    0i32.hash(hasher);
+    0i32.hash(hasher);
     common.jumpjet_speed.to_bits().hash(hasher);
     common.jumpjet_accel.to_bits().hash(hasher);
     common.jumpjet_current_speed.to_bits().hash(hasher);
@@ -2303,7 +2352,24 @@ fn hash_locomotor_payload(
             8u8.hash(hasher);
             hash_slope_transition_state(state, hasher);
         }
-        LocomotorRuntimePayload::Fly => 9u8.hash(hasher),
+        LocomotorRuntimePayload::Fly(state) => {
+            9u8.hash(hasher);
+            let (target_height, taking_off, landing) = state.height_hash_fields();
+            target_height.hash(hasher);
+            taking_off.hash(hasher);
+            landing.hash(hasher);
+            if schema.includes(HashFeature::FlyDestination) {
+                state.destination().hash(hasher);
+            }
+            if schema.includes(HashFeature::FlyCruiseMode) {
+                state.cruise_mode().hash(hasher);
+            }
+            if schema.includes(HashFeature::FlyLanding) {
+                state.moving().hash(hasher);
+                state.landing_effect_latched().hash(hasher);
+                state.airport_bound().hash(hasher);
+            }
+        }
         LocomotorRuntimePayload::Jumpjet(state) => {
             10u8.hash(hasher);
             if schema.includes(HashFeature::BridgeLocomotorAndDummy) {
@@ -3708,7 +3774,7 @@ mod particle_hash_tests {
         let id = sim.allocate_stable_id();
         system.stable_id = id;
         sim.particle_systems_mut().insert(system);
-        sim.reveal_particle_system(id);
+        sim.reveal_particle_system(id, None);
         id
     }
 

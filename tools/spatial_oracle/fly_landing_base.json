@@ -1,0 +1,4157 @@
+{
+  "moves": [
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null
+        ],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null
+        ],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null
+        ],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit"
+        ],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit"
+        ],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit"
+        ],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "plain"
+        ],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "plain"
+        ],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "plain"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "plain"
+        ],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "plain"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair"
+        ],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair"
+        ],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair"
+        ],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "helipad"
+        ],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "helipad"
+        ],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "helipad"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "helipad"
+        ],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "helipad"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null
+        ],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null
+        ],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null
+        ],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit"
+        ],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit"
+        ],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit"
+        ],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "plain"
+        ],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "plain"
+        ],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "plain"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "plain"
+        ],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "plain"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair"
+        ],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair"
+        ],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair"
+        ],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "helipad"
+        ],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "helipad"
+        ],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "helipad"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "helipad"
+        ],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "helipad"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null
+        ],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null
+        ],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null
+        ],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit"
+        ],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit"
+        ],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit"
+        ],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "plain"
+        ],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "plain"
+        ],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "plain"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "plain"
+        ],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "plain"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair"
+        ],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair"
+        ],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair"
+        ],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "helipad"
+        ],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "helipad"
+        ],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "helipad"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "helipad"
+        ],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "helipad"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": 7,
+        "loaded": false,
+        "queued": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": 5,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": 16,
+        "loaded": false,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": -1,
+        "loaded": false,
+        "queued": 5
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null
+        ],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null
+        ],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null
+        ],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit"
+        ],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit"
+        ],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit"
+        ],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "plain"
+        ],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "plain"
+        ],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "plain"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "plain"
+        ],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "plain"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair"
+        ],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair"
+        ],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair"
+        ],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "helipad"
+        ],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "helipad"
+        ],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "helipad"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "helipad"
+        ],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "helipad"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          null,
+          "repair"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "unit",
+          "repair"
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": 7,
+        "loaded": true,
+        "queued": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": 5,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": 16,
+        "loaded": true,
+        "queued": 7
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "contacts": [
+          "repair",
+          null
+        ],
+        "current": -1,
+        "loaded": true,
+        "queued": 5
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": false,
+        "loaded": true,
+        "taking_off": false,
+        "z": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": false,
+        "loaded": true,
+        "taking_off": true,
+        "z": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": true,
+        "loaded": true,
+        "taking_off": false,
+        "z": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": true,
+        "loaded": true,
+        "taking_off": true,
+        "z": -1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": false,
+        "loaded": true,
+        "taking_off": false,
+        "z": 0
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": false,
+        "loaded": true,
+        "taking_off": true,
+        "z": 0
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": true,
+        "loaded": true,
+        "taking_off": false,
+        "z": 0
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": true,
+        "loaded": true,
+        "taking_off": true,
+        "z": 0
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": false,
+        "loaded": true,
+        "taking_off": false,
+        "z": 1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": false,
+        "loaded": true,
+        "taking_off": true,
+        "z": 1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": true,
+        "loaded": true,
+        "taking_off": false,
+        "z": 1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": true,
+        "loaded": true,
+        "taking_off": true,
+        "z": 1
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": false,
+        "loaded": true,
+        "taking_off": false,
+        "z": 99
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": false,
+        "loaded": true,
+        "taking_off": true,
+        "z": 99
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": true,
+        "loaded": true,
+        "taking_off": false,
+        "z": 99
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": true,
+        "loaded": true,
+        "taking_off": true,
+        "z": 99
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": false,
+        "loaded": true,
+        "taking_off": false,
+        "z": 100
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": false,
+        "loaded": true,
+        "taking_off": true,
+        "z": 100
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": true,
+        "loaded": true,
+        "taking_off": false,
+        "z": 100
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": true,
+        "loaded": true,
+        "taking_off": true,
+        "z": 100
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": false,
+        "loaded": true,
+        "taking_off": false,
+        "z": 101
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": false,
+        "loaded": true,
+        "taking_off": true,
+        "z": 101
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": true,
+        "loaded": true,
+        "taking_off": false,
+        "z": 101
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": true,
+        "loaded": true,
+        "taking_off": true,
+        "z": 101
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": false,
+        "loaded": true,
+        "taking_off": false,
+        "z": 40000
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": false,
+        "loaded": true,
+        "taking_off": true,
+        "z": 40000
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": true,
+        "loaded": true,
+        "taking_off": false,
+        "z": 40000
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": false,
+        "landing": true,
+        "loaded": true,
+        "taking_off": true,
+        "z": 40000
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": false,
+        "loaded": true,
+        "taking_off": false,
+        "z": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": false,
+        "loaded": true,
+        "taking_off": true,
+        "z": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": true,
+        "loaded": true,
+        "taking_off": false,
+        "z": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": true,
+        "loaded": true,
+        "taking_off": true,
+        "z": -1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": false,
+        "loaded": true,
+        "taking_off": false,
+        "z": 0
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": false,
+        "loaded": true,
+        "taking_off": true,
+        "z": 0
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": true,
+        "loaded": true,
+        "taking_off": false,
+        "z": 0
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": true,
+        "loaded": true,
+        "taking_off": true,
+        "z": 0
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": false,
+        "loaded": true,
+        "taking_off": false,
+        "z": 1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": false,
+        "loaded": true,
+        "taking_off": true,
+        "z": 1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": true,
+        "loaded": true,
+        "taking_off": false,
+        "z": 1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": true,
+        "loaded": true,
+        "taking_off": true,
+        "z": 1
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": false,
+        "loaded": true,
+        "taking_off": false,
+        "z": 99
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": false,
+        "loaded": true,
+        "taking_off": true,
+        "z": 99
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": true,
+        "loaded": true,
+        "taking_off": false,
+        "z": 99
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": true,
+        "loaded": true,
+        "taking_off": true,
+        "z": 99
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": false,
+        "loaded": true,
+        "taking_off": false,
+        "z": 100
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": false,
+        "loaded": true,
+        "taking_off": true,
+        "z": 100
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": true,
+        "loaded": true,
+        "taking_off": false,
+        "z": 100
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": true,
+        "loaded": true,
+        "taking_off": true,
+        "z": 100
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": false,
+        "loaded": true,
+        "taking_off": false,
+        "z": 101
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": false,
+        "loaded": true,
+        "taking_off": true,
+        "z": 101
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": true,
+        "loaded": true,
+        "taking_off": false,
+        "z": 101
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": true,
+        "loaded": true,
+        "taking_off": true,
+        "z": 101
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": false,
+        "loaded": true,
+        "taking_off": false,
+        "z": 40000
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": false,
+        "loaded": true,
+        "taking_off": true,
+        "z": 40000
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": true,
+        "loaded": true,
+        "taking_off": false,
+        "z": 40000
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "landing": true,
+        "loaded": true,
+        "taking_off": true,
+        "z": 40000
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "health": 0,
+        "landing": true,
+        "loaded": true
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "health": -1,
+        "landing": true,
+        "loaded": true
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "kind": "unit",
+        "loaded": true
+      },
+      "landing_base": 0
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "level": 2,
+        "loaded": true,
+        "slope": 1,
+        "z": 360
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "level": 2,
+        "loaded": true,
+        "slope": 1,
+        "z": 361
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "loaded": true,
+        "on_bridge": true,
+        "z": 516
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "loaded": true,
+        "on_bridge": true,
+        "z": 517
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        10,
+        10
+      ],
+      "input": {
+        "carryall": true,
+        "health": 100,
+        "landing": false,
+        "loaded": true,
+        "missing_cell": true,
+        "taking_off": false
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "health": 100,
+        "landing": false,
+        "loaded": true,
+        "missing_cell": true,
+        "taking_off": true
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": true,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "health": 100,
+        "landing": true,
+        "loaded": true,
+        "missing_cell": true,
+        "taking_off": false
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "health": 100,
+        "landing": true,
+        "loaded": true,
+        "missing_cell": true,
+        "taking_off": true
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "health": 0,
+        "landing": false,
+        "loaded": true,
+        "missing_cell": true,
+        "taking_off": false
+      },
+      "landing_base": 100
+    },
+    {
+      "begin_takeoff": false,
+      "dummy_coord": [
+        -7,
+        -8
+      ],
+      "input": {
+        "carryall": true,
+        "health": -1,
+        "landing": false,
+        "loaded": true,
+        "missing_cell": true,
+        "taking_off": false
+      },
+      "landing_base": 100
+    }
+  ],
+  "rules": [
+    {
+      "carryall": false,
+      "raw": null
+    },
+    {
+      "carryall": false,
+      "raw": ""
+    },
+    {
+      "carryall": true,
+      "raw": "yes"
+    },
+    {
+      "carryall": false,
+      "raw": "no"
+    },
+    {
+      "carryall": true,
+      "raw": "true"
+    },
+    {
+      "carryall": false,
+      "raw": "false"
+    },
+    {
+      "carryall": true,
+      "raw": "1"
+    },
+    {
+      "carryall": false,
+      "raw": "0"
+    },
+    {
+      "carryall": false,
+      "raw": "junk"
+    }
+  ]
+}

@@ -34,6 +34,7 @@ pub(crate) enum SimulationAuthoredLoadError {
 pub(crate) struct SimulationAuthoredLoadHost<'a> {
     sim: &'a mut Simulation,
     art: &'a mut ArtRegistry,
+    rules: &'a crate::rules::ruleset::RuleSet,
     assets: &'a AssetManager,
     theater_ext: &'a str,
     theater_name: &'a str,
@@ -43,6 +44,7 @@ impl<'a> SimulationAuthoredLoadHost<'a> {
     pub(crate) fn new(
         sim: &'a mut Simulation,
         art: &'a mut ArtRegistry,
+        rules: &'a crate::rules::ruleset::RuleSet,
         assets: &'a AssetManager,
         theater_ext: &'a str,
         theater_name: &'a str,
@@ -50,6 +52,7 @@ impl<'a> SimulationAuthoredLoadHost<'a> {
         Self {
             sim,
             art,
+            rules,
             assets,
             theater_ext,
             theater_name,
@@ -97,7 +100,7 @@ impl<'a> SimulationAuthoredLoadHost<'a> {
         descriptor.type_name = self.sim.interner.intern(anim_name);
         let native_unique_id = self.next_native_id()?;
         self.sim
-            .spawn_load_anim_at_world(self.art, descriptor, world, native_unique_id)
+            .spawn_load_anim_at_world(self.art, self.rules, descriptor, world, native_unique_id)
             .map_err(Into::into)
     }
 }

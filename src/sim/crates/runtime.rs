@@ -1,8 +1,8 @@
 //! Live crate slot clear, identity-specific overlay removal, and the per-tick
 //! `CrateRegen` scan.
 //!
-//! `MapClass__UpdateCrateRegenTimers @ 0x0056BBE0` is the only runtime owner of
-//! the 256 persistent crate slots after scenario start. `LogicClass__PerTickUpdate
+//! `MapClass__UpdateCrateRegenTimers @ 0x0056BBE0` maintains the 256 persistent
+//! crate slots alongside pickup removal at `0x0056C020`. `LogicClass__PerTickUpdate
 //! @ 0x0055AFB0` calls it once per tick at `0x0055B65A`, after
 //! `AlphaShapeClass::PurgeDisabled` and before the Tactical, Factory and House
 //! callbacks, and it does nothing at all unless the game mode is nonzero and the
@@ -84,6 +84,10 @@ pub(crate) fn remove_crate_overlay_from_cell(
     if !is_live_crate_image(&rules.crate_rules, registry, overlay_id) {
         return false;
     }
+    clear_crate_overlay_fields(sim, cell_ref)
+}
+
+fn clear_crate_overlay_fields(sim: &mut Simulation, cell_ref: CrateMarkCellRef) -> bool {
     match cell_ref {
         CrateMarkCellRef::Real(rx, ry) => {
             let (Some(grid), Some(terrain)) =
@@ -98,6 +102,48 @@ pub(crate) fn remove_crate_overlay_from_cell(
             true
         }
     }
+}
+
+/// `MapClass` pickup removal at `0x0056C020`, called by Cell481A00 before
+/// replacement generation and the selected effect. Native comparisons:
+/// `tools/spatial_oracle/crate_pickup.json` (removal-reaching rows).
+///
+/// Multiplayer clears only the first occupied slot with this coordinate. A
+/// missing slot leaves even a visible crate untouched. Solo instead looks up
+/// the cell directly, without the In_Bounds diamond test, and accepts any
+/// OverlayType whose Crate flag is set; it never modifies runtime slots.
+pub(super) fn remove_pickup_crate(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    registry: &OverlayTypeRegistry,
+    cell: (i16, i16),
+) -> bool {
+    if sim.session.game_mode_nonzero {
+        let Some(index) = sim
+            .crate_authority
+            .slots()
+            .iter()
+            .position(|slot| !slot.is_empty() && (slot.cell_x, slot.cell_y) == cell)
+        else {
+            return false;
+        };
+        return clear_crate_slot(sim, rules, registry, index, sim.session.binary_frame as i32);
+    }
+    let cell_ref = resolve_crate_mark_cell(sim, cell);
+    let overlay_id = match &cell_ref {
+        CrateMarkCellRef::Real(rx, ry) => sim
+            .overlay_grid
+            .as_ref()
+            .and_then(|grid| grid.cell(*rx, *ry).overlay_id),
+        CrateMarkCellRef::Dummy(dummy) => dummy.overlay_fields().0,
+    };
+    if !overlay_id
+        .and_then(|id| registry.flags(id))
+        .is_some_and(|flags| flags.crate_type)
+    {
+        return false;
+    }
+    clear_crate_overlay_fields(sim, cell_ref)
 }
 
 /// Exact `Rules+0xF8`/`+0xFC`/`+0x100` pointer identity, expressed over the
@@ -234,6 +280,123 @@ mod tests {
 
     fn lighting() -> LightingProfileUnits {
         ParsedLightingProfiles::default().normal
+    }
+
+    #[test]
+    fn pickup_removal_matches_original_cell_pickup_outputs() {
+        // Compare only rows that reach Map56C020; guard/selection/effect
+        // coverage belongs to the complete pickup dispatcher, not this owner.
+        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/crate_pickup.json"
+        ))
+        .unwrap();
+        let mut compared = 0;
+        for row in rows {
+            if !row["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e == "0056c020")
+            {
+                continue;
+            }
+            let input = &row["input"];
+            let name = input["name"].as_str().unwrap();
+            let cell = input["cell"].as_array().map_or((10, 10), |v| {
+                (v[0].as_i64().unwrap() as i16, v[1].as_i64().unwrap() as i16)
+            });
+            let mut sim = sim_with_grid(31);
+            sim.session.game_mode_nonzero = input["mode"].as_i64() != Some(0);
+            sim.session.binary_frame = 100;
+            sim.playfield_bounds.as_mut().unwrap().base = 10;
+            sim.playfield_size_height = Some(10);
+            let mut rules = crate_ruleset("");
+            if input["different_image"] == true {
+                rules.crate_rules.wood_crate_img = Some("SILVER".into());
+            }
+            let registry = crate_registry();
+            let wood = registry.id_for_name("WOOD").unwrap();
+            sim.overlay_grid.as_mut().unwrap().place_overlay(
+                cell.0 as u16,
+                cell.1 as u16,
+                wood,
+                input["selection"].as_u64().unwrap_or(10) as u8,
+            );
+            // The native fixture explicitly zeroes the slot memory.
+            for (index, start, aux, duration) in [(0, 50, 777, 100), (1, 60, 888, 200)] {
+                let occupied = if index == 0 {
+                    input["registered"] != false
+                } else {
+                    input["duplicate_slot"] == true
+                };
+                *sim.crate_authority.slot_mut(index) = if occupied {
+                    CrateSlot {
+                        start_frame: start,
+                        aux,
+                        duration,
+                        cell_x: cell.0,
+                        cell_y: cell.1,
+                    }
+                } else {
+                    CrateSlot {
+                        start_frame: 0,
+                        ..CrateSlot::default()
+                    }
+                };
+            }
+            let removed = remove_pickup_crate(&mut sim, &rules, &registry, cell);
+            assert_eq!(
+                serde_json::json!([u8::from(removed)]),
+                row["removal_returns"],
+                "{name}"
+            );
+            let actual = sim
+                .overlay_grid
+                .as_ref()
+                .unwrap()
+                .cell(cell.0 as u16, cell.1 as u16);
+            assert_eq!(
+                actual.overlay_id,
+                (row["overlay"] != -1).then_some(wood),
+                "{name}"
+            );
+            assert_eq!(
+                i64::from(actual.overlay_data),
+                row["selection"].as_i64().unwrap(),
+                "{name}"
+            );
+            for (index, key) in [(0, "slot"), (1, "second_slot")] {
+                let slot = sim.crate_authority.slots()[index];
+                assert_eq!(
+                    serde_json::json!([
+                        slot.start_frame,
+                        slot.aux,
+                        slot.duration,
+                        slot.cell_x,
+                        slot.cell_y
+                    ]),
+                    row[key],
+                    "{name} {key}"
+                );
+            }
+            let dirty = sim
+                .overlay_grid
+                .as_mut()
+                .unwrap()
+                .take_removed_render_cells();
+            assert_eq!(
+                dirty.len(),
+                row["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|e| *e == "dirty_screen")
+                    .count(),
+                "{name}"
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 24);
     }
 
     /// The three timer shapes the native predicate distinguishes, including the

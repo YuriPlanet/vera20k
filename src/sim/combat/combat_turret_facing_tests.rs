@@ -1270,7 +1270,7 @@ fn gsi_08_04_voxel_turret_building_needs_an_exact_match_then_snaps_within_one_ro
     // is set, and `BuildingClass::Mission_Attack @ 0x0044B068`..`0x0044B0B3`
     // gives it a second chance in the SAME visit: within one `ROT=` step it
     // snaps `+0x388` with `UpdateFacing` and re-runs the error check.
-    fn tower_rules(voxel: bool, rot: u32) -> RuleSet {
+    fn tower_rules(voxel: bool, rot: i32) -> RuleSet {
         let ini_str: String = format!(
             "[VehicleTypes]\n\n\
 [InfantryTypes]\n\n\
@@ -1285,7 +1285,7 @@ TurretAnimIsVoxel={}\n\n\
         );
         RuleSet::from_ini(&IniFile::from_str(&ini_str)).expect("tower fixture should parse")
     }
-    fn fires_at_offset(voxel: bool, rot: u32, offset: u16) -> bool {
+    fn fires_at_offset(voxel: bool, rot: i32, offset: u16) -> bool {
         let rules = tower_rules(voxel, rot);
         let mut sim = Simulation::new();
         let mut tower = GameEntity::test_default(1, "GTGCAN", "Americans", 5, 5);
@@ -1293,7 +1293,7 @@ TurretAnimIsVoxel={}\n\n\
         tower.lifecycle.in_limbo = false;
         tower.barrel_facing = Some(FacingClass::new(
             facing_from_5_5_to_5_9().wrapping_add(offset),
-            rot.clamp(0, 0x7F) as u8,
+            rot,
         ));
         tower.attack_target = Some(AttackTarget::new(2));
         sim.substrate.entities.insert(tower);
@@ -1327,6 +1327,19 @@ TurretAnimIsVoxel={}\n\n\
         !fires_at_offset(false, 1, 0x0801),
         "and is refused past it, with no snap-and-retry"
     );
+    let native: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/building_fire_turn.json"
+    ))
+    .unwrap();
+    for row in native.as_array().unwrap() {
+        let rot = row["rot"].as_i64().unwrap() as i32;
+        let delta = row["delta"].as_u64().unwrap() as u16;
+        assert_eq!(
+            fires_at_offset(true, rot, delta),
+            row["retry"].as_bool().unwrap(),
+            "{row}"
+        );
+    }
 }
 
 #[test]

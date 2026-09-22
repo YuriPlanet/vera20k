@@ -1,0 +1,8594 @@
+[
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": -2147483648,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 105
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": -2147483648,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 105
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": -2147483648
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 27962,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 29375,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": -513,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 105
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": -513,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 105
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": -513
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 27962,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 29375,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": -257,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 105
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": -257,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 105
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": -257
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 27962,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 29375,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": -256,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 105
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": -256,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 105
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": -256
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 27962,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 29375,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": -255,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 128,
+        "previous": 16384,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 16128,
+        "destination": 49152,
+        "duration": 128,
+        "previous": 16384,
+        "rate": 256,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 15872,
+        "destination": 49152,
+        "duration": 128,
+        "previous": 16384,
+        "rate": 256,
+        "result": false,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 15577,
+        "destination": 57635,
+        "duration": 91,
+        "previous": 15616,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 15319,
+        "destination": 57635,
+        "duration": 91,
+        "previous": 15616,
+        "rate": 256,
+        "result": null,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 256,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 33155,
+        "destination": 65280,
+        "duration": 125,
+        "previous": 33059,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 106
+      },
+      {
+        "animated": 33536,
+        "destination": 256,
+        "duration": 126,
+        "previous": 33412,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 126,
+        "previous": 33412,
+        "rate": 256,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": -255,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 128,
+        "previous": 16384,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 16128,
+        "destination": 49152,
+        "duration": 128,
+        "previous": 16384,
+        "rate": 256,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 15872,
+        "destination": 49152,
+        "duration": 128,
+        "previous": 16384,
+        "rate": 256,
+        "result": false,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 15577,
+        "destination": 57635,
+        "duration": 91,
+        "previous": 15616,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 15319,
+        "destination": 57635,
+        "duration": 91,
+        "previous": 15616,
+        "rate": 256,
+        "result": null,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 256,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 33155,
+        "destination": 65280,
+        "duration": 125,
+        "previous": 33059,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 106
+      },
+      {
+        "animated": 33536,
+        "destination": 256,
+        "duration": 126,
+        "previous": 33412,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 126,
+        "previous": 33412,
+        "rate": 256,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": -255
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 55296,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 256,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 55040,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 256,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 54786,
+        "destination": 57635,
+        "duration": 11,
+        "previous": 54784,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 43385,
+        "destination": 57635,
+        "duration": 11,
+        "previous": 54784,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 44810,
+        "destination": 57635,
+        "duration": 11,
+        "previous": 54784,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": -129,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": -129,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": -129
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": -128,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 32768,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 32768,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 32768,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32768,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32768,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32768,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32768,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32768,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32768,
+        "result": null,
+        "rotating": false,
+        "start": 105
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": -128,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 32768,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 32768,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 32768,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32768,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32768,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32768,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32768,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32768,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32768,
+        "result": null,
+        "rotating": false,
+        "start": 105
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": -128
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 32768,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 32768,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 32768,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 27962,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 29375,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": -127,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 33024,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 33024,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 33024,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 33024,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 33024,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 33024,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 33024,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 33024,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 33024,
+        "result": null,
+        "rotating": false,
+        "start": 105
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": -127,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 33024,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 33024,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 33024,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 33024,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 33024,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 33024,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 33024,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 33024,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 33024,
+        "result": null,
+        "rotating": false,
+        "start": 105
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": -127
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 33024,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 33024,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 33024,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 27962,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 29375,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": -1,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 105
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": -1,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 65280,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 105
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": -1
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 65280,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 65280,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 27962,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 29375,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 0,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 105
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": 0,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 0,
+        "previous": 16384,
+        "rate": 0,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 105
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 0,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 0,
+        "result": true,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 27962,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 29375,
+        "destination": 57635,
+        "duration": 25,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 1,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 128,
+        "previous": 16384,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 16128,
+        "destination": 49152,
+        "duration": 128,
+        "previous": 16384,
+        "rate": 256,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 15872,
+        "destination": 49152,
+        "duration": 128,
+        "previous": 16384,
+        "rate": 256,
+        "result": false,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 15577,
+        "destination": 57635,
+        "duration": 91,
+        "previous": 15616,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 15319,
+        "destination": 57635,
+        "duration": 91,
+        "previous": 15616,
+        "rate": 256,
+        "result": null,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 256,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 33155,
+        "destination": 65280,
+        "duration": 125,
+        "previous": 33059,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 106
+      },
+      {
+        "animated": 33536,
+        "destination": 256,
+        "duration": 126,
+        "previous": 33412,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 126,
+        "previous": 33412,
+        "rate": 256,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": 1,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 128,
+        "previous": 16384,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 16128,
+        "destination": 49152,
+        "duration": 128,
+        "previous": 16384,
+        "rate": 256,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 15872,
+        "destination": 49152,
+        "duration": 128,
+        "previous": 16384,
+        "rate": 256,
+        "result": false,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 15577,
+        "destination": 57635,
+        "duration": 91,
+        "previous": 15616,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 15319,
+        "destination": 57635,
+        "duration": 91,
+        "previous": 15616,
+        "rate": 256,
+        "result": null,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 256,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 33155,
+        "destination": 65280,
+        "duration": 125,
+        "previous": 33059,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 106
+      },
+      {
+        "animated": 33536,
+        "destination": 256,
+        "duration": 126,
+        "previous": 33412,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 126,
+        "previous": 33412,
+        "rate": 256,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": 1
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 55296,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 256,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 55040,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 256,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 54786,
+        "destination": 57635,
+        "duration": 11,
+        "previous": 54784,
+        "rate": 256,
+        "result": true,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 43385,
+        "destination": 57635,
+        "duration": 11,
+        "previous": 54784,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 44810,
+        "destination": 57635,
+        "duration": 11,
+        "previous": 54784,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 15056,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 13746,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": false,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 12424,
+        "destination": 57635,
+        "duration": 15,
+        "previous": 12436,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 11069,
+        "destination": 57635,
+        "duration": 15,
+        "previous": 12436,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 33080,
+        "destination": 65280,
+        "duration": 25,
+        "previous": 33059,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 106
+      },
+      {
+        "animated": 34376,
+        "destination": 256,
+        "duration": 24,
+        "previous": 34368,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 24,
+        "previous": 34368,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 15056,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 13746,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": false,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 12424,
+        "destination": 57635,
+        "duration": 15,
+        "previous": 12436,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 11069,
+        "destination": 57635,
+        "duration": 15,
+        "previous": 12436,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 33080,
+        "destination": 65280,
+        "duration": 25,
+        "previous": 33059,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 106
+      },
+      {
+        "animated": 34376,
+        "destination": 256,
+        "duration": 24,
+        "previous": 34368,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 24,
+        "previous": 34368,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 15056,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 13746,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 12424,
+        "destination": 57635,
+        "duration": 15,
+        "previous": 12436,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 11069,
+        "destination": 57635,
+        "duration": 15,
+        "previous": 12436,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 9714,
+        "destination": 57635,
+        "duration": 15,
+        "previous": 12436,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 32,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 4,
+        "previous": 16384,
+        "rate": 8192,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 8192,
+        "destination": 49152,
+        "duration": 4,
+        "previous": 16384,
+        "rate": 8192,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 0,
+        "destination": 49152,
+        "duration": 4,
+        "previous": 16384,
+        "rate": 8192,
+        "result": false,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 57344,
+        "rate": 8192,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 57344,
+        "rate": 8192,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 8192,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 33060,
+        "destination": 65280,
+        "duration": 3,
+        "previous": 33059,
+        "rate": 8192,
+        "result": true,
+        "rotating": true,
+        "start": 106
+      },
+      {
+        "animated": 43800,
+        "destination": 256,
+        "duration": 2,
+        "previous": 43800,
+        "rate": 8192,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 2,
+        "previous": 43800,
+        "rate": 8192,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": 32,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 4,
+        "previous": 16384,
+        "rate": 8192,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 8192,
+        "destination": 49152,
+        "duration": 4,
+        "previous": 16384,
+        "rate": 8192,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 0,
+        "destination": 49152,
+        "duration": 4,
+        "previous": 16384,
+        "rate": 8192,
+        "result": false,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 57344,
+        "rate": 8192,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 57344,
+        "rate": 8192,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 8192,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 33060,
+        "destination": 65280,
+        "duration": 3,
+        "previous": 33059,
+        "rate": 8192,
+        "result": true,
+        "rotating": true,
+        "start": 106
+      },
+      {
+        "animated": 43800,
+        "destination": 256,
+        "duration": 2,
+        "previous": 43800,
+        "rate": 8192,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 2,
+        "previous": 43800,
+        "rate": 8192,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": 32
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 8192,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 40960,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 8192,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 32768,
+        "destination": 57635,
+        "duration": 3,
+        "previous": 32768,
+        "rate": 8192,
+        "result": true,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 55019,
+        "destination": 57635,
+        "duration": 3,
+        "previous": 32768,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 56327,
+        "destination": 57635,
+        "duration": 3,
+        "previous": 32768,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 103
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 126,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32256,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32256,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32256,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32256,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32256,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32256,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32256,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32256,
+        "result": true,
+        "rotating": false,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32256,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": 126,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32256,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32256,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32256,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32256,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32256,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32256,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32256,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32256,
+        "result": true,
+        "rotating": false,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32256,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": 126
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 32256,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 32256,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32256,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 127,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": 127,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": 127
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 128,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": 128,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": 128
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 255,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": 255,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": 255
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 256,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": 256,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": 256
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 2147483647,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 102,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 105,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 106,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 240,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": true,
+      "rot": 2147483647,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 1,
+        "previous": 16384,
+        "rate": 32512,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 105
+      },
+      {
+        "animated": 65280,
+        "destination": 65280,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 107
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 65280,
+        "rate": 32512,
+        "result": null,
+        "rotating": false,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 101,
+          "kind": "rate",
+          "value": 2147483647
+        },
+        {
+          "frame": 102,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 104,
+          "kind": "rate",
+          "value": 5
+        },
+        {
+          "frame": 105,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 106,
+          "kind": "snap",
+          "value": 256
+        },
+        {
+          "frame": 107,
+          "kind": "set",
+          "value": 16384
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 49152,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 16384,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 32512,
+        "result": null,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 32512,
+        "result": true,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 57635,
+        "destination": 57635,
+        "duration": 0,
+        "previous": 49152,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 103
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 0,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 106
+      },
+      {
+        "animated": 256,
+        "destination": 16384,
+        "duration": 12,
+        "previous": 256,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 107
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 2147483646,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 2147483647,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 2147483648,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 2147483649,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 2147483650,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 2147483651,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 2147483652,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 2147483653,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 2147483786,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 2147483646
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 2147483646
+      },
+      {
+        "animated": 15056,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 2147483646
+      },
+      {
+        "animated": 13746,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": false,
+        "rotating": true,
+        "start": 2147483646
+      },
+      {
+        "animated": 12424,
+        "destination": 57635,
+        "duration": 15,
+        "previous": 12436,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 2147483649
+      },
+      {
+        "animated": 11069,
+        "destination": 57635,
+        "duration": 15,
+        "previous": 12436,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 2147483649
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 2147483651
+      },
+      {
+        "animated": 33080,
+        "destination": 65280,
+        "duration": 25,
+        "previous": 33059,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 2147483652
+      },
+      {
+        "animated": 34376,
+        "destination": 256,
+        "duration": 24,
+        "previous": 34368,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 2147483653
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 24,
+        "previous": 34368,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 2147483653
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 4294967293,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 4294967294,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 4294967295,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 0,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 1,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 2,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 3,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 4,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 137,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 4294967293
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 4294967293
+      },
+      {
+        "animated": 15056,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 4294967293
+      },
+      {
+        "animated": 13746,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": false,
+        "rotating": true,
+        "start": 4294967293
+      },
+      {
+        "animated": 12424,
+        "destination": 57635,
+        "duration": 15,
+        "previous": 12436,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 0
+      },
+      {
+        "animated": 11069,
+        "destination": 57635,
+        "duration": 15,
+        "previous": 12436,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 0
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 2
+      },
+      {
+        "animated": 33080,
+        "destination": 65280,
+        "duration": 25,
+        "previous": 33059,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 3
+      },
+      {
+        "animated": 34376,
+        "destination": 256,
+        "duration": 24,
+        "previous": 34368,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 4
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 24,
+        "previous": 34368,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 4
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 16384,
+      "operations": [
+        {
+          "frame": 4294967295,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 0,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 1,
+          "kind": "set",
+          "value": 49152
+        },
+        {
+          "frame": 2,
+          "kind": "set",
+          "value": 57635
+        },
+        {
+          "frame": 3,
+          "kind": "sample",
+          "value": 0
+        },
+        {
+          "frame": 4,
+          "kind": "snap",
+          "value": 33059
+        },
+        {
+          "frame": 5,
+          "kind": "set",
+          "value": 65280
+        },
+        {
+          "frame": 6,
+          "kind": "set",
+          "value": 256
+        },
+        {
+          "frame": 139,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 5,
+      "start": 4294967295
+    },
+    "observations": [
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 4294967295
+      },
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 4294967295
+      },
+      {
+        "animated": 16366,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "result": false,
+        "rotating": true,
+        "start": 4294967295
+      },
+      {
+        "animated": 16363,
+        "destination": 57635,
+        "duration": 18,
+        "previous": 16366,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 2
+      },
+      {
+        "animated": 15015,
+        "destination": 57635,
+        "duration": 18,
+        "previous": 16366,
+        "rate": 1280,
+        "result": null,
+        "rotating": true,
+        "start": 2
+      },
+      {
+        "animated": 33059,
+        "destination": 33059,
+        "duration": 0,
+        "previous": 33059,
+        "rate": 1280,
+        "result": true,
+        "rotating": false,
+        "start": 4
+      },
+      {
+        "animated": 33080,
+        "destination": 65280,
+        "duration": 25,
+        "previous": 33059,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 5
+      },
+      {
+        "animated": 34376,
+        "destination": 256,
+        "duration": 24,
+        "previous": 34368,
+        "rate": 1280,
+        "result": true,
+        "rotating": true,
+        "start": 6
+      },
+      {
+        "animated": 256,
+        "destination": 256,
+        "duration": 24,
+        "previous": 34368,
+        "rate": 1280,
+        "result": null,
+        "rotating": false,
+        "start": 6
+      }
+    ]
+  },
+  {
+    "input": {
+      "initial": 0,
+      "operations": [
+        {
+          "frame": 100,
+          "kind": "set",
+          "value": 16383
+        },
+        {
+          "frame": 100,
+          "kind": "snap",
+          "value": 0
+        },
+        {
+          "frame": 101,
+          "kind": "sample",
+          "value": 0
+        }
+      ],
+      "rate_constructor": false,
+      "rot": 32,
+      "start": 100
+    },
+    "observations": [
+      {
+        "animated": 0,
+        "destination": 16383,
+        "duration": 1,
+        "previous": 0,
+        "rate": 8192,
+        "result": true,
+        "rotating": true,
+        "start": 100
+      },
+      {
+        "animated": 16383,
+        "destination": 16383,
+        "duration": 0,
+        "previous": 0,
+        "rate": 8192,
+        "result": false,
+        "rotating": false,
+        "start": 100
+      },
+      {
+        "animated": 16383,
+        "destination": 16383,
+        "duration": 0,
+        "previous": 0,
+        "rate": 8192,
+        "result": null,
+        "rotating": false,
+        "start": 100
+      }
+    ]
+  }
+]

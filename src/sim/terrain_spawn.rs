@@ -746,7 +746,7 @@ fn construct_terrain_objects_inner(
         sim.production
             .terrain_objects
             .insert(stable_id, terrain_state);
-        let registered = sim.register_terrain_object(stable_id);
+        let registered = sim.register_terrain_object(stable_id, Some(rules));
         debug_assert!(registered);
         mark_terrain_raw_occupation(
             &mut sim.substrate.raw_cell_occupation,

@@ -43,19 +43,12 @@ fn engineer_at(sim: &mut Simulation, rules: &RuleSet, cell: (u16, u16)) -> u64 {
 /// Infantry 0x51AA40(cell, true) through the shared Walk setter owner.
 fn order_walk(sim: &mut Simulation, rules: &RuleSet, id: u64, target: (u16, u16)) {
     let speed = sim.resolve_move_info(id, Some(rules)).unwrap().speed;
-    let grid = sim.path_grid_snapshot().unwrap();
     assert!(crate::sim::movement::prepare_walk_cell_destination(
         &mut sim.substrate.entities,
-        &grid,
         id,
         target,
         speed,
-        sim.terrain_costs
-            .get(&crate::rules::locomotor_type::SpeedType::Foot),
         sim.resolved_terrain.as_ref(),
-        sim.zone_grid.as_ref(),
-        sim.playfield_bounds,
-        &mut sim.substrate.cell_occupation,
         crate::sim::movement::DestinationTiming::new(
             sim.session.binary_frame,
             rules.general.blockage_path_delay_ticks,
@@ -310,4 +303,109 @@ fn receiver_writes_the_ready_action_only_when_do_action_admits_it() {
         .and_then(|set| set.get(&crate::rules::animation_sequence::SequenceKind::Stand))
         .is_some_and(|sequence| sequence.frame_count != 0);
     assert_eq!(doing, if has_ready { 0 } else { -1 });
+}
+
+#[test]
+fn infantry_damage_scatter_reaches_the_ordinary_walk_process() {
+    use crate::sim::combat::{EntityDamageEvent, world_receiver};
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::movement::ground_pose::position_world_coord;
+    let (mut sim, rules, registry) = super::tests::fixture_with_rules(
+        "[ENGINEER]\nFraidycat=yes\n[Guard]\nScatter=yes\n[CombatDamage]\nPlayerScatter=yes\n",
+    );
+    assert!(rules.object("ENGINEER").unwrap().fraidycat);
+    let victim = engineer_at(&mut sim, &rules, (10, 10));
+    let attacker = engineer_at(&mut sim, &rules, (8, 10));
+    sim.mission_assign_exact(
+        victim,
+        MissionId::from_known(MissionType::Guard),
+        sim.session.binary_frame,
+    )
+    .unwrap();
+    let e = sim.substrate.entities.get_mut(victim).unwrap();
+    e.mission_leaf.set_infantry_doing_verified(-1).unwrap();
+    let before = position_world_coord(&e.position);
+    let facing = e.facing;
+    let attacker_house = sim.substrate.entities.get(attacker).unwrap().owner();
+    let warhead = sim.interner.intern("SA");
+    let event = EntityDamageEvent::area(victim, 10, 0, attacker, Some(attacker_house), warhead);
+    world_receiver::commit_entities(
+        &mut sim,
+        &mut world_receiver::ReceiverRun::default(),
+        &[event],
+        None,
+        &rules,
+        Some(&registry),
+    );
+    let e = sim.substrate.entities.get(victim).unwrap();
+    assert_eq!(e.health.current, 65);
+    assert_eq!(e.facing, facing, "Scatter setter does not snap facing");
+    assert_eq!(
+        position_world_coord(&e.position),
+        before,
+        "no immediate Process for source Scatter"
+    );
+    let Some(NavTargetRef::Cell { rx, ry }) = e.navigation.nav_com else {
+        panic!("scatter cell");
+    };
+    assert_eq!(
+        e.locomotor.as_ref().unwrap().walk_destination(),
+        Some(DriveCoord::cell(rx, ry, 0))
+    );
+    assert!(
+        e.movement_target.as_ref().unwrap().path.is_empty(),
+        "first path belongs to Process"
+    );
+    assert_eq!(e.locomotor.as_ref().unwrap().step_head(), None);
+    assert_eq!(e.mission.queued(), MissionId::from_known(MissionType::Move));
+    // The same production tick host that handles normal orders must consume
+    // the damage-created request. The native corpus proves the first FindPath
+    // boundary; this regression continues through our real search/head/step.
+    sim.advance_tick(
+        &[],
+        Some(&rules),
+        &BTreeMap::new(),
+        None,
+        Some(&registry),
+        67,
+    );
+    let e = sim.substrate.entities.get(victim).unwrap();
+    assert_eq!(position_world_coord(&e.position), before);
+    assert!(e.locomotor.as_ref().unwrap().step_head().is_some());
+    sim.advance_tick(
+        &[],
+        Some(&rules),
+        &BTreeMap::new(),
+        None,
+        Some(&registry),
+        67,
+    );
+    assert_ne!(
+        position_world_coord(&sim.substrate.entities.get(victim).unwrap().position),
+        before
+    );
+    for _ in 0..200 {
+        sim.advance_tick(
+            &[],
+            Some(&rules),
+            &BTreeMap::new(),
+            None,
+            Some(&registry),
+            67,
+        );
+        if sim
+            .substrate
+            .entities
+            .get(victim)
+            .unwrap()
+            .movement_target
+            .is_none()
+        {
+            break;
+        }
+    }
+    let e = sim.substrate.entities.get(victim).unwrap();
+    assert_eq!((e.position.rx, e.position.ry), (rx, ry));
+    assert!(e.navigation.nav_com.is_none());
+    assert!(e.locomotor.as_ref().unwrap().walk_destination().is_none());
 }

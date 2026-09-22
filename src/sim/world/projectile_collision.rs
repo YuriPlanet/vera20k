@@ -786,7 +786,7 @@ mod tests {
                             crate::rules::locomotor_type::LocomotorKind::Fly,
                         );
                     locomotor.altitude = SimFixed::from_num(100);
-                    locomotor.air_phase = crate::sim::movement::locomotor::AirMovePhase::Cruising;
+
                     victim.locomotor = Some(locomotor);
                 }
                 assert!(matches!(sim.reveal(source), RevealOutcome::Revealed { .. }));
@@ -1928,13 +1928,10 @@ impl ProjectileCollisionWorld<'_> {
                     || name.eq_ignore_ascii_case(&rules.missile_spawn.dmisl.type_name)
             })
         {
-            use crate::sim::movement::rocket_movement::RocketPhase;
-            return target.rocket_state.as_ref().is_some_and(|rocket| {
-                matches!(
-                    rocket.phase,
-                    RocketPhase::Ascent | RocketPhase::Cruise | RocketPhase::Terminal
-                )
-            });
+            return target
+                .rocket_state
+                .as_ref()
+                .is_some_and(|rocket| rocket.phase.is_moving_now());
         }
         let raw = self.raw_location(target);
         target.lifecycle.cell_marked

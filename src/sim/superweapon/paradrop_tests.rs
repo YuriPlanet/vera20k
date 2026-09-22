@@ -21,6 +21,10 @@ use crate::sim::world::edge_cell::{Edge, find_paradrop_edge_cell};
 /// Minimal ruleset with PDPLANE + ParaDropWeapon + E1 + AMRADR cargo plane setup.
 /// AmerParaDropNum trimmed to 4 for faster test cycles vs the vanilla 8.
 fn make_paradrop_rules() -> RuleSet {
+    make_paradrop_rules_with_flight_level(None)
+}
+
+fn make_paradrop_rules_with_flight_level(flight_level: Option<i32>) -> RuleSet {
     let text = "\
 [InfantryTypes]
 0=E1
@@ -88,7 +92,11 @@ Warhead=SA
 Verses=100%,100%,100%,90%,70%,25%,100%,25%,25%,0%,0%
 CellSpread=0
 ";
-    let ini = IniFile::from_str(text);
+    let text = flight_level.map_or_else(
+        || text.to_string(),
+        |level| text.replace("[PDPLANE]", &format!("[PDPLANE]\nFlightLevel={level}")),
+    );
+    let ini = IniFile::from_str(&text);
     RuleSet::from_ini(&ini).expect("test ruleset parse")
 }
 
@@ -275,6 +283,40 @@ fn infantry_terminal_empty_custom_carrier_retires_after_failed_launch() {
 }
 
 #[test]
+fn mission_only_paradrop_marks_even_an_ordinary_landable_type() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AircraftTypes]\n0=PDPLANE\n[InfantryTypes]\n0=E1\n[VehicleTypes]\n[BuildingTypes]\n\
+         [General]\nAmerParaDropInf=E1\nAmerParaDropNum=1\nFlightLevel=1500\n\
+         [PDPLANE]\nStrength=100\nSpeed=10\nSelectable=yes\nLandable=yes\n\
+         Locomotor={4A582746-9839-11D1-B709-00A024DDAFD1}\n[E1]\nStrength=100\n",
+    ))
+    .unwrap();
+    let (mut sim, path_grid) = build_sim(&rules);
+    let owner = sim.interner.intern("Americans");
+    let sw = sim.interner.intern("SWTEST");
+    assert!(launch(
+        &mut sim,
+        &rules,
+        owner,
+        50,
+        20,
+        ParaDropKind::American,
+        sw,
+        Some(&path_grid)
+    ));
+    let id = find_pdplane(&sim).unwrap();
+    assert!(sim.substrate.entities.get(id).unwrap().is_mission_only());
+    assert!(
+        sim.substrate
+            .entities
+            .values()
+            .filter(|e| e.stable_id() != id)
+            .all(|e| !e.is_mission_only()),
+        "payload constructors do not inherit carrier history"
+    );
+}
+
+#[test]
 fn paradrop_launch_spawns_carrier_with_loaded_cargo() {
     let rules = make_paradrop_rules();
     let (mut sim, path_grid) = build_sim(&rules);
@@ -327,6 +369,38 @@ fn paradrop_launch_spawns_carrier_with_loaded_cargo() {
             assert!(!has_revealed_fog);
         }
         ref other => panic!("expected Open-equivalent ParaDropApproach, got {:?}", other),
+    }
+}
+
+#[test]
+fn paradrop_type_flight_level_reaches_spawned_carrier_and_survives_restore() {
+    for configured in [-1, 2200] {
+        let rules = make_paradrop_rules_with_flight_level(Some(configured));
+        let (mut sim, path_grid) = build_sim(&rules);
+        let owner = sim.interner.intern("Americans");
+        let sw_test = sim.interner.intern("SWTEST");
+        assert!(launch(
+            &mut sim,
+            &rules,
+            owner,
+            50,
+            20,
+            ParaDropKind::American,
+            sw_test,
+            Some(&path_grid),
+        ));
+        let id = find_pdplane(&sim).unwrap();
+        let expected = if configured == -1 { 1500 } else { configured };
+        let restored: Simulation =
+            bincode::deserialize(&bincode::serialize(&sim).unwrap()).unwrap();
+        for world in [&sim, &restored] {
+            let plane = world.substrate.entities.get(id).unwrap();
+            let loco = plane.locomotor.as_ref().unwrap();
+            assert_eq!(loco.fly_target_height(), expected);
+            assert_eq!(loco.altitude.to_num::<i32>(), expected);
+            assert_eq!(world.foot_navigation_coordinate(id).unwrap().z, expected);
+            assert_eq!(plane.passenger_role.cargo().unwrap().count(), 4);
+        }
     }
 }
 

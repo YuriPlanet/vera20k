@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Four original Link calls proving Aircraft-only instance copy and retention after a supplied live type change.",
+  "assumptions": [
+    "Real Fly constructor and original Aircraft/Unit RTTI vtables; supplied type+E0D.",
+    "No allocation, owner class construction, locomotor replacement or save/load coverage."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "link": "0x004CCA20",
+    "base_link": "0x0055A710",
+    "constructor": "0x004CC9A0"
+  },
+  "payload_sha256": "ceae8a8c05c11ca2a707390f49ec61b5b4f8d3e71628d738a8783c310053b2ea"
+}

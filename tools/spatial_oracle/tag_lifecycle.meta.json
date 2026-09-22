@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Tag find/create, linked Trigger construction and timer/RNG, dispatch, reset fanout, force/enable/disable, Object/cell attachment, detach, duplicate pending removal, linked Trigger splicing, deferred destructors and Logic tag polling with live list mutation/dirty flags. Excludes map loading/registration classification, scenario countdown expiry, later Logic AI, Team lifecycle, physical Object destruction and gated House-win/cursor destructor updates.",
+  "assumptions": [
+    "Resolved definitions, one registered House and initialized Scenario RNG.",
+    "Registries have spare capacity and native initialized vtables; map cells exist. Lifecycle cases construct real base Objects; no Teams are registered.",
+    "Polling cases supply the Logic registration list and run55AFB0..55B205; the scenario countdown is stopped, excluding its expiry/UI callback. Distinct TagTypes may share TriggerTypes.",
+    "Thread has an empty SEH chain. Gameplay/shutdown flagsA8E9A0/A8ED5C remain false, excluding destructor House-win/cursor updates."
+  ],
+  "substitutions": [
+    "Operator-new7C8E17 supplies bounded poisoned arena storage;7C8B3D records freeing it. Fresh Tag and Object storage is supplied directly to original constructors.",
+    "Windows IsBadReadPtr succeeds only after Unicorn validates the probed memory. Original CRT typeid and gameplay callees/instructions are unchanged."
+  ],
+  "entry_points": {
+    "find_or_create": "0x006E52A0",
+    "tag_constructor": "0x006E4DE0",
+    "process_event": "0x006E53A0",
+    "trigger_predicate": "0x007264C0",
+    "spring": "0x007265C0",
+    "reset": "0x00726400",
+    "execute_action": "0x006DD8B0",
+    "object_constructor": "0x005F3900",
+    "object_attach": "0x005F5B50",
+    "deferred_drain": "0x00725C70",
+    "logic_tag_poll_prefix": "0x0055AFB0",
+    "tag_destructor": "0x006E4F60",
+    "trigger_deleting_destructor": "0x00726950"
+  },
+  "payload_sha256": "59eb67f4543f243db25eeadf7d7a77412e77708d93d6dd1e743893aa6c1d0899"
+}

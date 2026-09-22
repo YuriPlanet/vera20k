@@ -1,26 +1,9 @@
-//! Runtime locomotor state — ECS component for unit movement behavior.
+//! Locomotor component and access to each movement mechanism's runtime.
 //!
-//! Each movable entity gets a `LocomotorState` component at spawn time, created
-//! from the unit's `ObjectType` data. This component controls HOW the unit moves:
-//! speed multipliers, movement layer (ground/air/underground), and phase tracking.
-//!
-//! `LocomotorState` works alongside `MovementTarget` (which holds the A* path).
-//! The locomotor controls the interpretation of the path; `MovementTarget` holds
-//! the raw path data. Entities without `LocomotorState` use legacy movement
-//! (backward compatible).
-//!
-//! ## Phase 1 scope
-//! Ground movers (Drive, Walk, Hover, Mech, Ship) are fully functional.
-//!
-//! ## Phase 2 scope
-//! Air movers (Fly, Jumpjet) have altitude state machines.
-//! Fly units move in straight lines (no A*), ascend/descend between ground and
-//! cruise altitude. Jumpjet units hover at JumpjetHeight with wobble.
-//! Special locomotors (Teleport, Tunnel, Rocket, DropPod) are stubbed for later.
-//!
-//! ## Dependency rules
-//! - Part of sim/ — depends on rules/ (LocomotorKind, ObjectType).
-//! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
+//! `MovementTarget` owns destination/path data. Mechanism payloads own native
+//! controller state; shared fields retain movement and presentation adapters.
+//! Current world Z is authoritative in Object coordinates. `altitude` is its
+//! bounded cache, while Fly's integer target lives in its own payload.
 
 use crate::rules::jumpjet_params::JumpjetParams;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
@@ -101,7 +84,8 @@ pub enum GroundMovePhase {
     Blocked,
 }
 
-/// Phase within a Fly mover's flight cycle.
+/// Derived view of Fly height versus target for legacy aircraft missions.
+/// This is neither serialized controller state nor native takeoff/landing flags.
 ///
 /// Fly units cycle through TakingOff → Cruising → Descending → Landed. A
 /// Jumpjet does not use it: its phase is the native state field,
@@ -117,9 +101,6 @@ pub enum AirMovePhase {
     /// Descending from cruise altitude back to ground.
     Descending,
 }
-
-/// Rate at which Fly aircraft ascend/descend (leptons per second).
-const FLY_CLIMB_RATE: SimFixed = SimFixed::lit("300");
 
 /// Runtime locomotor state attached to each movable ECS entity.
 ///
@@ -157,8 +138,6 @@ pub struct LocomotorState {
     pub layer: MovementLayer,
     /// Current movement phase (for ground movers).
     pub phase: GroundMovePhase,
-    /// Current air movement phase (Fly locomotors; unused by a Jumpjet).
-    pub air_phase: AirMovePhase,
     /// Speed multiplier applied on top of ObjectType.speed.
     /// 1.0 for most units, 0.65 for Hover, etc.
     pub speed_multiplier: SimFixed,
@@ -172,13 +151,9 @@ pub struct LocomotorState {
     /// matching the original engine's TargetSpeed/CurrentSpeed system.
     /// Jumpjets use their own `jumpjet_current_speed` instead.
     pub fly_current_speed: SimFixed,
-    /// Current altitude in leptons (0 = on the ground).
-    /// Fly units cruise at `GeneralRules.flight_level`; Jumpjets hover at JumpjetHeight.
+    /// Bounded altitude cache for movement/presentation adapters. Fly's exact
+    /// current height comes from Object Z and terrain; its target is in FlyRuntime.
     pub altitude: SimFixed,
-    /// Target altitude — what the unit is ascending/descending toward.
-    pub target_altitude: SimFixed,
-    /// Climb rate in leptons per second.
-    pub climb_rate: SimFixed,
     /// Cached jumpjet flight speed (only for Jumpjet locomotor).
     pub jumpjet_speed: SimFixed,
     /// Jumpjet acceleration rate (JumpjetAccel). Deceleration = accel * 1.5.
@@ -254,10 +229,9 @@ pub struct LocomotorState {
 impl LocomotorState {
     /// Create a LocomotorState from an ObjectType's parsed rules.ini data.
     ///
-    /// `flight_level` is the cruise altitude in leptons from `[General] FlightLevel=`
-    /// (typically `rules.general.flight_level`). Fly/Rocket locomotors use this
-    /// as their target altitude.
-    pub fn from_object_type(obj: &ObjectType, flight_level: i32, binary_frame: u32) -> Self {
+    /// Class runtime starts from its native constructor; Fly requests resolve
+    /// FlightLevel when takeoff is admitted, not during construction.
+    pub fn from_object_type(obj: &ObjectType, binary_frame: u32) -> Self {
         let kind: LocomotorKind = obj.locomotor;
         let sim_one: SimFixed = SimFixed::from_num(1);
 
@@ -286,9 +260,11 @@ impl LocomotorState {
             LocomotorKind::Parachute => (MovementLayer::Air, sim_one),
         };
 
-        // Extract jumpjet params for altitude and wobble.
-        let (target_alt, climb, jj_speed) =
-            Self::air_params_from_object(kind, &obj.jumpjet_params, flight_level);
+        let jj_speed = if kind == LocomotorKind::Jumpjet {
+            obj.jumpjet_params.speed
+        } else {
+            SIM_ZERO
+        };
 
         // gamemd-derived: every `TechnoType` carries the `+0xD70`..`+0xD90`
         // jumpjet block, but only the Jumpjet locomotor ever copies it out —
@@ -324,17 +300,22 @@ impl LocomotorState {
                 if let LocomotorRuntimePayload::Jumpjet(runtime) = &mut payload {
                     runtime.link(&obj.jumpjet_params);
                 }
+                if let LocomotorRuntimePayload::Fly(runtime) = &mut payload {
+                    runtime.link(
+                        obj.category == crate::rules::object_type::ObjectCategory::Aircraft
+                            && obj.airport_bound,
+                    );
+                }
                 payload
             },
             layer,
             phase: GroundMovePhase::Idle,
-            air_phase: AirMovePhase::Landed,
+
             speed_multiplier,
             speed_fraction: sim_one,
             fly_current_speed: SIM_ZERO,
             altitude: SIM_ZERO,
-            target_altitude: target_alt,
-            climb_rate: climb,
+
             jumpjet_speed: jj_speed,
             jumpjet_accel: jj_accel,
             jumpjet_current_speed: SIM_ZERO,
@@ -352,36 +333,6 @@ impl LocomotorState {
             hover_throttle: SIM_ZERO,
             hover_speed_request: SIM_ZERO,
             hover_bob_offset: SIM_ZERO,
-        }
-    }
-
-    /// Compute altitude parameters from locomotor kind and the type's jumpjet
-    /// block. Returns (target_altitude, climb_rate, jumpjet_speed).
-    ///
-    /// The Jumpjet arm has no fallback literals: `JumpjetParams` already
-    /// carries the `TechnoTypeClass::Constructor` seeds (`0x007115AE`ff) for
-    /// every key the section leaves out, so duplicating them here would be a
-    /// second, drift-prone source of truth.
-    fn air_params_from_object(
-        kind: LocomotorKind,
-        jumpjet_params: &JumpjetParams,
-        flight_level: i32,
-    ) -> (SimFixed, SimFixed, SimFixed) {
-        match kind {
-            LocomotorKind::Fly | LocomotorKind::Rocket => {
-                let alt = SimFixed::from_num(flight_level);
-                (alt, FLY_CLIMB_RATE, SIM_ZERO)
-            }
-            LocomotorKind::Jumpjet => {
-                let height: SimFixed = SimFixed::from_num(jumpjet_params.height);
-                // Jumpjet climb rate scaled to leptons/second (original is per-tick at 15Hz).
-                (
-                    height,
-                    sim_from_f32(jumpjet_params.climb) * SimFixed::from_num(15),
-                    jumpjet_params.speed,
-                )
-            }
-            _ => (SIM_ZERO, SIM_ZERO, SIM_ZERO),
         }
     }
 
@@ -409,13 +360,12 @@ impl LocomotorState {
             runtime_payload: LocomotorRuntimePayload::for_kind(kind, binary_frame),
             layer,
             phase: GroundMovePhase::Idle,
-            air_phase: AirMovePhase::Landed,
+
             speed_multiplier,
             speed_fraction: SimFixed::from_num(1),
             fly_current_speed: SIM_ZERO,
             altitude: SIM_ZERO,
-            target_altitude: SIM_ZERO,
-            climb_rate: SIM_ZERO,
+
             jumpjet_speed: SIM_ZERO,
             jumpjet_accel: SIM_ZERO,
             jumpjet_current_speed: SIM_ZERO,
@@ -461,6 +411,49 @@ impl LocomotorState {
     /// Whether this unit is currently airborne (altitude > 0).
     pub fn is_airborne(&self) -> bool {
         self.altitude > SIM_ZERO
+    }
+
+    pub(crate) fn fly_runtime(&self) -> Option<&super::fly_height::FlyRuntime> {
+        match (self.kind, &self.runtime_payload) {
+            (LocomotorKind::Fly, LocomotorRuntimePayload::Fly(state)) => Some(state),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn fly_runtime_mut(&mut self) -> Option<&mut super::fly_height::FlyRuntime> {
+        match (self.kind, &mut self.runtime_payload) {
+            (LocomotorKind::Fly, LocomotorRuntimePayload::Fly(state)) => Some(state),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn fly_target_height(&self) -> i32 {
+        self.fly_runtime().map_or(0, |state| state.target_height())
+    }
+
+    pub(crate) fn set_fly_target_height(&mut self, height: i32) {
+        if let Some(state) = self.fly_runtime_mut() {
+            state.set_target_height(height);
+        }
+    }
+
+    pub(crate) fn begin_fly_takeoff(&mut self, flight_level: i32) {
+        if let Some(state) = self.fly_runtime_mut() {
+            state.begin_takeoff(flight_level);
+        }
+    }
+
+    pub(crate) fn begin_fly_landing(&mut self) {
+        if let Some(state) = self.fly_runtime_mut() {
+            state.begin_landing();
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn air_phase(&self) -> AirMovePhase {
+        self.fly_runtime().map_or(AirMovePhase::Landed, |state| {
+            state.mission_phase(self.altitude.to_num::<i32>())
+        })
     }
 
     /// Whether a piggybacked locomotor is currently displacing the installed one.

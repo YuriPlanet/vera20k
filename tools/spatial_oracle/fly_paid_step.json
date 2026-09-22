@@ -1,0 +1,5424 @@
+[
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 0,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 0,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "heading_0"
+    },
+    "proposed": [
+      2688,
+      2653,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 1,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 1,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "heading_1"
+    },
+    "proposed": [
+      2688,
+      2653,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 255,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 255,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "heading_255"
+    },
+    "proposed": [
+      2688,
+      2653,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 256,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 256,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "heading_256"
+    },
+    "proposed": [
+      2688,
+      2653,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 8191,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 8191,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "heading_8191"
+    },
+    "proposed": [
+      2712,
+      2663,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 8192,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 8192,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "heading_8192"
+    },
+    "proposed": [
+      2712,
+      2663,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 16383,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 16383,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "heading_16383"
+    },
+    "proposed": [
+      2723,
+      2688,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 16384,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "heading_16384"
+    },
+    "proposed": [
+      2723,
+      2688,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 16385,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 16385,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "heading_16385"
+    },
+    "proposed": [
+      2723,
+      2688,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 32767,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 32767,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "heading_32767"
+    },
+    "proposed": [
+      2687,
+      2723,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 32768,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 32768,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "heading_32768"
+    },
+    "proposed": [
+      2687,
+      2723,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 49152,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "heading_49152"
+    },
+    "proposed": [
+      2653,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 65535,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 65535,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "heading_65535"
+    },
+    "proposed": [
+      2688,
+      2653,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 4660,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 4660,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "heading_4660"
+    },
+    "proposed": [
+      2703,
+      2656,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "heading_43981"
+    },
+    "proposed": [
+      2657,
+      2704,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": -65536,
+      "ini_speed": -100,
+      "name": "fraction_-100_-65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 0,
+      "ini_speed": -100,
+      "name": "fraction_-100_0"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 1,
+      "ini_speed": -100,
+      "name": "fraction_-100_1"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 3276,
+      "ini_speed": -100,
+      "name": "fraction_-100_3276"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6553,
+      "ini_speed": -100,
+      "name": "fraction_-100_6553"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6554,
+      "ini_speed": -100,
+      "name": "fraction_-100_6554"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 16384,
+      "ini_speed": -100,
+      "name": "fraction_-100_16384"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 32768,
+      "ini_speed": -100,
+      "name": "fraction_-100_32768"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65535,
+      "ini_speed": -100,
+      "name": "fraction_-100_65535"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65536,
+      "ini_speed": -100,
+      "name": "fraction_-100_65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 98304,
+      "ini_speed": -100,
+      "name": "fraction_-100_98304"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": -65536,
+      "ini_speed": -1,
+      "name": "fraction_-1_-65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 0,
+      "ini_speed": -1,
+      "name": "fraction_-1_0"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 1,
+      "ini_speed": -1,
+      "name": "fraction_-1_1"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 3276,
+      "ini_speed": -1,
+      "name": "fraction_-1_3276"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6553,
+      "ini_speed": -1,
+      "name": "fraction_-1_6553"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6554,
+      "ini_speed": -1,
+      "name": "fraction_-1_6554"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 16384,
+      "ini_speed": -1,
+      "name": "fraction_-1_16384"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 32768,
+      "ini_speed": -1,
+      "name": "fraction_-1_32768"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65535,
+      "ini_speed": -1,
+      "name": "fraction_-1_65535"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65536,
+      "ini_speed": -1,
+      "name": "fraction_-1_65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 98304,
+      "ini_speed": -1,
+      "name": "fraction_-1_98304"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": -65536,
+      "ini_speed": 0,
+      "name": "fraction_0_-65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 0,
+      "ini_speed": 0,
+      "name": "fraction_0_0"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 1,
+      "ini_speed": 0,
+      "name": "fraction_0_1"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 3276,
+      "ini_speed": 0,
+      "name": "fraction_0_3276"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6553,
+      "ini_speed": 0,
+      "name": "fraction_0_6553"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6554,
+      "ini_speed": 0,
+      "name": "fraction_0_6554"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 16384,
+      "ini_speed": 0,
+      "name": "fraction_0_16384"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 32768,
+      "ini_speed": 0,
+      "name": "fraction_0_32768"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65535,
+      "ini_speed": 0,
+      "name": "fraction_0_65535"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65536,
+      "ini_speed": 0,
+      "name": "fraction_0_65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 98304,
+      "ini_speed": 0,
+      "name": "fraction_0_98304"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 0
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": -65536,
+      "ini_speed": 1,
+      "name": "fraction_1_-65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": -2,
+    "type_speed": 2
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 0,
+      "ini_speed": 1,
+      "name": "fraction_1_0"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 2
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 1,
+      "ini_speed": 1,
+      "name": "fraction_1_1"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 2
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 3276,
+      "ini_speed": 1,
+      "name": "fraction_1_3276"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 2
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6553,
+      "ini_speed": 1,
+      "name": "fraction_1_6553"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 2
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6554,
+      "ini_speed": 1,
+      "name": "fraction_1_6554"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 2
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 16384,
+      "ini_speed": 1,
+      "name": "fraction_1_16384"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 2
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 32768,
+      "ini_speed": 1,
+      "name": "fraction_1_32768"
+    },
+    "proposed": [
+      2687,
+      2688,
+      1500
+    ],
+    "speed": 1,
+    "type_speed": 2
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65535,
+      "ini_speed": 1,
+      "name": "fraction_1_65535"
+    },
+    "proposed": [
+      2687,
+      2688,
+      1500
+    ],
+    "speed": 1,
+    "type_speed": 2
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65536,
+      "ini_speed": 1,
+      "name": "fraction_1_65536"
+    },
+    "proposed": [
+      2686,
+      2688,
+      1500
+    ],
+    "speed": 2,
+    "type_speed": 2
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 98304,
+      "ini_speed": 1,
+      "name": "fraction_1_98304"
+    },
+    "proposed": [
+      2685,
+      2689,
+      1500
+    ],
+    "speed": 3,
+    "type_speed": 2
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": -65536,
+      "ini_speed": 4,
+      "name": "fraction_4_-65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": -10,
+    "type_speed": 10
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 0,
+      "ini_speed": 4,
+      "name": "fraction_4_0"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 10
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 1,
+      "ini_speed": 4,
+      "name": "fraction_4_1"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 10
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 3276,
+      "ini_speed": 4,
+      "name": "fraction_4_3276"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 10
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6553,
+      "ini_speed": 4,
+      "name": "fraction_4_6553"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 10
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6554,
+      "ini_speed": 4,
+      "name": "fraction_4_6554"
+    },
+    "proposed": [
+      2687,
+      2688,
+      1500
+    ],
+    "speed": 1,
+    "type_speed": 10
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 16384,
+      "ini_speed": 4,
+      "name": "fraction_4_16384"
+    },
+    "proposed": [
+      2686,
+      2688,
+      1500
+    ],
+    "speed": 2,
+    "type_speed": 10
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 32768,
+      "ini_speed": 4,
+      "name": "fraction_4_32768"
+    },
+    "proposed": [
+      2683,
+      2690,
+      1500
+    ],
+    "speed": 5,
+    "type_speed": 10
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65535,
+      "ini_speed": 4,
+      "name": "fraction_4_65535"
+    },
+    "proposed": [
+      2680,
+      2692,
+      1500
+    ],
+    "speed": 9,
+    "type_speed": 10
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65536,
+      "ini_speed": 4,
+      "name": "fraction_4_65536"
+    },
+    "proposed": [
+      2679,
+      2692,
+      1500
+    ],
+    "speed": 10,
+    "type_speed": 10
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 98304,
+      "ini_speed": 4,
+      "name": "fraction_4_98304"
+    },
+    "proposed": [
+      2674,
+      2695,
+      1500
+    ],
+    "speed": 15,
+    "type_speed": 10
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": -65536,
+      "ini_speed": 6,
+      "name": "fraction_6_-65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": -15,
+    "type_speed": 15
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 0,
+      "ini_speed": 6,
+      "name": "fraction_6_0"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 15
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 1,
+      "ini_speed": 6,
+      "name": "fraction_6_1"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 15
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 3276,
+      "ini_speed": 6,
+      "name": "fraction_6_3276"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 15
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6553,
+      "ini_speed": 6,
+      "name": "fraction_6_6553"
+    },
+    "proposed": [
+      2687,
+      2688,
+      1500
+    ],
+    "speed": 1,
+    "type_speed": 15
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6554,
+      "ini_speed": 6,
+      "name": "fraction_6_6554"
+    },
+    "proposed": [
+      2687,
+      2688,
+      1500
+    ],
+    "speed": 1,
+    "type_speed": 15
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 16384,
+      "ini_speed": 6,
+      "name": "fraction_6_16384"
+    },
+    "proposed": [
+      2685,
+      2689,
+      1500
+    ],
+    "speed": 3,
+    "type_speed": 15
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 32768,
+      "ini_speed": 6,
+      "name": "fraction_6_32768"
+    },
+    "proposed": [
+      2681,
+      2691,
+      1500
+    ],
+    "speed": 7,
+    "type_speed": 15
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65535,
+      "ini_speed": 6,
+      "name": "fraction_6_65535"
+    },
+    "proposed": [
+      2675,
+      2694,
+      1500
+    ],
+    "speed": 14,
+    "type_speed": 15
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65536,
+      "ini_speed": 6,
+      "name": "fraction_6_65536"
+    },
+    "proposed": [
+      2674,
+      2695,
+      1500
+    ],
+    "speed": 15,
+    "type_speed": 15
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 98304,
+      "ini_speed": 6,
+      "name": "fraction_6_98304"
+    },
+    "proposed": [
+      2668,
+      2698,
+      1500
+    ],
+    "speed": 22,
+    "type_speed": 15
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": -65536,
+      "ini_speed": 8,
+      "name": "fraction_8_-65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": -20,
+    "type_speed": 20
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 0,
+      "ini_speed": 8,
+      "name": "fraction_8_0"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 20
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 1,
+      "ini_speed": 8,
+      "name": "fraction_8_1"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 20
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 3276,
+      "ini_speed": 8,
+      "name": "fraction_8_3276"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 20
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6553,
+      "ini_speed": 8,
+      "name": "fraction_8_6553"
+    },
+    "proposed": [
+      2687,
+      2688,
+      1500
+    ],
+    "speed": 1,
+    "type_speed": 20
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6554,
+      "ini_speed": 8,
+      "name": "fraction_8_6554"
+    },
+    "proposed": [
+      2686,
+      2688,
+      1500
+    ],
+    "speed": 2,
+    "type_speed": 20
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 16384,
+      "ini_speed": 8,
+      "name": "fraction_8_16384"
+    },
+    "proposed": [
+      2683,
+      2690,
+      1500
+    ],
+    "speed": 5,
+    "type_speed": 20
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 32768,
+      "ini_speed": 8,
+      "name": "fraction_8_32768"
+    },
+    "proposed": [
+      2679,
+      2692,
+      1500
+    ],
+    "speed": 10,
+    "type_speed": 20
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65535,
+      "ini_speed": 8,
+      "name": "fraction_8_65535"
+    },
+    "proposed": [
+      2671,
+      2697,
+      1500
+    ],
+    "speed": 19,
+    "type_speed": 20
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65536,
+      "ini_speed": 8,
+      "name": "fraction_8_65536"
+    },
+    "proposed": [
+      2670,
+      2697,
+      1500
+    ],
+    "speed": 20,
+    "type_speed": 20
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 98304,
+      "ini_speed": 8,
+      "name": "fraction_8_98304"
+    },
+    "proposed": [
+      2661,
+      2702,
+      1500
+    ],
+    "speed": 30,
+    "type_speed": 20
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": -65536,
+      "ini_speed": 10,
+      "name": "fraction_10_-65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": -25,
+    "type_speed": 25
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 0,
+      "ini_speed": 10,
+      "name": "fraction_10_0"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 25
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 1,
+      "ini_speed": 10,
+      "name": "fraction_10_1"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 25
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 3276,
+      "ini_speed": 10,
+      "name": "fraction_10_3276"
+    },
+    "proposed": [
+      2687,
+      2688,
+      1500
+    ],
+    "speed": 1,
+    "type_speed": 25
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6553,
+      "ini_speed": 10,
+      "name": "fraction_10_6553"
+    },
+    "proposed": [
+      2686,
+      2688,
+      1500
+    ],
+    "speed": 2,
+    "type_speed": 25
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6554,
+      "ini_speed": 10,
+      "name": "fraction_10_6554"
+    },
+    "proposed": [
+      2686,
+      2688,
+      1500
+    ],
+    "speed": 2,
+    "type_speed": 25
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 16384,
+      "ini_speed": 10,
+      "name": "fraction_10_16384"
+    },
+    "proposed": [
+      2682,
+      2690,
+      1500
+    ],
+    "speed": 6,
+    "type_speed": 25
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 32768,
+      "ini_speed": 10,
+      "name": "fraction_10_32768"
+    },
+    "proposed": [
+      2677,
+      2693,
+      1500
+    ],
+    "speed": 12,
+    "type_speed": 25
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65535,
+      "ini_speed": 10,
+      "name": "fraction_10_65535"
+    },
+    "proposed": [
+      2666,
+      2699,
+      1500
+    ],
+    "speed": 24,
+    "type_speed": 25
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65536,
+      "ini_speed": 10,
+      "name": "fraction_10_65536"
+    },
+    "proposed": [
+      2666,
+      2699,
+      1500
+    ],
+    "speed": 25,
+    "type_speed": 25
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 98304,
+      "ini_speed": 10,
+      "name": "fraction_10_98304"
+    },
+    "proposed": [
+      2655,
+      2705,
+      1500
+    ],
+    "speed": 37,
+    "type_speed": 25
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": -65536,
+      "ini_speed": 11,
+      "name": "fraction_11_-65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": -28,
+    "type_speed": 28
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 0,
+      "ini_speed": 11,
+      "name": "fraction_11_0"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 28
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 1,
+      "ini_speed": 11,
+      "name": "fraction_11_1"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 28
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 3276,
+      "ini_speed": 11,
+      "name": "fraction_11_3276"
+    },
+    "proposed": [
+      2687,
+      2688,
+      1500
+    ],
+    "speed": 1,
+    "type_speed": 28
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6553,
+      "ini_speed": 11,
+      "name": "fraction_11_6553"
+    },
+    "proposed": [
+      2686,
+      2688,
+      1500
+    ],
+    "speed": 2,
+    "type_speed": 28
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6554,
+      "ini_speed": 11,
+      "name": "fraction_11_6554"
+    },
+    "proposed": [
+      2686,
+      2688,
+      1500
+    ],
+    "speed": 2,
+    "type_speed": 28
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 16384,
+      "ini_speed": 11,
+      "name": "fraction_11_16384"
+    },
+    "proposed": [
+      2681,
+      2691,
+      1500
+    ],
+    "speed": 7,
+    "type_speed": 28
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 32768,
+      "ini_speed": 11,
+      "name": "fraction_11_32768"
+    },
+    "proposed": [
+      2675,
+      2694,
+      1500
+    ],
+    "speed": 14,
+    "type_speed": 28
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65535,
+      "ini_speed": 11,
+      "name": "fraction_11_65535"
+    },
+    "proposed": [
+      2664,
+      2700,
+      1500
+    ],
+    "speed": 27,
+    "type_speed": 28
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65536,
+      "ini_speed": 11,
+      "name": "fraction_11_65536"
+    },
+    "proposed": [
+      2663,
+      2701,
+      1500
+    ],
+    "speed": 28,
+    "type_speed": 28
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 98304,
+      "ini_speed": 11,
+      "name": "fraction_11_98304"
+    },
+    "proposed": [
+      2651,
+      2707,
+      1500
+    ],
+    "speed": 42,
+    "type_speed": 28
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": -65536,
+      "ini_speed": 14,
+      "name": "fraction_14_-65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": -35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 0,
+      "ini_speed": 14,
+      "name": "fraction_14_0"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 1,
+      "ini_speed": 14,
+      "name": "fraction_14_1"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 3276,
+      "ini_speed": 14,
+      "name": "fraction_14_3276"
+    },
+    "proposed": [
+      2687,
+      2688,
+      1500
+    ],
+    "speed": 1,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6553,
+      "ini_speed": 14,
+      "name": "fraction_14_6553"
+    },
+    "proposed": [
+      2685,
+      2689,
+      1500
+    ],
+    "speed": 3,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6554,
+      "ini_speed": 14,
+      "name": "fraction_14_6554"
+    },
+    "proposed": [
+      2685,
+      2689,
+      1500
+    ],
+    "speed": 3,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 16384,
+      "ini_speed": 14,
+      "name": "fraction_14_16384"
+    },
+    "proposed": [
+      2680,
+      2691,
+      1500
+    ],
+    "speed": 8,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 32768,
+      "ini_speed": 14,
+      "name": "fraction_14_32768"
+    },
+    "proposed": [
+      2673,
+      2696,
+      1500
+    ],
+    "speed": 17,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65535,
+      "ini_speed": 14,
+      "name": "fraction_14_65535"
+    },
+    "proposed": [
+      2658,
+      2704,
+      1500
+    ],
+    "speed": 34,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "fraction_14_65536"
+    },
+    "proposed": [
+      2657,
+      2704,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 98304,
+      "ini_speed": 14,
+      "name": "fraction_14_98304"
+    },
+    "proposed": [
+      2642,
+      2712,
+      1500
+    ],
+    "speed": 52,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": -65536,
+      "ini_speed": 40,
+      "name": "fraction_40_-65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": -102,
+    "type_speed": 102
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 0,
+      "ini_speed": 40,
+      "name": "fraction_40_0"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 102
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 1,
+      "ini_speed": 40,
+      "name": "fraction_40_1"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 102
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 3276,
+      "ini_speed": 40,
+      "name": "fraction_40_3276"
+    },
+    "proposed": [
+      2683,
+      2690,
+      1500
+    ],
+    "speed": 5,
+    "type_speed": 102
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6553,
+      "ini_speed": 40,
+      "name": "fraction_40_6553"
+    },
+    "proposed": [
+      2679,
+      2692,
+      1500
+    ],
+    "speed": 10,
+    "type_speed": 102
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6554,
+      "ini_speed": 40,
+      "name": "fraction_40_6554"
+    },
+    "proposed": [
+      2679,
+      2692,
+      1500
+    ],
+    "speed": 10,
+    "type_speed": 102
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 16384,
+      "ini_speed": 40,
+      "name": "fraction_40_16384"
+    },
+    "proposed": [
+      2666,
+      2699,
+      1500
+    ],
+    "speed": 25,
+    "type_speed": 102
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 32768,
+      "ini_speed": 40,
+      "name": "fraction_40_32768"
+    },
+    "proposed": [
+      2643,
+      2712,
+      1500
+    ],
+    "speed": 51,
+    "type_speed": 102
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65535,
+      "ini_speed": 40,
+      "name": "fraction_40_65535"
+    },
+    "proposed": [
+      2599,
+      2736,
+      1500
+    ],
+    "speed": 101,
+    "type_speed": 102
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65536,
+      "ini_speed": 40,
+      "name": "fraction_40_65536"
+    },
+    "proposed": [
+      2598,
+      2736,
+      1500
+    ],
+    "speed": 102,
+    "type_speed": 102
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 98304,
+      "ini_speed": 40,
+      "name": "fraction_40_98304"
+    },
+    "proposed": [
+      2553,
+      2760,
+      1500
+    ],
+    "speed": 153,
+    "type_speed": 102
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": -65536,
+      "ini_speed": 100,
+      "name": "fraction_100_-65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": -255,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 0,
+      "ini_speed": 100,
+      "name": "fraction_100_0"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 1,
+      "ini_speed": 100,
+      "name": "fraction_100_1"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 3276,
+      "ini_speed": 100,
+      "name": "fraction_100_3276"
+    },
+    "proposed": [
+      2677,
+      2693,
+      1500
+    ],
+    "speed": 12,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6553,
+      "ini_speed": 100,
+      "name": "fraction_100_6553"
+    },
+    "proposed": [
+      2666,
+      2699,
+      1500
+    ],
+    "speed": 25,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6554,
+      "ini_speed": 100,
+      "name": "fraction_100_6554"
+    },
+    "proposed": [
+      2666,
+      2699,
+      1500
+    ],
+    "speed": 25,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 16384,
+      "ini_speed": 100,
+      "name": "fraction_100_16384"
+    },
+    "proposed": [
+      2632,
+      2717,
+      1500
+    ],
+    "speed": 63,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 32768,
+      "ini_speed": 100,
+      "name": "fraction_100_32768"
+    },
+    "proposed": [
+      2576,
+      2748,
+      1500
+    ],
+    "speed": 127,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65535,
+      "ini_speed": 100,
+      "name": "fraction_100_65535"
+    },
+    "proposed": [
+      2464,
+      2808,
+      1500
+    ],
+    "speed": 254,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65536,
+      "ini_speed": 100,
+      "name": "fraction_100_65536"
+    },
+    "proposed": [
+      2463,
+      2809,
+      1500
+    ],
+    "speed": 255,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 98304,
+      "ini_speed": 100,
+      "name": "fraction_100_98304"
+    },
+    "proposed": [
+      2351,
+      2869,
+      1500
+    ],
+    "speed": 382,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": -65536,
+      "ini_speed": 101,
+      "name": "fraction_101_-65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": -255,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 0,
+      "ini_speed": 101,
+      "name": "fraction_101_0"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 1,
+      "ini_speed": 101,
+      "name": "fraction_101_1"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 3276,
+      "ini_speed": 101,
+      "name": "fraction_101_3276"
+    },
+    "proposed": [
+      2677,
+      2693,
+      1500
+    ],
+    "speed": 12,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6553,
+      "ini_speed": 101,
+      "name": "fraction_101_6553"
+    },
+    "proposed": [
+      2666,
+      2699,
+      1500
+    ],
+    "speed": 25,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6554,
+      "ini_speed": 101,
+      "name": "fraction_101_6554"
+    },
+    "proposed": [
+      2666,
+      2699,
+      1500
+    ],
+    "speed": 25,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 16384,
+      "ini_speed": 101,
+      "name": "fraction_101_16384"
+    },
+    "proposed": [
+      2632,
+      2717,
+      1500
+    ],
+    "speed": 63,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 32768,
+      "ini_speed": 101,
+      "name": "fraction_101_32768"
+    },
+    "proposed": [
+      2576,
+      2748,
+      1500
+    ],
+    "speed": 127,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65535,
+      "ini_speed": 101,
+      "name": "fraction_101_65535"
+    },
+    "proposed": [
+      2464,
+      2808,
+      1500
+    ],
+    "speed": 254,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65536,
+      "ini_speed": 101,
+      "name": "fraction_101_65536"
+    },
+    "proposed": [
+      2463,
+      2809,
+      1500
+    ],
+    "speed": 255,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 98304,
+      "ini_speed": 101,
+      "name": "fraction_101_98304"
+    },
+    "proposed": [
+      2351,
+      2869,
+      1500
+    ],
+    "speed": 382,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": -65536,
+      "ini_speed": 2147483647,
+      "name": "fraction_2147483647_-65536"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": -255,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 0,
+      "ini_speed": 2147483647,
+      "name": "fraction_2147483647_0"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 1,
+      "ini_speed": 2147483647,
+      "name": "fraction_2147483647_1"
+    },
+    "proposed": [
+      2688,
+      2688,
+      1500
+    ],
+    "speed": 0,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 3276,
+      "ini_speed": 2147483647,
+      "name": "fraction_2147483647_3276"
+    },
+    "proposed": [
+      2677,
+      2693,
+      1500
+    ],
+    "speed": 12,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6553,
+      "ini_speed": 2147483647,
+      "name": "fraction_2147483647_6553"
+    },
+    "proposed": [
+      2666,
+      2699,
+      1500
+    ],
+    "speed": 25,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 6554,
+      "ini_speed": 2147483647,
+      "name": "fraction_2147483647_6554"
+    },
+    "proposed": [
+      2666,
+      2699,
+      1500
+    ],
+    "speed": 25,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 16384,
+      "ini_speed": 2147483647,
+      "name": "fraction_2147483647_16384"
+    },
+    "proposed": [
+      2632,
+      2717,
+      1500
+    ],
+    "speed": 63,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 32768,
+      "ini_speed": 2147483647,
+      "name": "fraction_2147483647_32768"
+    },
+    "proposed": [
+      2576,
+      2748,
+      1500
+    ],
+    "speed": 127,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65535,
+      "ini_speed": 2147483647,
+      "name": "fraction_2147483647_65535"
+    },
+    "proposed": [
+      2464,
+      2808,
+      1500
+    ],
+    "speed": 254,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 65536,
+      "ini_speed": 2147483647,
+      "name": "fraction_2147483647_65536"
+    },
+    "proposed": [
+      2463,
+      2809,
+      1500
+    ],
+    "speed": 255,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 43981,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "facing": 43981,
+      "fraction_bits": 98304,
+      "ini_speed": 2147483647,
+      "name": "fraction_2147483647_98304"
+    },
+    "proposed": [
+      2351,
+      2869,
+      1500
+    ],
+    "speed": 382,
+    "type_speed": 255
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 8192,
+    "input": {
+      "current": [
+        2559,
+        2559,
+        416
+      ],
+      "facing": 8192,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "boundary_2559_2559"
+    },
+    "proposed": [
+      2583,
+      2534,
+      416
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 40960,
+    "input": {
+      "current": [
+        2560,
+        2560,
+        416
+      ],
+      "facing": 40960,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "boundary_2560_2560"
+    },
+    "proposed": [
+      2535,
+      2584,
+      416
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        10,
+        10,
+        416
+      ],
+      "facing": 49152,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "boundary_10_10"
+    },
+    "proposed": [
+      -25,
+      9,
+      416
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 16384,
+    "input": {
+      "current": [
+        131070,
+        131070,
+        416
+      ],
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "boundary_131070_131070"
+    },
+    "proposed": [
+      131105,
+      131070,
+      416
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 65535,
+    "input": {
+      "current": [
+        -3,
+        -4,
+        416
+      ],
+      "facing": 65535,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "boundary_-3_-4"
+    },
+    "proposed": [
+      -2,
+      -39,
+      416
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 65279,
+    "input": {
+      "current": [
+        100000,
+        120000,
+        416
+      ],
+      "facing": 65279,
+      "fraction_bits": 65536,
+      "ini_speed": 14,
+      "name": "boundary_100000_120000"
+    },
+    "proposed": [
+      99999,
+      119965,
+      416
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 16384,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 90,
+      "ini_speed": 14,
+      "name": "turn_-255_90",
+      "rot": -255
+    },
+    "proposed": [
+      2723,
+      2688,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 16128,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 91,
+      "ini_speed": 14,
+      "name": "turn_-255_91",
+      "rot": -255
+    },
+    "proposed": [
+      2722,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 13824,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 100,
+      "ini_speed": 14,
+      "name": "turn_-255_100",
+      "rot": -255
+    },
+    "proposed": [
+      2721,
+      2679,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 9728,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 116,
+      "ini_speed": 14,
+      "name": "turn_-255_116",
+      "rot": -255
+    },
+    "proposed": [
+      2716,
+      2667,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 90,
+      "ini_speed": 14,
+      "name": "turn_-1_90",
+      "rot": -1
+    },
+    "proposed": [
+      2653,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 91,
+      "ini_speed": 14,
+      "name": "turn_-1_91",
+      "rot": -1
+    },
+    "proposed": [
+      2653,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 100,
+      "ini_speed": 14,
+      "name": "turn_-1_100",
+      "rot": -1
+    },
+    "proposed": [
+      2653,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 116,
+      "ini_speed": 14,
+      "name": "turn_-1_116",
+      "rot": -1
+    },
+    "proposed": [
+      2653,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 90,
+      "ini_speed": 14,
+      "name": "turn_0_90",
+      "rot": 0
+    },
+    "proposed": [
+      2653,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 91,
+      "ini_speed": 14,
+      "name": "turn_0_91",
+      "rot": 0
+    },
+    "proposed": [
+      2653,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 100,
+      "ini_speed": 14,
+      "name": "turn_0_100",
+      "rot": 0
+    },
+    "proposed": [
+      2653,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 116,
+      "ini_speed": 14,
+      "name": "turn_0_116",
+      "rot": 0
+    },
+    "proposed": [
+      2653,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 16366,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 90,
+      "ini_speed": 14,
+      "name": "turn_5_90",
+      "rot": 5
+    },
+    "proposed": [
+      2722,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 15056,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 91,
+      "ini_speed": 14,
+      "name": "turn_5_91",
+      "rot": 5
+    },
+    "proposed": [
+      2722,
+      2683,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 3266,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 100,
+      "ini_speed": 14,
+      "name": "turn_5_100",
+      "rot": 5
+    },
+    "proposed": [
+      2698,
+      2654,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 116,
+      "ini_speed": 14,
+      "name": "turn_5_116",
+      "rot": 5
+    },
+    "proposed": [
+      2653,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 16384,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 90,
+      "ini_speed": 14,
+      "name": "turn_127_90",
+      "rot": 127
+    },
+    "proposed": [
+      2723,
+      2688,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 91,
+      "ini_speed": 14,
+      "name": "turn_127_91",
+      "rot": 127
+    },
+    "proposed": [
+      2653,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 100,
+      "ini_speed": 14,
+      "name": "turn_127_100",
+      "rot": 127
+    },
+    "proposed": [
+      2653,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 116,
+      "ini_speed": 14,
+      "name": "turn_127_116",
+      "rot": 127
+    },
+    "proposed": [
+      2653,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 16384,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 90,
+      "ini_speed": 14,
+      "name": "turn_128_90",
+      "rot": 128
+    },
+    "proposed": [
+      2723,
+      2688,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 91,
+      "ini_speed": 14,
+      "name": "turn_128_91",
+      "rot": 128
+    },
+    "proposed": [
+      2653,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 100,
+      "ini_speed": 14,
+      "name": "turn_128_100",
+      "rot": 128
+    },
+    "proposed": [
+      2653,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  },
+  {
+    "calls": [
+      "primary_current",
+      "fly_speed",
+      "sin_table",
+      "cos_table",
+      "candidate_in_map"
+    ],
+    "facing": 49152,
+    "input": {
+      "current": [
+        2688,
+        2688,
+        1500
+      ],
+      "destination": 49152,
+      "facing": 16384,
+      "fraction_bits": 65536,
+      "frame": 116,
+      "ini_speed": 14,
+      "name": "turn_128_116",
+      "rot": 128
+    },
+    "proposed": [
+      2653,
+      2687,
+      1500
+    ],
+    "speed": 35,
+    "type_speed": 35
+  }
+]

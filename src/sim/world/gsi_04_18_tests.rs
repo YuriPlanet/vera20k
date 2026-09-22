@@ -553,10 +553,10 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
         loco.layer = MovementLayer::Air;
         loco.altitude = crate::util::fixed_math::SimFixed::from_num(208);
         // Keep the admitted high-flight height through the actual Process below.
-        loco.target_altitude = loco.altitude;
+
         let runtime = loco.jumpjet_runtime_mut().expect("jumpjet runtime");
         runtime.phase = crate::sim::movement::jumpjet_flight::STATE_TRANSLATE;
-        // The kernel flies toward its own target height, not `target_altitude`.
+        // The kernel flies toward its own retained target height.
         runtime.flight.target_height = 208;
         entity.locomotor = Some(loco);
     }

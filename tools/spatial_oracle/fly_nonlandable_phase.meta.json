@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "64 complete original phase calls: all flag pairs, previous modes, physical heights0/900, type FlightLevel fallback/zero/positive/40000. Proves unconditional mode/height/flag writes and unchanged XYZ, speed, facings, Mark and Display order on non-Landable branch. Excludes outer Process admission, movement, landing, null MoveTo, mode-driven speed selection and rendered output.",
+  "assumptions": [
+    "Health100 Aircraft with Landable=false, real Aircraft/Fly vtables.",
+    "Original Fly ctor followed by supplied callback flags, mode, target height1500, target speed0.25 and type FlightLevel.",
+    "Original Mark/Display registration retains owner ahead of peer; no callback, Mark or Display call may run during this phase branch.",
+    "Both facing controllers retain original frame90 turns, queried at frame100 after dispatch."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "phase": "0x004CD2A0",
+    "constructor": "0x004CC9A0",
+    "flight_level": "0x00717800"
+  },
+  "payload_sha256": "55bc37279d5411bc849eb848196fed4a84559258fe6471e84ddf0d084880fa36"
+}

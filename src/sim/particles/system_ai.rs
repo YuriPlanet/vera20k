@@ -286,7 +286,7 @@ mod tests {
         let stable_id = sim.allocate_stable_id();
         system.stable_id = stable_id;
         sim.particle_systems_mut().insert(system);
-        assert!(sim.reveal_particle_system(stable_id));
+        assert!(sim.reveal_particle_system(stable_id, None));
         stable_id
     }
 

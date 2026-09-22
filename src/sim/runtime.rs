@@ -141,9 +141,13 @@ impl<'a> SimView<'a> {
         self.simulation.overlay_grid.as_ref()
     }
 
-    /// LogicClass active-object order — presentation draws in this order.
-    pub(crate) fn tactical_registration_order(&self) -> &'a [u64] {
-        self.simulation.tactical_registration_order()
+    /// Logic scheduling order, consumed separately by the radar pipeline.
+    pub(crate) fn logic_order(&self) -> &'a [u64] {
+        self.simulation.logic_order()
+    }
+
+    pub(crate) fn display_layers(&self) -> &'a super::world::display_layers::DisplayLayers {
+        self.simulation.display_layers()
     }
 
     /// Pending radar-terrain batch for the minimap dirty gate. Presentation
@@ -234,6 +238,73 @@ impl SimRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn staged_trigger_state_reaches_bound_frames_and_survives_restore() {
+        use crate::sim::snapshot::GameSnapshot;
+        use crate::sim::trigger_runtime::TriggerEffect;
+        use crate::sim::world::TickLane;
+
+        let map = crate::map::map_file::MapFile::from_bytes(
+            b"[Map]\nTheater=TEMPERATE\nSize=0,0,40,40\nLocalSize=2,2,36,32\n\
+              [IsoMapPack5]\n1=CAAEABUAAAAAEQAA\n\
+              [VariableNames]\n9=Ready,1\n\
+              [Triggers]\nREADY=Neutral,<none>,Ready,0,1,1,1,0\nDISABLED=Neutral,<none>,Disabled,1,1,1,1,0\n\
+              [Events]\nREADY=1,36,0,9\nDISABLED=1,47,0,0\n\
+              [Actions]\nREADY=1,112,0,0,0,0,0,0,A\nDISABLED=1,112,0,0,0,0,0,0,B\n",
+        ).expect("authored trigger map");
+        let mut sim = Simulation::new();
+        let terrain =
+            crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(0, 0, Vec::new());
+        populate_staged_scenario_with_generated_inits(
+            &mut sim,
+            &map,
+            &terrain,
+            "TEMPERATE",
+            None,
+            &std::collections::BTreeMap::new(),
+            None,
+            None,
+            crate::map::basic::BridgeDestroyabilityMode::CampaignOrEditor,
+            &crate::sim::scenario_session::ScenarioDescriptor::default(),
+            None,
+            |_| {},
+        )
+        .expect("shared fresh-map construction");
+        let mut resources = SimResources::empty();
+        resources.trigger_graph = map.trigger_graph;
+        resources.triggers = map.triggers;
+        resources.events = map.events;
+        resources.actions = map.actions;
+        let mut runtime = SimRuntime {
+            simulation: sim,
+            resources,
+        };
+        let before_first_frame = GameSnapshot::save(&runtime.simulation, 0, 0, "trigger_owner", 0);
+        let run = |runtime: &mut SimRuntime| {
+            runtime
+                .advance_frame(&[], 67, TickLane::Ordinary)
+                .expect("bound production frame")
+                .trigger_effects
+        };
+        let expected = vec![TriggerEffect::CenterCameraAtWaypoint {
+            waypoint: 0,
+            immediate: true,
+        }];
+        assert_eq!(run(&mut runtime), expected);
+        let after_first_frame = GameSnapshot::save(&runtime.simulation, 0, 0, "trigger_owner", 0);
+
+        // The replacement owns saved state; retained resources must not seed
+        // defaults or replay already executed one-shot actions during handoff.
+        let mut restored = GameSnapshot::load(&after_first_frame).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        runtime.replace_simulation(restored);
+        assert!(run(&mut runtime).is_empty());
+        let mut restored = GameSnapshot::load(&before_first_frame).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        runtime.replace_simulation(restored);
+        assert_eq!(run(&mut runtime), expected);
+    }
 
     #[test]
     fn staged_campaign_selects_current_house_after_roster_construction() {
@@ -593,6 +664,9 @@ where
     // `TerrainClass__Read_Map_Section @ 0x0071CA70` and every Techno section.
     // Keep the app-specific roster construction outside sim while making that
     // order an explicit prerequisite of the shared object-construction funnel.
+    // Keep scenario state on the staged owner throughout construction and
+    // handoff. Later live Tag construction can safely publish into this owner.
+    sim.initialize_map_triggers(&map_data.triggers, &map_data.local_variables);
     initialize_houses_before_objects(sim);
     if !descriptor.game_mode_nonzero {
         let roster = crate::map::houses::parse_house_roster(
@@ -626,8 +700,9 @@ where
     sim.install_resolved_terrain_for_new_map(resolved_terrain.clone());
     // Active `CellClass` overlay identity exists before the Techno map
     // sections are read. Install the already-resolved grid now so every
-    // UnitClass virtual Unlimbo sees ore, walls, and structural bridges;
-    // finalization later replaces this clone after wall-owner reconstruction.
+    // UnitClass virtual Unlimbo sees ore, walls, and structural bridges.
+    // This live grid then accumulates Cell+122 history, so finalization keeps
+    // it and uses its own overlay_grid argument only when none is installed.
     sim.overlay_grid = overlay_grid.cloned();
     // Wire the cliff/slope coefficients from [General] into the live World config;
     // it otherwise holds compiled vanilla defaults and never sees a modded INI.
@@ -900,6 +975,7 @@ where
         let mut host = crate::sim::world::authored_load_host::SimulationAuthoredLoadHost::new(
             sim,
             art,
+            rules,
             assets,
             theater_ext,
             theater_name,
@@ -982,6 +1058,7 @@ where
         let mut host = crate::sim::world::authored_load_host::SimulationAuthoredLoadHost::new(
             sim,
             art,
+            rules,
             assets,
             theater_ext,
             theater_name,
@@ -1113,10 +1190,16 @@ pub(crate) fn finalize_constructed_scenario(
     map_data: &crate::map::map_file::MapFile,
     rules: &RuleSet,
     overlay_registry: &crate::map::overlay_types::OverlayTypeRegistry,
-    mut overlay_grid: crate::sim::overlay_grid::OverlayGrid,
+    overlay_grid: crate::sim::overlay_grid::OverlayGrid,
     house_roster: &crate::map::houses::HouseRoster,
     skirmish_session: Option<&crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
 ) -> crate::sim::scenario_post_map::ScenarioPostMapOutput {
+    // Population and starting-unit Unlimbo mutate the live Cell+122 bytes.
+    // The loader argument is a presentation/materialization view taken before
+    // those events; never replace their retained history with that older copy.
+    // Every production caller installs the live grid first, so the argument
+    // is only the fallback for callers that never populated one.
+    let mut overlay_grid = sim.overlay_grid.take().unwrap_or(overlay_grid);
     // Attach the TIBTRE ore-spawner animation index to the terrain objects
     // constructed ahead of the map entities. Its authoritative raw SHP count
     // is rules-owned; presentation atlases retain only body-frame ranges.
@@ -1203,4 +1286,48 @@ pub(crate) fn finalize_constructed_scenario(
         });
     sim.discard_lighting_events();
     output
+}
+#[test]
+fn finalization_keeps_live_neighbor_counts_instead_of_the_loader_copy() {
+    use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
+    use crate::sim::overlay_grid::OverlayGrid;
+    let map = crate::map::map_file::MapFile::from_bytes(
+            b"[Map]\nTheater=TEMPERATE\nSize=0,0,4,4\nLocalSize=0,0,4,4\n[IsoMapPack5]\n1=CAAEABUAAAAAEQAA\n"
+        ).unwrap();
+    let rules = SimResources::empty().rules;
+    let registry = crate::map::overlay_types::OverlayTypeRegistry::from_ini(
+        &crate::rules::ini_parser::IniFile::from_str(""),
+        None,
+    );
+    let roster = crate::map::houses::parse_house_roster(&map.ini, &[], Some(&rules));
+    let mut sim = Simulation::new();
+    sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
+        8,
+        8,
+        (0..8)
+            .flat_map(|y| (0..8).map(move |x| test_flat_cell(x, y)))
+            .collect(),
+    ));
+    let stale = OverlayGrid::new_with_retained_wall_plane(8, 8);
+    sim.overlay_grid = Some(stale.clone());
+    sim.overlay_grid
+        .as_mut()
+        .unwrap()
+        .adjust_foot_neighbor_source(sim.resolved_terrain.as_ref(), (3, 3), true);
+    let expected = sim
+        .overlay_grid
+        .as_ref()
+        .unwrap()
+        .retained_neighbor_counts()
+        .unwrap()
+        .to_vec();
+    finalize_constructed_scenario(&mut sim, &map, &rules, &registry, stale, &roster, None);
+    assert_eq!(
+        sim.overlay_grid
+            .as_ref()
+            .unwrap()
+            .retained_neighbor_counts()
+            .unwrap(),
+        expected
+    );
 }

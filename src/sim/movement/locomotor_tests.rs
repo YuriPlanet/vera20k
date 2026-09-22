@@ -42,7 +42,6 @@ fn walk_destination_and_cell_producer_match_original_startup_conversion() {
         entity.locomotor = Some(LocomotorState::from_object_type(
             &make_obj(LocomotorKind::Walk, ObjectCategory::Infantry),
             0,
-            0,
         ));
         let coord = if input["cell_target"].as_bool().unwrap() {
             crate::sim::movement::navcom::target_cell_coord(10, 10, Some(&terrain))
@@ -94,7 +93,6 @@ fn walk_moving_byte_matches_original_setter_and_head_lifetime_traces() {
     for case in cases {
         let mut loco = LocomotorState::from_object_type(
             &make_obj(LocomotorKind::Walk, ObjectCategory::Infantry),
-            0,
             0,
         );
         let actions = case["actions"].as_array().unwrap();
@@ -162,6 +160,11 @@ fn make_obj(locomotor: LocomotorKind, category: ObjectCategory) -> ObjectType {
         accelerates: true,
         passive: false,
         slowdown_distance: 512,
+        flight_level: -1,
+        is_dropship: false,
+            pitch_angle: SimFixed::lit("0.34906585"),
+            aux_sound1: None,
+            aux_sound2: None,
         sight: 5,
         tech_level: -1,
         build_time_multiplier: 1.0,
@@ -286,6 +289,7 @@ fn make_obj(locomotor: LocomotorKind, category: ObjectCategory) -> ObjectType {
         base_reservation_spacing: None,
         unloading_class: None,
         ammo: -1,
+        initial_ammo: -1,
         spawns: None,
         spawns_number: 0,
         spawn_regen_rate: 0,
@@ -328,6 +332,7 @@ fn make_obj(locomotor: LocomotorKind, category: ObjectCategory) -> ObjectType {
         fly_by: false,
         fly_back: false,
         landable: false,
+        carryall: false,
         jumpjet: false,
         jumpjet_params: JumpjetParams::default(),
         deploys_into: None,
@@ -462,11 +467,11 @@ fn make_obj(locomotor: LocomotorKind, category: ObjectCategory) -> ObjectType {
 #[test]
 fn test_drive_locomotor() {
     let obj = make_obj(LocomotorKind::Drive, ObjectCategory::Vehicle);
-    let state = LocomotorState::from_object_type(&obj, 1500, 0);
+    let state = LocomotorState::from_object_type(&obj, 0);
     assert_eq!(state.kind, LocomotorKind::Drive);
     assert_eq!(state.layer, MovementLayer::Ground);
     assert_eq!(state.phase, GroundMovePhase::Idle);
-    assert_eq!(state.air_phase, AirMovePhase::Landed);
+    assert_eq!(state.air_phase(), AirMovePhase::Landed);
     assert_eq!(state.speed_multiplier, SIM_ONE);
     assert!(state.is_ground_mover());
     assert!(!state.is_air_mover());
@@ -477,7 +482,7 @@ fn test_hover_cruises_at_full_base_speed() {
     // Hover now cruises at its full base Speed (throttle 1.0), not the old
     // made-up 0.65x. The accel/brake throttle ramp lives in sim/movement/hover.rs.
     let obj = make_obj(LocomotorKind::Hover, ObjectCategory::Vehicle);
-    let state = LocomotorState::from_object_type(&obj, 1500, 0);
+    let state = LocomotorState::from_object_type(&obj, 0);
     assert_eq!(state.kind, LocomotorKind::Hover);
     assert_eq!(state.speed_multiplier, SIM_ONE);
     assert!(state.is_ground_mover());
@@ -486,7 +491,7 @@ fn test_hover_cruises_at_full_base_speed() {
 #[test]
 fn test_walk_locomotor() {
     let obj = make_obj(LocomotorKind::Walk, ObjectCategory::Infantry);
-    let state = LocomotorState::from_object_type(&obj, 1500, 0);
+    let state = LocomotorState::from_object_type(&obj, 0);
     assert_eq!(state.kind, LocomotorKind::Walk);
     assert_eq!(state.layer, MovementLayer::Ground);
     assert!(state.is_ground_mover());
@@ -495,25 +500,48 @@ fn test_walk_locomotor() {
 #[test]
 fn test_fly_locomotor_air_layer() {
     let obj = make_obj(LocomotorKind::Fly, ObjectCategory::Aircraft);
-    let state = LocomotorState::from_object_type(&obj, 1500, 0);
+    let state = LocomotorState::from_object_type(&obj, 0);
     assert_eq!(state.kind, LocomotorKind::Fly);
     assert_eq!(state.layer, MovementLayer::Air);
-    assert_eq!(state.air_phase, AirMovePhase::Landed);
+    assert_eq!(state.air_phase(), AirMovePhase::Landed);
     assert!(!state.is_ground_mover());
     assert!(state.is_air_mover());
-    assert_eq!(state.target_altitude, SimFixed::from_num(1500));
-    assert_eq!(state.climb_rate, FLY_CLIMB_RATE);
+    assert_eq!(state.fly_target_height(), 0);
+}
+
+#[test]
+fn fly_target_uses_type_flight_level_without_changing_other_locomotors() {
+    let mut obj = make_obj(LocomotorKind::Fly, ObjectCategory::Aircraft);
+    for (configured, expected) in [(-1, 1500), (0, 0), (-2, -2), (2200, 2200)] {
+        obj.flight_level = configured;
+        let mut state = LocomotorState::from_object_type(&obj, 0);
+        assert_eq!(state.fly_target_height(), 0, "constructor4CC9EE");
+        state.begin_fly_takeoff(obj.flight_level(1500));
+        assert_eq!(
+            state.fly_target_height(),
+            expected,
+            "admitted BeginTakeoff4CF9F8"
+        );
+    }
+    obj.flight_level = 2200;
+    obj.locomotor = LocomotorKind::Jumpjet;
+    let state = LocomotorState::from_object_type(&obj, 0);
+    assert_eq!(
+        state.jumpjet_runtime().unwrap().params.height,
+        obj.jumpjet_params.height
+    );
+    assert!(state.fly_runtime().is_none());
 }
 
 #[test]
 fn test_jumpjet_air_layer() {
     let obj = make_obj(LocomotorKind::Jumpjet, ObjectCategory::Infantry);
-    let state = LocomotorState::from_object_type(&obj, 1500, 0);
+    let state = LocomotorState::from_object_type(&obj, 0);
     assert_eq!(state.kind, LocomotorKind::Jumpjet);
     assert_eq!(state.layer, MovementLayer::Air);
     assert!(!state.is_ground_mover());
     assert!(state.is_air_mover());
-    assert_eq!(state.target_altitude, SimFixed::from_num(500));
+    assert_eq!(state.jumpjet_runtime().unwrap().params.height, 500);
 }
 
 #[test]
@@ -531,16 +559,19 @@ fn test_jumpjet_with_custom_params() {
         deviation: 40,
         no_wobbles: false,
     };
-    let state = LocomotorState::from_object_type(&obj, 1500, 0);
-    assert_eq!(state.target_altitude, SimFixed::from_num(750));
+    let state = LocomotorState::from_object_type(&obj, 0);
+    assert_eq!(state.jumpjet_runtime().unwrap().params.height, 750);
     assert_eq!(state.jumpjet_speed, sim_from_f32(20.0));
-    assert_eq!(state.climb_rate, sim_from_f32(8.0) * SimFixed::from_num(15));
+    assert_eq!(
+        state.jumpjet_runtime().unwrap().params.climb_bits,
+        8.0f32.to_bits()
+    );
 }
 
 #[test]
 fn test_ship_is_ground_mover() {
     let obj = make_obj(LocomotorKind::Ship, ObjectCategory::Vehicle);
-    let state = LocomotorState::from_object_type(&obj, 1500, 0);
+    let state = LocomotorState::from_object_type(&obj, 0);
     assert_eq!(state.kind, LocomotorKind::Ship);
     assert!(state.is_ground_mover());
     assert!(!state.is_air_mover());
@@ -553,7 +584,7 @@ fn cmin_locomotor_initializes_primary_and_active_teleport() {
     obj.teleporter = true;
     obj.turret_rot = 5;
 
-    let state = LocomotorState::from_object_type(&obj, 1500, 0);
+    let state = LocomotorState::from_object_type(&obj, 0);
 
     assert_eq!(state.active_kind(), LocomotorKind::Teleport);
     assert_eq!(state.effective_kind(), LocomotorKind::Teleport);
@@ -564,7 +595,7 @@ fn cmin_locomotor_initializes_primary_and_active_teleport() {
 #[test]
 fn test_is_airborne() {
     let obj = make_obj(LocomotorKind::Fly, ObjectCategory::Aircraft);
-    let mut state = LocomotorState::from_object_type(&obj, 1500, 0);
+    let mut state = LocomotorState::from_object_type(&obj, 0);
     assert!(!state.is_airborne());
     state.altitude = SimFixed::from_num(100);
     assert!(state.is_airborne());
@@ -575,7 +606,7 @@ fn test_is_airborne() {
 #[test]
 fn test_override_teleport_round_trip() {
     let obj = make_obj(LocomotorKind::Drive, ObjectCategory::Vehicle);
-    let mut state = LocomotorState::from_object_type(&obj, 1500, 0);
+    let mut state = LocomotorState::from_object_type(&obj, 0);
     assert!(!state.is_overridden());
     assert_eq!(state.kind, LocomotorKind::Drive);
     assert_eq!(state.layer, MovementLayer::Ground);
@@ -597,7 +628,7 @@ fn test_override_teleport_round_trip() {
 #[test]
 fn end_piggyback_without_a_stash_reports_nothing_to_pop() {
     let obj = make_obj(LocomotorKind::Drive, ObjectCategory::Vehicle);
-    let mut state = LocomotorState::from_object_type(&obj, 1500, 0);
+    let mut state = LocomotorState::from_object_type(&obj, 0);
     let result = state.end_piggyback();
     assert!(
         !result,
@@ -610,7 +641,7 @@ fn end_piggyback_without_a_stash_reports_nothing_to_pop() {
 fn test_override_preserves_speed_type() {
     let mut obj = make_obj(LocomotorKind::Drive, ObjectCategory::Vehicle);
     obj.speed_type = SpeedType::Wheel;
-    let mut state = LocomotorState::from_object_type(&obj, 1500, 0);
+    let mut state = LocomotorState::from_object_type(&obj, 0);
     assert_eq!(state.speed_type, SpeedType::Wheel);
 
     state.begin_piggyback(LocomotorKind::Teleport, MovementLayer::Ground, 0);
@@ -622,7 +653,7 @@ fn test_override_preserves_speed_type() {
 #[test]
 fn drive_piggyback_restores_primary_teleport_only_after_not_moving() {
     let obj = make_obj(LocomotorKind::Teleport, ObjectCategory::Vehicle);
-    let mut state = LocomotorState::from_object_type(&obj, 1500, 0);
+    let mut state = LocomotorState::from_object_type(&obj, 0);
 
     assert!(state.begin_drive_piggyback_for_teleporter(0));
     assert_eq!(state.active_kind(), LocomotorKind::Drive);
@@ -641,7 +672,7 @@ fn drive_piggyback_restores_primary_teleport_only_after_not_moving() {
 #[test]
 fn drive_piggyback_refuses_an_unstashed_active_drive() {
     let obj = make_obj(LocomotorKind::Teleport, ObjectCategory::Vehicle);
-    let mut state = LocomotorState::from_object_type(&obj, 1500, 0);
+    let mut state = LocomotorState::from_object_type(&obj, 0);
     state.kind = LocomotorKind::Drive;
 
     assert!(!state.begin_drive_piggyback_for_teleporter(0));
@@ -674,24 +705,24 @@ fn retail_kirov_and_disc_reach_their_authored_hover_altitude() {
         crate::rules::ini_parser::IniFile::from_bytes(&bytes).expect("retail rulesmd.ini parses");
 
     // (section, JumpjetSpeed, JumpjetClimb, JumpjetCrash) as authored.
-    for (id, speed, climb, crash) in [("ZEP", 5.0, 6.0, 12.0), ("DISK", 16.0, 8.0, 15.0)] {
+    for (id, speed, climb, crash) in [("ZEP", 5.0, 6.0_f32, 12.0), ("DISK", 16.0, 8.0, 15.0)] {
         let obj = ObjectType::from_ini_section(
             id,
             ini.section(id).unwrap_or_else(|| panic!("[{id}] section")),
             ObjectCategory::Vehicle,
         );
-        let state = LocomotorState::from_object_type(&obj, 1500, 0);
+        let state = LocomotorState::from_object_type(&obj, 0);
 
         assert_eq!(state.kind, LocomotorKind::Jumpjet, "[{id}]");
         assert_eq!(
-            state.target_altitude,
-            SimFixed::from_num(750),
+            state.jumpjet_runtime().unwrap().params.height,
+            750,
             "[{id}] hovers at its authored JumpjetHeight"
         );
         assert_eq!(state.jumpjet_speed, sim_from_f32(speed), "[{id}]");
         assert_eq!(
-            state.climb_rate,
-            sim_from_f32(climb) * SimFixed::from_num(15),
+            state.jumpjet_runtime().unwrap().params.climb_bits,
+            climb.to_bits(),
             "[{id}]"
         );
         assert_eq!(
@@ -732,7 +763,7 @@ fn non_jumpjet_locomotors_ignore_the_types_jumpjet_block() {
             deviation: 15,
             no_wobbles: true,
         };
-        let state = LocomotorState::from_object_type(&obj, 1500, 0);
+        let state = LocomotorState::from_object_type(&obj, 0);
 
         assert_eq!(
             state.jumpjet_accel,
@@ -747,11 +778,7 @@ fn non_jumpjet_locomotors_ignore_the_types_jumpjet_block() {
         );
         assert_eq!(state.jumpjet_turn_rate, 4, "{kind:?}");
         if kind != LocomotorKind::Fly {
-            assert_eq!(
-                state.target_altitude,
-                crate::util::fixed_math::SIM_ZERO,
-                "{kind:?}"
-            );
+            assert_eq!(state.fly_target_height(), 0, "{kind:?}");
         }
     }
 }

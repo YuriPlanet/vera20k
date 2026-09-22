@@ -161,6 +161,7 @@ impl Simulation {
                 return;
             }
             sim.mission_host_promote(id, now, rules);
+            sim.aircraft_ammo_after_commence(id);
         });
     }
 
@@ -183,6 +184,21 @@ impl Simulation {
             return;
         }
         self.mission_host_promote(id, self.session.binary_frame, rules);
+        self.aircraft_ammo_after_commence(id);
+    }
+
+    /// AircraftAI41505E..415085 consumes a pending release after Ready/Commence,
+    /// using the resulting native Mission+AC, including when an order interrupts
+    /// Attack. It neither reads nor clears the separate readiness latch+6D2.
+    fn aircraft_ammo_after_commence(&mut self, id: u64) {
+        let Some(entity) = self.substrate.entities.get_mut(id) else {
+            return;
+        };
+        if entity.category == EntityCategory::Aircraft && entity.mission.current().raw() != 1 {
+            if let Some(ammo) = entity.aircraft_ammo.as_mut() {
+                ammo.consume_release(false);
+            }
+        }
     }
 
     /// One `VoxelAnimClass::AI @ 0x00749F30` LogicVector slot.
@@ -587,6 +603,11 @@ fn techno_ai_shell(
                     ctx.path_grid,
                     ctx.overlay_registry,
                 );
+                // The remaining aircraft missions dispatch here too, inside
+                // this slot and before Fly Process (FootClass::AI4DA530).
+                if crate::sim::aircraft::dispatch_aircraft_mission(sim, rules, id, ctx.path_grid) {
+                    sim.aircraft_fire_requests.insert(id);
+                }
             }
         }
     }
@@ -2434,7 +2455,7 @@ mod tests {
         let mut e = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
         let mut target = AttackTarget::new(2);
         target.cooldown_ticks = 33;
-        target.burst_remaining = 2;
+        e.weapon_burst.complete_shot(3);
         e.attack_target = Some(target);
         e.passively_acquired_target = true;
 
@@ -2443,7 +2464,7 @@ mod tests {
         let attack = e.attack_target.as_ref().expect("target retained");
         assert_eq!(attack.target, TargetKind::Entity(7));
         assert_eq!(attack.cooldown_ticks, 33, "rearm must survive the swing");
-        assert_eq!(attack.burst_remaining, 2, "burst must survive the swing");
+        assert_eq!(e.weapon_burst.index(), 1, "burst must survive the swing");
         assert!(
             e.passively_acquired_target,
             "an auto-retarget is not a new order — the target stays scanner-owned"
@@ -3649,6 +3670,7 @@ mod tests {
         let rules = representative_foot_handler_rules();
         let mut unit = entity_of(1, EntityCategory::Unit);
         unit.attack_target = Some(AttackTarget::new(99));
+        unit.weapon_burst.complete_shot(2);
         update_mission_test_fixture(&mut unit.mission, |fixture| {
             fixture.current = MissionId::from_known(MissionType::Attack);
             fixture.dispatch_timer = MissionDispatchTimer::at_frame(0);
@@ -3659,6 +3681,7 @@ mod tests {
 
         let unit = sim.substrate.entities.get(1).unwrap();
         assert!(unit.attack_target.is_none());
+        assert_eq!(unit.weapon_burst.index(), 1);
         assert_eq!(unit.mission.queued(), MissionId::NONE);
     }
 
@@ -4246,6 +4269,7 @@ mod tests {
         let mut unit = entity_of(1, EntityCategory::Unit);
         unit.attack_target = Some(AttackTarget::new(2));
         unit.passively_acquired_target = true;
+        unit.weapon_burst.complete_shot(2);
         update_mission_test_fixture(&mut unit.mission, |fixture| {
             fixture.current = MissionId::from_known(MissionType::Move);
             fixture.dispatch_timer = MissionDispatchTimer::at_frame(0);
@@ -4265,6 +4289,7 @@ mod tests {
             "Assign_Target(NULL) on arrival"
         );
         assert!(!entity.passively_acquired_target);
+        assert_eq!(entity.weapon_burst.index(), 0);
         assert_eq!(
             entity.mission.dispatch_timer(),
             MissionDispatchTimer::from_raw(0, 1),
@@ -5802,10 +5827,19 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
             .in_logic_vector = true;
     }
 
-    /// Drive the Walk readiness producer's inputs: a live movement target with a
-    /// remaining path step reads as moving, its absence as stopped.
+    /// Supply the retained Walk byte/head and shared Foot fraction read by
+    /// native75AB40; a compatibility path alone cannot establish readiness.
     fn set_walking(sim: &mut Simulation, id: u64, walking: bool) {
         let entity = sim.substrate.entities.get_mut(id).expect("fixture entity");
+        let head = walking.then(|| crate::sim::components::DriveCoord::cell(6, 5, 0));
+        let loco = entity.locomotor.as_mut().unwrap();
+        loco.set_step_head(head);
+        loco.set_walk_destination(head);
+        entity.foot_speed.applied_fraction = if walking {
+            crate::util::fixed_math::SIM_ONE
+        } else {
+            crate::util::fixed_math::SIM_ZERO
+        };
         entity.movement_target = walking.then(|| crate::sim::components::MovementTarget {
             path: vec![(5, 5), (6, 5)],
             next_index: 1,
@@ -5882,6 +5916,20 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
              test proves nothing"
         );
         assert_eq!(e.mission.current(), MissionId::NONE);
+
+        // Retiring the path adapter alone does not finish a paid Walk step.
+        sim.substrate.entities.get_mut(1).unwrap().movement_target = None;
+        sim.object_ai_post_movement_promote(Some(&rules));
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .mission
+                .queued()
+                .known(),
+            Some(MissionType::Move)
+        );
 
         // Movement ended during the tick's movement phases.
         set_walking(&mut sim, 1, false);
@@ -6095,7 +6143,6 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
         e.attack_target = Some(AttackTarget {
             target: TargetKind::Entity(99),
             cooldown_ticks: 0,
-            burst_remaining: 1,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });

@@ -272,11 +272,7 @@ fn pick_exit_octant(
 /// `octant * 32` at the unit's `ROT=`.
 fn start_hull_turn(entity: &mut GameEntity, octant: usize, now: u32) {
     let target8 = ((octant as u32) << 5) as u8;
-    let rot = entity
-        .locomotor
-        .as_ref()
-        .map_or(0, |loco| loco.rot)
-        .clamp(0, 0x7F) as u8;
+    let rot = entity.locomotor.as_ref().map_or(0, |loco| loco.rot);
     entity.facing_target = Some(target8);
     let mut body = FacingClass::new(u16::from(entity.facing) << 8, rot);
     body.set(u16::from(target8) << 8, now);

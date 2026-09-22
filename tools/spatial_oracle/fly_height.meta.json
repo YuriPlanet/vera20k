@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "144 original vertical steps, including signed and beyond-I16F16 coordinates: unloaded/loaded climb, descent overshoot, IsDropship and landing differences, bridge attachment, ramps, type/global FlightLevel and health. Excludes full Process, preceding XY/crash relocation, following descent drift, speed, phase, sound/animation and Display transactions; no Rust parity claim.",
+  "assumptions": [
+    "Supplied post-horizontal frame, target height, full-locomotor landing byte+51 and Type.IsDropship at its captured stack+13 location.",
+    "Real Aircraft/Unit vtables and Aircraft auxiliary interface; FirstPassenger is a supplied nonnull/zero link, never dereferenced by the query.",
+    "Unmarked owner and one real map cell with Map+13C table AND Map+140 length initialized. Read-only observers assert ground/bridge queries select that cell, never Dummy;104/416 terrain scalars and416 Fly bridge adjustment supplied. No render Mark callbacks execute.",
+    "Destination XY equals owner XY; original distance calculation runs. PC53/chop ambient state.",
+    "Health0 and negative cases test this bounded range only, not admission or the earlier fall/crash controller."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "height_start": "0x004CDD0D",
+    "after_height": "0x004CDFBC",
+    "no_descent_end": "0x004CE145",
+    "get_height": "0x005F5F40",
+    "set_height": "0x005F5FA0",
+    "aircraft_query_interface": "0x00414290",
+    "has_passenger": "0x0041B7D0",
+    "type_flight_level": "0x00717800"
+  },
+  "payload_sha256": "d1f46f1e4fd650cbf703e3d44bc6c518e39abb6ec0b6d9b2158db3086398e308"
+}

@@ -1509,7 +1509,6 @@ mod tests {
             air.health.current = 1000;
             let mut locomotor = crate::sim::movement::locomotor::LocomotorState::from_object_type(
                 rules.object(type_id).unwrap(),
-                rules.general.flight_level,
                 0,
             );
             locomotor.layer = MovementLayer::Air;
@@ -1983,7 +1982,6 @@ mod tests {
                 let mut air_locomotor =
                     crate::sim::movement::locomotor::LocomotorState::from_object_type(
                         rules.object("AIRBOMB").unwrap(),
-                        rules.general.flight_level,
                         0,
                     );
                 air_locomotor.layer = MovementLayer::Air;
@@ -3377,27 +3375,74 @@ mod tests {
             destination: Option<(u16, u16)>,
             queued_mission: MissionId,
             rng_changed: bool,
+            rng_indices: serde_json::Value,
+            setter: serde_json::Value,
         }
 
-        fn run(mission: MissionType, attacker_present: bool, health: i32) -> Outcome {
-            let ini = IniFile::from_str(
-                "[InfantryTypes]\n0=E1\n\
+        #[derive(Default)]
+        struct ScatterFixture {
+            doing: i32,
+            animation: Option<crate::sim::animation::SequenceKind>,
+            first_bridge: bool,
+            all_bridges: bool,
+            head: Option<crate::sim::components::DriveCoord>,
+            outside: bool,
+            entry_case: Option<serde_json::Value>,
+        }
+
+        fn run(
+            mission: MissionType,
+            attacker_present: bool,
+            health: i32,
+            fraidycat: bool,
+            human_control: Option<bool>,
+            team: bool,
+            nav: bool,
+        ) -> Outcome {
+            run_fixture(
+                mission,
+                attacker_present,
+                health,
+                fraidycat,
+                human_control,
+                team,
+                nav,
+                ScatterFixture {
+                    doing: -1,
+                    ..Default::default()
+                },
+            )
+        }
+
+        fn run_fixture(
+            mission: MissionType,
+            attacker_present: bool,
+            health: i32,
+            fraidycat: bool,
+            human_control: Option<bool>,
+            team: bool,
+            nav: bool,
+            fixture: ScatterFixture,
+        ) -> Outcome {
+            let ini = IniFile::from_str(&format!(
+                "[General]\nFixture=1\n[InfantryTypes]\n0=E1\n\
                  [VehicleTypes]\n0=ATTACKER\n\
                  [AircraftTypes]\n\
                  [BuildingTypes]\n\
                  [Warheads]\n0=WH\n\
                  [IQ]\nScatter=99\n\
                  [CombatDamage]\nPlayerScatter=no\nMaxDamage=10000\n\
-                 [Guard]\nScatter=yes\n\
+                 [Guard]\nScatter=yes\n[Enter]\nScatter=yes\n\
                  [Attack]\nScatter=no\n\
-                 [E1]\nStrength=125\nArmor=none\nSpeed=4\n\
-                 Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
-                 MovementZone=Infantry\n\
-                 [ATTACKER]\nStrength=100\nArmor=none\n\
+                 [E1]\nStrength=125\nArmor=none\nSpeed=4\nFraidycat={fraidycat}\n\
+                 Locomotor={{4A582744-9839-11d1-B709-00A024DDAFD1}}\n\
+                 MovementZone=Infantry\nSpeedType=Foot\n\
+                 [ATTACKER]\nStrength=100\nArmor=none\nOpenTopped=yes\n\
                  [WH]\nCellSpread=0\nPercentAtMax=1\n\
                  Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-            );
-            let rules = RuleSet::from_ini(&ini).expect("damage-scatter fixture");
+            ));
+            let mut rules = RuleSet::from_ini(&ini).expect("damage-scatter fixture");
+            rules.general.blockage_path_delay_ticks = 22;
             let mut interner = test_interner();
             let attacker_house = interner.intern("AttackerHouse");
             let victim_house = interner.intern("VictimHouse");
@@ -3415,16 +3460,34 @@ mod tests {
             victim.owner = victim_house;
             victim.type_ref = victim_type;
             victim.category = EntityCategory::Infantry;
+            victim.mission_leaf = crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+                EntityCategory::Infantry,
+            );
+            victim
+                .mission_leaf
+                .set_infantry_doing_verified(fixture.doing)
+                .unwrap();
+            victim.animation = fixture.animation.map(crate::sim::animation::Animation::new);
             victim.health.current = health;
             victim.sub_cell = Some(2);
+            victim.on_bridge = fixture
+                .entry_case
+                .as_ref()
+                .and_then(|case| case["on_bridge"].as_bool())
+                .unwrap_or(false);
             victim.infantry = Some(crate::sim::game_entity::InfantryRuntime::new());
+            if nav {
+                victim.navigation.nav_com = Some(crate::sim::components::NavTargetRef::cell(8, 8));
+            }
             victim.locomotor = Some(
                 crate::sim::movement::locomotor::LocomotorState::from_object_type(
                     rules.object("E1").expect("E1 type"),
-                    rules.general.flight_level,
                     0,
                 ),
             );
+            if let Some(head) = fixture.head {
+                victim.locomotor.as_mut().unwrap().set_step_head(Some(head));
+            }
             victim.mission.apply_test_fixture(MissionTestFixture {
                 current: MissionId::from_known(mission),
                 suspended: MissionId::NONE,
@@ -3435,6 +3498,65 @@ mod tests {
                 ai_counter: 0,
                 dispatch_timer: MissionDispatchTimer::at_frame(0),
             });
+            if let Some(case) = fixture
+                .entry_case
+                .as_ref()
+                .filter(|c| c["live_setter"] == true)
+            {
+                use crate::sim::components::{DriveCoord, FootPathQueue};
+                use crate::sim::timer::CdTimer;
+                victim.facing = 64;
+                victim.infantry.as_mut().unwrap().cell_entry_blocked = true;
+                victim.navigation.nav_com_aux =
+                    Some(crate::sim::components::NavTargetRef::cell(1, 1));
+                victim.navigation.path_replay = FootPathQueue {
+                    directions: vec![2, 3, 4, 5],
+                    cursor: 0,
+                    reference_cell: Some((9, 8)),
+                };
+                let path = &mut victim.navigation.path_runtime;
+                path.movement_timer = CdTimer::started(50, 5);
+                path.blocked_timer = CdTimer::started(40, 6);
+                path.path_blocked = true;
+                path.retries_left = 7;
+                let loco = victim.locomotor.as_mut().unwrap();
+                loco.powered = case["power_off"] != true;
+                if let Some(head) = case["head"].as_array() {
+                    loco.set_step_head(Some(DriveCoord {
+                        x: head[0].as_i64().unwrap() as i32 - 1280,
+                        y: head[1].as_i64().unwrap() as i32 - 1280,
+                        z: head[2].as_i64().unwrap() as i32,
+                    }));
+                }
+                if case["moving"] == true {
+                    loco.set_walk_destination(Some(DriveCoord {
+                        x: 6528,
+                        y: 1408,
+                        z: 0,
+                    }));
+                }
+                victim.foot_locomotor_swap_active = case["swap_active"] == true;
+                if case["bunker"] == true {
+                    victim.bunker_link = crate::sim::game_entity::BunkerLink::Installed(1);
+                }
+                if case["warp_in"] == true || case["warp_out"] == true {
+                    use crate::sim::movement::teleport_movement::{TeleportPhase, TeleportState};
+                    victim.teleport_state = Some(TeleportState {
+                        phase: if case["warp_out"] == true {
+                            TeleportPhase::Relocate
+                        } else {
+                            TeleportPhase::ChronoDelay
+                        },
+                        target_rx: 8,
+                        target_ry: 8,
+                        being_warped_ticks: 3,
+                    });
+                }
+                if case["open_transport"] == true {
+                    victim.passenger_role =
+                        crate::sim::passenger::PassengerRole::Inside { transport_id: 1 };
+                }
+            }
             entities.insert(victim);
 
             let mut occupancy = OccupancyGrid::new();
@@ -3447,10 +3569,58 @@ mod tests {
                 CellListInsertion::PrependNonBuilding,
             );
             let cells = (0..10)
-                .flat_map(|ry| (0..10).map(move |rx| test_terrain_cell(rx, ry)))
+                .flat_map(|ry| {
+                    (0..10).map(move |rx| {
+                        let mut cell = test_terrain_cell(rx, ry);
+                        cell.speed_costs.foot = Some(100);
+                        cell
+                    })
+                })
                 .collect();
             let mut terrain = ResolvedTerrainGrid::from_cells(10, 10, cells);
-            let event = EntityDamageEvent::area(
+            if fixture.first_bridge {
+                terrain.cell_mut(6, 4).unwrap().bridge_facts.raw_flags = 0x100;
+            }
+            if fixture.all_bridges {
+                for (dx, dy) in crate::util::direction::DIRECTION_DELTAS {
+                    terrain
+                        .cell_mut((5 + dx) as u16, (5 + dy) as u16)
+                        .unwrap()
+                        .bridge_facts
+                        .raw_flags = 0x100;
+                }
+            }
+            let mut raw = crate::sim::occupancy::RawCellOccupationGrid::new();
+            if let Some(case) = fixture.entry_case.as_ref() {
+                // Translate the native witness from (10,10) to this damage
+                // receiver fixture's (5,5); source heading and neighbours agree.
+                let xy = |v: &serde_json::Value| {
+                    (
+                        (v[0].as_u64().unwrap() - 5) as u16,
+                        (v[1].as_u64().unwrap() - 5) as u16,
+                    )
+                };
+                for cell in case["cells"].as_array().into_iter().flatten() {
+                    let (x, y) = xy(cell);
+                    let out = terrain.cell_mut(x, y).unwrap();
+                    out.level = cell[2].as_i64().unwrap() as u8;
+                    out.bridge_facts.raw_flags = cell[3].as_u64().unwrap() as u32;
+                }
+                for cell in case["slopes"].as_array().into_iter().flatten() {
+                    let (x, y) = xy(cell);
+                    terrain.cell_mut(x, y).unwrap().slope_type = cell[2].as_u64().unwrap() as u8;
+                }
+                for cell in case["blocked_terrain"].as_array().into_iter().flatten() {
+                    let (x, y) = xy(cell);
+                    terrain.cell_mut(x, y).unwrap().speed_costs.foot = Some(0);
+                }
+                for cell in case["raw"].as_array().into_iter().flatten() {
+                    let (x, y) = xy(cell);
+                    raw.mark_ground(x, y, cell[2].as_u64().unwrap() as u8);
+                    raw.mark_deck(x, y, cell[3].as_u64().unwrap() as u8);
+                }
+            }
+            let mut event = EntityDamageEvent::area(
                 2,
                 10,
                 0,
@@ -3462,33 +3632,64 @@ mod tests {
                 attacker_present.then_some(attacker_house),
                 warhead_ref,
             );
-            let mut scenario_rng = SimRng::new(1);
-            let before_rng = scenario_rng.state();
-            let mut main_rng = SimRng::new(7);
-            let mut handled_deaths = Vec::new();
-            let mut houses = BTreeMap::new();
-            let mut fatal_lifecycle = None;
-            let mut sound_sink = None;
-            let _ = crate::sim::combat::commit_damage_events(
-                std::slice::from_ref(&event),
-                &mut entities,
-                &mut occupancy,
-                &rules,
-                &mut interner,
-                &mut houses,
-                &[],
-                &HouseAllianceMap::new(),
-                &mut main_rng,
-                &mut scenario_rng,
-                &mut handled_deaths,
-                None,
-                None,
-                Some(&mut terrain),
-                0,
-                &mut fatal_lifecycle,
-                &mut sound_sink,
+            if fixture
+                .entry_case
+                .as_ref()
+                .is_some_and(|c| c["warp_out"] == true || c["bunker"] == true)
+            {
+                // Ordinary damage is immune before Scatter in these states.
+                // Explicit ignore-defenses input reaches the same production
+                // receiver continuation so the native setter refusal is tested.
+                event.receiver_flags.as_mut().unwrap().ignore_defenses = true;
+            }
+            let mut world = crate::sim::world::Simulation::new();
+            world.substrate.entities = entities;
+            world.substrate.occupancy = occupancy;
+            world.substrate.raw_cell_occupation = raw;
+            world.interner = interner;
+            world.resolved_terrain = Some(terrain);
+            world.playfield_bounds = Some(
+                crate::sim::cell_rect::PlayfieldBounds::from_normalized_local_size(
+                    16, -16, -16, 64, 64,
+                ),
             );
-            let victim = entities.get(2).expect("victim remains represented");
+            if fixture.outside {
+                world.playfield_bounds = Some(
+                    crate::sim::cell_rect::PlayfieldBounds::from_normalized_local_size(
+                        16, 0, 0, 1, 1,
+                    ),
+                );
+            }
+            world.session.binary_frame = 100;
+            world.main_rng = SimRng::new(7);
+            world.scenario_rng = SimRng::new(1);
+            // Some(false) models campaign PlayerControl without IsHuman.
+            world.session.game_mode_nonzero = false;
+            let mut house =
+                HouseState::new(victim_house, 0, None, human_control == Some(true), 0, 10);
+            house.player_control = human_control.is_some();
+            world.houses.insert(victim_house, house);
+            if team {
+                let script = world.interner.intern("ScatterFixture");
+                world
+                    .team_script_vm
+                    .create_team(victim_house, script, vec![2], None, 0);
+            }
+            let before_rng = world.scenario_rng.state();
+            let mut receiver = crate::sim::combat::world_receiver::ReceiverRun::default();
+            crate::sim::combat::world_receiver::commit_entities(
+                &mut world,
+                &mut receiver,
+                std::slice::from_ref(&event),
+                None,
+                &rules,
+                None,
+            );
+            let victim = world
+                .substrate
+                .entities
+                .get(2)
+                .expect("victim remains represented");
             Outcome {
                 health: victim.health.current,
                 fear: victim
@@ -3499,37 +3700,219 @@ mod tests {
                 destination: victim
                     .movement_target
                     .as_ref()
-                    .map(|movement| *movement.path.last().expect("direct move has destination")),
+                    .and_then(|movement| movement.final_goal),
                 queued_mission: victim.mission.queued(),
-                rng_changed: scenario_rng.state() != before_rng,
+                rng_changed: world.scenario_rng.state() != before_rng,
+                rng_indices: {
+                    let state = world.scenario_rng.logical_state();
+                    serde_json::json!([state.index_a, state.index_b])
+                },
+                setter: {
+                    let loco = victim.locomotor.as_ref().unwrap();
+                    let path = &victim.navigation.path_runtime;
+                    let coord = |value: Option<crate::sim::components::DriveCoord>| {
+                        value.map_or([0, 0, 0], |v| [v.x + 1280, v.y + 1280, v.z])
+                    };
+                    let nav = victim.navigation.nav_com.and_then(|target| match target {
+                        crate::sim::components::NavTargetRef::Cell { rx, ry } => {
+                            Some([rx + 5, ry + 5])
+                        }
+                        _ => None,
+                    });
+                    serde_json::json!({
+                        "nav": nav, "aux": if victim.navigation.nav_com_aux.is_none() { 0 } else { 123 },
+                        "destination": coord(loco.walk_destination()), "head": coord(loco.step_head()),
+                        "queue": victim.navigation.path_replay.directions.iter().map(|&v| if v == 255 { -1 } else { i32::from(v) }).collect::<Vec<_>>(),
+                        "reference": victim.navigation.path_replay.reference_cell,
+                        "queued_mission": victim.mission.queued().raw(),
+                        "facing": u32::from(victim.facing) * 256 * 65537,
+                        "moving": u8::from(loco.walk_is_moving().unwrap()), "powered": u8::from(loco.powered),
+                        "blocked": u8::from(path.path_blocked),
+                        "movement_timer": [path.movement_timer.start_frame(), path.movement_timer.duration()],
+                        "blocked_timer": [path.blocked_timer.start_frame(), path.blocked_timer.duration()],
+                        "retries": path.retries_left,
+                        "entry_blocked": u8::from(victim.infantry.as_ref().unwrap().cell_entry_blocked),
+                    })
+                },
             }
         }
+
+        let run_scene = |fixture| {
+            run_fixture(
+                MissionType::Guard,
+                true,
+                125,
+                true,
+                None,
+                false,
+                false,
+                fixture,
+            )
+        };
+        let fixture = || ScatterFixture {
+            doing: -1,
+            ..Default::default()
+        };
+        // These witnesses execute original Scatter51D0D0 and Infantry51BF90
+        // together. Exercise the production damage receiver, including HP,
+        // queue/destination writes and fear, with the same entry prestates.
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/infantry_scatter_entry.json"
+        ))
+        .unwrap();
+        assert_eq!(corpus.as_array().unwrap().len(), 14);
+        for row in corpus.as_array().unwrap() {
+            let output = run_scene(ScatterFixture {
+                entry_case: Some(row["input"].clone()),
+                ..fixture()
+            });
+            let expected = row["destination"].as_array().map(|xy| {
+                (
+                    (xy[0].as_u64().unwrap() - 5) as u16,
+                    (xy[1].as_u64().unwrap() - 5) as u16,
+                )
+            });
+            assert_eq!(output.destination, expected, "{}", row["input"]);
+            assert_eq!(
+                output.rng_indices, row["random_indices"],
+                "{}",
+                row["input"]
+            );
+            assert_eq!(output.health, 115);
+            assert_eq!(output.fear, 300);
+            assert_eq!(
+                output.queued_mission,
+                expected.map_or(MissionId::NONE, |_| {
+                    MissionId::from_known(MissionType::Move)
+                })
+            );
+        }
+        let destinations: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/infantry_scatter_destination.json"
+        ))
+        .unwrap();
+        assert_eq!(destinations.as_array().unwrap().len(), 18);
+        for row in destinations.as_array().unwrap() {
+            let mission = if row["input"]["mission"] == 7 {
+                MissionType::Enter
+            } else {
+                MissionType::Guard
+            };
+            let output = run_fixture(
+                mission,
+                true,
+                125,
+                true,
+                None,
+                false,
+                false,
+                ScatterFixture {
+                    entry_case: Some(row["input"].clone()),
+                    ..fixture()
+                },
+            );
+            assert_eq!(output.setter, row["setter"], "{}", row["input"]);
+            assert_eq!(
+                output.rng_indices, row["random_indices"],
+                "{}",
+                row["input"]
+            );
+            assert_eq!((output.health, output.fear), (115, 300));
+        }
+        let displayed_death = run_scene(ScatterFixture {
+            animation: Some(crate::sim::animation::SequenceKind::Die1),
+            ..fixture()
+        });
+        assert_eq!(
+            displayed_death.destination,
+            Some((6, 4)),
+            "display does not own Doing"
+        );
+        let refused_doing = run_scene(ScatterFixture {
+            doing: 7,
+            animation: Some(crate::sim::animation::SequenceKind::Stand),
+            ..fixture()
+        });
+        assert_eq!(refused_doing.destination, None);
+        assert!(!refused_doing.rng_changed);
+        let later_preferred = run_scene(ScatterFixture {
+            first_bridge: true,
+            ..fixture()
+        });
+        assert_eq!(later_preferred.destination, Some((6, 5)));
+        let fallback = run_scene(ScatterFixture {
+            all_bridges: true,
+            ..fixture()
+        });
+        assert_eq!(fallback.destination, Some((6, 4)));
+        let from_head = run_scene(ScatterFixture {
+            head: Some(crate::sim::components::DriveCoord {
+                x: 7 * 256 + 128,
+                y: 7 * 256 + 128,
+                z: 0,
+            }),
+            ..fixture()
+        });
+        assert_eq!(
+            from_head.destination,
+            Some((8, 6)),
+            "scan follows Foot head; heading follows physical source"
+        );
+        let outside = run_scene(ScatterFixture {
+            outside: true,
+            ..fixture()
+        });
+        assert_eq!(outside.destination, None);
+        assert!(
+            outside.rng_changed,
+            "selection failure keeps the preceding native draw"
+        );
 
         // Seed 1 yields RandomRanged(0,4)==1. With the attacker due west,
         // native base direction is E (2), so start=NE (1) and the first open
         // cell is (6,4). The Move/NavCom write is already visible when fear is
-        // subsequently latched to 100.
-        let guard = run(MissionType::Guard, true, 125);
+        // subsequently latched to 300 for Fraidycat (native518C7B).
+        let guard = run(MissionType::Guard, true, 125, true, None, false, false);
         assert_eq!(guard.health, 115);
         assert_eq!(guard.destination, Some((6, 4)));
         assert_eq!(
             guard.queued_mission,
             MissionId::from_known(MissionType::Move)
         );
-        assert_eq!(guard.fear, 100);
+        assert_eq!(guard.fear, 300);
         assert!(guard.rng_changed);
 
-        let null_attacker = run(MissionType::Guard, false, 125);
+        let null_attacker = run(MissionType::Guard, false, 125, true, None, false, false);
         assert_eq!(null_attacker.destination, None);
         assert!(!null_attacker.rng_changed);
 
-        let fatal = run(MissionType::Guard, true, 10);
+        let fatal = run(MissionType::Guard, true, 10, true, None, false, false);
         assert_eq!(fatal.health, 0);
         assert_eq!(fatal.destination, None);
 
-        let attack_mission = run(MissionType::Attack, true, 125);
+        let attack_mission = run(MissionType::Attack, true, 125, true, None, false, false);
         assert_eq!(attack_mission.destination, None);
         assert!(!attack_mission.rng_changed);
+
+        // Unforced damage must not make an ordinary combat infantryman flee,
+        // even if an AI owns it or its human owner has a Team and NavCom.
+        for control in [None, Some(true), Some(false)] {
+            let soldier = run(MissionType::Guard, true, 125, false, control, true, true);
+            assert_eq!(soldier.health, 115);
+            assert_eq!(soldier.destination, None);
+            assert!(!soldier.rng_changed, "{soldier:?}");
+        }
+        for control in [Some(true), Some(false)] {
+            let moving_civilian = run(MissionType::Guard, true, 125, true, control, false, true);
+            assert_eq!(moving_civilian.destination, None);
+            assert!(
+                !moving_civilian.rng_changed,
+                "NavCom cannot substitute for Team"
+            );
+            let team_civilian = run(MissionType::Guard, true, 125, true, control, true, false);
+            assert_eq!(team_civilian.destination, Some((6, 4)));
+            assert!(team_civilian.rng_changed);
+        }
     }
 
     fn bridge_layer_test_fixture() -> (
@@ -3699,7 +4082,6 @@ mod tests {
         air.position.sub_y = CELL_CENTER_LEPTON;
         let mut air_locomotor = crate::sim::movement::locomotor::LocomotorState::from_object_type(
             rules.object("AIR").expect("air type"),
-            rules.general.flight_level,
             0,
         );
         air_locomotor.layer = MovementLayer::Air;

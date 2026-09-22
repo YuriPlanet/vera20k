@@ -303,6 +303,17 @@ impl ProcessedRulesLayers {
             .anim_type_art_read_states()
     }
 
+    /// Effective BulletType +2F7 after the actual per-pass Image/ART reads.
+    pub(crate) fn projectile_flat_states(&self) -> impl Iterator<Item = (&str, bool)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Projectile)
+            .into_iter()
+            .flatten()
+            .map(|member| (member.native_stored_id.as_str(), member.projectile_flat))
+    }
+
     /// Consume only the typed-reader compatibility projection and deliberately
     /// discard the native constructor/registry receipt.
     ///
@@ -584,6 +595,9 @@ struct ProcessedType {
     /// False until the native AnimType ART-body boundary has been entered.
     /// Kept on the process-resident type so subsequent Rules passes retain it.
     anim_art_read: bool,
+    /// BulletType +2F7; constructor 0x0046BCE0 initializes false. Unlike the
+    /// final Image string, this value retains earlier successful ART reads.
+    projectile_flat: bool,
 }
 
 impl ProcessedType {
@@ -592,6 +606,7 @@ impl ProcessedType {
             body: IniSection::new(native_stored_id.clone()),
             native_stored_id,
             anim_art_read: false,
+            projectile_flat: false,
         }
     }
 }
@@ -1299,32 +1314,26 @@ impl RulesPassProcessor {
     fn process_bullet_family(&mut self, pass: &IniFile, fixed_art: &IniFile) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::Projectile) {
-            if let Some((_id, raw, effective)) =
+            if let Some((_id, raw, _effective)) =
                 self.begin_rules_member_read(RulesTypeFamily::Projectile, index, pass)
             {
-                let image = effective.read_string("Image", "", 0x19);
+                // BulletType::ReadINI 0x0046C1CC..0x0046C292 reads this pass's
+                // Image with an empty default and a 25-byte buffer. Only a
+                // nonempty result enters the fixed-ART Trailer/Flat readers;
+                // no inherited Image, type-ID fallback or ART Image redirect.
+                let image = raw.read_string("Image", "", 0x19);
                 if !image.is_empty()
                     && let Some(section) = fixed_art.section(&image)
                 {
-                    self.allocate_scalar_from(
-                        section,
-                        "Trailer",
-                        RulesTypeFamily::Animation,
-                        0x80,
-                    );
+                    self.allocate_scalar_from(section, "Trailer", RulesTypeFamily::Animation, 0x80);
+                    let member = &mut self
+                        .families
+                        .get_mut(&RulesTypeFamily::Projectile)
+                        .expect("the live BulletType member exists")[index];
+                    member.projectile_flat = section.read_bool("Flat", member.projectile_flat);
                 }
-                self.allocate_scalar_from(
-                    &raw,
-                    "AirburstWeapon",
-                    RulesTypeFamily::Weapon,
-                    0x80,
-                );
-                self.allocate_scalar_from(
-                    &raw,
-                    "ShrapnelWeapon",
-                    RulesTypeFamily::Weapon,
-                    0x80,
-                );
+                self.allocate_scalar_from(&raw, "AirburstWeapon", RulesTypeFamily::Weapon, 0x80);
+                self.allocate_scalar_from(&raw, "ShrapnelWeapon", RulesTypeFamily::Weapon, 0x80);
             }
             index += 1;
         }

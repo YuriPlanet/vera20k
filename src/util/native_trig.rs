@@ -7,7 +7,7 @@
 //! multiple of pi/16 therefore reduces to a table read, and porting the read is
 //! exact where recomputing the angle is not.
 //!
-//! Shared retail table data, bounded FLH lookups and integer Walk displacement.
+//! Shared retail table data, bounded FLH lookups and full-facing displacement.
 
 // Original 0084F084 table, extracted and checked by walk_direction_table.py.
 // The small FLH arrays below are derived lookups for its different, f32-narrowed
@@ -52,16 +52,16 @@ fn advance_integer_coordinate(origin: i32, speed: i32, coefficient: u32) -> i32 
         -mantissa
     };
     let numerator = (i128::from(origin) << shift) + signed * i128::from(speed);
-    i32::try_from(numerator / (1_i128 << shift)).expect("Walk world coordinate exceeds i32")
+    i32::try_from(numerator / (1_i128 << shift)).expect("facing step world coordinate exceeds i32")
 }
 
-/// Walk75C067..75C0CB: advance using the newly requested full direction word.
-/// The body snap may retain its old destination on equality; movement still
-/// consumes the new direction. Inputs/outputs are whole world leptons, with Z
+/// Walk75C067..75C0CB and Fly4CDA84..4CDAE5 use this same full-direction math.
+/// The caller chooses the direction (Walk's request, Fly's Primary.Current).
+/// Inputs/outputs are whole world leptons, with Z
 /// and subsequent placement owned by the caller. Table products remain exact
 /// at the simulation's bounded integer movement speeds; final truncation is
 /// toward zero, after adding each displacement to its world coordinate.
-pub(crate) fn walk_step_world_xy(current: [i32; 2], facing: u16, speed: i32) -> [i32; 2] {
+pub(crate) fn facing_step_world_xy(current: [i32; 2], facing: u16, speed: i32) -> [i32; 2] {
     let index = walk_sine_index(facing);
     [
         advance_integer_coordinate(current[0], speed, sine_table_bits(index + 2048)),
@@ -163,6 +163,78 @@ pub fn rotate_z_by_step(point: (f32, f32, f32), step: i32) -> Option<(f32, f32, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Full original FindFireLocation4197C0 calls record every candidate before
+    /// map/visibility/reservation filtering. This establishes which existing
+    /// deterministic geometry can serve the pending production search port;
+    /// it does not assert that Mission_Attack already calls that search.
+    #[test]
+    fn aircraft_fire_location_candidates_and_distances_match_native() {
+        let rows: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tools/spatial_oracle/aircraft_fire_location.json"
+        ))
+        .unwrap();
+        let mut candidate_count = 0;
+        let mut distance_count = 0;
+        for row in rows.as_array().unwrap() {
+            let input = &row["input"];
+            let xyz = |key: &str, default: [i32; 3]| -> [i32; 3] {
+                input[key].as_array().map_or(default, |v| {
+                    std::array::from_fn(|axis| v[axis].as_i64().unwrap() as i32)
+                })
+            };
+            let target = xyz("target", [16512, 16512, 0]);
+            let range = row["weapon_range"].as_i64().unwrap() as i32;
+            let candidates = row["candidates"].as_array().unwrap();
+            for (index, native) in candidates.iter().enumerate() {
+                let radius = range - 256 * (1 + index as i32 / 16);
+                let actual = facing_step_world_xy(
+                    [target[0], target[1]],
+                    ((index % 16) as u16) << 12,
+                    radius,
+                );
+                assert_eq!(
+                    actual[0],
+                    native[0].as_i64().unwrap() as i32,
+                    "{input}, candidate {index} X"
+                );
+                assert_eq!(
+                    actual[1],
+                    native[1].as_i64().unwrap() as i32,
+                    "{input}, candidate {index} Y"
+                );
+                candidate_count += 1;
+            }
+            let reference = if input["target_has_destination"].as_bool().unwrap_or(false)
+                && input["target_flags"].as_i64().unwrap_or(4) & 4 != 0
+            {
+                xyz("destination", [20608, 16512, 0])
+            } else {
+                xyz("aircraft", [10368, 16512, 500])
+            };
+            // The native observer records which candidate reached ranking;
+            // equal packed cells across rings must retain their distinct XYZ.
+            for ranked in row["ranked"].as_array().unwrap() {
+                let native = &candidates[ranked["candidate_index"].as_u64().unwrap() as usize];
+                let actual = crate::util::native_x87::distance_3d_leptons(
+                    [
+                        native[0].as_i64().unwrap() as i32,
+                        native[1].as_i64().unwrap() as i32,
+                        0,
+                    ],
+                    [reference[0], reference[1], 0],
+                );
+                assert_eq!(
+                    actual as i64,
+                    ranked["distance"].as_i64().unwrap(),
+                    "{input}: {ranked}"
+                );
+                distance_count += 1;
+            }
+        }
+        assert!(candidate_count > 600);
+        assert!(distance_count > 400);
+    }
 
     #[test]
     fn every_walk_heading_uses_the_original_trig_entries() {

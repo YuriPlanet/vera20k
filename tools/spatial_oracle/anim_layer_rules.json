@@ -1,0 +1,78 @@
+[
+  {
+    "layer": 3,
+    "raw": null
+  },
+  {
+    "layer": 3,
+    "raw": ""
+  },
+  {
+    "layer": 0,
+    "raw": "Underground"
+  },
+  {
+    "layer": 1,
+    "raw": "Surface"
+  },
+  {
+    "layer": 2,
+    "raw": "Ground"
+  },
+  {
+    "layer": 3,
+    "raw": "Air"
+  },
+  {
+    "layer": 4,
+    "raw": "Top"
+  },
+  {
+    "layer": 2,
+    "raw": "gRoUnD"
+  },
+  {
+    "layer": 3,
+    "raw": " air "
+  },
+  {
+    "layer": -1,
+    "raw": "None"
+  },
+  {
+    "layer": -1,
+    "raw": "bogus"
+  },
+  {
+    "layer": -1,
+    "raw": "-1"
+  },
+  {
+    "layer": -1,
+    "raw": "0"
+  },
+  {
+    "layer": -1,
+    "raw": "1"
+  },
+  {
+    "layer": -1,
+    "raw": "2"
+  },
+  {
+    "layer": -1,
+    "raw": "3"
+  },
+  {
+    "layer": -1,
+    "raw": "4"
+  },
+  {
+    "layer": 2,
+    "raw": "Ground                                                                                                                                  "
+  },
+  {
+    "layer": 4,
+    "raw": "                                                                                                                               Top"
+  }
+]

@@ -349,7 +349,7 @@ impl Simulation {
         let cell = cells.lookup(coord_cell(coord));
         //0x5F5F00 (ECX = this Infantry, 0x51DB78): the current cell's signed
         //level byte (+11B via vtable +1BC) plus four when OnBridge (+8C).
-        let height = i32::from(cells.ground_fields(cell).0 as i8) + if on_bridge { 4 } else { 0 };
+        let height = ground_pose::query_object_cell_height(&cells, coord, on_bridge);
         let answer = self.infantry_can_enter(
             id,
             cell,
@@ -806,28 +806,12 @@ impl Simulation {
         let move_info = self
             .resolve_move_info(id, Some(rules))
             .ok_or("Find_Path redirect requires the actor's move info")?;
-        let grid = self.path_grid_snapshot();
-        let grid = grid
-            .as_deref()
-            .ok_or("Find_Path redirect requires navigation")?;
-        let speed_type = self
-            .substrate
-            .entities
-            .get(id)
-            .and_then(|actor| self.object_type(actor.type_ref(), rules))
-            .map(|object| object.speed_type)
-            .ok_or("Find_Path redirect requires the Infantry type")?;
         if !super::prepare_walk_cell_destination(
             &mut self.substrate.entities,
-            grid,
             id,
             (cell.0 as u16, cell.1 as u16),
             move_info.speed,
-            self.terrain_costs.get(&speed_type),
             self.resolved_terrain.as_ref(),
-            self.zone_grid.as_ref(),
-            self.playfield_bounds,
-            &mut self.substrate.cell_occupation,
             super::DestinationTiming::new(
                 self.session.binary_frame,
                 rules.general.blockage_path_delay_ticks,
@@ -880,6 +864,47 @@ impl Simulation {
         Ok(())
     }
 
+    /// Foot+320/4DA1D0, shared by class admission and the path-zone precheck.
+    /// Read retained3D5/3D4 and effective mission; fresh bounds or locomotor
+    /// state cannot reconstruct these inputs. TypeC94 IsTrain is absent from
+    /// stock retail types and remains outside the represented rules contract.
+    /// Original complete-call evidence: tools/spatial_oracle/unit_entry_boundary.
+    pub(crate) fn foot_allows_outside_playfield(&self, id: u64) -> Result<bool, String> {
+        let actor = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("missing Foot edge receiver")?;
+        if !actor.in_playfield {
+            return Ok(false);
+        }
+        if actor.is_mission_only() || actor.mission.effective().raw() == 4 {
+            return Ok(true);
+        }
+        if let Some((team_id, _)) = self.team_script_vm.team_for_member(id) {
+            let team = self
+                .team_script_vm
+                .team(team_id)
+                .ok_or("missing attached Team")?;
+            let script = self
+                .team_script_vm
+                .script(team.script_id())
+                .ok_or("missing attached ScriptType")?;
+            //6EC300 returns false for every invalid cursor/non-action3,
+            //independently of unrepresented Team7F. It must not perform a
+            //waypoint lookup on these exits. Do not infer7F from completion,
+            //refusal, suspension or script presence.
+            if script
+                .actions
+                .get(team.cursor() as u32 as usize)
+                .is_some_and(|action| action.action_id == 3)
+            {
+                return Err("Foot edge admission requires retained Team7F and action3 waypoint state/effects".into());
+            }
+        }
+        Ok(false)
+    }
+
     /// Original Foot+2CC4D3810. Its MZ==-1 and Cell(0,0) exits precede
     /// navigation, Team, map and source-bridge queries.
     pub(crate) fn walk_path_zone_precheck(
@@ -904,18 +929,7 @@ impl Simulation {
             return Ok(false);
         }
         let source = self.foot_navigation_coordinate(id)?;
-        //4DA1D0: stock Infantry +3D4 has no positive producer (all writers
-        //target Aircraft), and IsTrain+C94 is absent from the admitted stock
-        //types. Do not infer either from airborne/locomotor state.
-        let allow_destination_fringe = if !actor.in_playfield {
-            false
-        } else if actor.mission.effective().raw() == 4 {
-            true
-        } else if self.team_script_vm.team_for_member(id).is_some() {
-            return Err("Foot precheck requires attached Team6EC300 state/effects".into());
-        } else {
-            false
-        };
+        let allow_destination_fringe = self.foot_allows_outside_playfield(id)?;
         let terrain = self
             .resolved_terrain
             .as_ref()

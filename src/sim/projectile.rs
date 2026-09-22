@@ -1058,6 +1058,10 @@ pub struct ProjectilePayload {
 /// Immutable admission data for an ordinary, non-vertical projectile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectileSpawn {
+    /// BulletType+2F7 (`Flat`): Fire468B6D submits through GetLayer468B90,
+    /// selecting Surface when true and Air otherwise. The display owner retains
+    /// membership; this admission input is not a second live layer authority.
+    pub flat: bool,
     pub source_id: u64,
     pub origin: ProjectileCoord,
     pub target: ProjectileTarget,
@@ -2368,6 +2372,7 @@ mod tests {
 
     fn spawn(target: ProjectileTarget) -> ProjectileSpawn {
         ProjectileSpawn {
+            flat: false,
             source_id: 7,
             origin: ProjectileCoord::new(0, 0, 0),
             target,

@@ -38,7 +38,7 @@ use crate::util::native_x87::NativeF64Bits;
 pub const POWERUP_COUNT: usize = 19;
 
 /// Canonical slot order, read directly from the pointer table at `0x007E523C`
-/// and its target literals. This ordering is load-bearing: `CrateClass__PickupDispatch`
+/// and its target literals. This ordering is load-bearing: `CellClass__PickupCrate`
 /// indexes all four globals, the `[CrateRules]` solo mappings, and its own jump
 /// table by these positions, and the INI's own line order is irrelevant.
 pub const POWERUP_NAMES: [&str; POWERUP_COUNT] = [
@@ -107,7 +107,7 @@ pub fn powerup_from_name(name: &str) -> usize {
 /// consequence, while the fixed slot order does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PowerupTable {
-    /// Token 1 — selection weight. `CrateClass__PickupDispatch` sums all
+    /// Token 1 — selection weight. `CellClass__PickupCrate` sums all
     /// nineteen and draws `RandomRanged(1, total)`.
     pub weights: [i32; POWERUP_COUNT],
     /// Token 2 — the pickup animation. `None` is native's `-1`: either the

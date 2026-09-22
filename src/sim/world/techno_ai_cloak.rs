@@ -412,7 +412,7 @@ const NEIGHBOUR_OFFSETS: [(i32, i32); 8] = [
 ///   (`TechnoClass__Constructor @ 0x006F3228` ORs in 1;
 ///   `ObjectClass__Constructor @ 0x005F3B34` ORs in 2), not an on-map flag.
 ///   Every `GameEntity` is a Techno, so it needs no counterpart here.
-fn find_nearest_object_in_cell(sim: &Simulation, cell: (u16, u16)) -> Option<u64> {
+pub(super) fn find_nearest_object_in_cell(sim: &Simulation, cell: (u16, u16)) -> Option<u64> {
     let occupancy = sim.substrate.occupancy.get(cell.0, cell.1)?;
     let mut best: Option<(u64, i32)> = None;
     for occupant in occupancy.iter_layer(MovementLayer::Ground) {

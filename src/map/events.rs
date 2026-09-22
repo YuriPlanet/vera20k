@@ -7,11 +7,18 @@
 use std::collections::HashMap;
 
 use crate::rules::ini_parser::IniFile;
+use crate::rules::ini_value::scan_decimal_i32;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EventCondition {
     pub kind: i32,
-    pub params: Vec<String>,
+    /// Materialized TEvent+34, not the parameter-type discriminator.
+    pub value: i32,
+    /// Native +38: parameter type2 copies at most24 bytes, without trimming.
+    pub type_name: Option<String>,
+    /// Unresolved parameter type1 reference; native Read resolves ID or Name
+    /// against the already loaded TeamType registry (6F0FC0).
+    pub team_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,9 +38,8 @@ pub fn parse_events(ini: &IniFile) -> EventMap {
 
     let mut events: EventMap = HashMap::new();
     for key in section.keys() {
-        let Some(raw_value) = section.get(key) else {
-            continue;
-        };
+        // TriggerType Read7274A6 uses the same512-byte buffer as its header.
+        let raw_value = section.read_string(key, "", 512);
         let id = key.trim();
         if id.is_empty() {
             continue;
@@ -43,7 +49,7 @@ pub fn parse_events(ini: &IniFile) -> EventMap {
             .split(',')
             .map(|part| part.trim().to_string())
             .collect();
-        let conditions = parse_event_conditions(&fields);
+        let conditions = parse_event_conditions(&raw_value);
         events.insert(
             id.clone(),
             MapEvent {
@@ -60,40 +66,42 @@ pub fn parse_events(ini: &IniFile) -> EventMap {
     events
 }
 
-fn parse_event_conditions(fields: &[String]) -> Vec<EventCondition> {
-    if fields.is_empty() {
-        return Vec::new();
-    }
-
-    let declared_count = fields[0].trim().parse::<usize>().ok();
-    if let Some(count) = declared_count {
-        let payload = &fields[1..];
-        let chunk_len = 3;
-        let max_chunks = payload.len() / chunk_len;
-        let chunk_count = count.min(max_chunks);
-        if chunk_count > 0 {
-            return payload
-                .chunks_exact(chunk_len)
-                .take(chunk_count)
-                .filter_map(|chunk| {
-                    let kind = chunk[0].trim().parse::<i32>().ok()?;
-                    Some(EventCondition {
-                        kind,
-                        params: chunk[1..].to_vec(),
-                    })
-                })
-                .collect();
+/// Original TriggerType loop7274DC..727516 prepends every newly read event.
+/// TEvent Read71F4E0 consumes kind/parameter-type/value and, only for type2,
+/// one additional type-name token. Empty comma fields are skipped by strtok.
+fn parse_event_conditions(raw: &str) -> Vec<EventCondition> {
+    let number = |text: &str| scan_decimal_i32(&mut text.as_bytes()).unwrap_or(0);
+    let mut tokens = raw.split(',').filter(|part| !part.is_empty());
+    let count = tokens.next().map(number).unwrap_or(0);
+    let mut conditions = Vec::new();
+    for _ in 0..count {
+        // Malformed truncated records are kept only in the diagnostic fields.
+        let (Some(kind), Some(parameter_type), Some(parameter)) =
+            (tokens.next(), tokens.next(), tokens.next())
+        else {
+            break;
+        };
+        let mut condition = EventCondition {
+            kind: number(kind),
+            ..Default::default()
+        };
+        match number(parameter_type) {
+            0 => condition.value = number(parameter),
+            1 => condition.team_name = Some(parameter.to_string()),
+            2 => {
+                condition.value = number(parameter);
+                if let Some(name) = tokens.next().filter(|name| !name.is_empty()) {
+                    let bytes = name.as_bytes();
+                    condition.type_name =
+                        Some(String::from_utf8_lossy(&bytes[..bytes.len().min(24)]).into_owned());
+                }
+            }
+            _ => {}
         }
+        conditions.push(condition);
     }
-
-    let kind = fields[0].trim().parse::<i32>().ok();
-    kind.map(|kind| {
-        vec![EventCondition {
-            kind,
-            params: fields[1..].to_vec(),
-        }]
-    })
-    .unwrap_or_default()
+    conditions.reverse();
+    conditions
 }
 
 #[cfg(test)]
@@ -101,48 +109,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_events() {
-        let ini = IniFile::from_str("[Events]\nEV_A=2,47,3,0,27,7,0\nEV_B=2,7\n");
+    fn records_follow_native_width_values_and_prepend_order() {
+        let ini = IniFile::from_str("[Events]\nEV_A=3,47,0,3,60,2,2,E1,27,0,7\nEV_B=2,7\n");
         let events = parse_events(&ini);
-        assert_eq!(events.len(), 2);
         assert_eq!(
-            events.get("EV_A"),
-            Some(&MapEvent {
-                id: "EV_A".to_string(),
-                fields: vec![
-                    "2".to_string(),
-                    "47".to_string(),
-                    "3".to_string(),
-                    "0".to_string(),
-                    "27".to_string(),
-                    "7".to_string(),
-                    "0".to_string()
-                ],
-                conditions: vec![
-                    EventCondition {
-                        kind: 47,
-                        params: vec!["3".to_string(), "0".to_string()],
-                    },
-                    EventCondition {
-                        kind: 27,
-                        params: vec!["7".to_string(), "0".to_string()],
-                    },
-                ],
-            })
+            events["EV_A"].conditions,
+            vec![
+                EventCondition {
+                    kind: 27,
+                    value: 7,
+                    ..Default::default()
+                },
+                EventCondition {
+                    kind: 60,
+                    value: 2,
+                    type_name: Some("E1".into()),
+                    ..Default::default()
+                },
+                EventCondition {
+                    kind: 47,
+                    value: 3,
+                    ..Default::default()
+                },
+            ]
         );
-        assert_eq!(
-            events.get("EV_B").map(|event| event.fields.as_slice()),
-            Some(&["2".to_string(), "7".to_string()][..])
-        );
-        assert_eq!(
-            events.get("EV_B").map(|event| event.conditions.as_slice()),
-            Some(
-                &[EventCondition {
-                    kind: 2,
-                    params: vec!["7".to_string()],
-                }][..]
-            )
-        );
+        assert!(events["EV_B"].conditions.is_empty());
+        assert_eq!(events["EV_B"].fields, ["2", "7"]);
     }
 
     #[test]

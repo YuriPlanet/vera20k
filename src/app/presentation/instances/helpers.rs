@@ -11,80 +11,18 @@ use crate::map::entities::EntityCategory;
 use crate::map::terrain;
 use crate::render::batch::DepthAxis;
 use crate::render::native_z;
-use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::components::Position;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
-use crate::util::fixed_math::SIM_ZERO;
 
-/// Produce the one entity encounter order shared by tactical rendering and
-/// input picking. Layer/Y-sort comes from `TacticalDrawPlan`; equal keys retain
-/// the live ObjectClass registration order rather than falling back to map-key
-/// order. Entities absent from the live vector are appended in creation order
-/// solely so pre-reveal test/dev objects retain the renderer's old visibility.
-pub(crate) fn tactical_entity_encounter_order(
-    sim: &crate::sim::world::Simulation,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
-) -> Vec<u64> {
-    use crate::render::tactical_draw_plan::{
-        BlitPolicy, ObjectDraw, SpriteEncoding, TacticalCoord, TacticalDrawInput, TacticalDrawPlan,
-        TacticalLayer,
-    };
-
-    let mut registered = Vec::with_capacity(sim.entities().len());
-    let mut seen = std::collections::BTreeSet::new();
-    for &id in sim.tactical_registration_order() {
-        if sim.entities().get(id).is_some() && seen.insert(id) {
-            registered.push(id);
-        }
-    }
-    for entity in sim.entities().values() {
-        if seen.insert(entity.stable_id()) {
-            registered.push(entity.stable_id());
-        }
-    }
-
-    let inputs = registered
-        .iter()
-        .enumerate()
-        .filter_map(|(registration, id)| {
-            let entity = sim.entities().get(*id)?;
-            let layer = match entity_draw_band(entity) {
-                EntityDrawBand::Ground => 2,
-                EntityDrawBand::Top => 4,
-            };
-            let location = TacticalCoord {
-                x: i32::from(entity.position.rx) * 256
-                    + crate::util::fixed_math::sim_to_i32(entity.position.sub_x),
-                y: i32::from(entity.position.ry) * 256
-                    + crate::util::fixed_math::sim_to_i32(entity.position.sub_y),
-                z: i32::from(entity.position.z),
-            };
-            let (coord, y_sort_adjust) = if entity.category == EntityCategory::Structure {
-                let object_type =
-                    rules.and_then(|rules| rules.object(sim.interner.resolve(entity.type_ref())));
-                crate::app::presentation::render::draw_plan_lowering::building_ground_order_parts(
-                    location,
-                    object_type.is_some_and(|object| object.turret_anim_is_voxel),
-                    object_type.is_some_and(|object| object.gate),
-                )
-            } else {
-                (location, 0)
-            };
-            Some(TacticalDrawInput::Object(ObjectDraw {
-                id: *id,
-                layer: TacticalLayer(layer),
-                coord,
-                y_sort_adjust,
-                registration_order: registration as u64,
-                policy: BlitPolicy::opaque(SpriteEncoding::Plain),
-            }))
-        });
-    TacticalDrawPlan::build(inputs)
-        .object_layers
-        .into_iter()
-        .flat_map(|layer| layer.entries.into_iter().map(|entry| entry.object().id))
+/// Tactical6D8F19..6D95A9 visits the five retained Display vectors forward.
+/// Store-only and Logic-only entities cannot become render/pick candidates.
+pub(crate) fn tactical_entity_encounter_order(sim: &crate::sim::world::Simulation) -> Vec<u64> {
+    sim.display_layers()
+        .ordered_ids()
+        .copied()
+        .filter(|id| sim.entities().get(*id).is_some())
         .collect()
 }
 
@@ -169,7 +107,6 @@ fn tactical_bounded_entity_encounter_order(
 
     compose_tactical_screen_entity_encounter_order(
         sim,
-        state.rules(),
         (min_x, min_y, max_x, max_y),
         local_owner.as_deref(),
         local_owner_id,
@@ -183,7 +120,6 @@ fn tactical_bounded_entity_encounter_order(
 #[allow(clippy::too_many_arguments)]
 fn compose_tactical_screen_entity_encounter_order(
     sim: &crate::sim::world::Simulation,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
     bounds: (f32, f32, f32, f32),
     local_owner: Option<&str>,
     local_owner_id: Option<InternedId>,
@@ -193,7 +129,17 @@ fn compose_tactical_screen_entity_encounter_order(
     bulk_register_live_buildings: bool,
 ) -> Vec<u64> {
     let (min_x, min_y, max_x, max_y) = bounds;
-    tactical_entity_encounter_order(sim, rules)
+    let mut candidates = tactical_entity_encounter_order(sim);
+    // Band-box preflight has a separate native bulk Building registration
+    // path. Ordinary picking/rendering never scans the unregistered store.
+    if bulk_register_live_buildings {
+        candidates.extend(sim.entities().values().filter_map(|entity| {
+            (entity.category == EntityCategory::Structure
+                && sim.display_layers().layer_of(entity.stable_id()).is_none())
+            .then_some(entity.stable_id())
+        }));
+    }
+    candidates
         .into_iter()
         .filter(|id| {
             sim.entities().get(*id).is_some_and(|entity| {
@@ -247,74 +193,28 @@ pub(crate) enum CellVisibilityState {
     Shrouded,
 }
 
-/// Which display band an entity's body is drawn in.
-///
-/// gamemd keeps five display layers and asks each object which one it belongs
-/// to. `UnitClass`, `InfantryClass` and `AircraftClass` all forward that
-/// question straight to the attached locomotor, so the answer is a property of
-/// the locomotor rather than of the unit category:
-///
-/// * Drive, Walk, Hover, Ship, Mech and Teleport are Ground (layer 2)
-///   unconditionally — each of those locomotor slots is a two-instruction
-///   `return 2`.
-/// * Fly is Top (layer 4) the moment its object's height is above zero and
-///   Ground otherwise. It never consults the in-air flag, so a landed aircraft
-///   is an ordinary Ground object that sorts with the tanks around it.
-/// * Jumpjet is Ground while grounded, then Air (layer 3) climbing and Top once
-///   it reaches its own hover height.
-/// * Rocket is Air. So is DropPod, which is unreachable in stock YR.
-/// * A parachuting infantryman keeps its Walk locomotor, so it stays Ground
-///   despite hanging in the air — its altitude changes only where it is drawn.
-///
-/// Only layer 2 is kept sorted; the rest append and render in submission order,
-/// and every layer above 2 is drawn after all of layer 2. Air and Top are
-/// therefore indistinguishable as far as ground objects are concerned, and we
-/// have no separate Air object band, so both collapse into [`EntityDrawBand::Top`]
-/// here. The only ordering that collapse can disturb is Air-vs-Top against the
-/// layer-3 particle stream, which in stock YR is a takeoff's worth of frames.
+/// Presentation buckets for retained native Display membership.
+/// Air and Top still share an upper stream; their complete interleaving with
+/// effects remains a renderer migration, independent of membership authority.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EntityDrawBand {
-    /// gamemd layer 2 — the single Y-sorted band that holds buildings,
-    /// vehicles, infantry on foot and landed aircraft.
     Ground,
-    /// gamemd layers 3 and 4 — drawn after every Ground object.
     Top,
 }
 
-/// Which band this entity's body belongs to, per gamemd's per-locomotor answer.
-///
-/// The state read here mirrors what `render::locomotor_visual` reads to decide
-/// what is holding the entity up, because that is the same question: an entity
-/// is above the Ground band exactly when something has lifted it off the floor.
-pub(crate) fn entity_draw_band(entity: &GameEntity) -> EntityDrawBand {
-    // Object-level falling. The locomotor underneath is still Walk or Drive,
-    // both of which answer Ground, so a paradrop never leaves layer 2.
-    if entity.parachute_state.is_some() {
-        return EntityDrawBand::Ground;
-    }
-    // Scripted missiles fly on the Rocket locomotor, which answers Air.
-    if entity.rocket_state.is_some() {
-        return EntityDrawBand::Top;
-    }
-    let Some(loco) = entity.locomotor.as_ref() else {
-        return EntityDrawBand::Ground;
-    };
-    match loco.kind {
-        // The Rocket slot answers Air unconditionally — it has no height test
-        // of its own. Reachable only if a missile is ever built locomotor-first,
-        // since `rocket_state` answers above.
-        LocomotorKind::Rocket => EntityDrawBand::Top,
-        // The two flying locomotors gate on height, not on the locomotor's
-        // nominal layer: `MovementLayer::Air` is fixed at construction for these
-        // kinds, so a Harrier parked on its pad still carries it.
-        LocomotorKind::Fly | LocomotorKind::Jumpjet => {
-            if loco.altitude > SIM_ZERO {
-                EntityDrawBand::Top
-            } else {
-                EntityDrawBand::Ground
-            }
-        }
-        _ => EntityDrawBand::Ground,
+/// Tactical6D8F19..6D95A9 draws the retained Display vectors, not a fresh
+/// GetLayer query. Height/locomotor changes take effect here only after their
+/// simulation-owned remove/submit transaction (Fly phase4CD2A0, for example).
+/// Unregistered objects and layers without an entity body stream emit nothing.
+pub(crate) fn entity_draw_band(
+    display: &crate::sim::world::display_layers::DisplayLayers,
+    id: u64,
+) -> Option<EntityDrawBand> {
+    use crate::sim::world::display_layers::DisplayLayer;
+    match display.layer_of(id)? {
+        DisplayLayer::GROUND => Some(EntityDrawBand::Ground),
+        DisplayLayer::AIR | DisplayLayer::TOP => Some(EntityDrawBand::Top),
+        _ => None,
     }
 }
 
@@ -520,7 +420,8 @@ pub(crate) fn in_view(
 mod tests {
     use super::*;
     use crate::render::locomotor_visual::{ground_screen_position, screen_position};
-    use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
+    use crate::rules::locomotor_type::LocomotorKind;
+    use crate::sim::movement::locomotor::LocomotorState;
     use crate::util::fixed_math::SimFixed;
 
     /// Stock YR sets one global `FlightLevel=1500` for every aircraft.
@@ -547,8 +448,32 @@ mod tests {
             .insert(GameEntity::test_default(1, "E1", "Americans", 10, 10));
         sim.entities_mut()
             .insert(GameEntity::test_default(2, "E1", "Americans", 10, 10));
-        sim.set_logic_order_for_test(vec![2, 1]);
-        assert_eq!(tactical_entity_encounter_order(&sim, None), [2, 1]);
+        sim.entities_mut().get_mut(2).unwrap().lifecycle.in_limbo = true;
+        sim.entities_mut().get_mut(1).unwrap().lifecycle.in_limbo = true;
+        sim.reveal(2);
+        sim.reveal(1);
+        sim.set_logic_order_for_test(vec![1, 2]);
+        assert_eq!(tactical_entity_encounter_order(&sim), [2, 1]);
+        sim.entities_mut()
+            .insert(GameEntity::test_default(3, "E1", "Americans", 10, 10));
+        sim.set_logic_order_for_test(vec![3, 1, 2]);
+        assert_eq!(
+            tactical_entity_encounter_order(&sim),
+            [2, 1],
+            "Logic/store membership is insufficient"
+        );
+        sim.conceal(2);
+        assert_eq!(
+            tactical_entity_encounter_order(&sim),
+            [1],
+            "conceal removes the pick/render candidate"
+        );
+        sim.reveal(2);
+        assert_eq!(
+            tactical_entity_encounter_order(&sim),
+            [1, 2],
+            "resubmission follows retained equal-key members"
+        );
     }
 
     #[test]
@@ -641,7 +566,8 @@ mod tests {
         let building_anchor = interpolated_screen_position_entity(&hidden_building);
         sim.entities_mut().insert(hidden_mobile);
         sim.entities_mut().insert(hidden_building);
-        sim.set_logic_order_for_test(vec![1, 2]);
+        sim.entities_mut().get_mut(1).unwrap().lifecycle.in_limbo = true;
+        sim.reveal(1);
 
         let bounds = (
             mobile_anchor.0.min(building_anchor.0) - 32.0,
@@ -651,7 +577,6 @@ mod tests {
         );
         let visible = compose_tactical_screen_entity_encounter_order(
             &sim,
-            None,
             bounds,
             Some("Americans"),
             Some(local_owner),
@@ -662,7 +587,6 @@ mod tests {
         );
         let preflight = compose_tactical_screen_entity_encounter_order(
             &sim,
-            None,
             bounds,
             Some("Americans"),
             Some(local_owner),
@@ -728,101 +652,59 @@ mod tests {
     }
 
     #[test]
-    fn a_cruising_aircraft_leaves_the_ground_band() {
-        // Black Eagle at the stock flight level.
-        let beag = entity_with_locomotor(
-            "BEAG",
-            LocomotorKind::Fly,
-            STOCK_FLIGHT_LEVEL_LEPTONS,
-            40,
-            40,
-        );
-        assert_eq!(entity_draw_band(&beag), EntityDrawBand::Top);
-    }
+    fn body_band_follows_retained_display_until_resubmission() {
+        use crate::sim::world::Simulation;
+        use crate::sim::world::display_layers::DisplayLayer;
 
-    #[test]
-    fn an_aircraft_on_its_pad_is_an_ordinary_ground_object() {
-        // Fly answers the layer question from height alone and never looks at
-        // the in-air flag, and `MovementLayer::Air` is fixed at construction
-        // for the kind — so height is the only thing that may decide this.
-        let parked = entity_with_locomotor("BEAG", LocomotorKind::Fly, 0, 40, 40);
+        let mut sim = Simulation::new();
+        let mut aircraft = entity_with_locomotor("BEAG", LocomotorKind::Fly, 900, 40, 40);
+        aircraft.category = EntityCategory::Aircraft;
+        aircraft.lifecycle.in_limbo = true;
+        sim.entities_mut().insert(aircraft);
+        sim.reveal(1);
+        assert_eq!(sim.display_layers().layer_of(1), Some(DisplayLayer::TOP));
+
+        // Reproduce the stale-registration boundary: physical descent has
+        // reached the ground, but the phase transaction has not resubmitted.
+        // A fresh altitude classifier used to choose Ground and then lose the
+        // body because NativeGroundOrder correctly had no entry for this ID.
+        sim.entities_mut()
+            .get_mut(1)
+            .unwrap()
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .altitude = SimFixed::ZERO;
         assert_eq!(
-            parked.locomotor.as_ref().expect("locomotor").layer,
-            MovementLayer::Air,
-            "the nominal layer stays Air even parked; it must not be the predicate"
+            entity_draw_band(sim.display_layers(), 1),
+            Some(EntityDrawBand::Top)
         );
-        assert_eq!(entity_draw_band(&parked), EntityDrawBand::Ground);
-    }
-
-    #[test]
-    fn a_hovering_jumpjet_leaves_the_ground_band_and_a_landed_one_does_not() {
-        // ROCK, the Rocketeer — the one stock infantry type on a Jumpjet.
-        let hovering = entity_with_locomotor("ROCK", LocomotorKind::Jumpjet, 500, 12, 12);
-        let landed = entity_with_locomotor("ROCK", LocomotorKind::Jumpjet, 0, 12, 12);
-        assert_eq!(entity_draw_band(&hovering), EntityDrawBand::Top);
-        assert_eq!(entity_draw_band(&landed), EntityDrawBand::Ground);
-    }
-
-    #[test]
-    fn ground_locomotors_never_leave_the_ground_band() {
-        for kind in [
-            LocomotorKind::Drive,
-            LocomotorKind::Walk,
-            LocomotorKind::Hover,
-            LocomotorKind::Ship,
-            LocomotorKind::Mech,
-            LocomotorKind::Teleport,
-        ] {
-            let entity = entity_with_locomotor("MTNK", kind, 0, 5, 5);
-            assert_eq!(
-                entity_draw_band(&entity),
-                EntityDrawBand::Ground,
-                "{kind:?} answers Ground unconditionally in gamemd"
-            );
-        }
-    }
-
-    #[test]
-    fn a_paradropping_infantryman_stays_in_the_ground_band() {
-        // The locomotor underneath a parachute is still Walk, and Walk answers
-        // Ground unconditionally — the altitude only moves where it is drawn.
-        use crate::sim::entity_store::EntityStore;
-        use crate::sim::movement::parachute_descent::begin_parachute_descent;
-
-        let mut entities = EntityStore::default();
-        let mut gi = GameEntity::test_default(1, "E1", "Americans", 20, 20);
-        gi.category = crate::map::entities::EntityCategory::Infantry;
-        gi.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
-        entities.insert(gi);
-        assert!(begin_parachute_descent(
-            &mut entities,
-            1,
-            SimFixed::from_num(400)
-        ));
-        let gi = entities.get(1).expect("entity");
-
-        assert_eq!(entity_draw_band(gi), EntityDrawBand::Ground);
-        // ...but its key still has to come off the ground row, not the row it
-        // is drawn at 57 px above.
-        let (_, ground_y) = ground_screen_position(&gi.position);
-        let (_, drawn_y) = screen_position(gi);
-        assert_eq!(ground_y - drawn_y, 57.0);
-        assert_eq!(ground_sort_row(gi, drawn_y), ground_y);
-    }
-
-    /// The Rocket slot has no height test — it is a bare `return 3`. Today the
-    /// object-level `rocket_state` check answers first, so this arm is only
-    /// reachable if a missile is ever built locomotor-first; gating it on
-    /// altitude would then silently drop a launching missile into the ground
-    /// band.
-    #[test]
-    fn the_rocket_locomotor_is_above_the_ground_band_at_any_height() {
-        let launching = entity_with_locomotor("V3ROCKET", LocomotorKind::Rocket, 0, 8, 8);
+        let ground = crate::app::presentation::render::draw_plan_lowering::NativeGroundOrder::new(
+            sim.display_layers().members(DisplayLayer::GROUND),
+        );
         assert!(
-            launching.rocket_state.is_none(),
-            "this must exercise the locomotor arm, not the rocket_state shortcut"
+            ground
+                .object_draw(1, crate::render::tactical_draw_plan::SpriteEncoding::Voxel)
+                .is_none()
         );
-        assert_eq!(entity_draw_band(&launching), EntityDrawBand::Top);
+
+        // Exercise an existing real lifecycle resubmission. This establishes
+        // the render consumer contract, not the still-missing landing callback.
+        sim.conceal(1);
+        assert_eq!(entity_draw_band(sim.display_layers(), 1), None);
+        sim.reveal(1);
+        assert_eq!(
+            entity_draw_band(sim.display_layers(), 1),
+            Some(EntityDrawBand::Ground)
+        );
+        let ground = crate::app::presentation::render::draw_plan_lowering::NativeGroundOrder::new(
+            sim.display_layers().members(DisplayLayer::GROUND),
+        );
+        assert!(
+            ground
+                .object_draw(1, crate::render::tactical_draw_plan::SpriteEncoding::Voxel)
+                .is_some()
+        );
     }
 
     /// A parachute canopy takes its body's key rather than deriving one, and

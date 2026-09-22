@@ -1,7 +1,8 @@
 //! Aircraft ammo tracking and airfield docking system.
 //!
-//! Aircraft with finite `Ammo=` (from rules.ini) deplete ammo on each weapon
-//! fire. When ammo reaches 0, the aircraft auto-returns to the nearest
+//! Native Attack charges a pending release on a later mission/AI entry. The
+//! generic firing adapter still has legacy burst-completion deductions until
+//! its aircraft caller is migrated. With finite ammo depleted, docking seeks a
 //! helipad/airfield owned by the same player, descends onto its assigned
 //! pad cell, reloads, and re-launches.
 //!
@@ -40,14 +41,16 @@ use crate::sim::world::Simulation;
 
 /// Per-entity aircraft ammo and docking state.
 ///
-/// Present only on aircraft with `Ammo= >= 0` in rules.ini.
-/// Entities with `Ammo=-1` (unlimited, the default) have `None`.
+/// Present on every Aircraft, including negative native ammo counts. The
+/// pending release survives Mission changes; it is not an Attack sub-state.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub struct AircraftAmmo {
     /// Current ammo count. 0 = depleted, triggers auto-return.
     pub current: i32,
     /// Maximum ammo (from `Ammo=` in rules.ini).
     pub max: i32,
+    /// Aircraft+6C8, initialized by413D40 and set before the release loop41840E.
+    pending_release: bool,
     /// Current docking/reload lifecycle phase. None = normal flight.
     pub dock_phase: Option<AircraftDockPhase>,
     /// Stable ID of the target helipad/airfield building.
@@ -64,17 +67,61 @@ pub struct AircraftAmmo {
 }
 
 impl AircraftAmmo {
+    /// Aircraft InitFromType414033..41404B selects InitialAmmo unless it is
+    /// exactly -1. No clamping to zero or the type's maximum occurs.
+    pub(crate) fn from_type(obj: &crate::rules::object_type::ObjectType) -> Self {
+        let mut ammo = Self::new(obj.ammo);
+        if obj.initial_ammo != -1 {
+            ammo.current = obj.initial_ammo;
+        }
+        ammo
+    }
+
     /// Create a new ammo tracker with full ammo.
     pub fn new(max_ammo: i32) -> Self {
         Self {
             current: max_ammo,
             max: max_ammo,
+            pending_release: false,
             dock_phase: None,
             target_airfield: None,
             target_pad: None,
             reload_timer: 0,
             rescan_cooldown: 0,
         }
+    }
+
+    /// The admitted Mission_Attack release sets this before its Burst loop,
+    /// even for Burst<=0 or a FireAt call that returns no Bullet. Its production
+    /// writer must be connected with the mission/emission migration; a legacy
+    /// fire request alone is not admission.
+    pub(crate) fn begin_release(&mut self) {
+        self.pending_release = true;
+    }
+
+    pub(crate) const fn release_pending(&self) -> bool {
+        self.pending_release
+    }
+
+    /// Mission_Attack state1/3 and AI after leaving Attack always use DEC;
+    /// state10 alone checks Ammo>0. Clear the pending byte even without a debit.
+    /// Native418031/4180A1/418BEC,41505E; aircraft_attack_release.json witnesses.
+    pub(crate) fn consume_release(&mut self, positive_only: bool) {
+        if std::mem::take(&mut self.pending_release) && (!positive_only || self.current > 0) {
+            self.current = self.current.wrapping_sub(1);
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn hash_before_pending_release(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        self.current.hash(hasher);
+        self.max.hash(hasher);
+        self.dock_phase.hash(hasher);
+        self.target_airfield.hash(hasher);
+        self.target_pad.hash(hasher);
+        self.reload_timer.hash(hasher);
+        self.rescan_cooldown.hash(hasher);
     }
 }
 
@@ -233,7 +280,6 @@ impl AirfieldDocks {
     }
 
     /// Look up which (airfield, pad_index) this aircraft is parked on.
-    #[cfg(test)]
     pub fn pad_for(&self, aircraft_sid: u64) -> Option<(u64, u32)> {
         self.aircraft_to_pad.get(&aircraft_sid).copied()
     }
@@ -254,6 +300,73 @@ impl AirfieldDocks {
             }
             keep_airfield
         });
+    }
+}
+
+impl Simulation {
+    /// Reserve a pad and publish the matching radio contact. The native dock
+    /// is the airfield's RadioClass contact (`NumberOfDocks` slots): Fly
+    /// BeginLanding4CFA70 and Process_Landing4CE840 admit an AirportBound
+    /// aircraft only while the pad building is in its contacts. The Rust pad
+    /// table remains the pad-index owner; RESIDUAL: native selects the dock
+    /// offset from the contact slot and reserves it through Mission_Enter's
+    /// HELLO, so the two stores must be consolidated with that mission.
+    pub(crate) fn reserve_airfield_pad(
+        &mut self,
+        airfield: u64,
+        aircraft: u64,
+        pads: u32,
+    ) -> Option<u32> {
+        let previous = self
+            .production
+            .airfield_docks
+            .pad_for(aircraft)
+            .map(|(af, _)| af);
+        let pad = self
+            .production
+            .airfield_docks
+            .try_reserve(airfield, aircraft, pads)?;
+        if let Some(previous) = previous.filter(|&af| af != airfield) {
+            self.break_airfield_contact(aircraft, previous);
+        }
+        if let Some(af) = self.substrate.entities.get_mut(airfield) {
+            af.radio_contacts.set_capacity(pads as usize);
+        }
+        crate::sim::radio::transmit(
+            self,
+            aircraft,
+            airfield,
+            crate::sim::radio::RadioMessage::Hello,
+            crate::sim::radio::RadioPayload::default(),
+        );
+        Some(pad)
+    }
+
+    /// Release the pad and BREAK the contact published by
+    /// [`Self::reserve_airfield_pad`].
+    pub(crate) fn release_airfield_pad(&mut self, aircraft: u64) {
+        let Some((airfield, _)) = self.production.airfield_docks.pad_for(aircraft) else {
+            return;
+        };
+        self.production.airfield_docks.release(aircraft);
+        self.break_airfield_contact(aircraft, airfield);
+    }
+
+    fn break_airfield_contact(&mut self, aircraft: u64, airfield: u64) {
+        if self
+            .substrate
+            .entities
+            .get(aircraft)
+            .is_some_and(|e| e.radio_contacts.contains(airfield))
+        {
+            crate::sim::radio::transmit(
+                self,
+                aircraft,
+                airfield,
+                crate::sim::radio::RadioMessage::Break,
+                crate::sim::radio::RadioPayload::default(),
+            );
+        }
     }
 }
 
@@ -372,6 +485,8 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
         rescan_cooldown: u16,
         has_attack_target: bool,
         air_phase: Option<AirMovePhase>,
+        landing: bool,
+        arrived: bool,
         has_movement_target: bool,
     }
 
@@ -386,11 +501,19 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
                 return None;
             }
             let ammo = e.aircraft_ammo.as_ref()?;
+            // A signed counter also exists on unlimited-ammo aircraft; its
+            // presence alone no longer admits the finite-ammo docking FSM.
+            if ammo.max < 0 {
+                return None;
+            }
             // Skip aircraft managed by the mission system.
             if e.aircraft_mission.is_some() {
                 return None;
             }
-            let air_phase = e.locomotor.as_ref().map(|l| l.air_phase);
+            let air_phase = crate::sim::movement::air_movement::fly_mission_phase(
+                e,
+                sim.resolved_terrain.as_ref(),
+            );
             Some(AircraftSnap {
                 id: e.stable_id(),
                 owner: e.owner(),
@@ -405,6 +528,12 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
                 rescan_cooldown: ammo.rescan_cooldown,
                 has_attack_target: e.attack_target.is_some(),
                 air_phase,
+                landing: e
+                    .locomotor
+                    .as_ref()
+                    .and_then(|l| l.fly_runtime())
+                    .is_some_and(|s| s.landing()),
+                arrived: crate::sim::movement::air_movement::fly_landing_arrival(e),
                 has_movement_target: e.movement_target.is_some(),
             })
         })
@@ -425,7 +554,10 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
         new_rescan_cooldown: Option<u16>,
         restore_ammo: i32,
         clear_attack_target: bool,
-        set_air_phase: Option<AirMovePhase>,
+        /// Fly BeginLanding4CFA70 through the world owner.
+        begin_landing: bool,
+        /// Fly BeginTakeoff4CF950 through the world owner.
+        begin_takeoff: bool,
         air_move_to: Option<(u16, u16)>,
         clear_movement: bool,
     }
@@ -443,7 +575,8 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
             new_rescan_cooldown: None,
             restore_ammo: 0,
             clear_attack_target: false,
-            set_air_phase: None,
+            begin_landing: false,
+            begin_takeoff: false,
             air_move_to: None,
             clear_movement: false,
         };
@@ -500,7 +633,7 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
                     }
                     None => {
                         // Airfield destroyed — find another.
-                        sim.production.airfield_docks.release(snap.id);
+                        sim.release_airfield_pad(snap.id);
                         if let Some((af_sid, af_rx, af_ry)) = find_nearest_airfield(
                             sim,
                             rules,
@@ -536,13 +669,9 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
                     .map(|obj| obj.dock_contact_capacity())
                     .unwrap_or(1);
 
-                if let Some(pad_index) = sim
-                    .production
-                    .airfield_docks
-                    .try_reserve(af_sid, snap.id, max_slots)
-                {
+                if let Some(pad_index) = sim.reserve_airfield_pad(af_sid, snap.id, max_slots) {
+                    // Descending lands after this pad approach arrives.
                     m.new_dock_phase = Some(Some(AircraftDockPhase::Descending));
-                    m.set_air_phase = Some(AirMovePhase::Descending);
                     m.clear_movement = true;
                     m.new_target_pad = Some(Some(pad_index));
 
@@ -569,10 +698,13 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
             }
 
             Some(AircraftDockPhase::Descending) => {
-                // Wait for air_movement to bring altitude to 0 (Landed).
+                // Descend once the pad approach arrives (Fly
+                // Horizontal_Step4CF520's landing arm distance/speed).
                 if snap.air_phase == Some(AirMovePhase::Landed) {
                     m.new_dock_phase = Some(Some(AircraftDockPhase::Reloading));
                     m.new_reload_timer = Some(reload_ticks);
+                } else if !snap.landing && snap.arrived {
+                    m.begin_landing = true;
                 }
             }
 
@@ -585,10 +717,10 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
                     if new_ammo >= snap.max_ammo {
                         // Fully reloaded — launch.
                         m.new_dock_phase = Some(Some(AircraftDockPhase::Launching));
-                        m.set_air_phase = Some(AirMovePhase::Ascending);
+                        m.begin_takeoff = true;
                         m.new_target_pad = Some(None); // pad released
                         // Release dock slot.
-                        sim.production.airfield_docks.release(snap.id);
+                        sim.release_airfield_pad(snap.id);
                     } else {
                         m.new_reload_timer = Some(reload_ticks);
                     }
@@ -633,14 +765,15 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
             if m.clear_attack_target {
                 entity.attack_target = None;
             }
-            if let Some(phase) = m.set_air_phase {
-                if let Some(ref mut loco) = entity.locomotor {
-                    loco.air_phase = phase;
-                }
-            }
             if m.clear_movement {
                 entity.movement_target = None;
             }
+        }
+        if m.begin_landing {
+            sim.begin_fly_landing(m.id, Some(rules));
+        }
+        if m.begin_takeoff {
+            sim.begin_fly_takeoff(m.id, Some(rules));
         }
     }
 
@@ -664,16 +797,7 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
                 ))
             })
             .unwrap_or(crate::util::fixed_math::SimFixed::from_num(8));
-        crate::sim::movement::air_movement::issue_air_move_command(
-            &mut sim.substrate.entities,
-            id,
-            (rx, ry),
-            speed,
-            crate::sim::movement::DestinationTiming::from_rules(
-                sim.session.binary_frame,
-                rules.into(),
-            ),
-        );
+        sim.issue_air_cell_destination(id, (rx, ry), speed, Some(rules));
     }
 }
 

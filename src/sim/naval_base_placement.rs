@@ -750,7 +750,10 @@ mod tests {
         sim.session.binary_frame = 1;
         sim.session.map_width = 32;
         sim.session.map_height = 32;
-        sim.playfield_bounds = Some(broad_bounds());
+        // Keep the entire admissible diamond inside the populated 32x32 map.
+        // The broad query fixture admits missing cells too; blocking only real
+        // Float rows there does not mean that every candidate is blocked.
+        sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(16, 2, 2, 12, 8));
         sim.playfield_size_height = Some(32);
         sim.resolved_terrain = Some(water_terrain(32, 32));
         let path = PathGrid::from_resolved_terrain(sim.resolved_terrain.as_ref().unwrap());

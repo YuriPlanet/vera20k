@@ -523,7 +523,7 @@ fn resolve_target_coords_3d(
             let Some(t) = entities.get(id) else {
                 return Some((i64::MAX / 4, i64::MAX / 4, 0));
             };
-            let (rx, ry, sub_x, sub_y) = resolve_entity_target_coords(t, rules, interner);
+            let (rx, ry, sub_x, sub_y) = super::target_coords(t, Some(rules), interner);
             let tx = rx as i64 * 256 + sub_x.to_num::<i64>();
             let ty = ry as i64 * 256 + sub_y.to_num::<i64>();
             let tz = if is_low_flying(t) {
@@ -754,39 +754,6 @@ fn fire_source_for_target(
     Some((x, y, z))
 }
 
-/// Resolve an entity's target coords (rx, ry, sub_x, sub_y) — buildings shift
-/// from NW corner cell center to foundation geometric center, others use the
-/// entity's raw position.
-fn resolve_entity_target_coords(
-    t: &GameEntity,
-    rules: &RuleSet,
-    interner: &StringInterner,
-) -> (u16, u16, SimFixed, SimFixed) {
-    if t.category == EntityCategory::Structure {
-        if let Some(obj) = rules.object(interner.resolve(t.type_ref())) {
-            let (fw, fh) = foundation_dimensions(&obj.foundation);
-            let offset_x = (fw.saturating_sub(1) as i32) * 128;
-            let offset_y = (fh.saturating_sub(1) as i32) * 128;
-            let full_x: i32 =
-                t.position.rx as i32 * 256 + t.position.sub_x.to_num::<i32>() + offset_x;
-            let full_y: i32 =
-                t.position.ry as i32 * 256 + t.position.sub_y.to_num::<i32>() + offset_y;
-            return (
-                (full_x / 256) as u16,
-                (full_y / 256) as u16,
-                SimFixed::from_num(full_x % 256),
-                SimFixed::from_num(full_y % 256),
-            );
-        }
-    }
-    (
-        t.position.rx,
-        t.position.ry,
-        t.position.sub_x,
-        t.position.sub_y,
-    )
-}
-
 /// Ground Z in leptons for a cell, plus bridge deck offset if a bridge deck
 /// is present on the cell.
 fn ground_z_with_bridge_offset(rx: u16, ry: u16, terrain: &ResolvedTerrainGrid) -> Option<i64> {
@@ -930,9 +897,7 @@ mod tests {
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::test_interner;
     use crate::sim::movement::locomotion::LocomotorSlot;
-    use crate::sim::movement::locomotor::{
-        AirMovePhase, GroundMovePhase, LocomotorState, MovementLayer,
-    };
+    use crate::sim::movement::locomotor::{GroundMovePhase, LocomotorState, MovementLayer};
     use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
     use crate::util::lepton::LEPTONS_PER_LEVEL;
 
@@ -957,13 +922,12 @@ mod tests {
             ),
             layer: MovementLayer::Air,
             phase: GroundMovePhase::Idle,
-            air_phase: AirMovePhase::Cruising,
+
             speed_multiplier: SIM_ONE,
             speed_fraction: SIM_ONE,
             fly_current_speed: SIM_ZERO,
             altitude: SimFixed::from_num(altitude_lep as i32),
-            target_altitude: SimFixed::from_num(altitude_lep as i32),
-            climb_rate: SIM_ZERO,
+
             jumpjet_speed: SIM_ZERO,
             jumpjet_accel: SIM_ZERO,
             jumpjet_current_speed: SIM_ZERO,

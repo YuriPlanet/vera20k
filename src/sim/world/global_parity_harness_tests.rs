@@ -668,7 +668,22 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 111509923
 // id. It is not a general reconstruction; a scenario finalized by the map
 // loader held Some(first TIB* id). The projection must still equal the previous
 // current pin, asserted below. Rust hash-composition ratchet, not a native golden.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 17631878483843703671;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 17631878483843703671;
+// v181 adds the default Foot+580 factor to every entity's hash. The pre-181
+// assertion below retains the previous entire fixture state/RNG ratchet.
+const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xBC5E_52DA_969F_F60C;
+// Snapshot182 adds ordered display vectors. The pre-182 projection below
+// must reproduce the previous whole-fixture hash, including all RNG/state.
+// Schema186 removes the always-None release-tail byte from each entity. This
+// fixture contains no aircraft; the pre186 projection below retains the old
+// full hash, and every position/replay/RNG assertion remains unchanged.
+// Schema187: object burst index replaces the obsolete target remaining count.
+// The pre187 assertion below reproduces the preceding full fixture hash.
+// Schema189 folds retained Techno+3D4; Before(189) below reproduces v188.
+// v190 adds saved Foot neighbor history. Before(190) reproduces the full v189
+// fixture; its legacy grid has no retained plane. Route/RNG pins are unchanged.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x1EB4_793B_5056_9A45;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 12759965280527249411;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -995,6 +1010,23 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     let (_, final_scen, final_main, final_mapgen) =
         *recorded_streams.last().expect("final checkpoint recorded");
     let final_hash = *replayed.last().expect("at least one tick recorded");
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
+        0x6AA2_FA03_DF44_4115,
+        "v190 changes only the Foot neighbor-history hash composition in this fixture"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
+        0xC373_742E_090E_5AAC,
+        "v189 adds only the retained Techno+3D4 hash fold"
+    );
+    let before_burst_hash = rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(187));
+    assert_eq!(
+        before_burst_hash, 0x1924_EA0D_29FA_97C5,
+        "schema187 only replaces zero remaining-shot fields with the retained index in this fixture"
+    );
+    let before_release_hash =
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(186));
     // Schema 172 removed the refinery dock registry's hash folds. They were
     // unframed, so an empty registry contributed no bytes: the pin below holds
     // across that removal exactly when the refinery (id 2) holds no contact at
@@ -1054,6 +1086,16 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(174)),
         GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174,
         "the pre-174 composition must reproduce the previous current pin"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(181)),
+        GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181,
+        "excluding only Foot+580 must preserve the pre-181 fixture"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(182)),
+        GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182,
+        "excluding only display vectors must preserve the pre-182 fixture"
     );
     println!(
         "[schema168 global] pre168={:016X}",
@@ -1153,6 +1195,10 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         "retained westbound destination must advance after intermediate retirement",
     );
 
+    assert_eq!(
+        before_release_hash, GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186,
+        "restoring only the absent release-tail fold must reproduce the prior fixture"
+    );
     assert_eq!(
         final_hash, GLOBAL_HARNESS_FINAL_HASH,
         "committed global-harness baseline drifted. Do not copy the observed value: \

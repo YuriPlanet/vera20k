@@ -145,7 +145,8 @@ pub(super) fn configure_motion_after_transition(
         let ndy = next.1 as i32 - current_cell.1 as i32;
 
         let new_face = facing_from_delta(ndx, ndy);
-        if category == EntityCategory::Infantry || mover_rot <= 0 {
+        if category == EntityCategory::Infantry || super::FacingClass::rate_from_rot(mover_rot) <= 0
+        {
             *facing = new_face;
         } else {
             *facing_target = Some(new_face);
@@ -226,10 +227,8 @@ pub(super) fn hover_steer(
     }
 
     let desired16: u16 = super::hover::hover_desired_facing16(dxl, dyl);
-    let rot_byte: u8 = rot.clamp(0, 0x7F) as u8;
-    let bf = body_facing.get_or_insert_with(|| {
-        super::facing_class::FacingClass::new((*facing as u16) << 8, rot_byte)
-    });
+    let bf = body_facing
+        .get_or_insert_with(|| super::facing_class::FacingClass::new((*facing as u16) << 8, rot));
     bf.set(desired16, native_frame);
     let current16: u16 = bf.current(native_frame);
     *facing = (current16 >> 8) as u8;
@@ -286,21 +285,11 @@ pub(super) fn handle_vehicle_rotation(
         }
         return RotationResult::ReadyToMove;
     };
-    if rot <= 0 {
-        // ROT=0 — instant turn, no gradual rotation.
-        *facing = target_facing;
-        *facing_target = None;
-        *body_facing = None;
-        return RotationResult::ReadyToMove;
-    }
-
     // Rules ROT drives the hull FacingClass. `set` is a no-op once already aimed
     // at the target, so calling it each tick is safe and yields smooth retargets
     // (it snapshots the live animated value into the rotation origin).
-    let rot_byte = rot.min(0x7F) as u8;
-    let bf = body_facing.get_or_insert_with(|| {
-        super::facing_class::FacingClass::new((*facing as u16) << 8, rot_byte)
-    });
+    let bf = body_facing
+        .get_or_insert_with(|| super::facing_class::FacingClass::new((*facing as u16) << 8, rot));
     bf.set((target_facing as u16) << 8, native_frame);
     *facing = (bf.current(native_frame) >> 8) as u8;
 

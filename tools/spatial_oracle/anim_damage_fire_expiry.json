@@ -1,0 +1,458 @@
+[
+  {
+    "anim_expiry": {
+      "expired": true,
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "marked": false,
+      "owner": false,
+      "slots": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stored": [
+        128,
+        256,
+        300
+      ]
+    },
+    "owner_expiry": {
+      "expired": true,
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "marked": false,
+      "owner": false,
+      "slots": [
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stored": [
+        128,
+        256,
+        300
+      ]
+    },
+    "slot": 0
+  },
+  {
+    "anim_expiry": {
+      "expired": true,
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "marked": false,
+      "owner": false,
+      "slots": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stored": [
+        128,
+        256,
+        300
+      ]
+    },
+    "owner_expiry": {
+      "expired": true,
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "marked": false,
+      "owner": false,
+      "slots": [
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stored": [
+        128,
+        256,
+        300
+      ]
+    },
+    "slot": 1
+  },
+  {
+    "anim_expiry": {
+      "expired": true,
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "marked": false,
+      "owner": false,
+      "slots": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stored": [
+        128,
+        256,
+        300
+      ]
+    },
+    "owner_expiry": {
+      "expired": true,
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "marked": false,
+      "owner": false,
+      "slots": [
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stored": [
+        128,
+        256,
+        300
+      ]
+    },
+    "slot": 2
+  },
+  {
+    "anim_expiry": {
+      "expired": true,
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "marked": false,
+      "owner": false,
+      "slots": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stored": [
+        128,
+        256,
+        300
+      ]
+    },
+    "owner_expiry": {
+      "expired": true,
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "marked": false,
+      "owner": false,
+      "slots": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stored": [
+        128,
+        256,
+        300
+      ]
+    },
+    "slot": 3
+  },
+  {
+    "anim_expiry": {
+      "expired": true,
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "marked": false,
+      "owner": false,
+      "slots": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stored": [
+        128,
+        256,
+        300
+      ]
+    },
+    "owner_expiry": {
+      "expired": true,
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "marked": false,
+      "owner": false,
+      "slots": [
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+      ],
+      "stored": [
+        128,
+        256,
+        300
+      ]
+    },
+    "slot": 4
+  },
+  {
+    "anim_expiry": {
+      "expired": true,
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "marked": false,
+      "owner": false,
+      "slots": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stored": [
+        128,
+        256,
+        300
+      ]
+    },
+    "owner_expiry": {
+      "expired": true,
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "marked": false,
+      "owner": false,
+      "slots": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false
+      ],
+      "stored": [
+        128,
+        256,
+        300
+      ]
+    },
+    "slot": 5
+  },
+  {
+    "anim_expiry": {
+      "expired": true,
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "marked": false,
+      "owner": false,
+      "slots": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stored": [
+        128,
+        256,
+        300
+      ]
+    },
+    "owner_expiry": {
+      "expired": true,
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "marked": false,
+      "owner": false,
+      "slots": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ],
+      "stored": [
+        128,
+        256,
+        300
+      ]
+    },
+    "slot": 6
+  },
+  {
+    "anim_expiry": {
+      "expired": true,
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "marked": false,
+      "owner": false,
+      "slots": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stored": [
+        128,
+        256,
+        300
+      ]
+    },
+    "owner_expiry": {
+      "expired": true,
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "marked": false,
+      "owner": false,
+      "slots": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true
+      ],
+      "stored": [
+        128,
+        256,
+        300
+      ]
+    },
+    "slot": 7
+  }
+]

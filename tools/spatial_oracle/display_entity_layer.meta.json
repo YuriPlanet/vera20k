@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "88 entity layer queries across height thresholds, marking, bridge/falling, terrain slope and distinct linked/global cruise heights. Excludes non-entity layers, lifecycle submission and Rocket/Fly process behavior.",
+  "assumptions": [
+    "Real Unit and Building vtables; original Walk/Drive/Fly/Jumpjet constructors. Object location, lifecycle bytes and one map cell are supplied.",
+    "Map+13C table and Map+140 length are initialized. Read-only observers require ground and Jumpjet bridge queries to select the real cell; earlier fixtures without the length used Dummy and did not establish ramp/bridge behavior.",
+    "Jumpjet linked height and global CruiseHeight are supplied; this does not execute the rules reader or Link_To_Object.",
+    "No allocator or callbacks are replaced. Layer queries do not establish resubmission timing or full process parity."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "foot_layer": "0x004DB7E0",
+    "fly_layer": "0x004CFCF0",
+    "jumpjet_layer": "0x0054B8D0",
+    "object_layer": "0x005F4260",
+    "get_height": "0x005F5F40",
+    "high_flying": "0x005F6B90"
+  },
+  "payload_sha256": "27aa31fbf63b7fd69e0bfb24af076c499a4cb8993f0e74a17d1f9ba26c4afad2"
+}

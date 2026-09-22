@@ -1,0 +1,3001 @@
+[
+  {
+    "calls": [],
+    "candidate": [
+      16384,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "inside",
+      "proposed": [
+        16384,
+        16384,
+        1500
+      ]
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        64,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32953,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_edge"
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [],
+    "candidate": [
+      32639,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "right_sub_-129_seed_0",
+      "proposed": [
+        32639,
+        16384,
+        1500
+      ],
+      "seed": 0
+    },
+    "local_coords": [],
+    "next_random": 1229352179,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        127,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [],
+    "candidate": [
+      32639,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "right_sub_-129_seed_1",
+      "proposed": [
+        32639,
+        16384,
+        1500
+      ],
+      "seed": 1
+    },
+    "local_coords": [],
+    "next_random": 2025287381,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        127,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [],
+    "candidate": [
+      32639,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "right_sub_-129_seed_31",
+      "proposed": [
+        32639,
+        16384,
+        1500
+      ],
+      "seed": 31
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        127,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [],
+    "candidate": [
+      32640,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "right_sub_-128_seed_0",
+      "proposed": [
+        32640,
+        16384,
+        1500
+      ],
+      "seed": 0
+    },
+    "local_coords": [],
+    "next_random": 1229352179,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        127,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [],
+    "candidate": [
+      32640,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "right_sub_-128_seed_1",
+      "proposed": [
+        32640,
+        16384,
+        1500
+      ],
+      "seed": 1
+    },
+    "local_coords": [],
+    "next_random": 2025287381,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        127,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [],
+    "candidate": [
+      32640,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "right_sub_-128_seed_31",
+      "proposed": [
+        32640,
+        16384,
+        1500
+      ],
+      "seed": 31
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        127,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [],
+    "candidate": [
+      32767,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "right_sub_-1_seed_0",
+      "proposed": [
+        32767,
+        16384,
+        1500
+      ],
+      "seed": 0
+    },
+    "local_coords": [],
+    "next_random": 1229352179,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        127,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [],
+    "candidate": [
+      32767,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "right_sub_-1_seed_1",
+      "proposed": [
+        32767,
+        16384,
+        1500
+      ],
+      "seed": 1
+    },
+    "local_coords": [],
+    "next_random": 2025287381,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        127,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [],
+    "candidate": [
+      32767,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "right_sub_-1_seed_31",
+      "proposed": [
+        32767,
+        16384,
+        1500
+      ],
+      "seed": 31
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        127,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32875,
+      16323,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_0_seed_0",
+      "proposed": [
+        32768,
+        16384,
+        1500
+      ],
+      "seed": 0
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 1781224790,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        63
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32840,
+      16352,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_0_seed_1",
+      "proposed": [
+        32768,
+        16384,
+        1500
+      ],
+      "seed": 1
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 660436142,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        63
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32953,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_0_seed_31",
+      "proposed": [
+        32768,
+        16384,
+        1500
+      ],
+      "seed": 31
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32876,
+      16323,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_1_seed_0",
+      "proposed": [
+        32769,
+        16384,
+        1500
+      ],
+      "seed": 0
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 1781224790,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        63
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32841,
+      16352,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_1_seed_1",
+      "proposed": [
+        32769,
+        16384,
+        1500
+      ],
+      "seed": 1
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 660436142,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        63
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32954,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_1_seed_31",
+      "proposed": [
+        32769,
+        16384,
+        1500
+      ],
+      "seed": 31
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      33002,
+      16323,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_127_seed_0",
+      "proposed": [
+        32895,
+        16384,
+        1500
+      ],
+      "seed": 0
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 1781224790,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        63
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32967,
+      16352,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_127_seed_1",
+      "proposed": [
+        32895,
+        16384,
+        1500
+      ],
+      "seed": 1
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 660436142,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        63
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      33080,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_127_seed_31",
+      "proposed": [
+        32895,
+        16384,
+        1500
+      ],
+      "seed": 31
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        129,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      33003,
+      16323,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_128_seed_0",
+      "proposed": [
+        32896,
+        16384,
+        1500
+      ],
+      "seed": 0
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 1781224790,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        129,
+        64
+      ],
+      [
+        128,
+        63
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32968,
+      16352,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_128_seed_1",
+      "proposed": [
+        32896,
+        16384,
+        1500
+      ],
+      "seed": 1
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 660436142,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        129,
+        64
+      ],
+      [
+        128,
+        63
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      33081,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_128_seed_31",
+      "proposed": [
+        32896,
+        16384,
+        1500
+      ],
+      "seed": 31
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        129,
+        64
+      ],
+      [
+        129,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      33130,
+      16323,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_255_seed_0",
+      "proposed": [
+        33023,
+        16384,
+        1500
+      ],
+      "seed": 0
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 1781224790,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        129,
+        64
+      ],
+      [
+        129,
+        63
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      33095,
+      16352,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_255_seed_1",
+      "proposed": [
+        33023,
+        16384,
+        1500
+      ],
+      "seed": 1
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 660436142,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        129,
+        64
+      ],
+      [
+        129,
+        63
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      33208,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_255_seed_31",
+      "proposed": [
+        33023,
+        16384,
+        1500
+      ],
+      "seed": 31
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        129,
+        64
+      ],
+      [
+        129,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      33131,
+      16323,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_256_seed_0",
+      "proposed": [
+        33024,
+        16384,
+        1500
+      ],
+      "seed": 0
+    },
+    "local_coords": [
+      [
+        62,
+        127
+      ]
+    ],
+    "next_random": 1781224790,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        129,
+        64
+      ],
+      [
+        129,
+        64
+      ],
+      [
+        129,
+        63
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      33096,
+      16352,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_256_seed_1",
+      "proposed": [
+        33024,
+        16384,
+        1500
+      ],
+      "seed": 1
+    },
+    "local_coords": [
+      [
+        62,
+        127
+      ]
+    ],
+    "next_random": 660436142,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        129,
+        64
+      ],
+      [
+        129,
+        64
+      ],
+      [
+        129,
+        63
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      33209,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_256_seed_31",
+      "proposed": [
+        33024,
+        16384,
+        1500
+      ],
+      "seed": 31
+    },
+    "local_coords": [
+      [
+        62,
+        127
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        129,
+        64
+      ],
+      [
+        129,
+        64
+      ],
+      [
+        129,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      33386,
+      16323,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_511_seed_0",
+      "proposed": [
+        33279,
+        16384,
+        1500
+      ],
+      "seed": 0
+    },
+    "local_coords": [
+      [
+        62,
+        127
+      ]
+    ],
+    "next_random": 1781224790,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        129,
+        64
+      ],
+      [
+        130,
+        64
+      ],
+      [
+        130,
+        63
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      33351,
+      16352,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_511_seed_1",
+      "proposed": [
+        33279,
+        16384,
+        1500
+      ],
+      "seed": 1
+    },
+    "local_coords": [
+      [
+        62,
+        127
+      ]
+    ],
+    "next_random": 660436142,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        129,
+        64
+      ],
+      [
+        130,
+        64
+      ],
+      [
+        130,
+        63
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      33464,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "right_sub_511_seed_31",
+      "proposed": [
+        33279,
+        16384,
+        1500
+      ],
+      "seed": 31
+    },
+    "local_coords": [
+      [
+        62,
+        127
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        129,
+        64
+      ],
+      [
+        130,
+        64
+      ],
+      [
+        130,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      8377,
+      8220,
+      317
+    ],
+    "commit": false,
+    "input": {
+      "name": "edge_8192_8192",
+      "proposed": [
+        8192,
+        8192,
+        317
+      ]
+    },
+    "local_coords": [
+      [
+        30,
+        -2
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        32,
+        32
+      ],
+      [
+        32,
+        32
+      ],
+      [
+        32,
+        32
+      ]
+    ]
+  },
+  {
+    "calls": [],
+    "candidate": [
+      16384,
+      32512,
+      317
+    ],
+    "commit": true,
+    "input": {
+      "name": "edge_16384_32512",
+      "proposed": [
+        16384,
+        32512,
+        317
+      ]
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        64,
+        127
+      ]
+    ]
+  },
+  {
+    "calls": [],
+    "candidate": [
+      24576,
+      24576,
+      317
+    ],
+    "commit": true,
+    "input": {
+      "name": "edge_24576_24576",
+      "proposed": [
+        24576,
+        24576,
+        317
+      ]
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        96,
+        96
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      8504,
+      8347,
+      317
+    ],
+    "commit": true,
+    "input": {
+      "name": "edge_8319_8319",
+      "proposed": [
+        8319,
+        8319,
+        317
+      ]
+    },
+    "local_coords": [
+      [
+        30,
+        -2
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        32,
+        32
+      ],
+      [
+        32,
+        32
+      ],
+      [
+        33,
+        32
+      ]
+    ]
+  },
+  {
+    "calls": [],
+    "candidate": [
+      24703,
+      24703,
+      317
+    ],
+    "commit": true,
+    "input": {
+      "name": "edge_24703_24703",
+      "proposed": [
+        24703,
+        24703,
+        317
+      ]
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        96,
+        96
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      185,
+      28,
+      317
+    ],
+    "commit": false,
+    "input": {
+      "name": "edge_0_0",
+      "proposed": [
+        0,
+        0,
+        317
+      ]
+    },
+    "local_coords": [
+      [
+        30,
+        -66
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      -71,
+      27,
+      317
+    ],
+    "commit": false,
+    "input": {
+      "name": "edge_-257_-1",
+      "proposed": [
+        -257,
+        -1,
+        317
+      ]
+    },
+    "local_coords": [
+      [
+        29,
+        -67
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        -1,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      131199,
+      131071,
+      317
+    ],
+    "commit": false,
+    "input": {
+      "name": "edge_131071_131071",
+      "proposed": [
+        131071,
+        131071,
+        317
+      ]
+    },
+    "local_coords": [
+      [
+        30,
+        956
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        511,
+        511
+      ],
+      [
+        512,
+        511
+      ],
+      [
+        512,
+        511
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "mission_only": false,
+      "name": "gate_mission_only_False"
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "in_playfield": false,
+      "name": "gate_in_playfield_False"
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "gate_target_True",
+      "target": true
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "fly_by": true,
+      "name": "gate_fly_by_True"
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32953,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "gate_spawned_True",
+      "spawned": true
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "mission": 26,
+      "name": "gate_mission_26"
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "mission": 27,
+      "name": "gate_mission_27"
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32953,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "mission": 31,
+      "name": "gate_mission_31"
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32953,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "mission": -1,
+      "name": "queued_5",
+      "queued_mission": 5
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "mission": -1,
+      "name": "queued_26",
+      "queued_mission": 26
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "mission": -1,
+      "name": "queued_27",
+      "queued_mission": 27
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32953,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "mission": -1,
+      "name": "queued_31",
+      "queued_mission": 31
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32953,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "mission": 31,
+      "name": "target_mission31",
+      "target": true
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "mission": -1,
+      "name": "target_queued31",
+      "queued_mission": 31,
+      "target": true
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action",
+      "script_action",
+      "waypoint",
+      "playfield_mode_one",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32953,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "team_0",
+      "team": {}
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "team_1",
+      "team": {
+        "active": false
+      }
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "team_2",
+      "team": {
+        "cursor": -1
+      }
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "team_3",
+      "team": {
+        "cursor": 1
+      }
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action",
+      "script_action"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "team_4",
+      "team": {
+        "action": 2
+      }
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action",
+      "script_action",
+      "waypoint",
+      "playfield_mode_one"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "team_5",
+      "team": {
+        "waypoint": [
+          64,
+          64
+        ]
+      }
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action",
+      "script_action",
+      "waypoint",
+      "playfield_mode_one",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32953,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "team_6",
+      "team": {
+        "waypoint": [
+          32,
+          36
+        ]
+      }
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action",
+      "script_action",
+      "waypoint",
+      "playfield_mode_one",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32953,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "team_7",
+      "team": {
+        "level": 5,
+        "waypoint": [
+          32,
+          36
+        ]
+      }
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action",
+      "script_action",
+      "waypoint",
+      "playfield_mode_one",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32953,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "team_8",
+      "team": {
+        "level": -1,
+        "slope": 1,
+        "waypoint": [
+          32,
+          36
+        ]
+      }
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action",
+      "script_action",
+      "waypoint",
+      "playfield_mode_one",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32953,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "team_9",
+      "team": {
+        "count": 3,
+        "cursor": 2
+      }
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "team_10",
+      "team": {
+        "cursor": -2147483648
+      }
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "team_11",
+      "team": {
+        "count": 0,
+        "cursor": 0
+      }
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action",
+      "script_action",
+      "waypoint",
+      "playfield_mode_one"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "team_height_0_slope_0",
+      "team": {
+        "level": 0,
+        "slope": 0,
+        "waypoint": [
+          33,
+          36
+        ]
+      }
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action",
+      "script_action",
+      "waypoint",
+      "playfield_mode_one",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32953,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "team_height_1_slope_0",
+      "team": {
+        "level": 1,
+        "slope": 0,
+        "waypoint": [
+          33,
+          36
+        ]
+      }
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action",
+      "script_action",
+      "waypoint",
+      "playfield_mode_one",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32953,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "team_height_0_slope_1",
+      "team": {
+        "level": 0,
+        "slope": 1,
+        "waypoint": [
+          33,
+          36
+        ]
+      }
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action",
+      "script_action",
+      "waypoint",
+      "playfield_mode_one"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "name": "team_height_-1_slope_1",
+      "team": {
+        "level": -1,
+        "slope": 1,
+        "waypoint": [
+          33,
+          36
+        ]
+      }
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action",
+      "script_action",
+      "waypoint",
+      "playfield_mode_one",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32953,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "mission_only": false,
+      "name": "team_without_mission_only",
+      "team": {}
+    },
+    "local_coords": [
+      [
+        62,
+        126
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "team_waypoint_gate",
+      "script_has_action",
+      "script_action",
+      "waypoint",
+      "playfield_mode_one"
+    ],
+    "candidate": [
+      32768,
+      16384,
+      1500
+    ],
+    "commit": true,
+    "input": {
+      "fly_by": true,
+      "name": "team_fly_by",
+      "team": {}
+    },
+    "local_coords": [],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      8377,
+      8220,
+      0
+    ],
+    "commit": false,
+    "input": {
+      "local": [
+        0,
+        0,
+        64,
+        64
+      ],
+      "name": "local_0",
+      "proposed": [
+        8192,
+        8192,
+        0
+      ],
+      "span_12c": 127
+    },
+    "local_coords": [
+      [
+        32,
+        0
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        32,
+        32
+      ],
+      [
+        32,
+        32
+      ],
+      [
+        32,
+        32
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      8377,
+      8220,
+      0
+    ],
+    "commit": false,
+    "input": {
+      "local": [
+        30,
+        0,
+        20,
+        64
+      ],
+      "name": "local_1",
+      "proposed": [
+        8192,
+        8192,
+        0
+      ],
+      "span_12c": 127
+    },
+    "local_coords": [
+      [
+        2,
+        0
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        32,
+        32
+      ],
+      [
+        32,
+        32
+      ],
+      [
+        32,
+        32
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      8121,
+      8220,
+      0
+    ],
+    "commit": false,
+    "input": {
+      "local": [
+        2,
+        2,
+        60,
+        56
+      ],
+      "name": "local_2",
+      "proposed": [
+        8192,
+        8192,
+        0
+      ],
+      "span_12c": -7
+    },
+    "local_coords": [
+      [
+        30,
+        -2
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        32,
+        32
+      ],
+      [
+        31,
+        32
+      ],
+      [
+        31,
+        32
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      8121,
+      8220,
+      0
+    ],
+    "commit": false,
+    "input": {
+      "local": [
+        2,
+        2,
+        60,
+        56
+      ],
+      "name": "local_3",
+      "proposed": [
+        8192,
+        8192,
+        0
+      ],
+      "span_12c": 0
+    },
+    "local_coords": [
+      [
+        30,
+        -2
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        32,
+        32
+      ],
+      [
+        31,
+        32
+      ],
+      [
+        31,
+        32
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local",
+      "scatter"
+    ],
+    "candidate": [
+      32953,
+      16412,
+      1500
+    ],
+    "commit": false,
+    "input": {
+      "name": "odd_width",
+      "size": [
+        65,
+        63
+      ],
+      "span_12c": 127
+    },
+    "local_coords": [
+      [
+        62,
+        125
+      ]
+    ],
+    "next_random": 2287577493,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "shape_queries": [
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ],
+      [
+        128,
+        64
+      ]
+    ]
+  },
+  {
+    "calls": [
+      "aircraft_gate",
+      "to_local"
+    ],
+    "candidate": [
+      20608,
+      256,
+      0
+    ],
+    "commit": true,
+    "input": {
+      "name": "nonsquare",
+      "proposed": [
+        20736,
+        256,
+        0
+      ],
+      "size": [
+        80,
+        24
+      ],
+      "span_12c": 103
+    },
+    "local_coords": [
+      [
+        78,
+        0
+      ]
+    ],
+    "next_random": 2026076499,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "shape_queries": [
+      [
+        81,
+        1
+      ],
+      [
+        80,
+        1
+      ]
+    ]
+  }
+]

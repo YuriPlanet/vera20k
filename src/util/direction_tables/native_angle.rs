@@ -93,6 +93,27 @@ pub(crate) fn native_atan2_f32(y: NativeF32Bits, x: NativeF32Bits) -> X87Value {
 /// Returns the full native facing word for a screen-relative coordinate delta.
 pub fn facing16_from_delta(dx: i32, dy: i32) -> u16 {
     let angle = native_atan2(dy.wrapping_neg(), dx);
+    facing16_from_angle(angle)
+}
+
+/// Building447BFB..447C36 subtracts the two retained coordinates in x87,
+/// before the atan2 wrapper narrows them to f32. An i32 delta would wrap at
+/// opposite signed coordinate boundaries. Reuse the existing table/conversion.
+pub(crate) fn facing16_between(from: [i32; 2], to: [i32; 2]) -> u16 {
+    let difference = |a, b| {
+        X87Chop53::store_f32(X87Chop53::sub(
+            X87Chop53::load_i32(a),
+            X87Chop53::load_i32(b),
+        ))
+        .expect("differences of i32 coordinates fit finite f32")
+    };
+    facing16_from_angle(native_atan2_f32(
+        difference(from[1], to[1]),
+        difference(to[0], from[0]),
+    ))
+}
+
+fn facing16_from_angle(angle: X87Value) -> u16 {
     let centered = X87Chop53::sub(angle, load_f64(PI_OVER_TWO_F64));
     let scaled = X87Chop53::mul(centered, load_f64(FACING_SCALE_F64));
     X87Chop53::ftol_i64(scaled)

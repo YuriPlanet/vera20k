@@ -3,6 +3,106 @@
 use super::*;
 
 #[test]
+fn projectile_flat_matches_original_art_reader_and_retained_defaults() {
+    use crate::rules::ruleset::RuleSet;
+    let cases: serde_json::Value =
+        serde_json::from_str(include_str!("../../tools/projectile_oracle/flat_art.json")).unwrap();
+    let cases = cases.as_array().unwrap();
+    assert_eq!(cases.len(), 38);
+    for case in cases {
+        let prior = case["prior"].as_bool().unwrap();
+        let mut art = format!(
+            "[PRIOR]\nFlat={}\n[{}]\nImage=UNREAD_REDIRECT\n",
+            if prior { "yes" } else { "no" },
+            case["art_section"].as_str().unwrap()
+        );
+        if let Some(flat) = case["flat"].as_str() {
+            art.push_str(&format!("Flat={flat}\n"));
+        }
+        // A redirected ART body must not become the source of Flat.
+        art.push_str(&format!(
+            "[UNREAD_REDIRECT]\nFlat={}\n",
+            if prior { "no" } else { "yes" }
+        ));
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=GUN\n\
+             [GUN]\nProjectile=SHOT\n[SHOT]\nImage=PRIOR\n",
+        ));
+        let mut pass = format!("[SHOT]\nROT=1\nFlat={}\n", if prior { "no" } else { "yes" });
+        if let Some(image) = case["image"].as_str() {
+            pass.push_str(&format!("Image={image}\n"));
+        }
+        layers.push(RulesLayerKind::Scenario, IniFile::from_str(&pass));
+        let processed = layers
+            .process_with_fixed_art(&IniFile::from_str(&art))
+            .unwrap();
+        let rules = RuleSet::from_processed_rules(&processed).unwrap();
+        assert_eq!(
+            rules.projectile("SHOT").unwrap().flat,
+            case["effective_flat"].as_bool().unwrap(),
+            "{}",
+            case["name"]
+        );
+    }
+}
+
+#[test]
+fn projectile_flat_survives_registry_handoff_and_resets_with_its_owner() {
+    use crate::rules::ruleset::RuleSet;
+    let art = IniFile::from_str("[YES]\nFlat=yes\n");
+    let root = IniFile::from_str(
+        "[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=GUN\n\
+         [GUN]\nProjectile=SHOT\n[SHOT]\nImage=YES\n",
+    );
+    let processed = RulesLayerStack::new(root.clone())
+        .process_with_fixed_art(&art)
+        .unwrap();
+    let (_, receipt) = processed.into_ini_and_native_type_construction_trace();
+    let continued = RulesLayerStack::new(IniFile::from_str("[SHOT]\nROT=1\n"))
+        .process_with_fixed_art_and_registry_state(
+            &art,
+            receipt.into_registry_state_discarding_events(),
+        )
+        .unwrap();
+    assert!(
+        RuleSet::from_processed_rules(&continued)
+            .unwrap()
+            .projectile("SHOT")
+            .unwrap()
+            .flat
+    );
+    assert!(
+        continued
+            .native_type_construction_trace()
+            .events()
+            .is_empty()
+    );
+    let (_, receipt) = continued.into_ini_and_native_type_construction_trace();
+    let mut no_image_root = root;
+    no_image_root.replace_first_section(
+        IniFile::from_str("[SHOT]\nROT=1\n")
+            .section("SHOT")
+            .unwrap()
+            .clone(),
+    );
+    let reset = RulesLayerStack::new(no_image_root)
+        .process_with_fixed_art_and_registry_state(
+            &art,
+            receipt
+                .into_registry_state_discarding_events()
+                .destructive_reset(),
+        )
+        .unwrap();
+    assert!(
+        !RuleSet::from_processed_rules(&reset)
+            .unwrap()
+            .projectile("SHOT")
+            .unwrap()
+            .flat
+    );
+}
+
+#[test]
 fn anim_art_read_receipt_distinguishes_live_sweep_from_late_allocation() {
     // ReadTypeData 0x00679A5D..0x00679A82 reloads the live Anim count, then
     // proceeds to Techno readers; AudioVisual runs still later in Process.

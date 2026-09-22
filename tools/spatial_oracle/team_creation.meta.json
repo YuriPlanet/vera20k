@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original full TeamType create and Team/Script/Tag/Trigger constructors, optionally through TriggerAction4 dispatch. Pins owner/limit/depth behavior, initial retained state, publication, waypoint and Tag timer/RNG effects. Excludes definition loading, trigger spring, recruitment/activation/AI and deletion.",
+  "assumptions": [
+    "Resolved TeamType/ScriptType/TagType/TriggerType and waypoint inputs, two registered houses and optional prior teams.",
+    "All registry arrays have spare capacity; vector growth and memory exhaustion are excluded.",
+    "Original static initializers6E8A20/6F0610 establish the zero cell constants; original Scenario RNG is seeded.",
+    "Tag trigger event lists contain zero or one event; original event13/51 timer reset and RNG execute."
+  ],
+  "substitutions": [
+    "Operator-new7C8E17 supplies bounded poisoned arena storage. No gameplay call, return value or instruction is replaced."
+  ],
+  "entry_points": {
+    "trigger_execute": "0x006DD8B0",
+    "create_team": "0x006F09C0",
+    "team_constructor": "0x006E8A90",
+    "script_constructor": "0x006913C0",
+    "tag_constructor": "0x006E4DE0",
+    "trigger_constructor": "0x00725FA0"
+  },
+  "payload_sha256": "0cbe504881d4911878172bf407a3c5f5522d8f3516efec882f2820c658c9b448"
+}

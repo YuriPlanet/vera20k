@@ -43,7 +43,6 @@ fn fixture() -> (Simulation, RuleSet) {
     );
     entity.locomotor = Some(LocomotorState::from_object_type(
         rules.object("CMIN").expect("CMIN type"),
-        rules.general.flight_level,
         0,
     ));
     entity.lifecycle.in_limbo = false;
@@ -352,6 +351,9 @@ fn foot_queue_survives_drive_retirement_construction_and_reuse() {
     let (mut sim, _) = fixture();
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     activate_drive(entity);
+    assert!(entity.foot_speed.accept_speed_crate(
+        crate::util::native_x87::NativeF64Bits::from_bits(1.2_f64.to_bits())
+    ));
     let queue = entity.navigation.path_replay.clone();
     let speed = entity.foot_speed.clone();
     assert!(try_restore_primary(entity));
@@ -372,10 +374,14 @@ fn foot_speed_without_class_payload_roundtrips_and_hashes_each_field() {
     // Scenario RNG is deliberately reset by the production deserializer.
     // Normalize this fixture to that load state before comparing whole hashes.
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
-    let expected = crate::sim::components::FootSpeedState {
-        applied_fraction: SimFixed::lit("0.625"),
-        cached_current_speed: 13,
-    };
+    let mut expected = crate::sim::components::FootSpeedState::default();
+    expected.applied_fraction = SimFixed::lit("0.625");
+    expected.cached_current_speed = 13;
+    assert!(
+        expected.accept_speed_crate(crate::util::native_x87::NativeF64Bits::from_bits(
+            1.2_f64.to_bits()
+        ))
+    );
     sim.substrate.entities.get_mut(1).unwrap().foot_speed = expected.clone();
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "foot_speed", 0);
     let mut loaded = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -387,13 +393,22 @@ fn foot_speed_without_class_payload_roundtrips_and_hashes_each_field() {
     assert_eq!(entity.foot_speed, expected);
     assert_eq!(loaded.state_hash(), sim.state_hash());
     let original = loaded.state_hash();
-    for field in 0..2 {
+    for field in 0..3 {
         let speed = &mut loaded.substrate.entities.get_mut(1).unwrap().foot_speed;
         *speed = expected.clone();
         if field == 0 {
             speed.applied_fraction += SimFixed::lit("0.125");
-        } else {
+        } else if field == 1 {
             speed.cached_current_speed += 1;
+        } else {
+            *speed = Default::default();
+            speed.applied_fraction = expected.applied_fraction;
+            speed.cached_current_speed = expected.cached_current_speed;
+            assert!(
+                speed.accept_speed_crate(crate::util::native_x87::NativeF64Bits::from_bits(
+                    1.3_f64.to_bits()
+                ))
+            );
         }
         assert_ne!(loaded.state_hash(), original, "Foot speed field {field}");
     }

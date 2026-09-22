@@ -552,7 +552,7 @@ fn step_ready_docked(
         child.facing = launch_facing;
     }
     let revealed = matches!(
-        sim.reveal(child_id),
+        sim.reveal_entity_with_rules(child_id, rules),
         crate::sim::world::RevealOutcome::Revealed { .. }
     );
     if !revealed {
@@ -976,8 +976,8 @@ fn child_ammo(sim: &Simulation, child_id: u64) -> i32 {
         .get(child_id)
         .and_then(|c| c.aircraft_ammo.as_ref())
         .map(|a| a.current)
-        // No finite-ammo tracking means unlimited; native reads Ammo=-1 the
-        // same way and never sends such a child home to rearm.
+        // Real Aircraft now retain their signed count, including -1. This
+        // fallback applies only to incomplete/non-Aircraft compatibility data.
         .unwrap_or(i32::MAX)
 }
 
@@ -988,11 +988,7 @@ fn assign_child_attack(sim: &mut Simulation, child_id: u64, target: TargetKind) 
             TargetKind::Cell(rx, ry) => crate::sim::combat::AttackTarget::for_cell(rx, ry),
         });
         if let Some(mission) = child.aircraft_mission.as_mut() {
-            *mission = crate::sim::aircraft::AircraftMission::Attack {
-                sub_state: 0,
-                has_fired: false,
-                is_strafe: false,
-            };
+            *mission = crate::sim::aircraft::AircraftMission::Attack { sub_state: 0 };
         }
     }
 }
@@ -1040,13 +1036,7 @@ fn hold_child_over_owner(
             *mission = crate::sim::aircraft::AircraftMission::Move { sub_state: 0 };
         }
     }
-    crate::sim::movement::air_movement::issue_air_move_command(
-        &mut sim.substrate.entities,
-        child_id,
-        (rx, ry),
-        speed,
-        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, rules.into()),
-    );
+    sim.issue_air_cell_destination(child_id, (rx, ry), speed, Some(rules));
 }
 
 /// The eight-direction cell step native uses for the owner-relative hold cell.
@@ -1102,13 +1092,7 @@ fn recall_child_to_owner(sim: &mut Simulation, rules: &RuleSet, owner_id: u64, c
             *mission = crate::sim::aircraft::AircraftMission::Move { sub_state: 0 };
         }
     }
-    crate::sim::movement::air_movement::issue_air_move_command(
-        &mut sim.substrate.entities,
-        child_id,
-        (rx, ry),
-        speed,
-        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, rules.into()),
-    );
+    sim.issue_air_cell_destination(child_id, (rx, ry), speed, Some(rules));
 }
 
 /// Hand a launched missile child to the rocket locomotor with the impact

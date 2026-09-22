@@ -536,7 +536,28 @@ use crate::sim::world::Simulation;
 // state field, and `AirMovePhase::Hovering`, which only that mirror produced, is
 // gone, so the enum's encoding and a flying Jumpjet's stored value both differ
 // from what a 179 save holds.
-const SNAPSHOT_VERSION: u32 = 180;
+// 180 -> 181: Foot+580 crate speed multiplier is retained with the Foot owner,
+// including across locomotor replacement. It is serialized and hashed.
+// 181 -> 182: persistent DisplayClass layer membership and order. Its lookup
+// cache is rebuilt, but history cannot be recovered from current coordinates.
+// 182 -> 183: display vectors now include terrain, particle systems, bullets,
+// waves and voxel debris. Prior snapshots cannot recover their registration history.
+// 183 -> 184: animation display membership, retained instance YSortAdjust and
+// Object+74 marking. Prior snapshots cannot reconstruct attachment history.
+// 184 -> 185: Fly owns its integer height target and native takeoff/landing
+// flags; the shared synthetic air phase, target and climb-rate fields are gone.
+// 185 -> 186: aircraft retain signed Ammo and the pending-release byte outside
+// the Attack variant. Duplicate mission flags and the fabricated release tail
+// are removed; pending state cannot be recovered from the old representation.
+// 186 -> 187: object burst position replaces AttackTarget's remaining-shot count.
+// 187 -> 188: Fly retains exact destination XYZ, independent of the cell cache.
+// 188 -> 189: retained Techno+3D4 cannot be recovered from live type or cargo.
+// 189 -> 190: Foot+55C history and the combined retained wall/Foot Cell+122 plane.
+// 190 -> 191: Fly retains its native cruise-mode byte through save and piggyback.
+// 191 -> 192: Fly moving+34, the landing-effect latch +52, the linked
+// AirportBound+18 and Techno+2E8 flight attitude are saved and hashed. A 191
+// save cannot recover an in-progress landing effect or approach pitch.
+const SNAPSHOT_VERSION: u32 = 192;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -683,6 +704,8 @@ pub enum SnapshotRestoreError {
     DuplicateLogicIdentity { object_id: u64 },
     #[error("LogicVector object id {object_id} has no restored registry identity")]
     MissingLogicIdentity { object_id: u64 },
+    #[error("DisplayClass object id {object_id} has no restored registry identity")]
+    MissingDisplayIdentity { object_id: u64 },
     #[error("live {registry} object id {object_id} is absent from LogicVector")]
     MissingRequiredLogicIdentity {
         registry: &'static str,
@@ -1151,7 +1174,13 @@ fn restore_object_references(
     // null, and a deferred Destroy is still a physically present valid target.
     let mut claimed_slots = BTreeMap::new();
     for (owner_id, entity) in sim.substrate.entities.iter_sorted() {
-        for (slot, anim_id) in entity.building_anim_slots.iter().enumerate() {
+        // Diagnostic slots0..20 are Building+55C, slots21..28 are +5C8.
+        for (slot, anim_id) in entity
+            .building_anim_slots
+            .iter()
+            .chain(entity.damage_fire_anim_ids.iter())
+            .enumerate()
+        {
             let Some(anim_id) = *anim_id else { continue };
             let slot = slot as u8;
             if entity.category != crate::map::entities::EntityCategory::Structure {
@@ -1451,16 +1480,6 @@ fn restore_object_references(
             )?;
         }
 
-        for &anim_id in entity.damage_fire_anim_ids.iter().flatten() {
-            require_resolved_reference(
-                anim_ids.contains(&anim_id),
-                "EntityStore",
-                entity_id,
-                "damage_fire_anim_ids",
-                "AnimStore",
-                anim_id,
-            )?;
-        }
         if let Some(system_id) = entity.damage_smoke_system_id {
             require_resolved_reference(
                 particle_system_ids.contains(&system_id),
@@ -1920,7 +1939,7 @@ impl Simulation {
                     grid.width(),
                     grid.height(),
                     grid.cell_storage_len(),
-                    grid.retained_wall_neighbor_count_storage_len(),
+                    grid.retained_neighbor_count_storage_len(),
                 )
             })
             .ok_or(SnapshotRestoreError::MissingMapAuthorityComponent {
@@ -2873,14 +2892,14 @@ mod tests {
             width: u16,
             height: u16,
             cells: Vec<OverlayCell>,
-            retained_wall_neighbor_counts: Option<Vec<u8>>,
+            retained_neighbor_counts: Option<Vec<u8>>,
         }
 
         let malformed_bytes = bincode::serialize(&OverlayGridWire {
             width: 2,
             height: 1,
             cells: vec![OverlayCell::default()],
-            retained_wall_neighbor_counts: None,
+            retained_neighbor_counts: None,
         })
         .expect("malformed overlay wire fixture");
         let malformed: OverlayGrid =
@@ -2915,14 +2934,14 @@ mod tests {
             width: u16,
             height: u16,
             cells: Vec<OverlayCell>,
-            retained_wall_neighbor_counts: Option<Vec<u8>>,
+            retained_neighbor_counts: Option<Vec<u8>>,
         }
 
         let malformed_bytes = bincode::serialize(&OverlayGridWire {
             width: 2,
             height: 1,
             cells: vec![OverlayCell::default(); 2],
-            retained_wall_neighbor_counts: Some(vec![7]),
+            retained_neighbor_counts: Some(vec![7]),
         })
         .expect("malformed retained wall-neighbor wire fixture");
         let malformed: OverlayGrid =
@@ -2962,14 +2981,14 @@ mod tests {
             width: u16,
             height: u16,
             cells: Vec<OverlayCell>,
-            retained_wall_neighbor_counts: Option<Vec<u8>>,
+            retained_neighbor_counts: Option<Vec<u8>>,
         }
 
         let planeless_bytes = bincode::serialize(&OverlayGridWire {
             width: 2,
             height: 1,
             cells: vec![OverlayCell::default(); 2],
-            retained_wall_neighbor_counts: None,
+            retained_neighbor_counts: None,
         })
         .expect("plane-less retained wall wire fixture");
         let planeless: OverlayGrid =
@@ -3430,7 +3449,15 @@ mod tests {
         // 170 -> 171: shared animation bounds and retained HasEngineer.
         // 173 -> 174: ProductionState drops the resource node map.
         // 174 -> 175: bridge collapse explosions join the AnimStore.
-        assert_eq!(super::SNAPSHOT_VERSION, 180);
+        // 180 -> 181: Foot+580 crate multiplier survives save/restore.
+        // 184 -> 185: Fly owns its integer height target and takeoff/landing flags.
+        // 185 -> 186: Aircraft pending ammo survives independently of Attack.
+        // 186 -> 187: object burst position replaces the target-owned count.
+        // 187 -> 188: retained Fly destination XYZ cannot be recovered from cells.
+        // 189 -> 190: Foot neighbor history and retained live counters.
+        // 190 -> 191: Fly cruise mode survives save and locomotor suspension.
+        // 191 -> 192: Fly moving/landing latch/AirportBound and flight attitude.
+        assert_eq!(super::SNAPSHOT_VERSION, 192);
     }
 
     #[test]
@@ -3700,7 +3727,7 @@ mod tests {
                 .overlay_grid
                 .as_ref()
                 .expect("overlay authority")
-                .retained_wall_neighbor_counts(),
+                .retained_neighbor_counts(),
             Some(&[0, 7, 255, 4][..])
         );
     }
@@ -4584,7 +4611,7 @@ mod tests {
 
     #[test]
     fn building_anim_slot_restore_rejects_invalid_graph_before_mutation() {
-        for case in 0..5 {
+        for case in 0..8 {
             let (mut sim, rules, owner) = crate::sim::building_art::slot_test_fixture();
             let anim = sim
                 .set_building_anim_slot(owner, 3, false, false, 0, &rules)
@@ -4625,7 +4652,7 @@ mod tests {
                         second_slot: 4,
                     }
                 }
-                _ => {
+                4 => {
                     let second = sim.allocate_stable_id();
                     let mut entity = sim.substrate.entities.get(owner).unwrap().clone();
                     entity.stable_id = second;
@@ -4636,6 +4663,42 @@ mod tests {
                         first_slot: 3,
                         second_owner: second,
                         second_slot: 3,
+                    }
+                }
+                5 => {
+                    sim.substrate
+                        .entities
+                        .get_mut(owner)
+                        .unwrap()
+                        .damage_fire_anim_ids[0] = Some(999);
+                    SnapshotRestoreError::MissingBuildingSlotAnim {
+                        owner_id: owner,
+                        slot: 21,
+                        anim_id: 999,
+                    }
+                }
+                6 => {
+                    sim.substrate
+                        .entities
+                        .get_mut(owner)
+                        .unwrap()
+                        .damage_fire_anim_ids[0] = Some(anim);
+                    SnapshotRestoreError::DuplicateBuildingSlotAnim {
+                        anim_id: anim,
+                        first_owner: owner,
+                        first_slot: 3,
+                        second_owner: owner,
+                        second_slot: 21,
+                    }
+                }
+                _ => {
+                    let entity = sim.substrate.entities.get_mut(owner).unwrap();
+                    entity.building_anim_slots[3] = None;
+                    entity.damage_fire_anim_ids[0] = Some(anim);
+                    entity.category = crate::map::entities::EntityCategory::Unit;
+                    SnapshotRestoreError::InvalidBuildingAnimSlotOwner {
+                        owner_id: owner,
+                        slot: 21,
                     }
                 }
             };
@@ -4661,7 +4724,7 @@ mod tests {
             .set_building_anim_slot(owner, 3, false, false, 0, &rules)
             .unwrap();
         assert!(sim.anim(anim).unwrap().owner_entity.is_none());
-        sim.destroy_anim(anim);
+        sim.destroy_anim(anim, &rules);
         assert!(sim.substrate.pending_delete.contains(&anim));
         assert_eq!(
             sim.entities().get(owner).unwrap().building_anim_slots[3],
@@ -6391,6 +6454,7 @@ mod tests {
         };
 
         ProjectileSpawn {
+            flat: false,
             source_id,
             origin: ProjectileCoord::new(0, 0, 0),
             target,
@@ -6634,6 +6698,10 @@ mod tests {
         process_dummy.set_level_slope(-7, 11);
         process_dummy.stamp_coord(7, 9);
 
+        let before_neighbor_count = live.state_hash();
+        process_dummy.adjust_neighbor_count(true);
+        assert_ne!(before_neighbor_count, live.state_hash());
+
         let owner = live.intern("DummyOccupationOwner");
         let hash_before_raw = live.state_hash();
         live.substrate.raw_cell_occupation.write_infantry(
@@ -6691,6 +6759,7 @@ mod tests {
             "the process-global CellClass bytes are not Scenario payload"
         );
         assert!(!cold.shared_cell_dummy.same_identity(&process_dummy));
+        assert_eq!(cold.shared_cell_dummy.neighbor_count(), 0);
 
         let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
         restored.retain_in_scenario_process_state_from(&live);
@@ -6699,6 +6768,7 @@ mod tests {
             live.substrate.raw_cell_occupation.dummy_for_hash()
         );
         assert!(restored.shared_cell_dummy.same_identity(&process_dummy));
+        assert_eq!(restored.shared_cell_dummy.neighbor_count(), 1);
         assert_eq!(
             restored.shared_cell_dummy.snapshot(),
             crate::map::resolved_terrain::SharedCellDummySnapshot {
@@ -7557,7 +7627,7 @@ mod tests {
             sim.production
                 .terrain_objects
                 .insert(terrain.stable_id, terrain.clone());
-            assert!(sim.register_terrain_object(terrain.stable_id));
+            assert!(sim.register_terrain_object(terrain.stable_id, None));
             sim.production
                 .terrain_object_cells
                 .insert(terrain.cell(), terrain.stable_id);

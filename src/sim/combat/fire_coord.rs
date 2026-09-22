@@ -144,6 +144,19 @@ pub(crate) fn fire_coordinate(
         .barrel_facing
         .as_ref()
         .map_or(body_facing16, |barrel| barrel.current(binary_frame));
+    let matrix_facing16 = if world
+        .substrate
+        .entities
+        .get(snap.stable_id)
+        .and_then(|e| e.locomotor.as_ref())
+        .is_some_and(|l| l.kind == crate::rules::locomotor_type::LocomotorKind::Fly)
+    {
+        // Fly DrawMatrix4CF651 reads SecondaryFacing even when GetFLH's
+        // separate relative-aim rotation still subtracts PrimaryFacing.
+        aim_facing16
+    } else {
+        body_facing16
+    };
 
     let art = rules
         .art_registry
@@ -182,8 +195,11 @@ pub(crate) fn fire_coordinate(
                 flh.lateral,
                 flh.height,
                 art.turret_offset,
-                aim_facing16,
-                body_facing16,
+                crate::util::flh_transform::FlhFacings {
+                    aim: aim_facing16,
+                    body: body_facing16,
+                    matrix: matrix_facing16,
+                },
                 burst_index,
             )
         })

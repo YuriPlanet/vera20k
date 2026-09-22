@@ -1,0 +1,574 @@
+[
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "fly",
+      "moving": false,
+      "pitch": -1
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "fly",
+      "moving": false,
+      "pitch": 0
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "fly",
+      "moving": false,
+      "pitch": 1.52587890625e-05
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "fly",
+      "moving": false,
+      "pitch": 1
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": false,
+      "phase": 0
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": false,
+      "phase": 1
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": false,
+      "phase": 2
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": false,
+      "phase": 3
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": false,
+      "phase": 4
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": false,
+      "phase": 5
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": false,
+      "phase": 6
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "fly",
+      "moving": true,
+      "pitch": -1
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "fly",
+      "moving": true,
+      "pitch": 0
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "fly",
+      "moving": true,
+      "pitch": 1.52587890625e-05
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "fly",
+      "moving": true,
+      "pitch": 1
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": true,
+      "phase": 0
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": true,
+      "phase": 1
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": true,
+      "phase": 2
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": true,
+      "phase": 3
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": true,
+      "phase": 4
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": true,
+      "phase": 5
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": true,
+      "phase": 6
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "fly",
+      "moving": false,
+      "pitch": -1
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "fly",
+      "moving": false,
+      "pitch": 0
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "fly",
+      "moving": false,
+      "pitch": 1.52587890625e-05
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "fly",
+      "moving": false,
+      "pitch": 1
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": false,
+      "phase": 0
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": false,
+      "phase": 1
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": false,
+      "phase": 2
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": false,
+      "phase": 3
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": false,
+      "phase": 4
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": false,
+      "phase": 5
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": false,
+      "phase": 6
+    },
+    "moving": false
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "fly",
+      "moving": true,
+      "pitch": -1
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "fly",
+      "moving": true,
+      "pitch": 0
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "fly",
+      "moving": true,
+      "pitch": 1.52587890625e-05
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "fly",
+      "moving": true,
+      "pitch": 1
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": true,
+      "phase": 0
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": true,
+      "phase": 1
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": true,
+      "phase": 2
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": true,
+      "phase": 3
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": true,
+      "phase": 4
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": true,
+      "phase": 5
+    },
+    "moving": true
+  },
+  {
+    "input": {
+      "destination": [
+        3200,
+        2688,
+        0
+      ],
+      "family": "jumpjet",
+      "moving": true,
+      "phase": 6
+    },
+    "moving": true
+  }
+]

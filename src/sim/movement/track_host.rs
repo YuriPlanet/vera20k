@@ -394,7 +394,7 @@ impl Simulation {
                 }
                 // Native clears Head_To and selector before target+4C, then
                 // queries the owner's physical cell and fresh +4C height.
-                let reached = self.track_reached_destination(id, family)?;
+                let reached = self.track_reached_destination(id, family, rules)?;
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     if reached {
                         match family {
@@ -1117,7 +1117,12 @@ impl Simulation {
         true
     }
 
-    fn track_reached_destination(&self, id: u64, family: TrackFamily) -> Result<bool, String> {
+    fn track_reached_destination(
+        &self,
+        id: u64,
+        family: TrackFamily,
+        rules: Option<&RuleSet>,
+    ) -> Result<bool, String> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(false);
         };
@@ -1126,8 +1131,10 @@ impl Simulation {
         };
         let coord = super::navcom::nav_target_coordinate(
             target,
+            Some(id),
             &self.substrate.entities,
             self.resolved_terrain.as_ref(),
+            rules.map(|rules| (rules, &self.interner)),
         )?;
         let destination = match family {
             TrackFamily::Drive => entity
@@ -1218,7 +1225,10 @@ impl Simulation {
         };
         if selection.is_some() && !has_destination {
             if let Some(entity) = self.substrate.entities.get_mut(id) {
-                entity.attack_target = None;
+                // Unit738AF5/738C75 calls the virtual target setter before
+                // the Guard/Harvest queue; clearing only Target loses its
+                // retained burst reset (Techno6FCF5B).
+                crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
             }
         }
         // Unit738CFA..D12 suppresses assignment only after preceding writes.
@@ -1329,6 +1339,8 @@ impl Simulation {
                 capability,
                 super::bump_crush::ScatterEligibility::from_rules(rules),
                 self.session.binary_frame,
+                rules,
+                &self.houses,
             );
             if !matches!(kills, super::bump_crush::DriveCrushOutcome::Kill { ref victims } if victims.contains(&victim))
             {
@@ -1382,6 +1394,9 @@ impl Simulation {
         }
         if let Some(rules) = rules {
             self.refresh_unit_sensor_at_per_cell(id, rules);
+        }
+        self.foot_neighbors_at_per_cell(id);
+        if let Some(rules) = rules {
             crate::sim::world::techno_ai_cloak::uncloak_on_sensor_neighbour_after_cell_entry(
                 self, id, rules,
             );

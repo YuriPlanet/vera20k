@@ -663,6 +663,7 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
                 tick_ms,
                 live_order,
                 fire_suppressed,
+                &BTreeSet::new(),
                 projectile_detonations,
                 wave_damage_events,
             );

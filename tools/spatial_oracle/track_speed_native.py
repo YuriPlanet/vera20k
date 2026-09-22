@@ -138,6 +138,12 @@ def generate():
                 getters.append(getter(dict(raw=17, applied=0.75, house=house, crate=crate, rank=rank, faster=faster, elite_faster=elite, flag_owner=flag)))
     for raw in (17, -17, 2147483647):
         getters.append(getter(dict(raw=raw, applied=1.0, crate=3.0, flag_owner=0)))
+    # Stock INI Speed4/6/7 loads native10/15/17. The original chop53
+    # multiplication makes15*1.2 truncate to17, unlike host round-to-nearest.
+    for ini_speed, raw in ((4, 10), (6, 15), (7, 17)):
+        for crate in (1.0, 1.2):
+            getters.append(getter(dict(ini_speed=ini_speed, raw=raw, applied=1.0,
+                                       crate=crate, veteran=1.2, faster=True)))
     cases = []
     base_cases = [dict(selector=s, accelerates=a, passive=p) for s in (-1, 1, 63, 64, 71) for a in (False, True) for p in (False, True)]
     # Selector-1 is admitted by the native path-head8 alternative.

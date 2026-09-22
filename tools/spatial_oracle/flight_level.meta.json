@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "30 original FlightLevel reads and effective-height queries. Excludes file loading, full constructors, locomotor state transitions and movement.",
+  "assumptions": [
+    "Supplied cached INI entry/index and TechnoType constructor default -1 (711050, EBP=-1).",
+    "General FlightLevel supplied as500 or retail1500; original getter executes in full."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "read_call": "0x00712336",
+    "read_end": "0x00712350",
+    "read_integer": "0x005276D0",
+    "effective_height": "0x00717800"
+  },
+  "payload_sha256": "3c831f3d2e7786cd74f3c62dfa42e8dcdc4c30a72e35ba5e5c8bd647a0a2a666"
+}

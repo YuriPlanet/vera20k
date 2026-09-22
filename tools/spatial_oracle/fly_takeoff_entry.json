@@ -1,0 +1,5918 @@
+[
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 8192,
+          "duration": 0,
+          "previous": 8192,
+          "rate": 1280,
+          "start": 100
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 1500
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      "air_add",
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      "primary_snap",
+      "takeoff_sound"
+    ],
+    "input": {
+      "air_registered": false,
+      "move": false,
+      "z": 0
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 8192,
+          "duration": 0,
+          "previous": 8192,
+          "rate": 1280,
+          "start": 100
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          16768,
+          16512,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": true,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 1500
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      "air_add",
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      "primary_snap",
+      "takeoff_sound",
+      [
+        "ground",
+        [
+          16768,
+          16512,
+          0
+        ]
+      ]
+    ],
+    "input": {
+      "air_registered": false,
+      "move": true,
+      "z": 0
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 8192,
+          "duration": 0,
+          "previous": 8192,
+          "rate": 1280,
+          "start": 100
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 1500
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      "primary_snap",
+      "takeoff_sound"
+    ],
+    "input": {
+      "air_registered": true,
+      "move": false,
+      "z": 0
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 8192,
+          "duration": 0,
+          "previous": 8192,
+          "rate": 1280,
+          "start": 100
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          16768,
+          16512,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": true,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 1500
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      "primary_snap",
+      "takeoff_sound",
+      [
+        "ground",
+        [
+          16768,
+          16512,
+          0
+        ]
+      ]
+    ],
+    "input": {
+      "air_registered": true,
+      "move": true,
+      "z": 0
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          1
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 1500
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          1
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      "air_add",
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          1
+        ]
+      ],
+      "takeoff_sound"
+    ],
+    "input": {
+      "air_registered": false,
+      "move": false,
+      "z": 1
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          1
+        ],
+        "destination": [
+          16768,
+          16512,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": true,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          1
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          1
+        ]
+      ],
+      [
+        "ground",
+        [
+          16768,
+          16512,
+          0
+        ]
+      ]
+    ],
+    "input": {
+      "air_registered": false,
+      "move": true,
+      "z": 1
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          1
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 1500
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          1
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          1
+        ]
+      ],
+      "takeoff_sound"
+    ],
+    "input": {
+      "air_registered": true,
+      "move": false,
+      "z": 1
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          1
+        ],
+        "destination": [
+          16768,
+          16512,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": true,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          1
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          1
+        ]
+      ],
+      [
+        "ground",
+        [
+          16768,
+          16512,
+          0
+        ]
+      ]
+    ],
+    "input": {
+      "air_registered": true,
+      "move": true,
+      "z": 1
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          208
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 1500
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          208
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      "air_add",
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          208
+        ]
+      ],
+      "takeoff_sound"
+    ],
+    "input": {
+      "air_registered": false,
+      "move": false,
+      "z": 208
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          208
+        ],
+        "destination": [
+          16768,
+          16512,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": true,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          208
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          208
+        ]
+      ],
+      [
+        "ground",
+        [
+          16768,
+          16512,
+          0
+        ]
+      ]
+    ],
+    "input": {
+      "air_registered": false,
+      "move": true,
+      "z": 208
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          208
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 1500
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          208
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          208
+        ]
+      ],
+      "takeoff_sound"
+    ],
+    "input": {
+      "air_registered": true,
+      "move": false,
+      "z": 208
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          208
+        ],
+        "destination": [
+          16768,
+          16512,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": true,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          208
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          208
+        ]
+      ],
+      [
+        "ground",
+        [
+          16768,
+          16512,
+          0
+        ]
+      ]
+    ],
+    "input": {
+      "air_registered": true,
+      "move": true,
+      "z": 208
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          900
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 1500
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          900
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      "air_add",
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          900
+        ]
+      ],
+      "takeoff_sound"
+    ],
+    "input": {
+      "air_registered": false,
+      "move": false,
+      "z": 900
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          900
+        ],
+        "destination": [
+          16768,
+          16512,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": true,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          900
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          900
+        ]
+      ],
+      [
+        "ground",
+        [
+          16768,
+          16512,
+          0
+        ]
+      ]
+    ],
+    "input": {
+      "air_registered": false,
+      "move": true,
+      "z": 900
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          900
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 1500
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          900
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          900
+        ]
+      ],
+      "takeoff_sound"
+    ],
+    "input": {
+      "air_registered": true,
+      "move": false,
+      "z": 900
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          900
+        ],
+        "destination": [
+          16768,
+          16512,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": true,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          900
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          900
+        ]
+      ],
+      [
+        "ground",
+        [
+          16768,
+          16512,
+          0
+        ]
+      ]
+    ],
+    "input": {
+      "air_registered": true,
+      "move": true,
+      "z": 900
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 8192,
+          "duration": 0,
+          "previous": 8192,
+          "rate": 1280,
+          "start": 100
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 1500
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      "air_add",
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      "primary_snap",
+      "takeoff_sound"
+    ],
+    "input": {
+      "air_registered": false,
+      "move": false,
+      "powered": false,
+      "z": 0
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 8192,
+          "duration": 0,
+          "previous": 8192,
+          "rate": 1280,
+          "start": 100
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 1500
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      "air_add",
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      "primary_snap",
+      "takeoff_sound"
+    ],
+    "input": {
+      "air_registered": false,
+      "health": 0,
+      "move": false,
+      "z": 0
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 8192,
+          "duration": 0,
+          "previous": 8192,
+          "rate": 1280,
+          "start": 100
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 40000
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      "air_add",
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      "primary_snap",
+      "takeoff_sound"
+    ],
+    "input": {
+      "air_registered": false,
+      "flight_level": 40000,
+      "move": false,
+      "z": 0
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": true,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 1500
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": true,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      "air_add",
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      "takeoff_sound"
+    ],
+    "input": {
+      "air_registered": false,
+      "bridge": true,
+      "move": false,
+      "on_bridge": true,
+      "z": 0
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 1500
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      "air_add",
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      "takeoff_sound"
+    ],
+    "input": {
+      "air_registered": false,
+      "level": 2,
+      "move": false,
+      "z": 0
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [],
+    "input": {
+      "air_registered": false,
+      "move": true,
+      "powered": false,
+      "z": 0
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          16768,
+          16512,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": true,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      [
+        "ground",
+        [
+          16768,
+          16512,
+          0
+        ]
+      ]
+    ],
+    "input": {
+      "air_registered": false,
+      "health": 0,
+      "move": true,
+      "z": 0
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 8192,
+          "duration": 0,
+          "previous": 8192,
+          "rate": 1280,
+          "start": 100
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          16768,
+          16512,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": true,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 40000
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      "air_add",
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      "primary_snap",
+      "takeoff_sound",
+      [
+        "ground",
+        [
+          16768,
+          16512,
+          0
+        ]
+      ]
+    ],
+    "input": {
+      "air_registered": false,
+      "flight_level": 40000,
+      "move": true,
+      "z": 0
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          16768,
+          16512,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": true,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": true,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 1500
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": true,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      "air_add",
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      "takeoff_sound",
+      [
+        "ground",
+        [
+          16768,
+          16512,
+          0
+        ]
+      ]
+    ],
+    "input": {
+      "air_registered": false,
+      "bridge": true,
+      "move": true,
+      "on_bridge": true,
+      "z": 0
+    }
+  },
+  {
+    "after": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 1,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          16768,
+          16512,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": true,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          1,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 1500
+    },
+    "before": {
+      "facings": [
+        {
+          "destination": 49152,
+          "duration": 25,
+          "previous": 16384,
+          "rate": 1280,
+          "start": 90
+        },
+        {
+          "destination": 8192,
+          "duration": 12,
+          "previous": 24576,
+          "rate": 1280,
+          "start": 90
+        }
+      ],
+      "mode": false,
+      "state": {
+        "air_members": 0,
+        "coordinates": [
+          16512,
+          16512,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "layers": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "marked": true,
+        "moving": false,
+        "neighbor_cell": [
+          0,
+          0
+        ],
+        "neighbors": [
+          [
+            63,
+            63,
+            0
+          ],
+          [
+            63,
+            64,
+            0
+          ],
+          [
+            63,
+            65,
+            0
+          ],
+          [
+            64,
+            63,
+            0
+          ],
+          [
+            64,
+            65,
+            0
+          ],
+          [
+            65,
+            63,
+            0
+          ],
+          [
+            65,
+            64,
+            0
+          ],
+          [
+            65,
+            65,
+            0
+          ]
+        ],
+        "on_bridge": false,
+        "path_timer": [
+          0,
+          0
+        ],
+        "phase": [
+          0,
+          0,
+          1
+        ],
+        "speeds": [
+          0.75,
+          0.5
+        ]
+      },
+      "target_height": 37
+    },
+    "events": [
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      "air_add",
+      [
+        "ground",
+        [
+          16512,
+          16512,
+          0
+        ]
+      ],
+      "takeoff_sound",
+      [
+        "ground",
+        [
+          16768,
+          16512,
+          0
+        ]
+      ]
+    ],
+    "input": {
+      "air_registered": false,
+      "level": 2,
+      "move": true,
+      "z": 0
+    }
+  }
+]

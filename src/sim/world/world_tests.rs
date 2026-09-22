@@ -340,7 +340,7 @@ fn particle_frame_boundary_fixture(frame_count: u16) -> (Simulation, RuleSet) {
         owner_house: None,
         done_spawning: true,
     });
-    assert!(sim.reveal_particle_system(stable_id));
+    assert!(sim.reveal_particle_system(stable_id, None));
     (sim, rules)
 }
 
@@ -553,7 +553,7 @@ Rate=120
     sim.spawn_wakes_for_frame(&rules);
 
     let wake_anims: Vec<u64> = sim
-        .tactical_registration_order()
+        .logic_order()
         .iter()
         .copied()
         .filter(|id| {
@@ -590,7 +590,7 @@ Rate=120
         .cached_current_speed = 0;
     sim.spawn_wakes_for_frame(&rules);
     let count_after = sim
-        .tactical_registration_order()
+        .logic_order()
         .iter()
         .filter(|id| {
             sim.anim(**id)
@@ -1191,7 +1191,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
         sim.overlay_grid
             .as_ref()
             .unwrap()
-            .retained_wall_neighbor_counts(),
+            .retained_neighbor_counts(),
         Some(expected_after_sale.as_slice()),
         "native sale leaves the sold wall contribution stale and reverses only cleanup removals"
     );
@@ -1396,7 +1396,7 @@ fn wall_sale_preserves_the_sold_anchor_retained_count_source() {
     let grid = sim.overlay_grid.as_ref().expect("overlay authority");
     assert_eq!(grid.cell(2, 2).overlay_id, None);
     assert_eq!(
-        grid.retained_wall_neighbor_counts(),
+        grid.retained_neighbor_counts(),
         Some(expected.as_slice()),
         "HouseClass sale has no CellClass+0x122 decrement for the sold anchor"
     );
@@ -1474,7 +1474,7 @@ fn wall_sale_cleanup_reaches_fixed_stride_alias_and_reverses_that_source_only() 
     assert_eq!(grid.cell(0, 1).overlay_id, None);
     assert_eq!(grid.cell(511, 0).overlay_id, None);
     assert_eq!(
-        grid.retained_wall_neighbor_counts(),
+        grid.retained_neighbor_counts(),
         Some(expected.as_slice()),
         "sale keeps the sold aliasing source but reverses the cleanup-removed aliased source"
     );
@@ -1801,6 +1801,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
             100,
             &[10, 20],
             &BTreeSet::new(),
+            &BTreeSet::new(),
             &[detonation],
             &[],
         );
@@ -1991,6 +1992,7 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
         100,
         &[],
         &BTreeSet::new(),
+        &BTreeSet::new(),
         &[detonation],
         &[],
     );
@@ -2077,6 +2079,7 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
         Some(&registry),
         100,
         &[],
+        &BTreeSet::new(),
         &BTreeSet::new(),
         &[],
         &[],
@@ -10065,6 +10068,12 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
     assert_eq!(sim.substrate.voxel_anims.len(), 3);
     let ids: Vec<u64> = sim.substrate.voxel_anims.ids();
     assert_eq!(
+        sim.substrate
+            .display
+            .members(super::display_layers::DisplayLayer::AIR),
+        ids
+    );
+    assert_eq!(
         sim.live_object_order_snapshot(),
         ids,
         "each piece is revealed into the live order in spawn order"
@@ -10125,6 +10134,11 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
     assert!(
         !sim.live_object_order_snapshot().contains(&first),
         "Delete leaves the LogicVector"
+    );
+    assert_eq!(
+        sim.substrate.display.layer_of(first),
+        None,
+        "Delete leaves Display too"
     );
     sim.debug_assert_logic_membership_consistent();
 }

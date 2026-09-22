@@ -135,6 +135,10 @@ fn test_body_rotation_matches_native_frame_duration() {
     );
     // ROT=0 snaps instantly (no gradual rotation).
     assert_eq!(frames_to_turn(0x00, 0x40, 0), 0, "ROT=0 turns instantly");
+    // Native signed ROT preserves the low byte: -255 is +0x0100,
+    // while -1 is the non-positive rate0xFF00.
+    assert_eq!(frames_to_turn(0x00, 0x40, -255), 64);
+    assert_eq!(frames_to_turn(0x00, 0x40, -1), 0);
 }
 
 fn native_track_fixture(kind: LocomotorKind, budget: i32) -> (Simulation, TrackInvocation, i32) {

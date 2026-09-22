@@ -539,6 +539,11 @@ mod tests {
             accelerates: true,
             passive: false,
             slowdown_distance: 512,
+            flight_level: -1,
+            is_dropship: false,
+            pitch_angle: SimFixed::lit("0.34906585"),
+            aux_sound1: None,
+            aux_sound2: None,
             sight: 5,
             tech_level: -1,
             build_time_multiplier: 1.0,
@@ -663,6 +668,7 @@ mod tests {
             base_reservation_spacing: None,
             unloading_class: None,
             ammo: -1,
+            initial_ammo: -1,
             spawns: None,
             spawns_number: 0,
             spawn_regen_rate: 0,
@@ -705,6 +711,7 @@ mod tests {
             fly_by: false,
             fly_back: false,
             landable: false,
+            carryall: false,
             jumpjet: false,
             jumpjet_params: crate::rules::jumpjet_params::JumpjetParams::default(),
             deploys_into: None,
@@ -1069,7 +1076,7 @@ mod tests {
     fn test_teleport_with_piggyback_restores_drive() {
         let mut entities = EntityStore::new();
         let obj = make_drive_obj();
-        let loco = LocomotorState::from_object_type(&obj, 1500, 0);
+        let loco = LocomotorState::from_object_type(&obj, 0);
         let mut e = GameEntity::test_default(1, "CMIN", "Americans", 5, 5);
         e.locomotor = Some(loco);
         entities.insert(e);
@@ -1109,7 +1116,7 @@ mod tests {
     fn teleporter_empty_destination_starts_teleport_without_drive_override() {
         let mut entities = EntityStore::new();
         let obj = make_teleport_harvester_obj();
-        let loco = LocomotorState::from_object_type(&obj, 1500, 0);
+        let loco = LocomotorState::from_object_type(&obj, 0);
         let mut e = GameEntity::test_default(1, "CMIN", "Americans", 5, 5);
         e.locomotor = Some(loco);
         entities.insert(e);
@@ -1148,7 +1155,7 @@ mod tests {
     fn teleporter_building_destination_activates_drive_piggyback() {
         let mut entities = EntityStore::new();
         let obj = make_teleport_harvester_obj();
-        let loco = LocomotorState::from_object_type(&obj, 1500, 0);
+        let loco = LocomotorState::from_object_type(&obj, 0);
         let mut e = GameEntity::test_default(1, "CMIN", "Americans", 5, 5);
         e.locomotor = Some(loco);
         entities.insert(e);
@@ -1269,7 +1276,7 @@ mod tests {
     fn test_harvester_relocate_cleans_up_in_one_tick() {
         let mut entities = EntityStore::new();
         let obj = make_drive_obj();
-        let loco = LocomotorState::from_object_type(&obj, 1500, 0);
+        let loco = LocomotorState::from_object_type(&obj, 0);
         let mut e = GameEntity::test_default(1, "CMIN", "Americans", 5, 5);
         e.locomotor = Some(loco);
         entities.insert(e);

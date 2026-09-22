@@ -69,12 +69,12 @@ class Fixture:
         u.mem_write(OWNER+0x21C,dwords(HOUSE))
         u.mem_write(OWNER+0x6C4,dwords(TYPE))
         u.mem_write(OWNER+0x150,struct.pack('<f',row.get('veterancy',0)))
-        u.mem_write(OWNER+0x2FC,dwords(row.get('special_building',0)))
+        u.mem_write(OWNER+0x2FC,dwords(row.get('building_ammo',0)))
         u.mem_write(OWNER+0x3B8,dwords(row.get('burst_index',1)))
         u.mem_write(OWNER+0x2E4,dwords(row.get('bunker',0)))
         u.mem_write(TYPE+0x2A0,bytes([row.get('veteran_ability',0)]))
         u.mem_write(TYPE+0x2B2,bytes([row.get('elite_ability',0)]))
-        for n,v in enumerate(row.get('aircraft_delays',[-1]*4)):
+        for n,v in enumerate(row.get('unit_delays',[-1]*4)):
             u.mem_write(TYPE+0xE48+n*4,dwords(v))
         u.mem_write(SLOT,dwords(0 if row.get('no_weapon',False) else WEAPON))
         u.mem_write(WEAPON+0x9C,dwords(row.get('burst',1)))
@@ -110,10 +110,10 @@ def inputs():
              for n in (0,1,3) for m in ('00000000','3fc00000','bf800000','7fc00001','7f800000') for r in(-1,50,65536)]
     rows += [dict(bunker=1,bunker_bits=m,rof=r)
              for m in ('00000000','3fc00000','bf800000','7fc00001','7f800000') for r in (-1,50,65536)]
-    rows += [dict(burst=5,burst_index=i,**{'class':c},aircraft_delays=delays)
+    rows += [dict(burst=5,burst_index=i,**{'class':c},unit_delays=delays)
              for i in (-1,0,1,2,4,5) for c in (1,15,28)
              for delays in ([-1]*4,[0,-2,65536,2147483647])]
-    rows += [dict(rof=-77,direct=1),dict(no_weapon=True),dict(**{'class':6},special_building=2)]
+    rows += [dict(rof=-77,direct=1),dict(no_weapon=True),dict(**{'class':6},building_ammo=2)]
     rows += [{name:[a,b], 'rof':-77} for name in ('temporal','parasite','magnet') for a in (0,1) for b in (0,1)]
     return rows
 
@@ -128,10 +128,17 @@ def metadata():
     out=provenance(scope='Original6FCFA0 GetROF signed numeric stores, branch order and RNG with supplied query callbacks',
         assumptions=['Queried type, weapon, class, garrison/count and retained HouseROF are supplied inputs',
                      'Original Scenario RNG seed constructor, range draws, veterancy predicates and ftol execute',
-                     'Aircraft class1 and Type+6C4 branch is distinct from Infantry class15/Type+6C0',
+                     'Original RTTI leaves establish Unit1, Aircraft2, Building6 and Infantry15; class1 Type+6C4 delays belong to Unit',
                      'No caller FireAt scheduling, weapon selection, INI parsing or House factor construction claim'],
         substitutions=['Scratch-owned virtual query table returns supplied class/weapon/type/garrison/occupants; originalPE code/vtables unchanged'],
         entry_points={'get_rof':0x6FCFA0})
+    out['original_classes'] = []
+    for name, vtable in (('unit',0x7F5C70),('aircraft',0x7E22A4),
+                         ('building',0x7E3EBC),('infantry',0x7EB058)):
+        entry=f.word(vtable+0x2C)
+        value=f.call(entry,OWNER)
+        out['original_classes'].append(dict(name=name,vtable=f'{vtable:08X}',
+            entry=f'{entry:08X}',value=value,hex=bytes(f.u.mem_read(entry,6)).hex()))
     out['original_slices']=[dict(start=f'{SPAN[0]:08X}',end_exclusive=f'{SPAN[1]:08X}',hex=f.original.hex(),sha256=hashlib.sha256(f.original).hexdigest())]
     return out
 

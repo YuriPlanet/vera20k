@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Drive/Ship/Walk IsMoving and Walk IsMovingNow with supplied retained state",
+  "assumptions": [
+    "Original interface vtables and owner pointer, explicit NullCoord=(0,0,0).",
+    "Supplied destination/head/moving byte and finite Q16-exact Foot+578 fraction; no lifecycle, movement Process or scenario load.",
+    "All queries must preserve locomotor and owner memory; head Z-only differences and partially zero XYZ are retained."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "drive": "0x004AFB80",
+    "ship": "0x0069F290",
+    "walk": "0x0075AB30",
+    "walk_now": "0x0075AB40"
+  },
+  "payload_sha256": "5bbb8c2a44b540f664a75ae47e84d5e1d4e882fbe840ace90906af1c174fc089"
+}

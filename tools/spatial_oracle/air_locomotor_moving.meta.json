@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Fly4CCA90 and Jumpjet54AE50 IsMoving over independent retained state",
+  "assumptions": [
+    "Original interface vtables and owner pointer; supplied request byte and destination XYZ.",
+    "Fly pitch finite and Q16/f32-exact; Jumpjet phases0..6 supplied independently of its moving byte.",
+    "No MoveTo, Process, pitch writers or scenario lifecycle. Owner/locomotor memory must be unchanged."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "fly": "0x004CCA90",
+    "jumpjet": "0x0054AE50"
+  },
+  "payload_sha256": "dddbdfb8b23e390eaaa3d96f7caaca634f49ad277be7b4f42d06a99d7bf394fc"
+}

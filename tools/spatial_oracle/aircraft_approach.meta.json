@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "49 full original Mission_Attack calls: 8 initial state0 transitions and 41 state3 calls covering classifier precedence, speed-vs-request distinction, strict NavCom thresholds, live target/weapon FLH facing, ammo prefix, destination/timers and unchanged Scenario RNG. Flat supplied Fly matrix; not complete flight/attack parity.",
+  "assumptions": [
+    "Inherited re-engagement map/COM/airborne fixture; no queued Enter, radio contacts, linked lift, fire particles or6AC latch.",
+    "Original Facing constructors, SetROT5 and Snap initialize both headings; frame100.",
+    "Supplied current Fly speed, Fighter, primary/elite FLH, turret offset and burst parity; no pitch/roll tilt."
+  ],
+  "substitutions": [
+    "Inherited OS Interlocked imports only; no gameplay function replaced."
+  ],
+  "entry_points": {
+    "attack": "0x00417FE0",
+    "strafe": "0x0041B7F0",
+    "fighter": "0x0041B840",
+    "moving_now": "0x004CCAC0",
+    "distance": "0x005F6440",
+    "get_flh": "0x006F3AD0",
+    "facing_set": "0x004C9220",
+    "aircraft_destination": "0x0041AA80",
+    "foot_destination": "0x004D94B0"
+  },
+  "payload_sha256": "f2cabdfcd8938f5fe8b49ab9e0ccade13f6021dfbf1ad81d4e8da868ec5ae212"
+}

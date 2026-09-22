@@ -38,7 +38,7 @@ fn getter_inputs(input: &Value) -> FootSpeedInputs {
 fn live_getter_matches_original_staged_house_crate_veterancy_fraction_and_ctf() {
     let corpus = corpus();
     let cases = corpus["getters"].as_array().unwrap();
-    assert_eq!(cases.len(), 69);
+    assert_eq!(cases.len(), 75);
     for case in cases {
         assert_eq!(
             current_speed(getter_inputs(&case["input"])).unwrap(),

@@ -1,0 +1,4130 @@
+[
+  {
+    "input": {
+      "adjust": -17,
+      "layer": -1,
+      "marked": false,
+      "name": "layer_-1_marked_False_adjust_-17"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": -1,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": -1,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": -1,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 367
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": 2147483647,
+      "layer": -1,
+      "marked": false,
+      "name": "layer_-1_marked_False_adjust_2147483647"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": -1,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": -1,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": -1,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147483265
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": -17,
+      "layer": -1,
+      "marked": true,
+      "name": "layer_-1_marked_True_adjust_-17"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": -1,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": -1,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": -1,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 367
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": 2147483647,
+      "layer": -1,
+      "marked": true,
+      "name": "layer_-1_marked_True_adjust_2147483647"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": -1,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": -1,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": -1,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147483265
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": -17,
+      "layer": 0,
+      "marked": false,
+      "name": "layer_0_marked_False_adjust_-17"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 0,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 0,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 0,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 367
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": 2147483647,
+      "layer": 0,
+      "marked": false,
+      "name": "layer_0_marked_False_adjust_2147483647"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 0,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 0,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 0,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147483265
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": -17,
+      "layer": 0,
+      "marked": true,
+      "name": "layer_0_marked_True_adjust_-17"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 0,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 0,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 0,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 367
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": 2147483647,
+      "layer": 0,
+      "marked": true,
+      "name": "layer_0_marked_True_adjust_2147483647"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 0,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 0,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 0,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147483265
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": -17,
+      "layer": 1,
+      "marked": false,
+      "name": "layer_1_marked_False_adjust_-17"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            1,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 1,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 1,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 1,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 367
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": 2147483647,
+      "layer": 1,
+      "marked": false,
+      "name": "layer_1_marked_False_adjust_2147483647"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            1,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 1,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 1,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 1,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147483265
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": -17,
+      "layer": 1,
+      "marked": true,
+      "name": "layer_1_marked_True_adjust_-17"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            1,
+            0,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 1,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            1,
+            0,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 1,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 1,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 367
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": 2147483647,
+      "layer": 1,
+      "marked": true,
+      "name": "layer_1_marked_True_adjust_2147483647"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            1,
+            0,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 1,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            1,
+            0,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 1,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 1,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147483265
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": -17,
+      "layer": 2,
+      "marked": false,
+      "name": "layer_2_marked_False_adjust_-17"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 2,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 2,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 367
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": 2147483647,
+      "layer": 2,
+      "marked": false,
+      "name": "layer_2_marked_False_adjust_2147483647"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 2,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 2,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147483265
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": -17,
+      "layer": 2,
+      "marked": true,
+      "name": "layer_2_marked_True_adjust_-17"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 2,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 2,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 367
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": 2147483647,
+      "layer": 2,
+      "marked": true,
+      "name": "layer_2_marked_True_adjust_2147483647"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 2,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 2,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147483265
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": -17,
+      "layer": 3,
+      "marked": false,
+      "name": "layer_3_marked_False_adjust_-17"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            1,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 3,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 3,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 3,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 367
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": 2147483647,
+      "layer": 3,
+      "marked": false,
+      "name": "layer_3_marked_False_adjust_2147483647"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            1,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 3,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 3,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 3,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147483265
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": -17,
+      "layer": 3,
+      "marked": true,
+      "name": "layer_3_marked_True_adjust_-17"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            1,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 3,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            1,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 3,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 3,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 367
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": 2147483647,
+      "layer": 3,
+      "marked": true,
+      "name": "layer_3_marked_True_adjust_2147483647"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            1,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 3,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            1,
+            0
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 3,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 3,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147483265
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": -17,
+      "layer": 4,
+      "marked": false,
+      "name": "layer_4_marked_False_adjust_-17"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            1
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 4,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 4,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 4,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 367
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": 2147483647,
+      "layer": 4,
+      "marked": false,
+      "name": "layer_4_marked_False_adjust_2147483647"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            1
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 4,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 4,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 4,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147483265
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": -17,
+      "layer": 4,
+      "marked": true,
+      "name": "layer_4_marked_True_adjust_-17"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            1
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 4,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 5743
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            1
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 4,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 6467
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 4,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": 367
+        }
+      }
+    ]
+  },
+  {
+    "input": {
+      "adjust": 2147483647,
+      "layer": 4,
+      "marked": true,
+      "name": "layer_4_marked_True_adjust_2147483647"
+    },
+    "observations": [
+      {
+        "op": "submit",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            1
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 4,
+          "stored": [
+            2816,
+            2944,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            2816,
+            2944,
+            300
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477889
+        }
+      },
+      {
+        "op": "move_owner",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "detach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            1
+          ],
+          "marked": true,
+          "owner": false,
+          "queried_layer": 4,
+          "stored": [
+            3128,
+            3356,
+            1000
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "attach",
+        "state": {
+          "absolute": [
+            3128,
+            3356,
+            1000
+          ],
+          "detached": false,
+          "layers": [
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "marked": true,
+          "owner": true,
+          "queried_layer": 2,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147477165
+        }
+      },
+      {
+        "op": "expire",
+        "state": {
+          "absolute": [
+            128,
+            256,
+            300
+          ],
+          "detached": true,
+          "layers": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "marked": false,
+          "owner": false,
+          "queried_layer": 4,
+          "stored": [
+            128,
+            256,
+            300
+          ],
+          "y_sort": -2147483265
+        }
+      }
+    ]
+  }
+]

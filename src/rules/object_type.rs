@@ -346,8 +346,20 @@ pub struct ObjectType {
     /// Ordinary Drive4B1C59..1C72/Ship6A12A3..12BC chain admission requires it.
     pub passive: bool,
     /// Lepton distance from destination at which braking begins (SlowdownDistance=).
-    /// Default 512 (~2 cells). Original engine default is 500.
+    /// Native default500 leptons.
     pub slowdown_distance: i32,
+    /// TechnoType+618: constructor711050 seeds -1; ReadINI712336 reads
+    /// `FlightLevel`. Getter717800 uses General.FlightLevel only for -1.
+    pub(crate) flight_level: i32,
+    /// TechnoType+C95: ctor7113B9=false, ReadINI712350..712373 reads
+    /// IsDropship; Fly4CDA28 selects its distinct vertical motion.
+    pub(crate) is_dropship: bool,
+    /// TechnoType+3B0, ReadINI712379..712391: degrees converted to radians;
+    /// -1 preserves the constructor value (20 degrees). Used by Fly approach.
+    pub(crate) pitch_angle: SimFixed,
+    /// TechnoType+52C/+530, ReadINI712E4D/712E89: takeoff/landing cues.
+    pub(crate) aux_sound1: Option<String>,
+    pub(crate) aux_sound2: Option<String>,
     /// Vision range in cells.
     pub sight: i32,
     /// Technology level required (-1 = unbuildable by player).
@@ -716,6 +728,9 @@ pub struct ObjectType {
     /// Ammo count for aircraft. -1 = unlimited (default), 0+ = finite.
     /// Aircraft with finite ammo return to a helipad/airfield to reload after depleting.
     pub ammo: i32,
+    /// TechnoType+680, ReadINI71474C (InitialAmmo); -1 selects Ammo at
+    /// Aircraft InitFromType414033..41404B. Other signed values are retained.
+    pub initial_ammo: i32,
 
     // -- Spawn manager (Spawns= pool: V3, Dreadnought, Boomer, Carrier, Destroyer) --
     /// TechnoType this unit spawns as sub-units (`Spawns=`). Presence of a
@@ -830,6 +845,9 @@ pub struct ObjectType {
     pub fly_back: bool,
     /// Landable=yes — aircraft can land on the ground.
     pub landable: bool,
+    /// AircraftType+DFC, Carryall reader41CC9B..41CCC7; ctor41C8D0=false.
+    /// Aircraft's landing-base query41B6A0 combines it with live cargo/radio.
+    pub(crate) carryall: bool,
     /// `JumpJet=` in rules.ini — `TechnoTypeClass+0xD94`, a sibling of the
     /// nine parameters below rather than a gate on them.
     pub jumpjet: bool,
@@ -1469,6 +1487,16 @@ fn native_minutes_to_ticks(value: f32) -> u32 {
 }
 
 impl ObjectType {
+    /// Native TechnoType virtual+BC (717800), used by Fly takeoff4CF9F2
+    /// and Aircraft Unlimbo414383. Zero and other negatives are literal.
+    pub fn flight_level(&self, general_flight_level: i32) -> i32 {
+        if self.flight_level == -1 {
+            general_flight_level
+        } else {
+            self.flight_level
+        }
+    }
+
     /// Building43BCBD..43BCD0 allocates at least one radio contact even when
     /// the signed type count is nonpositive. This is not the coordinate-query count.
     pub fn dock_contact_capacity(&self) -> u32 {
@@ -1727,6 +1755,23 @@ impl ObjectType {
             accelerates: section.get_bool("Accelerates").unwrap_or(true),
             passive: section.get_bool("Passive").unwrap_or(false),
             slowdown_distance: section.get_i32("SlowdownDistance").unwrap_or(500),
+            flight_level: section.get_i32("FlightLevel").unwrap_or(-1),
+            is_dropship: section.get_bool("IsDropship").unwrap_or(false),
+            pitch_angle: sim_from_f32(
+                section
+                    .get_f32("PitchAngle")
+                    .filter(|v| *v != -1.0)
+                    .unwrap_or(20.0)
+                    * (std::f32::consts::PI / 180.0),
+            ),
+            aux_sound1: section
+                .get("AuxSound1")
+                .map(str::to_string)
+                .filter(|s| !s.is_empty()),
+            aux_sound2: section
+                .get("AuxSound2")
+                .map(str::to_string)
+                .filter(|s| !s.is_empty()),
             sight: section.get_i32("Sight").unwrap_or(0),
             // TechnoTypeClass ctor @ gamemd.exe 0x00711082 initializes
             // +0x634 to 255; ReadINI preserves that current value when the
@@ -1891,6 +1936,7 @@ impl ObjectType {
             base_reservation_spacing: None,
             unloading_class: section.get("UnloadingClass").map(|s| s.to_string()),
             ammo: section.get_i32("Ammo").unwrap_or(-1),
+            initial_ammo: section.get_i32("InitialAmmo").unwrap_or(-1),
 
             // Spawn manager pool
             spawns: section
@@ -1977,6 +2023,7 @@ impl ObjectType {
             fly_by: section.get_bool("FlyBy").unwrap_or(false),
             fly_back: section.get_bool("FlyBack").unwrap_or(false),
             landable: section.get_bool("Landable").unwrap_or(false),
+            carryall: section.get_bool("Carryall").unwrap_or(false),
             // gamemd-derived: `TechnoTypeClass::ReadINI` reads `JumpJet` into
             // its own boolean at `+0xD94` (`0x007151EC PUSH 0x843640` ->
             // `0x00715200 MOV [EBP+0xD94],AL`), the last member of the same
@@ -2457,6 +2504,39 @@ fn parse_exit_coord(value: Option<&str>) -> Option<(i32, i32, i32)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn flight_level_reader_and_fallback_match_original_executable() {
+        #[derive(serde::Deserialize)]
+        struct Row {
+            raw: Option<String>,
+            general: i32,
+            stored: i32,
+            effective: i32,
+        }
+        let rows: Vec<Row> =
+            serde_json::from_str(include_str!("../../tools/spatial_oracle/flight_level.json"))
+                .unwrap();
+        assert_eq!(rows.len(), 30);
+        for row in rows {
+            let mut ini = IniFile::from_str("[PLANE]\nStrength=100\n");
+            if let Some(raw) = &row.raw {
+                ini.projection_section_mut("PLANE").set("FlightLevel", raw);
+            }
+            let obj = ObjectType::from_ini_section(
+                "PLANE",
+                ini.section("PLANE").unwrap(),
+                ObjectCategory::Aircraft,
+            );
+            assert_eq!(obj.flight_level, row.stored, "{:?}", row.raw);
+            assert_eq!(
+                obj.flight_level(row.general),
+                row.effective,
+                "{:?}",
+                row.raw
+            );
+        }
+    }
+
     #[test]
     fn signed_dock_count_is_distinct_from_contact_capacity() {
         #[derive(serde::Deserialize)]

@@ -1065,6 +1065,8 @@ impl LiveOverlayCells {
         if let NativeOverlayCellTarget::Real(index) = target {
             self.authored_wall_neighbor_counts[index] =
                 self.authored_wall_neighbor_counts[index].wrapping_add(1);
+        } else {
+            self.shared_dummy.adjust_neighbor_count(true);
         }
     }
 

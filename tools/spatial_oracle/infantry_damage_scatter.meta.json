@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "278 original Infantry Scatter admission cases for false/false damage calls. Includes Doing -1..41, real house-control mode gate, mission, moving, target, rank/abilities, PlayerScatter, Team and independent NavCom. No RNG/destination or full damage parity claim.",
+  "assumptions": [
+    "Supplied valid Infantry, type, house and Walk interface state, original vtables.",
+    "Both boolean arguments false as ReceiveDamage; current Guard uses an explicit MissionControl Scatter byte.",
+    "Team/NavCom/Target nonnull sentinels are compared only, never dereferenced in this prefix."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "scatter": "0x0051D0D0",
+    "admitted_stop": "0x0051D226",
+    "house_control": "0x0050B730",
+    "ability": "0x0070D0D0",
+    "walk_is_moving": "0x0075AB30"
+  },
+  "payload_sha256": "fa28a82b45b9e7f6ba098bed7259fb2e2d08d902db16b80aeeff4c3cb8eeff4c"
+}

@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "96 original retained-flag suffix/click-gate pairs. Covers failed/successful parent result, prior flag history, Selectable/Landable and null/base/elite Camera. No complete Unlimbo, reinforcement, forced selection, cursor/action resolution or flight navigation claim.",
+  "assumptions": [
+    "Supplied Aircraft object/type and base/elite weapon slots; original vtable.",
+    "Foot Unlimbo AL result is supplied at the region entry; its body does not execute.",
+    "Click region starts after preceding type/cloak/visibility gates; input action NONE."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "unlimbo_flag_suffix": "0x004143A0",
+    "get_weapon": "0x0070E140",
+    "click_action_flag_gate": "0x00692762"
+  },
+  "payload_sha256": "c4a47e39a2b3c404da622a4113e850f68c6c043619f860bd0cdc50ae085adbb3"
+}

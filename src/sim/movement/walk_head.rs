@@ -116,9 +116,15 @@ pub(super) fn finish_fresh_head(
             head.x.wrapping_sub(current.x),
             head.y.wrapping_sub(current.y),
         );
+        // Class constructor owns ROT, even for a Unit using the Walk GUID.
+        let rot = if entity.category == crate::map::entities::EntityCategory::Infantry {
+            127 // Infantry ctor517BBD; Unit ctor735570 uses Type ROT.
+        } else {
+            loco.rot
+        };
         entity
             .body_facing
-            .get_or_insert_with(|| super::FacingClass::new(0, 0))
+            .get_or_insert_with(|| super::FacingClass::new(0, rot))
             .snap(facing, native_frame);
         entity.facing = (facing >> 8) as u8;
         entity.facing_target = None;
@@ -463,6 +469,14 @@ mod tests {
             let input = &row["input"];
             let mut entity = GameEntity::test_default(1, "E1", "Owner", 9, 10);
             entity.category = crate::map::entities::EntityCategory::Infantry;
+            if !input["infantry_constructor_facing"]
+                .as_bool()
+                .unwrap_or(false)
+            {
+                // Retain the older corpus's explicitly supplied rate0 owner;
+                // the new constructor rows exercise lazy Infantry rate127.
+                entity.body_facing = Some(super::super::FacingClass::new(0, 0));
+            }
             entity.owner = InternedId::from_index(41);
             entity.position.sub_x = SimFixed::from_num(input["sub"][0].as_i64().unwrap());
             entity.position.sub_y = SimFixed::from_num(input["sub"][1].as_i64().unwrap());

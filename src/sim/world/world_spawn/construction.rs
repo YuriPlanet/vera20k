@@ -18,7 +18,7 @@ use crate::sim::vision::MAX_SIGHT_RANGE;
 use crate::sim::world::Simulation;
 
 /// Existing initialization differences are explicit here. In particular map
-/// import currently omits Ship state, finite aircraft ammo and Fly Idle setup.
+/// import currently omits Ship state and Fly Idle setup.
 /// This is a Rust compatibility policy, not a claim of native equivalence.
 #[derive(Clone, Copy)]
 pub(super) enum ComponentOrigin {
@@ -104,10 +104,22 @@ impl Simulation {
 
         stamp_scoring_flags(ge, obj);
         ge.sight_is_zero = obj.is_some_and(|object| object.sight == 0);
-        if let Some(obj) = obj.filter(|obj| obj.has_turret) {
+        if let Some(obj) = obj.filter(|obj| obj.has_turret || category == EntityCategory::Aircraft)
+        {
             let initial = crate::sim::movement::turret::body_facing_to_turret(facing);
-            let rot_byte = obj.turret_rot.clamp(0, 0xFF) as u8;
-            ge.barrel_facing = Some(crate::sim::movement::FacingClass::new(initial, rot_byte));
+            ge.barrel_facing = Some(crate::sim::movement::FacingClass::new(
+                initial,
+                obj.turret_rot,
+            ));
+            if category == EntityCategory::Aircraft {
+                // Aircraft413FD2..414015 supplies ROT to BOTH controllers;
+                // Unlimbo414310 -> Foot4D7170 -> Techno6F6DAA snaps Primary;
+                // Aircraft414417 snaps Secondary. Both timers retain this frame.
+                let mut facing = crate::sim::movement::FacingClass::new(initial, obj.turret_rot);
+                facing.snap(initial, self.session.binary_frame);
+                ge.body_facing = Some(facing);
+                ge.barrel_facing = Some(facing);
+            }
         }
         if uses_voxel {
             ge.voxel_animation = Some(VoxelAnimation::new(1, 1));
@@ -152,7 +164,6 @@ impl Simulation {
         if should_construct_locomotor(category, obj) {
             ge.locomotor = Some(LocomotorState::from_object_type(
                 obj,
-                rules.map_or(1500, |rules| rules.general.flight_level),
                 self.session.binary_frame,
             ));
             if matches!(origin, ComponentOrigin::Runtime)
@@ -163,13 +174,11 @@ impl Simulation {
                 ge.ship_locomotion = Some(Default::default());
             }
         }
-        // Aircraft ammo: set up ammo tracking for aircraft with finite Ammo=.
-        if matches!(origin, ComponentOrigin::Runtime)
-            && obj.ammo >= 0
-            && category == EntityCategory::Aircraft
-        {
-            ge.aircraft_ammo = Some(crate::sim::docking::aircraft_dock::AircraftAmmo::new(
-                obj.ammo,
+        // Retain the signed native count even for Ammo=-1. Mission_Attack's
+        // pending-release consumer can decrement a negative count as well.
+        if category == EntityCategory::Aircraft {
+            ge.aircraft_ammo = Some(crate::sim::docking::aircraft_dock::AircraftAmmo::from_type(
+                obj,
             ));
         }
         // Initialize aircraft mission for Fly-locomotor aircraft.

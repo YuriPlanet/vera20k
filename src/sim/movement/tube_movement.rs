@@ -471,9 +471,14 @@ fn finalize_tube_object(
                 entity.position.exact_z_leptons = None;
             }
         } else {
-            let owner_current_speed = entity.movement_target.as_ref().map_or(0, |target| {
-                super::foot_speed::owner_current_speed_from_fraction(target.speed, SIM_ONE)
-            });
+            let object = rules.and_then(|r| r.object(interner.resolve(entity.type_ref())));
+            let speed = super::foot_speed::adjusted_speed(
+                entity,
+                object,
+                rules.map_or(1.0, |r| r.general.veteran_speed),
+            );
+            let owner_current_speed =
+                super::foot_speed::owner_current_speed_from_fraction(speed, SIM_ONE);
             entity.position.rx = tube.exit.0;
             entity.position.ry = tube.exit.1;
             entity.position.sub_x = CELL_CENTER_LEPTON;
@@ -601,14 +606,8 @@ fn scatter_exit_blockers(
 }
 
 fn locomotor_is_moving(entity: &GameEntity) -> bool {
-    if entity.locomotor.as_ref().is_some_and(|loco| {
-        loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Drive
-    }) {
-        super::drive_locomotion::drive_locomotor_is_moving(entity)
-    } else {
-        entity.movement_target.is_some()
-            || crate::sim::movement::track_head::committed_track_head(entity).is_some()
-    }
+    // Other families still require their retained-state/lifecycle migration.
+    super::motion_query::is_moving(entity).unwrap_or_else(|| entity.movement_target.is_some())
 }
 
 fn stop_blocked_mover(entities: &mut EntityStore, entity_id: u64) {
@@ -792,6 +791,55 @@ mod tests {
     use crate::sim::components::{DriveLocomotionRuntime, Health};
     use crate::sim::game_entity::GameEntity;
     use crate::sim::occupancy::CellListInsertion;
+
+    #[test]
+    fn tube_exit_scatter_skips_retained_motion_without_an_order() {
+        use crate::rules::locomotor_type::LocomotorKind;
+        use crate::sim::movement::locomotor::LocomotorState;
+        for kind in [LocomotorKind::Walk, LocomotorKind::Jumpjet] {
+            let mut actor = GameEntity::test_default(2, "E1", "Americans", 5, 5);
+            actor.category = EntityCategory::Infantry;
+            let mut loco = LocomotorState::for_test_kind(kind);
+            if let Some(state) = loco.jumpjet_runtime_mut() {
+                state.moving = true;
+                state.phase = 2;
+            } else {
+                loco.set_walk_destination(Some(DriveCoord::cell(6, 5, 0)));
+            }
+            actor.locomotor = Some(loco);
+            let before = serde_json::to_value(&actor).unwrap();
+            let mut entities = EntityStore::new();
+            entities.insert(actor);
+            let mut occupancy = OccupancyGrid::new();
+            occupancy.add(
+                5,
+                5,
+                2,
+                MovementLayer::Ground,
+                Some(0),
+                CellListInsertion::PrependNonBuilding,
+            );
+            let mut rng = SimRng::new(42);
+            let before_rng = rng.state();
+            scatter_exit_blockers(
+                &mut entities,
+                1,
+                (5, 5),
+                Some(&PathGrid::new(10, 10)),
+                None,
+                &occupancy,
+                None,
+                &StringInterner::default(),
+                &mut rng,
+                crate::sim::movement::DestinationTiming::new(0, 60),
+            );
+            assert_eq!(rng.state(), before_rng);
+            assert_eq!(
+                serde_json::to_value(entities.get(2).unwrap()).unwrap(),
+                before
+            );
+        }
+    }
 
     fn flat_cell(rx: u16, ry: u16, tube_index: Option<TubeId>) -> ResolvedTerrainCell {
         let speed_costs = SpeedCostProfile::default();

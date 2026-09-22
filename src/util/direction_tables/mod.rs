@@ -28,6 +28,7 @@ pub use dragon::{DRAGON_FRAME_TABLE, dragon_frame_index};
 pub use lepton::{LEPTON_DELTAS, lepton_delta, lepton_to_cell};
 pub use native_angle::{facing8_from_delta, facing16_from_delta};
 pub(crate) use native_angle::native_atan2_f32;
+pub(crate) use native_angle::facing16_between;
 pub use quantize::{
     dir_from_facing8, dir_from_facing16, facing8_to_16, muzzle_anim_index_8way, opposite_dir,
     step32_from_facing16,

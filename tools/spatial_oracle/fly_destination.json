@@ -1,0 +1,1018 @@
+[
+  {
+    "destination": [
+      16512,
+      16512,
+      0
+    ],
+    "events": [
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          0
+        ]
+      },
+      {
+        "call": "ready"
+      }
+    ],
+    "height": 37,
+    "input": {
+      "name": "plain"
+    },
+    "mode": false,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      -10
+    ],
+    "events": [
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          -10
+        ]
+      },
+      {
+        "call": "ready"
+      }
+    ],
+    "height": 37,
+    "input": {
+      "name": "z_-10",
+      "request": [
+        16512,
+        16512,
+        -10
+      ]
+    },
+    "mode": false,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      119
+    ],
+    "events": [
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          119
+        ]
+      },
+      {
+        "call": "ready"
+      }
+    ],
+    "height": 37,
+    "input": {
+      "name": "z_119",
+      "request": [
+        16512,
+        16512,
+        119
+      ]
+    },
+    "mode": false,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      120
+    ],
+    "events": [
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          120
+        ]
+      },
+      {
+        "call": "ready"
+      }
+    ],
+    "height": 37,
+    "input": {
+      "name": "z_120",
+      "request": [
+        16512,
+        16512,
+        120
+      ]
+    },
+    "mode": false,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      121
+    ],
+    "events": [
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          121
+        ]
+      }
+    ],
+    "height": 37,
+    "input": {
+      "name": "z_121",
+      "request": [
+        16512,
+        16512,
+        121
+      ]
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      500
+    ],
+    "events": [
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          500
+        ]
+      }
+    ],
+    "height": 37,
+    "input": {
+      "name": "z_500",
+      "request": [
+        16512,
+        16512,
+        500
+      ]
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      1500
+    ],
+    "events": [
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          0
+        ]
+      },
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          1500
+        ]
+      }
+    ],
+    "height": 37,
+    "input": {
+      "ammo": -1,
+      "name": "armed_-1",
+      "target": true
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      0
+    ],
+    "events": [
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          0
+        ]
+      },
+      {
+        "call": "ready"
+      }
+    ],
+    "height": 37,
+    "input": {
+      "ammo": 0,
+      "name": "armed_0",
+      "target": true
+    },
+    "mode": false,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      1500
+    ],
+    "events": [
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          0
+        ]
+      },
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          1500
+        ]
+      }
+    ],
+    "height": 37,
+    "input": {
+      "ammo": 1,
+      "name": "armed_1",
+      "target": true
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      1500
+    ],
+    "events": [
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          0
+        ]
+      },
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          1500
+        ]
+      }
+    ],
+    "height": 37,
+    "input": {
+      "ammo": 2,
+      "name": "armed_2",
+      "target": true
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      0
+    ],
+    "events": [
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          0
+        ]
+      },
+      {
+        "call": "ready"
+      }
+    ],
+    "height": 37,
+    "input": {
+      "name": "ready",
+      "ready": true
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      0
+    ],
+    "events": [
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          0
+        ]
+      },
+      {
+        "call": "ready"
+      }
+    ],
+    "height": 37,
+    "input": {
+      "landable": false,
+      "name": "nonlandable"
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      20000,
+      21000,
+      17
+    ],
+    "events": [],
+    "height": 37,
+    "input": {
+      "mode": true,
+      "moving": true,
+      "name": "unpowered",
+      "powered": false,
+      "previous": [
+        20000,
+        21000,
+        17
+      ]
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      16500,
+      16500,
+      999
+    ],
+    "events": [],
+    "height": 37,
+    "input": {
+      "landing": true,
+      "name": "same_cell_landing",
+      "previous": [
+        16500,
+        16500,
+        999
+      ],
+      "request": [
+        16512,
+        16512,
+        200
+      ]
+    },
+    "mode": false,
+    "moving": false
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      200
+    ],
+    "events": [
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          200
+        ]
+      }
+    ],
+    "height": 37,
+    "input": {
+      "name": "same_cell_takeoff",
+      "previous": [
+        16500,
+        16500,
+        999
+      ],
+      "request": [
+        16512,
+        16512,
+        200
+      ],
+      "taking_off": true
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      1604
+    ],
+    "events": [
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          0
+        ]
+      },
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          1604
+        ]
+      }
+    ],
+    "height": 37,
+    "input": {
+      "level": 1,
+      "name": "ground_1_0",
+      "slope": 0,
+      "target": true
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      1760
+    ],
+    "events": [
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          0
+        ]
+      },
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          1760
+        ]
+      }
+    ],
+    "height": 37,
+    "input": {
+      "level": 2,
+      "name": "ground_2_1",
+      "slope": 1,
+      "target": true
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      1864
+    ],
+    "events": [
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          0
+        ]
+      },
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          1864
+        ]
+      }
+    ],
+    "height": 37,
+    "input": {
+      "level": 3,
+      "name": "ground_3_4",
+      "slope": 4,
+      "target": true
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      1500
+    ],
+    "events": [
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          0
+        ]
+      },
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          1500
+        ]
+      }
+    ],
+    "height": 37,
+    "input": {
+      "flight_level": -1,
+      "name": "level_-1",
+      "target": true
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      0
+    ],
+    "events": [
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          0
+        ]
+      },
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          0
+        ]
+      }
+    ],
+    "height": 37,
+    "input": {
+      "flight_level": 0,
+      "name": "level_0",
+      "target": true
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      120
+    ],
+    "events": [
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          0
+        ]
+      },
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          120
+        ]
+      }
+    ],
+    "height": 37,
+    "input": {
+      "flight_level": 120,
+      "name": "level_120",
+      "target": true
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      121
+    ],
+    "events": [
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          0
+        ]
+      },
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          121
+        ]
+      }
+    ],
+    "height": 37,
+    "input": {
+      "flight_level": 121,
+      "name": "level_121",
+      "target": true
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      16512,
+      16512,
+      40000
+    ],
+    "events": [
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          0
+        ]
+      },
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16512,
+          16512,
+          40000
+        ]
+      }
+    ],
+    "height": 37,
+    "input": {
+      "flight_level": 40000,
+      "name": "level_40000",
+      "target": true
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      16519,
+      16523,
+      333
+    ],
+    "events": [
+      {
+        "call": "landing_base"
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          10368,
+          16512,
+          500
+        ]
+      },
+      {
+        "call": "ground",
+        "xyz": [
+          16519,
+          16523,
+          333
+        ]
+      }
+    ],
+    "height": 37,
+    "input": {
+      "name": "subcell",
+      "request": [
+        16519,
+        16523,
+        333
+      ]
+    },
+    "mode": true,
+    "moving": true
+  },
+  {
+    "destination": [
+      -256,
+      -256,
+      77
+    ],
+    "events": [],
+    "height": 37,
+    "input": {
+      "landing": true,
+      "name": "signed_cell_alias",
+      "previous": [
+        -256,
+        -256,
+        77
+      ],
+      "request": [
+        16776960,
+        16776960,
+        200
+      ]
+    },
+    "mode": false,
+    "moving": false
+  },
+  {
+    "destination": [
+      -255,
+      -255,
+      77
+    ],
+    "events": [],
+    "height": 37,
+    "input": {
+      "landing": true,
+      "name": "signed_cell_truncation",
+      "previous": [
+        -255,
+        -255,
+        77
+      ],
+      "request": [
+        1,
+        1,
+        200
+      ]
+    },
+    "mode": false,
+    "moving": false
+  }
+]

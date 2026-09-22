@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Infantry51D162..51D226/51D6E6 force demotion and gates with Jumpjet54AE50",
+  "assumptions": [
+    "Shared infantry_scatter_oracle supplied interior state; Jumpjet actual vtable7ECD68, phase2, independent moving byte and null destination.",
+    "64 boolean combinations of moving/force/mission-scatter/Fraidycat/target/global-scatter; second flag true and Doing=-1.",
+    "Stops before direction/RNG/destination work; excludes early human/Doing gates and complete Scatter."
+  ],
+  "substitutions": [
+    "Mission table query51D176 returns supplied record; HasWeaponAbility(3)51D1DC returns false. Actual Jumpjet IsMoving executes."
+  ],
+  "entry_points": {
+    "scatter_gate": "0x0051D162",
+    "jumpjet_moving": "0x0054AE50"
+  },
+  "payload_sha256": "cb51a67e0555e61d71e4ca37ced1e6a07c091598df7f1379f313faa10bac09bc"
+}

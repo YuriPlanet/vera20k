@@ -1,7 +1,8 @@
 //! Shared live Infantry51BF90 admission and the repair +1AC receivers.
-//! Infantry retains its numeric local accumulator and projects the results
-//! consumed by pathfinding/failure/repair. Other repair classes retain their
-//! established ==7 projection. Ordered terminal answers remain significant.
+//! Infantry and Unit retain numeric accumulators; consumers project only the
+//! answers they need. Both classes use Foot4D9C60's height/list prelude.
+//! Ordered terminal answers remain significant.
+//! Numeric Unit evidence: tools/spatial_oracle/unit_entry.{py,json,meta.json}.
 use super::*;
 use crate::rules::{
     locomotor_type::{LocomotorKind, SpeedType},
@@ -11,6 +12,10 @@ use crate::rules::{
 use crate::sim::combat::combat_weapon;
 use crate::sim::movement::bump_crush::{self, CrushCapability, CrushTarget};
 use crate::sim::{components::NavTargetRef, game_entity::GameEntity, intern::InternedId};
+
+#[cfg(test)]
+#[path = "unit_entry_tests.rs"]
+mod unit_entry_tests;
 
 fn friendly(live: &LivePublication<'_>, a: InternedId, b: InternedId) -> bool {
     crate::map::houses::are_houses_friendly(
@@ -205,9 +210,8 @@ mod tests {
             let mut entity = sim.substrate.entities.get(id).unwrap().clone();
             let mut object = rules.object("HORNET").unwrap().clone();
             object.locomotor = kind;
-            entity.locomotor = Some(
-                crate::sim::movement::locomotor::LocomotorState::from_object_type(&object, 0, 0),
-            );
+            entity.locomotor =
+                Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(&object, 0));
             // A shared dummy cannot satisfy mode0's all-real projection proof.
             let probe = |sim: &mut Simulation| {
                 aircraft_effect_quotient(
@@ -265,7 +269,7 @@ mod tests {
             entity.locomotor = kind.map(|kind| {
                 let mut object = rules.object("HORNET").unwrap().clone();
                 object.locomotor = kind;
-                crate::sim::movement::locomotor::LocomotorState::from_object_type(&object, 0, 0)
+                crate::sim::movement::locomotor::LocomotorState::from_object_type(&object, 0)
             });
             let result = aircraft_effect_quotient(
                 &LivePublication {
@@ -625,7 +629,6 @@ mod tests {
             Some(crate::sim::combat::AttackTarget {
                 target: crate::sim::combat::TargetKind::Entity(71),
                 cooldown_ticks: 0,
-                burst_remaining: 0,
                 burst_delay_ticks: 0,
                 pending_infantry_fire: None,
             });
@@ -760,7 +763,6 @@ mod tests {
             .attack_target = Some(crate::sim::combat::AttackTarget {
             target: crate::sim::combat::TargetKind::Entity(hut),
             cooldown_ticks: 0,
-            burst_remaining: 0,
             burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });
@@ -882,13 +884,13 @@ fn damage_aggregate(live: &LivePublication<'_>, e: &GameEntity, obj: &ObjectType
 }
 
 fn moving(e: &GameEntity) -> bool {
+    if let Some(moving) = crate::sim::movement::motion_query::is_moving(e) {
+        return moving;
+    }
     match e.locomotor.as_ref().map(|l| l.kind) {
-        Some(LocomotorKind::Drive) => crate::sim::movement::drive_locomotor_is_moving(e),
-        Some(LocomotorKind::Ship) => e
-            .ship_locomotion
-            .as_ref()
-            .is_some_and(|s| s.destination.is_some() || s.head_to.is_some()),
-        Some(LocomotorKind::Walk | LocomotorKind::Hover) => {
+        // OPEN Hover514C30 reads retained destination OR head XYZ. The current
+        // payload retains only its head; NavCom remains the previous adapter.
+        Some(LocomotorKind::Hover) => {
             e.locomotor
                 .as_ref()
                 .is_some_and(|l| l.step_head().is_some())
@@ -1038,11 +1040,6 @@ fn foot_entry(
         return aircraft_effect_quotient(live, e, cell).map(|hard| if hard { 7 } else { 0 });
     }
     let infantry = e.category == EntityCategory::Infantry;
-    let mut layer = if live.flags(cell) & BRIDGE_FLAG_STRUCTURAL != 0 {
-        MovementLayer::Bridge
-    } else {
-        MovementLayer::Ground
-    };
     let (mut bits, mut owner) = raw(live, cell, MovementLayer::Ground);
     let initial_level = live.level(cell);
     let mut vehicle_occupied = bits & 0x20 != 0;
@@ -1064,12 +1061,13 @@ fn foot_entry(
                 return Ok(7);
             }
         } else if c.yr_cell_land_type != required.as_index()
-            && !(matches!(c.bridge_facts.overlay_id, Some(237 | 238)) && initial_level != -1)
+            && !(matches!(c.bridge_facts.overlay_id, Some(237 | 238))
+                && args.height != i32::from(initial_level))
         {
             return Ok(7);
         }
     }
-    if infantry {
+    let layer = {
         use crate::sim::movement::infantry_entry::{adjust_height_and_list, backstep_cell};
         let mut height = args.height;
         let mut list_bridge = live.flags(cell) & 0x100 != 0
@@ -1078,13 +1076,23 @@ fn foot_entry(
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
         let tube = terrain.tube_for_native_cell(cell);
         if args.direction == 8 {
-            //51BFFD..51C036: the direction-eight entry tests the retained
-            //Tube endpoints, before any neighbor/height/list work.
-            return Ok(if tube.is_some_and(|tube| tube.entry != tube.exit) {
-                0
-            } else {
-                7
-            });
+            //51BFFD tests distinct endpoints; Unit73F218 tests a nonzero
+            //exit, including an automatic Tube whose endpoints are equal.
+            //Both return before neighbor/height/list work. Original calls:
+            //tools/spatial_oracle/unit_entry_traversal.{py,json,meta.json}.
+            return Ok(
+                if tube.is_some_and(|tube| {
+                    if infantry {
+                        tube.entry != tube.exit
+                    } else {
+                        tube.exit != (0, 0)
+                    }
+                }) {
+                    0
+                } else {
+                    7
+                },
+            );
         }
         let cross_tube = |tube: Option<&crate::map::tube_facts::TubeFact>, direction: i32| {
             tube.is_some_and(|tube| {
@@ -1103,7 +1111,7 @@ fn foot_entry(
             return Ok(7);
         }
         //51C0AE reloads the target level after the first neighbor lookup.
-        if height.wrapping_sub(i32::from(live.level(cell))) > 4 {
+        if infantry && height.wrapping_sub(i32::from(live.level(cell))) > 4 {
             return Ok(0);
         }
         if !adjust_height_and_list(
@@ -1116,8 +1124,8 @@ fn foot_entry(
         ) {
             return Ok(7);
         }
-        //51C0FB..136: raw occupation selection is independent of the object
-        //list plane modified by4D9C60. Do not collapse these two authorities.
+        //51C0FB..136 /73F303..348: raw occupation selection is independent
+        //of the object list plane modified by4D9C60. Keep both authorities.
         if height != -1
             && live.flags(cell) & 0x100 != 0
             && height == i32::from(live.level(cell)) + 4
@@ -1125,45 +1133,34 @@ fn foot_entry(
             (bits, owner) = raw(live, cell, MovementLayer::Bridge);
             vehicle_occupied = bits & 0x20 != 0;
         }
-        layer = if list_bridge {
+        if list_bridge {
             MovementLayer::Bridge
         } else {
             MovementLayer::Ground
-        };
-    } else {
-        //The existing Unit repair caller has dir=-1/height=-1. Preserve its
-        //two independent queries and established list/raw projection.
-        for _ in 0..2 {
-            let p = live.coord(cell);
-            let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[3];
-            live.terrain()
-                .native_cell_identity((p.0.wrapping_add(dx as i16), p.1.wrapping_add(dy as i16)));
         }
-        if live.flags(cell) & BRIDGE_FLAG_STRUCTURAL == 0 {
-            layer = MovementLayer::Ground;
-        }
-        if layer == MovementLayer::Bridge {
-            (bits, owner) = raw(live, cell, layer);
-        }
-    }
-    let p = live.coord(cell);
-    if e.in_playfield
-        && !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
-            (i32::from(p.0), i32::from(p.1)),
+    };
+    //Unit73F34C / Infantry51C13A: mode0 alone checks the retained Cell.
+    //Unit still performs the read/+320 when3D5 is false; Infantry skips it.
+    //578540 consumes the pointer directly, without578460's extra lookup.
+    let boundary_refused = !live.sim.session.game_mode_nonzero
+        && (!infantry || e.in_playfield)
+        && !crate::sim::cell_rect::retained_cell_is_in_playfield(
+            cell,
             live.sim.playfield_bounds,
-            Some(live.terrain()),
+            live.terrain(),
         )
-    {
+        && !live.sim.foot_allows_outside_playfield(id)?;
+    if boundary_refused && e.in_playfield {
         return Ok(7);
     }
+    let p = live.coord(cell);
     let weapon0 = combat_weapon::weapon_for_index(obj, e.veterancy, 0)
         .and_then(|(name, _)| live.rules.weapon(name));
     let crusher = obj.crusher
         || (e.veterancy >= 100 && obj.veteran_crusher)
         || (e.veterancy >= 200 && obj.elite_crusher);
     let capability = CrushCapability::new(crusher, obj.omni_crusher);
-    let mut nonzero = false;
-    let mut infantry_result: u8 = 0;
+    let mut entry_result: u8 = 0;
     let mut stationary_infantry = 0u32;
     let mut crush_latch = false;
     let overlay = match cell {
@@ -1198,7 +1195,13 @@ fn foot_entry(
                 .as_ref()
                 .and_then(|g| g.cell(p.0 as u16, p.1 as u16).wall_owner)
                 .is_some_and(|o| friendly(live, e.owner(), o));
-            if !infantry && flags.crushable && crusher && !allied {
+            if !infantry
+                && ((flags.crushable && crusher)
+                    || obj.movement_zone == crate::rules::locomotor_type::MovementZone::CrusherAll)
+            {
+                if allied {
+                    entry_result = entry_result.max(4);
+                }
             } else {
                 let warhead = weapon0
                     .and_then(|w| w.warhead.as_deref())
@@ -1208,10 +1211,7 @@ fn foot_entry(
                 {
                     return Ok(7);
                 }
-                nonzero = true;
-                if infantry {
-                    infantry_result = if allied { 4 } else { 5 };
-                }
+                entry_result = entry_result.max(if allied { 4 } else { 5 });
             }
         }
     }
@@ -1250,13 +1250,14 @@ fn foot_entry(
                 {
                     return Ok(7);
                 }
-                nonzero = true;
+                entry_result = entry_result.max(5);
             }
             continue;
         };
         if blocker_id == id {
             if !infantry {
                 bits &= !0x20;
+                vehicle_occupied = false;
             }
             continue;
         }
@@ -1291,7 +1292,11 @@ fn foot_entry(
             }
         }
         let allied = friendly(live, e.owner(), b.owner());
-        let mission = e.mission.current().known();
+        let mission = if infantry {
+            e.mission.current().known()
+        } else {
+            e.mission.effective().known()
+        };
         if infantry {
             match infantry_target_admission(live, e, obj, b, cell)? {
                 InfantryTargetAdmission::Ordinary => {}
@@ -1379,10 +1384,7 @@ fn foot_entry(
                 if !allied && !combat_weapon::is_armed(e, obj) {
                     return Ok(7);
                 }
-                nonzero = true;
-                if infantry {
-                    infantry_result = infantry_result.max(if allied { 3 } else { 5 });
-                }
+                entry_result = entry_result.max(if allied { 3 } else { 5 });
                 continue;
             }
             if !infantry {
@@ -1424,13 +1426,11 @@ fn foot_entry(
         }
         if !allied {
             if b.cloak.as_ref().is_some_and(|s| s.state == 2) {
-                nonzero = true;
-                if infantry {
-                    infantry_result = infantry_result.max(1);
-                }
+                entry_result = entry_result.max(1);
                 continue;
             }
             if !infantry
+                && crusher
                 && bump_crush::can_crush(
                     capability,
                     CrushTarget::from_entity(b, live.sim.session.binary_frame),
@@ -1453,35 +1453,41 @@ fn foot_entry(
                 if b.category == EntityCategory::Infantry {
                     if infantry_disguised_to(live, b, e.owner())? {
                         //51C61F is an assignment, not a boolean soft latch.
-                        infantry_result = 6;
+                        entry_result = 6;
                     }
                 } else {
-                    infantry_result = infantry_result.max(5);
+                    entry_result = entry_result.max(5);
                 }
             } else {
-                nonzero = true;
+                entry_result = entry_result.max(5);
             }
         } else if !infantry {
-            if moving(b) {
+            //73F865..8C0: Foot NavCom, body turn, then active IsMoving.
+            if b.navigation.nav_com.is_some()
+                || b.body_facing
+                    .as_ref()
+                    .is_some_and(|f| f.is_rotating(live.sim.session.binary_frame))
+                || moving(b)
+            {
                 if head_on(e, b, live.sim.session.binary_frame) {
                     return Ok(7);
                 }
                 if (b.foot_occupation_enabled && b.category != EntityCategory::Infantry)
                     || chain_cursor(b)
                 {
-                    nonzero = true;
+                    entry_result = entry_result.max(2);
                 }
             } else {
-                nonzero = true;
+                entry_result = entry_result.max(6);
             }
         } else {
             match b.category {
                 EntityCategory::Aircraft | EntityCategory::Structure => return Ok(7),
                 EntityCategory::Unit => {
                     if !moving(b) && b.navigation.nav_com.is_none() {
-                        infantry_result = infantry_result.max(6);
+                        entry_result = entry_result.max(6);
                     } else if b.foot_occupation_enabled || chain_cursor(b) {
-                        infantry_result = infantry_result.max(2);
+                        entry_result = entry_result.max(2);
                     }
                 }
                 EntityCategory::Infantry => {
@@ -1499,33 +1505,67 @@ fn foot_entry(
         return Ok(7);
     }
     if infantry {
-        if infantry_result == 0 && vehicle_occupied {
+        if entry_result == 0 && vehicle_occupied {
             //51C7DF..7F7 returns2 before owner/full-subcell tests.
             return Ok(2);
         }
         if let Some(owner) = owner {
             if friendly(live, e.owner(), owner) {
-                if bits & 0x1c == 0x1c && infantry_result < 2 {
-                    infantry_result = if stationary_infantry == 3 { 6 } else { 2 };
+                if bits & 0x1c == 0x1c && entry_result < 2 {
+                    entry_result = if stationary_infantry == 3 { 6 } else { 2 };
                 }
             } else {
                 if damage_aggregate(live, e, obj) <= 0 {
                     return Ok(7);
                 }
-                infantry_result = infantry_result.max(5);
+                entry_result = entry_result.max(5);
             }
         }
-        Ok(if infantry_result == 0 && bits & 0x1c == 0x1c {
+        Ok(if entry_result == 0 && bits & 0x1c == 0x1c {
             7
         } else {
-            infantry_result
+            entry_result
         })
     } else {
-        if nonzero || crush_latch || bits & 0x20 != 0 {
+        //73FC24: a nonzero running code wins before every raw-byte branch.
+        if entry_result != 0 {
+            return Ok(entry_result);
+        }
+        if crush_latch {
+            //73FCF6 asks for the first GROUND Unit even when the selected
+            //object list/raw byte came from the bridge deck. Keep the native
+            //Object IsCrushableBy subset shared with the track entry owner.
+            let first_unit_is_crushable = || {
+                live.sim
+                    .substrate
+                    .occupancy
+                    .get(p.0 as u16, p.1 as u16)
+                    .into_iter()
+                    .flat_map(|list| list.iter_layer(MovementLayer::Ground))
+                    .filter_map(|member| live.sim.substrate.entities.get(member.entity_id))
+                    .find(|unit| unit.category == EntityCategory::Unit)
+                    .is_some_and(|unit| {
+                        crate::sim::pathfinding::cell_entry::unit_tail_is_crushable_by(
+                            unit,
+                            capability,
+                            friendly(live, e.owner(), unit.owner()),
+                            live.sim.session.binary_frame,
+                        )
+                    })
+            };
+            return Ok(if !vehicle_occupied || first_unit_is_crushable() {
+                0
+            } else {
+                2
+            });
+        }
+        if bits & 0x3f == 0 {
             return Ok(0);
         }
-        let allied = owner.is_some_and(|owner| friendly(live, e.owner(), owner));
-        if bits & 0x3f != 0 && !allied && !crusher {
+        if vehicle_occupied || owner.is_some_and(|owner| friendly(live, e.owner(), owner)) {
+            return Ok(2);
+        }
+        if !crusher {
             return Ok(
                 if !weapon0
                     .and_then(|w| w.projectile.as_deref())
@@ -1534,7 +1574,7 @@ fn foot_entry(
                 {
                     7
                 } else {
-                    0
+                    5
                 },
             );
         }
