@@ -26,6 +26,7 @@ use crate::sim::command::{
 };
 use crate::sim::components::OrderIntent;
 use crate::sim::docking::building_dock::{self, DockState};
+use crate::sim::mission::concrete_effects::represented_assign_target;
 use crate::sim::mission::{DockTeardown, MissionType};
 use crate::sim::movement;
 use crate::sim::movement::bump_crush;
@@ -662,9 +663,10 @@ impl Simulation {
                 );
                 // Clear attack and order intent.
                 if let Some(e) = self.substrate.entities.get_mut(*entity_id) {
-                    e.attack_target = None;
-                    // Provenance cannot outlive the target it describes.
-                    e.passively_acquired_target = false;
+                    // Event MegaMission4C7467 calls Assign_Target before the
+                    // destination setter. Its changed-null path6FCF5B also
+                    // resets retained burst state; dropping Target alone cannot.
+                    represented_assign_target(e, None);
                     e.order_intent = None;
                     e.dock_state = None;
                     e.c4_plant = None;
@@ -863,8 +865,8 @@ impl Simulation {
                 }
                 if let Some(e) = self.substrate.entities.get_mut(*entity_id) {
                     movement::stop_navigation_at_committed_head(e);
-                    e.attack_target = None;
-                    e.passively_acquired_target = false;
+                    // Event Stop4C75F8 invokes the same virtual target setter.
+                    represented_assign_target(e, None);
                     e.order_intent = None;
                     e.dock_state = None;
                     e.c4_plant = None;
@@ -1082,8 +1084,7 @@ impl Simulation {
                     DockTeardown::IdleOnly,
                 );
                 if let Some(e) = self.substrate.entities.get_mut(*entity_id) {
-                    e.attack_target = None;
-                    e.passively_acquired_target = false;
+                    represented_assign_target(e, None);
                 }
 
                 // Snapshot speed, locomotor, and rules data in one lookup.
@@ -2902,8 +2903,7 @@ impl Simulation {
             }
             None => {
                 if let Some(e) = self.substrate.entities.get_mut(entity_id) {
-                    e.attack_target = None;
-                    e.passively_acquired_target = false;
+                    represented_assign_target(e, None);
                     e.order_intent = Some(OrderIntent::Guard {
                         anchor_rx,
                         anchor_ry,

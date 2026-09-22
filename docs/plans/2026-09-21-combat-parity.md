@@ -1449,15 +1449,16 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): installed trigger ownership and integration review
+## Current checkpoint (2026-09-22): critic findings and command burst reset
 
 Owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`;
-branch `feature/combat-foot-speed`. Latest source `7b83fc6c`, main integration
-`d75dc8b6`; the commit containing this checkpoint records its validation. `.local/`
-is intentional untracked evidence. The combat goal remains active. Main's
+branch `feature/combat-foot-speed`. This increment is based on published
+`b950b964` and contains the command target-setter fix below. Trigger ownership
+source is `7b83fc6c`; main integration is `d75dc8b6`. `.local/` is intentional
+untracked evidence. The combat goal remains active. Main's
 retirement of the dependency map is merged; never consult or refresh it.
 
-Implemented in this increment: Simulation owns trigger initialization and dispatch
+Trigger ownership implementation: Simulation owns trigger initialization and dispatch
 throughout actions. Removed the temporary `mem::take` runtime and detached app
 loader handoff. Shared authored/generated construction initializes map locals and
 disabled flags before objects; headless binds actual graph/trigger/event/action
@@ -1465,7 +1466,7 @@ resources instead of empty tables. Runtime fields are private. Existing action
 semantics and serialized/hash layout are unchanged; live Tag instances, timers,
 force/enable behavior and native polling order remain required migrations.
 
-Validation of the source candidate (the main merge changes no Rust):
+Validation of trigger ownership source7b83fc6c (the main merge changes no Rust):
 - All25 trigger tests pass (`.local/trigger-owner-focused.log`).
 - `sim::runtime::tests::staged_trigger_state_reaches_bound_frames_and_survives_restore`
   passes: authored locals/disabled flags reach a bound production frame, and
@@ -1485,11 +1486,38 @@ Validation of the source candidate (the main merge changes no Rust):
   timeout. Evidence: `.local/trigger-owner-retail-soviet/{run.json,loader.log,
   capture/capture.json}`. Owned Cargo/capture operations are terminal.
 
-One fresh pre-PR critic `combat_increment_critic` is reviewing the accumulated
-branch against origin/main3a7a76dd. No PR yet. Next delivery action: resolve its
-confirmed findings, validate affected changes, then publish/merge a coherent
-increment. Do not repeat the critic after fixes. Earlier Ground rendering GPU
-checks passed4 tests (`.local/display-consumers-gpu.log`); no full visual parity.
+The single fresh pre-PR critic `combat_increment_critic` FINISHED its risk-focused
+review of d75dc8b6 against origin/main3a7a76dd. No PR was opened: hold the merge.
+Do not repeat the critic after fixes. It found three confirmed integration defects:
+1. Aircraft Attack state1 is absorbing with a resolved target and ammo remaining
+   after pending debit. The new Fighter/re-engagement suffixes reach it; native
+   FindFireLocation/AssignDestination continuation is required before shipping.
+   Stock ORCA/BEAG Ammo1 escape the zero-ammo gate, but multi/unlimited-ammo rules
+   stall. Require a multi-release production regression, not only suffix samples.
+2. Pure Fly takeoff registers TOP, but landing does not resubmit GROUND. At zero
+   height, units/SHP derive a Ground band then reject the missing NativeGroundOrder
+   entry, so a landed/reloading aircraft can disappear. Complete native landing's
+   membership transaction and renderer routing through the same retained authority;
+   test takeoff -> landing -> reload through the actual instance builder.
+3. Entity-owned WeaponBurst outlived direct command target clears. Event Stop4C75F8
+   invokes Assign_Target(NULL), MegaMission4C7467 invokes the target setter, and
+   Techno6FCF5B resets+3B8 only on a changed-null assignment. Raw pointer clearing
+   bypassed that reset. Owner fix migrates Move, Stop, AttackMove and untargeted
+   Guard through `represented_assign_target`, with a production-command regression.
+   Other clears still need native-role classification: Depot/Transport/Sabotage/
+   Capture/Bunker commands, mission handlers, pursuit, spawner/transport/teleport
+   and combat cleanup. Preserve genuine Detach/PointerExpired direct-write semantics.
+
+Burst command fix:3 focused tests pass, including the new production-command
+regression for all4 orders. Full `cargo test -p vera20k --lib` passes **9,154
+passed,0 failed,135 ignored**,12.54s (`.local/burst-command-full-tests.log`).
+Snapshot189/replay pins unchanged. Library Clippy passes with1,029 warnings in
+25.67s (`.local/burst-command-clippy.log`). The release/retail results above are
+for7b83fc6c, not the command fix; no new loader or schema change. All owned Cargo
+and native operations are terminal at this checkpoint.
+Original Event comments4C7467/4C75F8 were added, saved and read back. Critic text is
+retained at `.local/combat-increment-critic.txt`. Earlier Ground GPU checks passed4
+(`.local/display-consumers-gpu.log`), but did not cover landing or full visual parity.
 
 Retained native evidence from published9202149b: `trigger_event_records` has54
 original constructor/read/list cases and bounded predicates. Rust compares all
@@ -1535,13 +1563,17 @@ Native ownership and ordering to preserve in the migration:
   until the next poll. Tail clears+34AA/+34A9/+34AB/+34BE. Never use diagnostic
   TriggerGraph sorting as production order.
 
-Next implementation: replace the EXISTING TriggerRuntime definition-ID latches
+Next implementation priorities: finish the remaining target-setter audit and the
+review's aircraft re-engagement/landing production joins before PR/merge. The native
+Tag/Team chain remains required for Fly map-edge and scenario-driven combat; resume
+it through the existing owner, without mistaking documentation for completion.
+Replace the EXISTING TriggerRuntime definition-ID latches
 and MapTrigger.repeating with live Tag/Trigger instances on the installed owner.
 Use world/lifecycle's pending-delete authority. Materialize ordered Tag/CellTag
 inputs and authored Object attachments through shared staging/resources, preserving
 constructor timer/RNG order. Team construction/recruitment/AI remain test-only.
 
-Additional native reader evidence (body/vtable only, not a new executable corpus):
+Additional native reader evidence (no committed corpus/Rust comparison yet):
 TagType ctor6E5B60 sets vt7F45C4; its+64 slot points6E6080. The reader clears
 INI cache526B00, uses ReadString128, tokenizes then passes BUFFER START to atoi
 (not the returned token pointer), stores repeat+9C, copies name max48 to+64 and
@@ -1550,6 +1582,11 @@ therefore matter. The resolver scans registry8B4178 by first case-insensitive
 ID match; missing nonsentinel names construct a Type. Original section loader
 6E5ED0 preserves source order. `.local/tag-type-read-6e6080.txt` retains notes;
 Ghidra has no function at6E6080: inspect bytes without repairing boundaries.
+A local full-reader/constructor probe now runs: `.local/tag_type_reader_probe.py`,
+`.jsonl`, and `.local/tag-type-next.txt`. It supplies real section/entry CRC indexes
+so526B00 cache-clear executes. Missing nonsentinel TriggerTypes construct normally;
+IDs truncate24bytes. Missing third tokens fault in original strcmp(NULL): keep
+safe malformed-input handling explicit, never fabricate false native goldens.
 
 Required remaining work includes Team activation/recruitment/scripts; Fly map-edge,
 search/navigation/landing; remaining Display consumers and crate pickup effects;
