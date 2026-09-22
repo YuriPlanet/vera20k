@@ -1,0 +1,2686 @@
+[
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": 5,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": 4,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": -1,
+      "mission_only": false,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": 5,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": 4,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": -1,
+      "mission_only": true,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": 5,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": 4,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": -1,
+      "mission_only": false,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": 5,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": 4,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": -1,
+      "mission_only": true,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": 5,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": 4,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": -1,
+      "mission_only": false,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": 5,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": 4,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": -1,
+      "mission_only": true,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": 5,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": 4,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": -1,
+      "mission_only": false,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": 5,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": 4,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        0,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": -1,
+      "mission_only": true,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": 5,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": 4,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": -1,
+      "mission_only": false,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": 5,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": 4,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": -1,
+      "mission_only": true,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": 5,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": 4,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": -1,
+      "mission_only": false,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": 5,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": 4,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": -1,
+      "mission_only": true,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": 5,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": 4,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": -1,
+      "mission_only": false,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": 5,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": 4,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": -1,
+      "mission_only": true,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": 5,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": 4,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": -1,
+      "mission_only": false,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": 5,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": 4,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": -1,
+      "mission_only": true,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": 5,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": 4,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": -1,
+      "mission_only": false,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": 5,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": 4,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": false,
+      "mission": -1,
+      "mission_only": true,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": 5,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": 4,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": -1,
+      "mission_only": false,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": 5,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": 4,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": false,
+      "in_playfield": true,
+      "mission": -1,
+      "mission_only": true,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": 5,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": 4,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": -1,
+      "mission_only": false,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": 5,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": 4,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": false,
+      "mission": -1,
+      "mission_only": true,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": 5,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": 4,
+      "mission_only": false,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": -1,
+      "mission_only": false,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": 5,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": 4,
+      "mission_only": true,
+      "queued": -1,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "game_mode_nonzero": true,
+      "in_playfield": true,
+      "mission": -1,
+      "mission_only": true,
+      "queued": 4,
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "cells": [
+        [
+          11,
+          10,
+          255,
+          0
+        ]
+      ],
+      "in_playfield": true,
+      "mission": 5,
+      "slopes": [
+        [
+          11,
+          10,
+          0
+        ]
+      ],
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "cells": [
+        [
+          11,
+          10,
+          255,
+          0
+        ]
+      ],
+      "in_playfield": true,
+      "mission": 4,
+      "slopes": [
+        [
+          11,
+          10,
+          0
+        ]
+      ],
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "cells": [
+        [
+          11,
+          10,
+          255,
+          0
+        ]
+      ],
+      "in_playfield": true,
+      "mission": 5,
+      "slopes": [
+        [
+          11,
+          10,
+          1
+        ]
+      ],
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "cells": [
+        [
+          11,
+          10,
+          255,
+          0
+        ]
+      ],
+      "in_playfield": true,
+      "mission": 4,
+      "slopes": [
+        [
+          11,
+          10,
+          1
+        ]
+      ],
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "cells": [
+        [
+          11,
+          10,
+          0,
+          0
+        ]
+      ],
+      "in_playfield": true,
+      "mission": 5,
+      "slopes": [
+        [
+          11,
+          10,
+          0
+        ]
+      ],
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "cells": [
+        [
+          11,
+          10,
+          0,
+          0
+        ]
+      ],
+      "in_playfield": true,
+      "mission": 4,
+      "slopes": [
+        [
+          11,
+          10,
+          0
+        ]
+      ],
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "cells": [
+        [
+          11,
+          10,
+          0,
+          0
+        ]
+      ],
+      "in_playfield": true,
+      "mission": 5,
+      "slopes": [
+        [
+          11,
+          10,
+          1
+        ]
+      ],
+      "trace_boundary": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "cells": [
+        [
+          11,
+          10,
+          0,
+          0
+        ]
+      ],
+      "in_playfield": true,
+      "mission": 4,
+      "slopes": [
+        [
+          11,
+          10,
+          1
+        ]
+      ],
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "cells": [
+        [
+          11,
+          10,
+          1,
+          0
+        ]
+      ],
+      "in_playfield": true,
+      "mission": 5,
+      "slopes": [
+        [
+          11,
+          10,
+          0
+        ]
+      ],
+      "trace_boundary": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "cells": [
+        [
+          11,
+          10,
+          1,
+          0
+        ]
+      ],
+      "in_playfield": true,
+      "mission": 4,
+      "slopes": [
+        [
+          11,
+          10,
+          0
+        ]
+      ],
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "cells": [
+        [
+          11,
+          10,
+          1,
+          0
+        ]
+      ],
+      "in_playfield": true,
+      "mission": 5,
+      "slopes": [
+        [
+          11,
+          10,
+          1
+        ]
+      ],
+      "trace_boundary": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "cells": [
+        [
+          11,
+          10,
+          1,
+          0
+        ]
+      ],
+      "in_playfield": true,
+      "mission": 4,
+      "slopes": [
+        [
+          11,
+          10,
+          1
+        ]
+      ],
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "cells": [
+        [
+          11,
+          10,
+          4,
+          0
+        ]
+      ],
+      "in_playfield": true,
+      "mission": 5,
+      "slopes": [
+        [
+          11,
+          10,
+          0
+        ]
+      ],
+      "trace_boundary": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "cells": [
+        [
+          11,
+          10,
+          4,
+          0
+        ]
+      ],
+      "in_playfield": true,
+      "mission": 4,
+      "slopes": [
+        [
+          11,
+          10,
+          0
+        ]
+      ],
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "cells": [
+        [
+          11,
+          10,
+          4,
+          0
+        ]
+      ],
+      "in_playfield": true,
+      "mission": 5,
+      "slopes": [
+        [
+          11,
+          10,
+          1
+        ]
+      ],
+      "trace_boundary": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        2,
+        16,
+        16
+      ],
+      "cells": [
+        [
+          11,
+          10,
+          4,
+          0
+        ]
+      ],
+      "in_playfield": true,
+      "mission": 4,
+      "slopes": [
+        [
+          11,
+          10,
+          1
+        ]
+      ],
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x6ec300"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "in_playfield": true,
+      "mission": 5,
+      "team": {
+        "action": 2,
+        "active": false,
+        "cursor": -1
+      },
+      "trace_boundary": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "in_playfield": true,
+      "mission": 4,
+      "team": {
+        "action": 2,
+        "active": false,
+        "cursor": -1
+      },
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x6ec300"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "in_playfield": true,
+      "mission": 5,
+      "team": {
+        "action": 2,
+        "active": false,
+        "cursor": 0
+      },
+      "trace_boundary": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "in_playfield": true,
+      "mission": 4,
+      "team": {
+        "action": 2,
+        "active": false,
+        "cursor": 0
+      },
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x6ec300"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "in_playfield": true,
+      "mission": 5,
+      "team": {
+        "action": 2,
+        "active": false,
+        "cursor": 1
+      },
+      "trace_boundary": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "in_playfield": true,
+      "mission": 4,
+      "team": {
+        "action": 2,
+        "active": false,
+        "cursor": 1
+      },
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x6ec300"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "in_playfield": true,
+      "mission": 5,
+      "team": {
+        "action": 2,
+        "active": true,
+        "cursor": -1
+      },
+      "trace_boundary": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "in_playfield": true,
+      "mission": 4,
+      "team": {
+        "action": 2,
+        "active": true,
+        "cursor": -1
+      },
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x6ec300"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "in_playfield": true,
+      "mission": 5,
+      "team": {
+        "action": 2,
+        "active": true,
+        "cursor": 0
+      },
+      "trace_boundary": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "in_playfield": true,
+      "mission": 4,
+      "team": {
+        "action": 2,
+        "active": true,
+        "cursor": 0
+      },
+      "trace_boundary": true
+    },
+    "result": 0
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x6ec300"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "in_playfield": true,
+      "mission": 5,
+      "team": {
+        "action": 2,
+        "active": true,
+        "cursor": 1
+      },
+      "trace_boundary": true
+    },
+    "result": 7
+  },
+  {
+    "calls": [
+      "0x73f0a0",
+      "0x578540",
+      "0x4da1d0",
+      "0x4d9c10",
+      "0x55abf0",
+      "0x73fc24"
+    ],
+    "input": {
+      "bounds": [
+        16,
+        0,
+        3,
+        16,
+        16
+      ],
+      "in_playfield": true,
+      "mission": 4,
+      "team": {
+        "action": 2,
+        "active": true,
+        "cursor": 1
+      },
+      "trace_boundary": true
+    },
+    "result": 0
+  }
+]

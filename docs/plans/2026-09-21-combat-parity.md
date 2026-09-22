@@ -1449,144 +1449,96 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): Unit height and Tube traversal
+## Current checkpoint (2026-09-22): shared Foot boundary admission
 
 Owned checkout: engine-ownership-boundaries/ra2-rust-game, branch
-feature/combat-foot-speed, published parent **12f7a4b6**. Combat goal stays active.
-The sole critic already ran; no repeated critic or PR/merge while its required
-aircraft attack/flight joins remain unfinished. Preserve .local/ and prior work.
+feature/combat-foot-speed. This increment follows published **423a5cf5**;
+its commit is identified by this checkpoint and the boundary-admission files.
+Combat goal stays active. Preserve .local/ and existing work. The sole critic
+already ran; no new critic or PR/merge until required aircraft attack/flight
+joins and production validation are resolved.
 
-Current acceptance: replace the Unit repair-only height shortcut with original
-direction/Tube/Foot4D9C60 traversal in the shared live receiver. Preserve
-Infantry's distinct Tube endpoint predicate and high-height early-clear arm,
-Unit's numeric outcomes, independent bridge list/raw planes, and repair's
-literal-seven projection. No competing entry implementation or new state.
+Acceptance: replace the live Unit/Infantry bounds shortcut with original
+GameMode and retained-Cell checks, sharing represented Foot4DA1D0 permissions
+with Walk path precheck. Preserve class-specific call order and explicit
+unrepresented Team behavior; no new state or competing authority.
 
-Implemented: Unit now uses the same existing Foot height owner as Infantry,
-with native class differences retained. MovementRestrictedTo overlay237/238
-exception compares the supplied height against signed Cell level, rather than
-assuming height=-1. Two independent neighbor lookups remain when previous=NULL;
-explicit previous suppresses only the Foot lookup, not the earlier Tube query.
-Evidence unit_entry_traversal.{py,json,meta.json}:328 complete original Unit
-calls, including9 directions, signed levels, slope/bridge combinations,
-explicit previous, list/raw selection,128 target/backstep Tube direction
-combinations and restriction/overlay cases. Native --check passes328 rows;
-unit_entry's previous150 outputs reproduce unchanged. Ghidra73F0A0/4D9C60
-comments corrected, saved and read back. No full Scatter/pathfinding claim.
-Final cargo test -p vera20k --lib passes **9187 tests,0 failures,135 ignored**
-(.local/unit-traversal-full.log,23.00s). Final cargo clippy -p vera20k --lib
-passes with1024 warnings, unchanged from parent (.local/unit-traversal-clippy.log,
-24.51s). Both processes finished. Native traversal and original entry checks
-also finished. No retail rendered/Linux/macOS claim.
+Implemented:
+- Unit73F34C checks Map578540/+320 in GameMode0 even when retained3D5 is false;
+  Infantry51C13A skips both when3D5 is false. Only final refusal requires3D5.
+- Map578540 consumes the retained Cell's signed coordinate/level/slope. The new
+  cell_rect reader reuses NativeCellQuery fields without another lookup or
+  dummy stamp; a dummy/real-coordinate alias regression protects this distinction.
+- Shared Foot4DA1D0 permission reads retained3D5, retained3D4 and effective
+  current/queued Retreat4. Attached Team invalid cursors/non-action3 return false,
+  independently of missing7F. Active action3 remains an explicit unresolved
+  error. TypeC94 IsTrain is absent from stock and remains outside parsed rules.
+- Walk path precheck uses the same owner, removing its separate approximation.
 
-Published12f7a4b6 acceptance: preserve original Unit73F0A0 numeric outcomes in the shared live
-repair/class receiver, including ordered blockers, walls/gates and independent
-raw occupation. Repair still projects ==7; source Scatter requires ==0. Remove
-the boolean accumulator which incorrectly turned all soft outcomes into0.
+Evidence: unit_entry_boundary.{py,json,meta.json} preserves100 complete original
+Unit73F0A0 calls through Map578540/Foot4DA1D0, with real Unit/Drive tables and
+Script readers. Covers three raw bounds, both game modes, retained3D4/3D5,
+current/queued Retreat, signed level/slope and non-action3 Team cursor exits.
+Only inherited OS Interlocked imports are substituted. Native --check passes100
+rows, and the prior150 entry/328 traversal outputs reproduce unchanged. The live
+receiver and repair's literal-seven projection compare every new row. Prestates
+are supplied: no Team activation/waypoint, IsTrain or complete Scatter parity.
+Ghidra4DA1D0 renamed FootClass__AllowsOutsidePlayfield; its plate and578540's
+retained-pointer distinction were saved and read back. No structural/byte edits.
 
-Implemented: bridge_repair_admission::foot_entry now uses one numeric accumulator
-for Infantry and Unit. Unit retains1 cloaked enemy,2 moving ally/raw vehicle or
-allied raw owner,3 closed allied Gate,4 allied wall,5 armed enemy/hostile wall,
-6 stationary allied mobile,7 hard refusal; terminal0 still precedes later
-blockers for Enter's exact NavCom. Unit effective mission includes queued
-fallback. Moving-ally admission checks NavCom/body turn before IsMoving.
-Self clears both the captured raw vehicle bit and local latch. A nonzero
-accumulator wins before raw occupation. Crush latch with raw vehicle bit asks
-the FIRST GROUND Unit, even when the selected list/byte is on the deck.
-Allied crushable walls now preserve4 without requiring a weapon; CrusherAll
-uses the same native wall route. Existing state owners, no save-format change.
+Validation: final cargo test -p vera20k --lib passes **9189 tests,0 failures,
+135 ignored**,24.89s (.local/unit-boundary-full-validated.log). Final cargo
+clippy -p vera20k --lib passes,1024 warnings unchanged,30.50s
+(.local/unit-boundary-clippy-validated.log). Both terminal. Earlier Clippy
+rejected the combined short-circuit expression; splitting boundary evaluation
+from the final3D5 gate preserves query order and passes the final suite. Earlier
+retained-cell compile mismatch was fixed through existing coordinate accessors.
+No replay rebaseline, new persistence state or retail/rendered/Linux/macOS claim.
 
-The native comparison exposed a required shared dependency correction:
-bump_crush::can_crush incorrectly excluded non-infantry from the ordinary arm
-and returned early on a refused Omni arm. Shared object_is_crushable_by now
-matches Object5F6CD0: Omni excludes buildings/resistant targets; refusal falls
-through to explicit Crushable plus deploy-immunity/invulnerability gates.
-Capability and alliance remain caller gates. The already-native Unit crush-tail
-helper delegates to this predicate, removing its competing local formula.
-Unit73FB2A still requires Crusher/ability before calling Object5F6CD0; Omni alone
-does not bypass that specific entry caller's gate. Existing general crush
-consumers use the corrected shared predicate too.
+Published prerequisites retained:
+- 423a5cf5: shared Foot4D9C60 height traversal, native Unit/Infantry Tube and
+  high-height differences;328 full original calls. Full9187/135ignored and
+  Clippy1024 passed. Explicit previous suppresses only Foot backstep lookup.
+- 12f7a4b6: Unit numeric0..7 admission, ordered lists/raw planes, Gate/Wall,
+  crush-tail and Object5F6CD0 Omni fallthrough correction;150 full original
+  calls. Full9186/135ignored and Clippy1024 passed. Ghidra4525F0 is GatePassable.
+- d17dad7c:69 original Unit Scatter state-prefix cases and56 source-selection
+  cases; full9185/135ignored, Clippy1024 passed. Source destination was observed,
+  not executed. All eight active-retail loco+1C entries are55ABF0 constantzero,
+  confirmed by48 original Foot4D9C10 calls; dormant TS families excluded.
 
-Evidence: tools/spatial_oracle/unit_entry.{py,json,meta.json} executes150 complete
-Unit73F0A0 calls with repair arguments(-1,-1,NULL,true), original Unit/Building
-tables, constructed Drive, real House/GetWeapon/CrushableBy/Foot readers.
-Only OS Interlocked imports are substituted. Cases cover all eight codes,
-independent raw bits/owners, ordered live lists, self/Enter exits, body turning,
-NavCom/in-transit, Gate open/closed and friendship/armament, Wall crush/owner/
-weapon and CrusherAll, and32 regular/Omni/Crushable/resistance/category cases.
-Prestates are supplied; no scenario load or lifetime producer claim. Body/house
-memory unchanged. Source fixture setup is shared with unit_source_scatter;
-its existing56 outputs remain unchanged. Unit corpus is compared to the actual
-shared receiver and repair projection, not a separate test implementation.
+Next safe action: complete Unit source Scatter's real741970 destination join,
+then connect Aircraft CellScatter/Attack. .local/unit-setter-probe.py now executes
+an ordinary nonnull Cell target through full741970 ->4D94B0 ->Drive4AFD40 without
+gameplay substitutions. Foot4D31E0 proves embedded vectors588/5AC use7E91EC;
+Radio65A750 proves one NULL contact slot; Unit735416 initializes6D8=-1. Initial
+zero6D8 fixture correctly refused Drive MoveTo and was corrected before accepting
+any evidence. Probe supplies Rules1768=22 and original vector constructors;
+not yet a committed corpus or Rust comparison. Expand state/flag/caller coverage,
+including timer writes, path/NavQueue clear, active-locomotor+98 and6AC bypass.
 
-Published12f7a4b6 validation: final cargo test -p vera20k --lib passes **9186 tests,0 failures,
-135 ignored** (.local/unit-entry-full-validated.log,19.94s). Final cargo clippy
--p vera20k --lib passes with1024 warnings, unchanged from the parent
-(.local/unit-entry-clippy.log,26.99s). Both processes finished. Native --check
-passes150 Unit entry rows,48 locomotor entry rows and56 unchanged Unit source
-Scatter rows. The comparison caught and corrected the shared crush-helper
-defect (native0, Rust5 for a Crushable Unit) and a stale ground vehicle latch
-after deck-byte selection. Final test-only failures came from duplicate INI
-sections hiding MovementZone/Gate; the corrected fixture declares each section
-once. Native references were not rebaselined to Rust. No retail rendered or
-Linux/macOS execution claim.
-
-Ghidra: corrected false4525F0 CanGarrison label to BuildingClass__IsGatePassable.
-ReadINI4609EA..460A13 and literal81AA8C establish Gate at16B7; FirestormWall is
-separate16C0. Replaced73F0A0's false code1=Crushable/code3=generic-building
-annotation with exact accumulator/tail and bounded corpus evidence. Saved/read
-back. Updated the stale gate-identity paragraph in cell_entry.rs. Updated
-5F6CD0's annotation to preserve Omni fallthrough and distinguish Object targets
-from overlay crushing.
-
-Next required receiver work: Unit73F34C gates the map-edge check on GameMode0;
-out-of-bounds candidates can still pass through Foot+320/4DA1D0. The live
-receiver currently reduces this to in_playfield plus bounds. Native4DA1D0:
-if !retained3D5 returnfalse; otherwise TypeC94 IsTrain, retained3D4, effective
-Retreat4, or attached Team6EC300 can admit. IsTrain is absent from stock.
-Team6EC300 requires retainedTeam7F, valid unsigned Script cursor, action3 and
-Scenario waypoint outside height-aware Map578460(mode1). Share its existing
-owners rather than deriving from locomotor kind or duplicating state. Also
-audit moving/chain_cursor's installed-kind dispatch before general exposure.
-Native seed uncertainty resolved:
-foot_locomotor_entry.{py,json,meta.json} executes48 original Foot4D9C10 calls;
-Drive/Ship/Walk/Hover/Fly/Jumpjet/Rocket/Teleport all have actual+1C=55ABF0,
-XOR EAX,EAX;RET8, with no instance reads. Thus their initial0 is exact; dormant
-TS Mech/Tunnel are outside this proof. Resolve remaining gates before exposing
-the general receiver to source Scatter; do not substitute
-repair's !=7 projection or the legacy movement classifier for ==0.
-Unit source branch743CA0 additionally tests current MissionControl Paralyzed(+7),
-Unit6D1 (miner.unload_active), NavCom/second flag and6AF (turret_rotation_latch).
-Target with !firstFlag draws RandomRanged(1,4), only1 admits. Away heading uses
-physical9C, jitter0..2 minus1, seed Foot4C. Shared eight-neighbor fallback and
-projection can be reused with exact Unit73F0A0 entry. QueueMove(false)744053 then
-Unit destination741970 at744070. NULL source uses FNPC56DC20 and SetDestination
-only, without QueueMove/immediate Process. Existing blocker selection/setter
-remains a compatibility residual; complete class Scatter is not yet ported.
-
-Published d17dad7c owns unconditional Unit Scatter state refusals before all
-blocker RNG/orders: effective Sleep0/Sticky6/Unload16, active Teleport, body
-rotation, any deploy phase, unpowered loco.69 original prefix comparisons;
-full9185 passed/135 ignored, Clippy1024 warnings. It also published56 native
-source-selection cases, including six live numeric Unit entry cases. No full
-Unit setter/Scatter claim. Native deploy animation producers remain approximate.
-
-Garrison shared-receiver migration investigated, not implemented: Building457DE0
-calls Scatter(building center,true,true) after Unlimbo and AssignTarget(NULL).
-Current production_sell copy uses a coarse/inverted heading and direct movement.
-General Infantry flags need moving-byte demotion, human/Doing27..30 and true/true
-DoAction31 lifetime, then shared class entry/Walk setter. Same-destination prone
-human setter needs DoAction7 and TypeFearless+EAC proof. Overlay registry must
-reach sale/red-HP/destruction callers before live entry. Do not infer Doing
-lifetime from presentation or an Unlimbo reset.
-
-Parent00cbae96 owns damage Scatter->Infantry51AA40->Foot4D94B0->Walk75ACB0:
-18 original setter,56 source,14 live entry rows and subsequent movement/arrival
-regressions. Remaining dependencies: non-Walk/JumpJet class-switching setters,
-DirectRocker2A8 reciprocal link, lift2AC/2B0 detach70FEE0, retained UseFireParticles
-304 release, Unit6AC latch; Infantry NULL-source/DoAction31; full Unit Scatter;
-Aircraft CellScatter and Attack5..9; real flight/landing/reload and whole-combat
-audit. The existing critic findings and larger goal residuals remain required.
+Required joins remain open:
+- Team6EC300: retained7F, valid unsigned Script cursor/action3 and Scenario
+  waypoint outside Map578460. Constructor6E8B11 clears7F; TeamAI6E91BE sets it,
+  6EA089/6EA0E2 clear it. Existing VM lacks7F and production creation/activation.
+  Do not derive it from script presence/completion/refusal/suspension. Port the
+  actual lifecycle through existing Team/Tag owners; waypoint reads can stamp dummy.
+- Audit live entry moving/chain_cursor installed-kind dispatch before general
+  exposure. Scatter requires numeric==0, never repair's !=7 projection.
+- Unit source743CA0 gates current MissionControl Paralyzed7, miner.unload_active
+  6D1, NavCom/second flag and turret_rotation_latch6AF. Unforced Target draws1..4,
+  only1 admits. Away heading uses physical9C, jitter0..2 minus1, seedFoot4C;
+  shared eight-neighbor fallback prefers direct projection. QueueMove(false)
+  precedes741970. NULL source uses FNPC56DC20 and setter only, no immediate Process.
+- Infantry general/NULL Scatter needs DoAction31 lifetime and non-Walk setters.
+  Garrison457DE0 calls Scatter(building center,true,true) after Unlimbo/target
+  clear; production_sell's coarse/inverted direct-move copy remains unported.
+  Overlay registry must reach sale/red-HP/destruction callers. Foot linked
+  DirectRocker2A8, lift2AC/2B0 detach70FEE0 and UseFireParticles304 cleanup remain.
+- Aircraft CellScatter, Attack5..9, full Fly navigation/landing/reload/rendered
+  joins, live Tag/Trigger migration, launch/homing, vehicle click, fire legality,
+  special warheads and whole-combat audit remain required. Recording them does
+  not complete the goal; preserve previous evidence below for continuation.
 
 ## Previous checkpoint (2026-09-22): Infantry damage-scatter admission
 

@@ -7,6 +7,33 @@ fn spatial_native_vectors() -> serde_json::Value {
     serde_json::from_str(include_str!("../../tools/spatial_oracle/map_queries.json")).unwrap()
 }
 
+#[test]
+fn retained_playfield_query_does_not_relookup_a_dummy_alias() {
+    use crate::map::cell_index::NativeCellIdentity;
+    let terrain = flat_terrain(33, 33);
+    let real = terrain.native_cell_identity((11, 10));
+    terrain.stamp_dummy_cell_requested_coord(11, 10);
+    terrain.test_set_dummy_cell_level_slope(4, 0);
+    let before = terrain.shared_cell_dummy().snapshot();
+    let bounds = Some(PlayfieldBounds {
+        base: 16,
+        off_fc: 0,
+        off_100: 2,
+        off_104: 16,
+        off_108: 16,
+    });
+    // unit_entry_boundary's original578540 calls admit level0 and refuse4
+    // here. Retaining the dummy must read its own level, even though a fresh
+    // coordinate lookup would select the allocated real Cell instead.
+    assert!(retained_cell_is_in_playfield(real, bounds, &terrain));
+    assert!(!retained_cell_is_in_playfield(
+        NativeCellIdentity::Dummy,
+        bounds,
+        &terrain
+    ));
+    assert_eq!(terrain.shared_cell_dummy().snapshot(), before);
+}
+
 fn native_pair(value: &serde_json::Value) -> (i32, i32) {
     (
         value[0].as_i64().unwrap() as i32,

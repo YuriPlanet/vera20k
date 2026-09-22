@@ -26,6 +26,18 @@ def query(case):
     u.mem_write(TYPE, dwords(0x7F6218))
     u.mem_write(ACTOR + 0x14, dwords(5))  # Techno and Foot abstract flags
     u.mem_write(ACTOR + 0x21C, dwords(HOUSE))
+    u.mem_write(ACTOR + 0x3D4, bytes([case.get('mission_only', False), case.get('in_playfield', False)]))
+    u.mem_write(0xA8E7AC, dwords(case.get('game_mode_nonzero', False)))
+    if 'team' in case:
+        team, script, script_type = EXTRA + 0x2B000, EXTRA + 0x2B200, EXTRA + 0x2B400
+        state = case['team']
+        u.mem_write(ACTOR + 0x5D4, dwords(team))
+        u.mem_write(team + 0x7F, bytes([state.get('active', True)]))
+        u.mem_write(team + 0x28, dwords(script))
+        u.mem_write(script + 0x24, dwords(script_type))
+        u.mem_write(script + 0x2C, dwords(state.get('cursor', 0)))
+        u.mem_write(script_type + 0xA0, dwords(1))
+        u.mem_write(script_type + 0xA4, dwords(state.get('action', 2), 4))
     for address, index in ((HOUSE, 0), (ENEMY, 1)):
         u.mem_write(address + 0x30, dwords(index))
     for x, y, slope in case.get('slopes', []):
@@ -122,6 +134,8 @@ def query(case):
     seen = []
     def observe(_u, address, _size, _data):
         if address in (0x73F0A0, 0x4D9C10, 0x55ABF0, 0x73FC24, 0x47EBA0):
+            seen.append(hex(address))
+        elif case.get('trace_boundary') and address in (0x578540, 0x4DA1D0, 0x6EC300, 0x578460):
             seen.append(hex(address))
     u.hook_add(UC_HOOK_CODE, observe)
     before = bytes(u.mem_read(EXTRA, 0x30000))

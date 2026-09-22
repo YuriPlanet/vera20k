@@ -1139,16 +1139,21 @@ fn foot_entry(
             MovementLayer::Ground
         }
     };
-    let p = live.coord(cell);
-    if e.in_playfield
-        && !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
-            (i32::from(p.0), i32::from(p.1)),
+    //Unit73F34C / Infantry51C13A: mode0 alone checks the retained Cell.
+    //Unit still performs the read/+320 when3D5 is false; Infantry skips it.
+    //578540 consumes the pointer directly, without578460's extra lookup.
+    let boundary_refused = !live.sim.session.game_mode_nonzero
+        && (!infantry || e.in_playfield)
+        && !crate::sim::cell_rect::retained_cell_is_in_playfield(
+            cell,
             live.sim.playfield_bounds,
-            Some(live.terrain()),
+            live.terrain(),
         )
-    {
+        && !live.sim.foot_allows_outside_playfield(id)?;
+    if boundary_refused && e.in_playfield {
         return Ok(7);
     }
+    let p = live.coord(cell);
     let weapon0 = combat_weapon::weapon_for_index(obj, e.veterancy, 0)
         .and_then(|(name, _)| live.rules.weapon(name));
     let crusher = obj.crusher

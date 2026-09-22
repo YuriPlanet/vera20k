@@ -21,6 +21,15 @@ fn unit_entry_matches_original_height_bridge_and_tube_traversal() {
     );
 }
 
+#[test]
+fn unit_entry_matches_original_playfield_boundary_permissions() {
+    compare_rows(
+        include_str!("../../../tools/spatial_oracle/unit_entry_boundary.json"),
+        100,
+        true,
+    );
+}
+
 fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
     let rows: serde_json::Value = serde_json::from_str(json).unwrap();
     let mut mismatches = Vec::new();
@@ -138,13 +147,26 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                 .overlay_id = Some(overlay as u8);
         }
         sim.session.binary_frame = 100;
+        sim.session.game_mode_nonzero = flag("game_mode_nonzero");
+        if let Some(bounds) = input["bounds"].as_array() {
+            sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+                base: bounds[0].as_i64().unwrap() as i32,
+                off_fc: bounds[1].as_i64().unwrap() as i32,
+                off_100: bounds[2].as_i64().unwrap() as i32,
+                off_104: bounds[3].as_i64().unwrap() as i32,
+                off_108: bounds[4].as_i64().unwrap() as i32,
+            });
+        }
         let ours = sim.intern("Americans");
         let enemy = sim.intern("Russians");
         let mut mover = GameEntity::test_default(90, "MOVER", "Americans", 10, 10);
         mover.owner = ours;
         mover.type_ref = sim.intern("MOVER");
         mover.category = EntityCategory::Unit;
-        mover.in_playfield = false;
+        mover.in_playfield = flag("in_playfield");
+        if flag("mission_only") {
+            mover.mark_mission_only();
+        }
         mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
         sim.substrate.entities.insert(mover);
         sim.mission_assign_exact(
@@ -153,6 +175,44 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
             100,
         )
         .unwrap();
+        if let Some(queued) = input["queued"].as_i64() {
+            use crate::sim::mission::{MissionDispatchTimer, MissionId, state::MissionTestFixture};
+            sim.substrate
+                .entities
+                .get_mut(90)
+                .unwrap()
+                .mission
+                .apply_test_fixture(MissionTestFixture {
+                    current: MissionId::from_raw(input["mission"].as_i64().unwrap_or(5) as i32),
+                    queued: MissionId::from_raw(queued as i32),
+                    suspended: MissionId::NONE,
+                    movement_bypass_latch: 0,
+                    handler_state: 0,
+                    mission_start_frame: 100,
+                    ai_counter: 0,
+                    dispatch_timer: MissionDispatchTimer::at_frame(100),
+                });
+        }
+        if let Some(team) = input.get("team") {
+            let script_id = sim.intern("ENTRY_TEAM_SCRIPT");
+            sim.team_script_vm
+                .register_script(crate::sim::team_script_vm::TeamScriptDefinition {
+                    id: script_id,
+                    actions: vec![crate::sim::team_script_vm::TeamScriptAction {
+                        action_id: team["action"].as_i64().unwrap() as i32,
+                        argument: 4,
+                    }],
+                    source: crate::rules::team_ai_ini::TeamAiDefinitionSource::FixedAimd,
+                });
+            let id = sim
+                .team_script_vm
+                .create_team(ours, script_id, vec![90], None, 100);
+            // Supplied retained Script cursor, independent of the unported
+            // Team activation lifecycle. Non-action3 is false for either7F.
+            let mut state = serde_json::to_value(&sim.team_script_vm).unwrap();
+            state["teams"][id.to_string()]["cursor"] = team["cursor"].clone();
+            sim.team_script_vm = serde_json::from_value(state).unwrap();
+        }
         let mut ids = Vec::new();
         for (index, node) in input["objects"]
             .as_array()

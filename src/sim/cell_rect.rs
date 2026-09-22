@@ -1097,6 +1097,20 @@ pub(crate) fn cell_is_in_playfield_height_aware(
     cell_is_in_playfield_height_aware_in_query(cell, bounds, terrain, None)
 }
 
+/// Map578540 mode1 reads an already-retained Cell pointer. Unlike578460,
+/// it does not look up the coordinates or stamp the shared dummy again.
+pub(crate) fn retained_cell_is_in_playfield(
+    cell: crate::map::cell_index::NativeCellIdentity,
+    bounds: Option<PlayfieldBounds>,
+    terrain: &ResolvedTerrainGrid,
+) -> bool {
+    let Some(bounds) = bounds else { return false };
+    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+    let coord = cells.coord(cell);
+    let (level, slope) = cells.ground_fields(cell);
+    bounds.contains_height_aware_packed(i32::from(coord.0), i32::from(coord.1), level as i8, slope)
+}
+
 pub(crate) fn cell_is_in_playfield_height_aware_in_query(
     cell: (i32, i32),
     bounds: Option<PlayfieldBounds>,
