@@ -11,7 +11,7 @@ A scoped pass certifies no wider system. Owners fix confirmed mechanism/prerequi
 defects; adjacent findings become follow-ups, not automatic expansion. Review grants
 no mutation/publication authority.
 
-Follow AGENTS.md's cadence: one critic pass after implementation and validation,
-before opening a PR for substantial/risky changes. The owner rechecks fixes and
-affected conclusions. Do not request follow-up or replacement critics after fixes
-or revisions unless the user explicitly asks; trivial edits need no critic.
+Follow AGENTS.md's cadence: one critic pass per PR, after implementation and
+validation and before opening it, for substantial/risky changes. The owner rechecks
+fixes and affected conclusions. Do not request follow-up or replacement critics after
+fixes or revisions unless the user explicitly asks; trivial edits need no critic.

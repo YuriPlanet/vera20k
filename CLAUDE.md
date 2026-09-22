@@ -136,9 +136,11 @@ and validation, before opening the PR. The critic is free to inspect original ev
 and challenge scope/design. It identifies implementation defects and useful refactoring
 opportunities, explaining their impact and risks. The owner fixes confirmed defects,
 rejects false positives with evidence and may implement worthwhile in-scope refactors,
-validating all changes. Unrelated opportunities become follow-ups. Do not run critics
-per implementation increment or repeat reviews after fixes or revisions unless the user
-explicitly asks.
+validating all changes. Unrelated opportunities become follow-ups. Each validated,
+dependency-coherent mechanism gets its own PR and its own single critic pass; do not
+hold validated mechanisms back to batch them into one review. Do not run critics per
+implementation increment within a mechanism or repeat reviews after fixes or revisions
+unless the user explicitly asks.
 Keep a concise [checkpoint](.agents/skills/_shared/handoff.md) for sustained work.
 
 ## Git and validation
@@ -154,6 +156,8 @@ Preserve unique/local data; use `sync` for complex cleanup.
 
 Choose validation appropriate to the change, considering native fidelity, connected
 production behavior and protection against regressions.
+
+Avoid tests that merely mirror the implementation or require maintaining a second implementation of the same logic.
 
 - Working Rust: `cargo check -p vera20k` as needed; focused
   `cargo test -p vera20k --lib <module_path>::`.
