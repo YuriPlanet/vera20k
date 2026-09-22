@@ -1,0 +1,8280 @@
+[
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "repeat"
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56
+    ],
+    "calls": [
+      "006E4DE0"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": []
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": []
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": []
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "empty",
+      "triggers": []
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      72,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "006E4DE0",
+      "00725FA0",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 2,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "sharing",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "shared"
+        ],
+        [
+          "fresh"
+        ],
+        [
+          "shared"
+        ],
+        [
+          "fresh"
+        ]
+      ]
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 1,
+        "pending_tags": [
+          0
+        ],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 1,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 1,
+        "pending_tags": [
+          0
+        ],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 1,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 1,
+        "pending_tags": [
+          0
+        ],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 1,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "pending_shared",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "mark_tag",
+          0
+        ],
+        [
+          "shared"
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ]
+      ]
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            8
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7,
+          8
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            8
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            8
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7,
+          8
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "reverse_chain",
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              47,
+              0
+            ]
+          ]
+        },
+        {
+          "actions": [
+            [
+              28,
+              8
+            ]
+          ],
+          "events": [
+            [
+              47,
+              0
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726720",
+      "007258D0"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 2,
+        "pending_tags": [
+          0
+        ],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 2,
+        "pending_tags": [
+          0
+        ],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "mode_0_refs_0",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            50,
+            60
+          ]
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            51,
+            60
+          ]
+        ]
+      ],
+      "repeat": 0
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726720",
+      "007258D0"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 2,
+        "pending_tags": [
+          0
+        ],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 2,
+        "pending_tags": [
+          0
+        ],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "mode_0_refs_1",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "attach_cell",
+          0,
+          50,
+          60
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            50,
+            60
+          ]
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            51,
+            60
+          ]
+        ]
+      ],
+      "repeat": 0
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726720",
+      "007258D0"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 2,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 2,
+        "pending_tags": [
+          0
+        ],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 2,
+        "pending_tags": [
+          0
+        ],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "mode_0_refs_2",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "attach_cell",
+          0,
+          50,
+          60
+        ],
+        [
+          "attach_cell",
+          0,
+          51,
+          60
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            50,
+            60
+          ]
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            51,
+            60
+          ]
+        ]
+      ],
+      "repeat": 0
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "mode_1_refs_0",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            50,
+            60
+          ]
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            51,
+            60
+          ]
+        ]
+      ],
+      "repeat": 1
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726720",
+      "007258D0"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 2,
+        "pending_tags": [
+          0
+        ],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 2,
+        "pending_tags": [
+          0
+        ],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "mode_1_refs_1",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "attach_cell",
+          0,
+          50,
+          60
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            50,
+            60
+          ]
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            51,
+            60
+          ]
+        ]
+      ],
+      "repeat": 1
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726720",
+      "007258D0"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 2,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 2,
+        "pending_tags": [
+          0
+        ],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "mode_1_refs_2",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "attach_cell",
+          0,
+          50,
+          60
+        ],
+        [
+          "attach_cell",
+          0,
+          51,
+          60
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            50,
+            60
+          ]
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            51,
+            60
+          ]
+        ]
+      ],
+      "repeat": 1
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "mode_2_refs_0",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            50,
+            60
+          ]
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            51,
+            60
+          ]
+        ]
+      ],
+      "repeat": 2
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "mode_2_refs_1",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "attach_cell",
+          0,
+          50,
+          60
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            50,
+            60
+          ]
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            51,
+            60
+          ]
+        ]
+      ],
+      "repeat": 2
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 2,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 2,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 2,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "mode_2_refs_2",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "attach_cell",
+          0,
+          50,
+          60
+        ],
+        [
+          "attach_cell",
+          0,
+          51,
+          60
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            50,
+            60
+          ]
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            51,
+            60
+          ]
+        ]
+      ],
+      "repeat": 2
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "mode_3_refs_0",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            50,
+            60
+          ]
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            51,
+            60
+          ]
+        ]
+      ],
+      "repeat": 3
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "mode_3_refs_1",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "attach_cell",
+          0,
+          50,
+          60
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            50,
+            60
+          ]
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            51,
+            60
+          ]
+        ]
+      ],
+      "repeat": 3
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 2,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 2,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 2,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "mode_3_refs_2",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "attach_cell",
+          0,
+          50,
+          60
+        ],
+        [
+          "attach_cell",
+          0,
+          51,
+          60
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            50,
+            60
+          ]
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            51,
+            60
+          ]
+        ]
+      ],
+      "repeat": 3
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 153,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 153,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 183,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "timer_13",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ],
+        [
+          "frame",
+          153
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ],
+        [
+          "frame",
+          183
+        ],
+        [
+          "dispatch",
+          0,
+          51
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              13,
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 3,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 15,
+                "enabled": 1,
+                "pending": 0,
+                "start": 153,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 3,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 15,
+                "enabled": 1,
+                "pending": 0,
+                "start": 153,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 4,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 183,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "timer_51",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ],
+        [
+          "frame",
+          153
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ],
+        [
+          "frame",
+          183
+        ],
+        [
+          "dispatch",
+          0,
+          51
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              51,
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 107402731
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 1,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 4,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 135,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 4,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 135,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "globals": [
+          7,
+          8
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 4,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 135,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "globals": [
+          8
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 6,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            54,
+            0
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          8
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 6,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 0,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 0,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            54,
+            0
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7,
+          8
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 8,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 60,
+                "enabled": 0,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 0,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            54,
+            0
+          ],
+          [
+            53,
+            0
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7,
+          8
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 10,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 105,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "global_resets_27",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "fresh"
+        ],
+        [
+          "frame",
+          170
+        ],
+        [
+          "global",
+          7,
+          1
+        ],
+        [
+          "global",
+          7,
+          1
+        ],
+        [
+          "global",
+          8,
+          1
+        ],
+        [
+          "global",
+          7,
+          0
+        ],
+        [
+          "action",
+          54,
+          0
+        ],
+        [
+          "global",
+          7,
+          1
+        ],
+        [
+          "action",
+          53,
+          0
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [],
+          "events": [
+            [
+              27,
+              7
+            ],
+            [
+              51,
+              6
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 55574052
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 1,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 4,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 135,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 4,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 135,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "globals": [
+          7,
+          8
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 4,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 135,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "globals": [
+          8
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 6,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            54,
+            0
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          8
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 6,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 0,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 0,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            54,
+            0
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7,
+          8
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 8,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 60,
+                "enabled": 0,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 0,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            54,
+            0
+          ],
+          [
+            53,
+            0
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7,
+          8
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 10,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 105,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "global_resets_28",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "fresh"
+        ],
+        [
+          "frame",
+          170
+        ],
+        [
+          "global",
+          7,
+          1
+        ],
+        [
+          "global",
+          7,
+          1
+        ],
+        [
+          "global",
+          8,
+          1
+        ],
+        [
+          "global",
+          7,
+          0
+        ],
+        [
+          "action",
+          54,
+          0
+        ],
+        [
+          "global",
+          7,
+          1
+        ],
+        [
+          "action",
+          53,
+          0
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [],
+          "events": [
+            [
+              28,
+              7
+            ],
+            [
+              51,
+              6
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 55574052
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 1,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "globals": [],
+        "locals": [
+          7
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 4,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 135,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "globals": [],
+        "locals": [
+          7
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 4,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 135,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "globals": [],
+        "locals": [
+          7,
+          8
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 4,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 135,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "globals": [],
+        "locals": [
+          8
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 6,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            54,
+            0
+          ]
+        ],
+        "changed": 1,
+        "globals": [],
+        "locals": [
+          8
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 6,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 0,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 0,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            54,
+            0
+          ]
+        ],
+        "changed": 1,
+        "globals": [],
+        "locals": [
+          7,
+          8
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 8,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 60,
+                "enabled": 0,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 0,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            54,
+            0
+          ],
+          [
+            53,
+            0
+          ]
+        ],
+        "changed": 1,
+        "globals": [],
+        "locals": [
+          7,
+          8
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 10,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 105,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "local_resets_36",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "fresh"
+        ],
+        [
+          "frame",
+          170
+        ],
+        [
+          "local",
+          7,
+          1
+        ],
+        [
+          "local",
+          7,
+          1
+        ],
+        [
+          "local",
+          8,
+          1
+        ],
+        [
+          "local",
+          7,
+          0
+        ],
+        [
+          "action",
+          54,
+          0
+        ],
+        [
+          "local",
+          7,
+          1
+        ],
+        [
+          "action",
+          53,
+          0
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [],
+          "events": [
+            [
+              36,
+              7
+            ],
+            [
+              51,
+              6
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 55574052
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 1,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "globals": [],
+        "locals": [
+          7
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 4,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 135,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "globals": [],
+        "locals": [
+          7
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 4,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 135,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "globals": [],
+        "locals": [
+          7,
+          8
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 4,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 135,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "globals": [],
+        "locals": [
+          8
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 6,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            54,
+            0
+          ]
+        ],
+        "changed": 1,
+        "globals": [],
+        "locals": [
+          8
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 6,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 0,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 0,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            54,
+            0
+          ]
+        ],
+        "changed": 1,
+        "globals": [],
+        "locals": [
+          7,
+          8
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 8,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 60,
+                "enabled": 0,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 0,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            54,
+            0
+          ],
+          [
+            53,
+            0
+          ]
+        ],
+        "changed": 1,
+        "globals": [],
+        "locals": [
+          7,
+          8
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 10,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 105,
+                "enabled": 1,
+                "pending": 0,
+                "start": 170,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "local_resets_37",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "fresh"
+        ],
+        [
+          "frame",
+          170
+        ],
+        [
+          "local",
+          7,
+          1
+        ],
+        [
+          "local",
+          7,
+          1
+        ],
+        [
+          "local",
+          8,
+          1
+        ],
+        [
+          "local",
+          7,
+          0
+        ],
+        [
+          "action",
+          54,
+          0
+        ],
+        [
+          "local",
+          7,
+          1
+        ],
+        [
+          "action",
+          53,
+          0
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [],
+          "events": [
+            [
+              37,
+              7
+            ],
+            [
+              51,
+              6
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 55574052
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 0,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 0,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 0,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            22,
+            0
+          ]
+        ],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 0,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 0,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            22,
+            0
+          ]
+        ],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 0,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 0,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            22,
+            0
+          ],
+          [
+            53,
+            0
+          ]
+        ],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            22,
+            0
+          ],
+          [
+            53,
+            0
+          ],
+          [
+            22,
+            0
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "force_enabled_0",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "fresh"
+        ],
+        [
+          "action",
+          22,
+          0
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ],
+        [
+          "action",
+          53,
+          0
+        ],
+        [
+          "action",
+          22,
+          0
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              47,
+              999
+            ]
+          ],
+          "flags": [
+            1,
+            1,
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            22,
+            0
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            22,
+            0
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            22,
+            0
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            53,
+            0
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            22,
+            0
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            53,
+            0
+          ],
+          [
+            22,
+            0
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "force_enabled_1",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "fresh"
+        ],
+        [
+          "action",
+          22,
+          0
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ],
+        [
+          "action",
+          53,
+          0
+        ],
+        [
+          "action",
+          22,
+          0
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              47,
+              999
+            ]
+          ],
+          "flags": [
+            1,
+            1,
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 1,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            53,
+            0
+          ]
+        ],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            53,
+            0
+          ],
+          [
+            22,
+            0
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "difficulty": -1,
+      "name": "difficulty_-1",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "action",
+          53,
+          0
+        ],
+        [
+          "action",
+          22,
+          0
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              51,
+              7
+            ]
+          ],
+          "flags": [
+            1,
+            0,
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    "next_random": 2225548056
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 1,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            53,
+            0
+          ]
+        ],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            53,
+            0
+          ],
+          [
+            22,
+            0
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "difficulty": 0,
+      "name": "difficulty_0",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "action",
+          53,
+          0
+        ],
+        [
+          "action",
+          22,
+          0
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              51,
+              7
+            ]
+          ],
+          "flags": [
+            1,
+            0,
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    "next_random": 2225548056
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 1,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 0,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            53,
+            0
+          ]
+        ],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 1,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 0,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            53,
+            0
+          ],
+          [
+            22,
+            0
+          ]
+        ],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 1,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 0,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "difficulty": 1,
+      "name": "difficulty_1",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "action",
+          53,
+          0
+        ],
+        [
+          "action",
+          22,
+          0
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              51,
+              7
+            ]
+          ],
+          "flags": [
+            1,
+            0,
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    "next_random": 2287577493
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 1,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            53,
+            0
+          ]
+        ],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            53,
+            0
+          ],
+          [
+            22,
+            0
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "difficulty": 2,
+      "name": "difficulty_2",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "action",
+          53,
+          0
+        ],
+        [
+          "action",
+          22,
+          0
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              51,
+              7
+            ]
+          ],
+          "flags": [
+            1,
+            0,
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    "next_random": 2225548056
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 1,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            53,
+            0
+          ]
+        ],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            53,
+            0
+          ],
+          [
+            22,
+            0
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "difficulty": 3,
+      "name": "difficulty_3",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "action",
+          53,
+          0
+        ],
+        [
+          "action",
+          22,
+          0
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              51,
+              7
+            ]
+          ],
+          "flags": [
+            1,
+            0,
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    "next_random": 2225548056
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "completion_mode_0",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "dispatch",
+          0,
+          2
+        ],
+        [
+          "frame",
+          150
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ]
+      ],
+      "repeat": 0,
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              2,
+              0
+            ],
+            [
+              47,
+              10
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 1,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 1,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 1,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 1,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "completion_mode_2",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "dispatch",
+          0,
+          2
+        ],
+        [
+          "frame",
+          150
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ]
+      ],
+      "repeat": 2,
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              2,
+              0
+            ],
+            [
+              47,
+              10
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": -15,
+                "enabled": 1,
+                "pending": 0,
+                "start": 2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": -15,
+                "enabled": 1,
+                "pending": 0,
+                "start": 2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": -15,
+                "enabled": 1,
+                "pending": 0,
+                "start": 2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": -15,
+                "enabled": 1,
+                "pending": 0,
+                "start": -2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "frame": 2147483632,
+      "name": "timer_boundary_-1",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ],
+        [
+          "frame",
+          2147483664
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              13,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": -2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "frame": 2147483632,
+      "name": "timer_boundary_0",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ],
+        [
+          "frame",
+          2147483664
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              13,
+              0
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": -2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "frame": 2147483632,
+      "name": "timer_boundary_2",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ],
+        [
+          "frame",
+          2147483664
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              13,
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": -2147483641,
+                "enabled": 1,
+                "pending": 0,
+                "start": 2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": -2147483641,
+                "enabled": 1,
+                "pending": 0,
+                "start": 2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": -2147483641,
+                "enabled": 1,
+                "pending": 0,
+                "start": 2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": -2147483641,
+                "enabled": 1,
+                "pending": 0,
+                "start": -2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "frame": 2147483632,
+      "name": "timer_boundary_143165577",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ],
+        [
+          "frame",
+          2147483664
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              13,
+              143165577
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 2147483633,
+                "enabled": 1,
+                "pending": 0,
+                "start": 2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 2147483633,
+                "enabled": 1,
+                "pending": 0,
+                "start": 2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 2147483633,
+                "enabled": 1,
+                "pending": 0,
+                "start": 2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 2147483633,
+                "enabled": 1,
+                "pending": 0,
+                "start": 2147483632,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "frame": 2147483632,
+      "name": "timer_boundary_2147483647",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ],
+        [
+          "frame",
+          2147483664
+        ],
+        [
+          "dispatch",
+          0,
+          13
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              13,
+              2147483647
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "shared_timer_last_event",
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              51,
+              7
+            ],
+            [
+              13,
+              4
+            ],
+            [
+              51,
+              3
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2225548056
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 1,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            22,
+            0
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "force_predicate_resets_timer",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            0,
+            0
+          ],
+          1
+        ],
+        [
+          "action",
+          22,
+          0
+        ]
+      ],
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              51,
+              7
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2225548056
+  }
+]

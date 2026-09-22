@@ -148,6 +148,93 @@ fn spawn_type(sim: &mut Simulation, type_id: &str) -> u64 {
 }
 
 #[test]
+fn parsed_variable_actions_match_native_reader_dispatch_and_restore() {
+    #[derive(serde::Deserialize)]
+    struct NativeRow {
+        raw: String,
+        kind: i32,
+        value: i32,
+        waypoint: i32,
+        initial_globals: BTreeSet<u32>,
+        initial_locals: BTreeSet<u32>,
+        globals: BTreeSet<u32>,
+        locals: BTreeSet<u32>,
+    }
+    let rows: Vec<NativeRow> = serde_json::from_str(include_str!(
+        "../../tools/spatial_oracle/trigger_action_values.json"
+    ))
+    .unwrap();
+    for row in rows {
+        let ini = crate::rules::ini_parser::IniFile::from_str(&format!(
+            "[Triggers]\nVARIABLE=Neutral,<none>,Variable,0,1,1,1,0\n\
+             [Events]\nVARIABLE=1,47,0,0\n[Actions]\nVARIABLE=1,{}\n",
+            row.raw
+        ));
+        let triggers = crate::map::triggers::parse_triggers(&ini);
+        let events = crate::map::events::parse_events(&ini);
+        let actions = crate::map::actions::parse_actions(&ini);
+        let entry = &actions["VARIABLE"].entries[0];
+        assert_eq!(entry.kind, row.kind, "{}", row.raw);
+        assert_eq!(entry.literal_value(), Some(row.value), "{}", row.raw);
+        assert_eq!(
+            entry.waypoint_index.map_or(-1, |value| value as i32),
+            row.waypoint,
+            "{}",
+            row.raw
+        );
+        let graph = build_trigger_graph(
+            &HashMap::new(),
+            &HashMap::new(),
+            &triggers,
+            &events,
+            &actions,
+        );
+        let mut original = Simulation::new();
+        original.trigger_runtime = TriggerRuntime::from_map(&triggers, &HashMap::new());
+        original.trigger_runtime.globals_set = row.initial_globals;
+        original.trigger_runtime.locals_set = row.initial_locals;
+        let bytes = GameSnapshot::save(&original, 0, 0, "trigger_values", 0);
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        for sim in [&mut original, &mut restored] {
+            let before_rng = sim.rng_state();
+            let frame = sim
+                .advance_master_frame(
+                    &[],
+                    None,
+                    &BTreeMap::new(),
+                    None,
+                    None,
+                    67,
+                    TickLane::Ordinary,
+                    Some(TriggerInputs {
+                        graph: &graph,
+                        triggers: &triggers,
+                        events: &events,
+                        actions: &actions,
+                        waypoints: &HashMap::new(),
+                        rules: None,
+                    }),
+                )
+                .unwrap();
+            assert!(frame.frame_committed);
+            assert_eq!(sim.trigger_runtime.globals_set, row.globals, "{}", row.raw);
+            assert_eq!(sim.trigger_runtime.locals_set, row.locals, "{}", row.raw);
+            assert_eq!(
+                sim.rng_state(),
+                before_rng,
+                "empty native Tag registry draws no RNG"
+            );
+        }
+        assert_eq!(
+            original.trigger_runtime, restored.trigger_runtime,
+            "{}",
+            row.raw
+        );
+    }
+}
+
+#[test]
 fn parsed_map_trigger_flags_gate_production_frames_and_survive_restore() {
     // Use actual map text, not hand-built MapTrigger booleans. The enabled
     // and difficulty expectations are established by trigger_type_flags.json.
@@ -765,7 +852,7 @@ fn master_frame_save_load_continues_trigger_projectile_and_delete_state() {
             fields: vec![],
             entries: vec![ActionEntry {
                 kind: 28,
-                params: vec!["13".to_string()],
+                params: vec!["0".to_string(), "13".to_string()],
                 waypoint_index: Some(0),
             }],
         },
@@ -1001,8 +1088,8 @@ fn global_actions_can_enable_and_force_followup_trigger() {
                 fields: vec![
                     "D".to_string(),
                     "28".to_string(),
-                    "7".to_string(),
                     "0".to_string(),
+                    "7".to_string(),
                     "0".to_string(),
                     "0".to_string(),
                     "0".to_string(),
@@ -1029,8 +1116,8 @@ fn global_actions_can_enable_and_force_followup_trigger() {
                     ActionEntry {
                         kind: 28,
                         params: vec![
-                            "7".to_string(),
                             "0".to_string(),
+                            "7".to_string(),
                             "0".to_string(),
                             "0".to_string(),
                             "0".to_string(),
@@ -1186,8 +1273,8 @@ fn linked_trigger_field_queues_followup_trigger() {
                 fields: vec![
                     "1".to_string(),
                     "28".to_string(),
-                    "5".to_string(),
                     "0".to_string(),
+                    "5".to_string(),
                     "0".to_string(),
                     "0".to_string(),
                     "0".to_string(),
@@ -1197,8 +1284,8 @@ fn linked_trigger_field_queues_followup_trigger() {
                 entries: vec![ActionEntry {
                     kind: 28,
                     params: vec![
-                        "5".to_string(),
                         "0".to_string(),
+                        "5".to_string(),
                         "0".to_string(),
                         "0".to_string(),
                         "0".to_string(),
@@ -1578,8 +1665,8 @@ fn local_variables_seed_and_gate_followup_triggers() {
                 fields: vec![
                     "1".to_string(),
                     "56".to_string(),
-                    "2".to_string(),
                     "0".to_string(),
+                    "2".to_string(),
                     "0".to_string(),
                     "0".to_string(),
                     "0".to_string(),
@@ -1589,8 +1676,8 @@ fn local_variables_seed_and_gate_followup_triggers() {
                 entries: vec![ActionEntry {
                     kind: 56,
                     params: vec![
-                        "2".to_string(),
                         "0".to_string(),
+                        "2".to_string(),
                         "0".to_string(),
                         "0".to_string(),
                         "0".to_string(),

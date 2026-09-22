@@ -303,14 +303,29 @@ impl TriggerRuntime {
                     enqueue_trigger(queue, queued, target);
                 }
             }
-            ACTION_SET_GLOBAL => {
-                if let Some(index) = parse_u32_param(&action.params, 0) {
-                    self.globals_set.insert(index);
-                }
-            }
-            ACTION_CLEAR_GLOBAL => {
-                if let Some(index) = parse_u32_param(&action.params, 0) {
-                    self.globals_set.remove(&index);
+            ACTION_SET_GLOBAL | ACTION_CLEAR_GLOBAL | ACTION_SET_LOCAL | ACTION_CLEAR_LOCAL => {
+                // gamemd 6DD8B0 cases28/29/56/57 read materialized +90,
+                // then Scenario setters689670/689910 reject out-of-range
+                // indices. ParamType and the four auxiliary dwords are not
+                // variable indices. Live timer-reset fanout is still pending
+                // the Tag/Trigger instance migration.
+                let global = matches!(action.kind, ACTION_SET_GLOBAL | ACTION_CLEAR_GLOBAL);
+                let limit = if global { 50 } else { 100 };
+                let Some(index) = action
+                    .literal_value()
+                    .filter(|index| (0..limit).contains(index))
+                else {
+                    return;
+                };
+                let values = if global {
+                    &mut self.globals_set
+                } else {
+                    &mut self.locals_set
+                };
+                if matches!(action.kind, ACTION_SET_GLOBAL | ACTION_SET_LOCAL) {
+                    values.insert(index as u32);
+                } else {
+                    values.remove(&(index as u32));
                 }
             }
             ACTION_CHANGE_VISIBLE_MAP_AREA => {
@@ -335,16 +350,6 @@ impl TriggerRuntime {
             ACTION_DISABLE_TRIGGER => {
                 if let Some(target) = parse_trigger_id_param(&action.params, 0) {
                     self.disabled_triggers.insert(target);
-                }
-            }
-            ACTION_SET_LOCAL => {
-                if let Some(index) = parse_u32_param(&action.params, 0) {
-                    self.locals_set.insert(index);
-                }
-            }
-            ACTION_CLEAR_LOCAL => {
-                if let Some(index) = parse_u32_param(&action.params, 0) {
-                    self.locals_set.remove(&index);
                 }
             }
             ACTION_CENTER_CAMERA => {

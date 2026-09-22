@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Tag find/create, linked Trigger construction and timer/RNG, repeated dispatch, global/local reset fanout, enable/disable/force, cell attachment and detach/enqueue. Excludes map definition loading, production scenario dispatch, Team/Object lifecycle and deferred destruction.",
+  "assumptions": [
+    "Resolved definitions, one registered House and initialized Scenario RNG.",
+    "Registries have spare capacity; map cells exist; no physical Objects or Teams are registered."
+  ],
+  "substitutions": [
+    "Operator-new7C8E17 supplies bounded poisoned arena storage. Fresh Tag storage is supplied directly to its original constructor. No gameplay calls or instructions are replaced."
+  ],
+  "entry_points": {
+    "find_or_create": "0x006E52A0",
+    "tag_constructor": "0x006E4DE0",
+    "process_event": "0x006E53A0",
+    "trigger_predicate": "0x007264C0",
+    "spring": "0x007265C0",
+    "reset": "0x00726400",
+    "execute_action": "0x006DD8B0"
+  },
+  "payload_sha256": "4a929c6579c0ac52cc786bbed4e6df5f77a7fe5ebc932023af91276570bf7aba"
+}

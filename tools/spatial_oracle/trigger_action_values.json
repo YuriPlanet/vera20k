@@ -1,0 +1,1511 @@
+[
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0,0,41,42,43,44,Z",
+    "returned": 1,
+    "value": 0,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      7
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0,7,41,42,43,44,Z",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      49
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0,49,41,42,43,44,Z",
+    "returned": 1,
+    "value": 49,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 0,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0,50,41,42,43,44,Z",
+    "returned": 1,
+    "value": 50,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 0,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0,99,41,42,43,44,Z",
+    "returned": 1,
+    "value": 99,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 0,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0,100,41,42,43,44,Z",
+    "returned": 1,
+    "value": 100,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 0,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0,-1,41,42,43,44,Z",
+    "returned": 1,
+    "value": -1,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      7
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0,4294967303,41,42,43,44,Z",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      7
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0,  +7tail,41,42,43,44,Z",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0,junk,41,42,43,44,Z",
+    "returned": 1,
+    "value": 0,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      7,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 29,
+    "locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "raw": "29,0,0,41,42,43,44,Z",
+    "returned": 1,
+    "value": 0,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 29,
+    "locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "raw": "29,0,7,41,42,43,44,Z",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0,
+      7
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 29,
+    "locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "raw": "29,0,49,41,42,43,44,Z",
+    "returned": 1,
+    "value": 49,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 0,
+    "globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 29,
+    "locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "raw": "29,0,50,41,42,43,44,Z",
+    "returned": 1,
+    "value": 50,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 0,
+    "globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 29,
+    "locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "raw": "29,0,99,41,42,43,44,Z",
+    "returned": 1,
+    "value": 99,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 0,
+    "globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 29,
+    "locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "raw": "29,0,100,41,42,43,44,Z",
+    "returned": 1,
+    "value": 100,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 0,
+    "globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 29,
+    "locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "raw": "29,0,-1,41,42,43,44,Z",
+    "returned": 1,
+    "value": -1,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 29,
+    "locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "raw": "29,0,4294967303,41,42,43,44,Z",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 29,
+    "locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "raw": "29,0,  +7tail,41,42,43,44,Z",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      7,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 29,
+    "locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "raw": "29,0,junk,41,42,43,44,Z",
+    "returned": 1,
+    "value": 0,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 56,
+    "locals": [
+      0
+    ],
+    "raw": "56,0,0,41,42,43,44,Z",
+    "returned": 1,
+    "value": 0,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 56,
+    "locals": [
+      7
+    ],
+    "raw": "56,0,7,41,42,43,44,Z",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 56,
+    "locals": [
+      49
+    ],
+    "raw": "56,0,49,41,42,43,44,Z",
+    "returned": 1,
+    "value": 49,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 56,
+    "locals": [
+      50
+    ],
+    "raw": "56,0,50,41,42,43,44,Z",
+    "returned": 1,
+    "value": 50,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 56,
+    "locals": [
+      99
+    ],
+    "raw": "56,0,99,41,42,43,44,Z",
+    "returned": 1,
+    "value": 99,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 0,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 56,
+    "locals": [],
+    "raw": "56,0,100,41,42,43,44,Z",
+    "returned": 1,
+    "value": 100,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 0,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 56,
+    "locals": [],
+    "raw": "56,0,-1,41,42,43,44,Z",
+    "returned": 1,
+    "value": -1,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 56,
+    "locals": [
+      7
+    ],
+    "raw": "56,0,4294967303,41,42,43,44,Z",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 56,
+    "locals": [
+      7
+    ],
+    "raw": "56,0,  +7tail,41,42,43,44,Z",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 56,
+    "locals": [
+      0
+    ],
+    "raw": "56,0,junk,41,42,43,44,Z",
+    "returned": 1,
+    "value": 0,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 57,
+    "locals": [
+      7,
+      49,
+      99
+    ],
+    "raw": "57,0,0,41,42,43,44,Z",
+    "returned": 1,
+    "value": 0,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 57,
+    "locals": [
+      0,
+      49,
+      99
+    ],
+    "raw": "57,0,7,41,42,43,44,Z",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 57,
+    "locals": [
+      0,
+      7,
+      99
+    ],
+    "raw": "57,0,49,41,42,43,44,Z",
+    "returned": 1,
+    "value": 49,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 0,
+    "globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 57,
+    "locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "raw": "57,0,50,41,42,43,44,Z",
+    "returned": 1,
+    "value": 50,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 57,
+    "locals": [
+      0,
+      7,
+      49
+    ],
+    "raw": "57,0,99,41,42,43,44,Z",
+    "returned": 1,
+    "value": 99,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 0,
+    "globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 57,
+    "locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "raw": "57,0,100,41,42,43,44,Z",
+    "returned": 1,
+    "value": 100,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 0,
+    "globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 57,
+    "locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "raw": "57,0,-1,41,42,43,44,Z",
+    "returned": 1,
+    "value": -1,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 57,
+    "locals": [
+      0,
+      49,
+      99
+    ],
+    "raw": "57,0,4294967303,41,42,43,44,Z",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 57,
+    "locals": [
+      0,
+      49,
+      99
+    ],
+    "raw": "57,0,  +7tail,41,42,43,44,Z",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_globals": [
+      0,
+      7,
+      49
+    ],
+    "initial_locals": [
+      0,
+      7,
+      49,
+      99
+    ],
+    "kind": 57,
+    "locals": [
+      7,
+      49,
+      99
+    ],
+    "raw": "57,0,junk,41,42,43,44,Z",
+    "returned": 1,
+    "value": 0,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      7
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,11,7,41,42,43,44,8",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 0
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      7
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,9,text,41,42,43,44,7",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 0
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 0,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,9,text,41,42,43,44,-1",
+    "returned": 1,
+    "value": -1,
+    "waypoint": 0
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      7
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,5,-1,41,42,43,44,7",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 0
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,5,-1,41,42,43,44,",
+    "returned": 1,
+    "value": 0,
+    "waypoint": 0
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,9,text,41,42,43,44,",
+    "returned": 1,
+    "value": 0,
+    "waypoint": 0
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,12,7,41,42,43,44,8",
+    "returned": 1,
+    "value": 0,
+    "waypoint": -1
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,-1,7,41,42,43,44,8",
+    "returned": 1,
+    "value": 0,
+    "waypoint": -1
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,1,-1,41,42,43,44,Z",
+    "returned": 1,
+    "value": 0,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,2,-1,41,42,43,44,Z",
+    "returned": 1,
+    "value": 0,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,3,-1,41,42,43,44,Z",
+    "returned": 1,
+    "value": 0,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,4,text,41,42,43,44,Z",
+    "returned": 1,
+    "value": 0,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,10,text,41,42,43,44,7",
+    "returned": 1,
+    "value": 0,
+    "waypoint": -1
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      7
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0,7,41,42,43,44",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 0
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      7
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0,7,41,42,43,44,",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 0
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      7
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,,0,,7,,41,42,43,44,Z",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0, ,41,42,43,44,Z",
+    "returned": 1,
+    "value": 0,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 0,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0,\t-2,41,42,43,44,Z",
+    "returned": 1,
+    "value": -2,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      7
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0,\u000b7,41,42,43,44,Z",
+    "returned": 1,
+    "value": 7,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 0,
+    "globals": [],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0,2147483648,41,42,43,44,Z",
+    "returned": 1,
+    "value": -2147483648,
+    "waypoint": 25
+  },
+  {
+    "args": [
+      41,
+      42,
+      43,
+      44
+    ],
+    "changed": 1,
+    "globals": [
+      0
+    ],
+    "initial_globals": [],
+    "initial_locals": [],
+    "kind": 28,
+    "locals": [],
+    "raw": "28,0,-9223372036854775808,41,42,43,44,Z",
+    "returned": 1,
+    "value": 0,
+    "waypoint": 25
+  }
+]
