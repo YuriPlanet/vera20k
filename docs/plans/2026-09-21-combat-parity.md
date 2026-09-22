@@ -237,13 +237,17 @@ empty-selection click admission, save/restore and hashing (snapshot189). The
 preceding paid Fly motion uses full Primary facing and live type speed;
 `16b609e1` connects pure takeoff callback and Mark/Display. The native comparisons and all9,148 lib tests pass; see the flag section
 below for validation and exact coverage limits.
-Current evidence increment adds78 original Fly map-edge cases, correcting three
+Published evidence `31cf7819` adds78 original Fly map-edge cases, correcting three
 earlier inferences: +E0B is FlyBy; scatter runs at most once;6EA089 SETS Team+7F.
-It changes no Rust behavior. Production Team creation is still absent (both
-creation helpers are cfg(test)); adding an unproduced activation flag would not
-connect this prerequisite. Next trace TeamTypeCreate6F09C0/reinforcement65DD30
-through membership, activation and action3 in the existing TeamScriptVm owner,
-then replace Fly's rectangular coordinate clamp using the saved native corpus.
+Current increment adds39 original Team creation cases, including complete
+Team/Script/Tag/Trigger constructors and trigger-action4 dispatch. It changes no
+Rust behavior. Production Team creation is still absent (both creation helpers
+are cfg(test)); adding an unproduced activation flag would not connect this
+prerequisite. Creation requires per-instance Tag/Trigger state and constructor
+timer RNG, which current TriggerRuntime's definition-wide latches cannot express.
+Next migrate those instances through the existing TriggerRuntime owner, connect
+trigger4/TeamType creation to TeamScriptVm with the saved construction corpus,
+then membership, activation and action3. Preserve the native Fly map-edge target.
 No critic/PR yet. The dependency map is retired and must not be used or refreshed.
 Snapshot188 retained Fly destination XYZ in active and stashed runtime. `f241211c` preserves
 the native FindFireLocation corpus, deterministic geometry comparisons and removal
@@ -1292,6 +1296,64 @@ Corrected Ghidra's false `TeamTypeClass__AI` label at6F1090 to
 the body calls AbstractType.ReadINI410A60 and INI readers, not live Team AI.
 Saved/read back that label/plate and focused comments at41CD6E,4CDBE1,4CDC37,
 4CDCFB,566332,6EA089 and6EC300, preserving existing annotations.
+
+### Team creation prerequisite: current acceptance and evidence
+
+Acceptance before the production port: trigger action4 resolves its materialized
+TeamType reference, brackets creation with the ScenarioInit-depth increment,
+and constructs an empty native-equivalent Team through TeamScriptVm. Preserve
+owner precedence, Max admission, initial waypoint Cell target, registration order,
+base-defense/type counts, initial flags/timers/cursor, per-instance Tag/Trigger
+construction and its Scenario RNG effects. Save/restore must retain each instance
+independently. Do not reuse the test helper's pre-admitted members/cursor0 or add
+a second trigger-state authority. Recruitment/activation must precede executing
+the team's script and remain required after the construction rung.
+
+`team_creation` runs39 original full creation paths:22 construct,17 refuse/no-op.
+Only operator-new storage is supplied (poisoned arena); all gameplay constructors,
+owner/limit branches, registry stores, waypoint and timer/RNG callees execute.
+Its `--check` passes, with binary identity and exclusions in the sidecar. No Rust
+source/schema/loader changed, so no Cargo rerun is warranted for this evidence.
+
+- Action4 table6DFDEC+(4-1)*4 selects6DEB57. It increments A8E7AC and calls
+  6F09C0 with NULL House, then restores depth and returns true even on refusal.
+  At normal depth0 it bypasses Max. The triggering House is not the team owner.
+- Create6F09C0 chooses explicit House, then Type+C4 House, then special slot+C8.
+  **+C8 is not an ordinary country index**:510F60 accepts0x117B..0x1182;
+  510ED0->68C030 maps it through Scenario+1180 to a registered House index.
+  Without the depth bypass, campaign checks Type+DC; other modes count live
+  teams matching both House and Type via5095D0. No RNG occurs on these gates.
+- Constructor6E8A90 zeros membership and six TaskForce-entry counts;7A/7D/80
+  start1, other74..84 bytes start0. Timers58/64 start at the current frame with
+  zero durations60/6C. Native Script6913C0 starts cursor=-1. Waypoint helper
+  6F18A0 supplies zero for index-1; ctor's empty-cell comparison is zero/zero,
+  established by original static initializers6F0610/6E8A20. Nonzero waypoint
+  becomes a Cell target+34, which the VM's entity-only target cannot represent.
+- Type+F6 is existing IsBaseDefense (key81A7EC, store6F13CE): ctor increments
+  House+566C when true, and Type+DC separately. Definition counts are not live
+  Team counts. Membership6EA500 increments the admitted TaskForce **entry slot**,
+  not an aggregate by type; retain this distinction for duplicate entry types.
+- Type.Tag+D0 creates a new Tag6E4DE0 before Script. Each linked TriggerType is
+  constructed in definition-chain order, then prepended to the runtime list:
+  runtime traversal reverses construction/RNG order. Trigger725FA0 calls726400
+  BEFORE its difficulty/enabled gate. Event13 starts duration15*argument;
+  event51 uses15*(trunc(argument/2)+RandomRanged(0,argument)), wrapping i32.
+  The disabled random-timer sample still draws. Seed31's two-trigger case uses
+  four recurrence draws including rejections;65C7E0 inlines65C837 rather than
+  calling65C780. Do not count API calls instead of recurrence updates.
+
+Current TriggerRuntime is owned by Simulation but constructed in app/loading/init
+from definitions alone. Its disabled/fired latches are keyed by TriggerType ID;
+it has no live Tag/Trigger instance, timer or instance event-completion owner.
+Migrate that existing owner and loader/restore/advance consumers before connecting
+Team tags; do not create a competing Team-local trigger implementation. Native
+Tag.ProcessTriggerEvent6E53A0 and Trigger.Spring7265C0 are the next lifecycle
+readers to trace. Spring checks instance+44/+30, walks Type+B0 actions, resolves
+the Type's House and ORs successful action results. Ghidra's false voice-only
+label at7265C0 is corrected to TriggerClass__Spring. Named6F09C0
+TeamTypeClass__Create_Team and saved/read back focused constructor/action/timer
+annotations. Native creation evidence excludes loading, Spring, membership,
+activation, recruitment and deletion; it does not complete this dependency.
 
 Map-edge acceptance for the eventual production port: retained state and raw
 versus queued mission gates select the correct branch; reuse map Size/LocalSize,

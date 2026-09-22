@@ -1,0 +1,2696 @@
+[
+  {
+    "allocations": [
+      160,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "name": "default"
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 1,
+      "script": 1,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": false,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": true,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [
+      160,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "explicit_owner": 1,
+      "name": "explicit_wins"
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 1,
+      "script": 1,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 1,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": false,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": true,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [],
+    "calls": [
+      "create",
+      "is_multiplayer_slot"
+    ],
+    "created": false,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "default_owner": -1,
+      "name": "no_owner"
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 0,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": false,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 0
+  },
+  {
+    "allocations": [
+      160,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "waypoint",
+      "team_waypoint",
+      "waypoint",
+      "cell_lookup",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "name": "waypoint",
+      "waypoint_index": 4
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 1,
+      "script": 1,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": false,
+      "target_cell": [
+        64,
+        64
+      ],
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": true,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [
+      160,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "waypoint",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "name": "empty_waypoint",
+      "waypoint": [
+        0,
+        0
+      ],
+      "waypoint_index": 4
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 1,
+      "script": 1,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": false,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": true,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [
+      160,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      8,
+      8
+    ],
+    "input": {
+      "base_defense": true,
+      "name": "house_counter"
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 1,
+      "script": 1,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": false,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": true,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [
+      160,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "frame": -1,
+      "name": "negative_frame"
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 1,
+      "script": 1,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": -1,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": false,
+      "target_cell": null,
+      "timers": [
+        -1,
+        0,
+        -1,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": true,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [
+      160,
+      56,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "tag_ctor",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "name": "empty_tag",
+      "tag": true
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 2,
+      "script": 1,
+      "tag": 1,
+      "tag_trigger_base": 1,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": true,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": true,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [
+      160,
+      56,
+      72,
+      72,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "tag_ctor",
+      "trigger_ctor",
+      "trigger_reset",
+      "trigger_ctor",
+      "trigger_reset",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "name": "tag_two_triggers",
+      "triggers": [
+        {},
+        {}
+      ]
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 4,
+      "script": 1,
+      "tag": 1,
+      "tag_trigger_base": 3,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 2
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": true,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": [
+        {
+          "enabled": 1,
+          "events_completed": 0,
+          "timer_duration": 0,
+          "timer_start": 123,
+          "type_index": 1
+        },
+        {
+          "enabled": 1,
+          "events_completed": 0,
+          "timer_duration": 0,
+          "timer_start": 123,
+          "type_index": 0
+        }
+      ]
+    },
+    "return_value": true,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [
+      160,
+      56,
+      72,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "tag_ctor",
+      "trigger_ctor",
+      "trigger_reset",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "name": "tag_timer",
+      "triggers": [
+        {
+          "event": [
+            13,
+            7
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 3,
+      "script": 1,
+      "tag": 1,
+      "tag_trigger_base": 2,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 1
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": true,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": [
+        {
+          "enabled": 1,
+          "events_completed": 0,
+          "timer_duration": 105,
+          "timer_start": 123,
+          "type_index": 0
+        }
+      ]
+    },
+    "return_value": true,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [
+      160,
+      56,
+      72,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "tag_ctor",
+      "trigger_ctor",
+      "trigger_reset",
+      "ranged_rng",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "name": "tag_random_timer",
+      "triggers": [
+        {
+          "event": [
+            51,
+            7
+          ]
+        }
+      ]
+    },
+    "next_random": 2287577493,
+    "registry_counts": {
+      "abstract": 3,
+      "script": 1,
+      "tag": 1,
+      "tag_trigger_base": 2,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 1
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": true,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": [
+        {
+          "enabled": 1,
+          "events_completed": 0,
+          "timer_duration": 90,
+          "timer_start": 123,
+          "type_index": 0
+        }
+      ]
+    },
+    "return_value": true,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "type_count": 1
+  },
+  {
+    "allocations": [
+      160,
+      56,
+      72,
+      72,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "tag_ctor",
+      "trigger_ctor",
+      "trigger_reset",
+      "ranged_rng",
+      "trigger_ctor",
+      "trigger_reset",
+      "ranged_rng",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "name": "tag_reverse_rng_order",
+      "triggers": [
+        {
+          "event": [
+            51,
+            7
+          ]
+        },
+        {
+          "event": [
+            51,
+            19
+          ]
+        }
+      ]
+    },
+    "next_random": 107402731,
+    "registry_counts": {
+      "abstract": 4,
+      "script": 1,
+      "tag": 1,
+      "tag_trigger_base": 3,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 2
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": true,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": [
+        {
+          "enabled": 1,
+          "events_completed": 0,
+          "timer_duration": 225,
+          "timer_start": 123,
+          "type_index": 1
+        },
+        {
+          "enabled": 1,
+          "events_completed": 0,
+          "timer_duration": 90,
+          "timer_start": 123,
+          "type_index": 0
+        }
+      ]
+    },
+    "return_value": true,
+    "rng_changed": true,
+    "rng_draws": 4,
+    "type_count": 1
+  },
+  {
+    "allocations": [
+      160,
+      56,
+      72,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "tag_ctor",
+      "trigger_ctor",
+      "trigger_reset",
+      "ranged_rng",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "name": "disabled_random_timer",
+      "triggers": [
+        {
+          "difficulty": [
+            true,
+            false,
+            true,
+            true
+          ],
+          "event": [
+            51,
+            7
+          ]
+        }
+      ]
+    },
+    "next_random": 2287577493,
+    "registry_counts": {
+      "abstract": 3,
+      "script": 1,
+      "tag": 1,
+      "tag_trigger_base": 2,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 1
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": true,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": [
+        {
+          "enabled": 0,
+          "events_completed": 0,
+          "timer_duration": 90,
+          "timer_start": 123,
+          "type_index": 0
+        }
+      ]
+    },
+    "return_value": true,
+    "rng_changed": true,
+    "rng_draws": 1,
+    "type_count": 1
+  },
+  {
+    "allocations": [],
+    "calls": [
+      "create",
+      "is_multiplayer_slot"
+    ],
+    "created": false,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "default_owner": -1,
+      "multiplayer_slot": -1,
+      "name": "slot_-1"
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 0,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": false,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 0
+  },
+  {
+    "allocations": [],
+    "calls": [
+      "create",
+      "is_multiplayer_slot"
+    ],
+    "created": false,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "default_owner": -1,
+      "multiplayer_slot": 0,
+      "name": "slot_0"
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 0,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": false,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 0
+  },
+  {
+    "allocations": [],
+    "calls": [
+      "create",
+      "is_multiplayer_slot"
+    ],
+    "created": false,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "default_owner": -1,
+      "multiplayer_slot": 4474,
+      "name": "slot_4474"
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 0,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": false,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 0
+  },
+  {
+    "allocations": [
+      160,
+      48
+    ],
+    "calls": [
+      "create",
+      "is_multiplayer_slot",
+      "resolve_multiplayer_slot",
+      "team_ctor",
+      "team_waypoint",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "default_owner": -1,
+      "multiplayer_slot": 4475,
+      "name": "slot_4475"
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 1,
+      "script": 1,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 1,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": false,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": true,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [
+      160,
+      48
+    ],
+    "calls": [
+      "create",
+      "is_multiplayer_slot",
+      "resolve_multiplayer_slot",
+      "team_ctor",
+      "team_waypoint",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "default_owner": -1,
+      "multiplayer_slot": 4476,
+      "name": "slot_4476"
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 1,
+      "script": 1,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": false,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": true,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [],
+    "calls": [
+      "create",
+      "is_multiplayer_slot",
+      "resolve_multiplayer_slot"
+    ],
+    "created": false,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "default_owner": -1,
+      "multiplayer_slot": 4477,
+      "name": "slot_4477"
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 0,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": false,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 0
+  },
+  {
+    "allocations": [],
+    "calls": [
+      "create",
+      "is_multiplayer_slot",
+      "resolve_multiplayer_slot"
+    ],
+    "created": false,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "default_owner": -1,
+      "multiplayer_slot": 4482,
+      "name": "slot_4482"
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 0,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": false,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 0
+  },
+  {
+    "allocations": [],
+    "calls": [
+      "create",
+      "is_multiplayer_slot"
+    ],
+    "created": false,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "default_owner": -1,
+      "multiplayer_slot": 4483,
+      "name": "slot_4483"
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 0,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": false,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 0
+  },
+  {
+    "allocations": [],
+    "calls": [
+      "create"
+    ],
+    "created": false,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "existing": [
+        [
+          1,
+          true
+        ],
+        [
+          0,
+          false
+        ]
+      ],
+      "game_mode": 0,
+      "max": 0,
+      "name": "limit_0_0_0",
+      "type_count": 1
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 2,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": false,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [],
+    "calls": [
+      "create"
+    ],
+    "created": false,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "existing": [
+        [
+          1,
+          true
+        ],
+        [
+          0,
+          false
+        ]
+      ],
+      "game_mode": 0,
+      "max": 1,
+      "name": "limit_0_0_1",
+      "type_count": 1
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 2,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": false,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [],
+    "calls": [
+      "create"
+    ],
+    "created": false,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "existing": [
+        [
+          0,
+          true
+        ],
+        [
+          1,
+          true
+        ],
+        [
+          0,
+          false
+        ]
+      ],
+      "game_mode": 0,
+      "max": 1,
+      "name": "limit_0_1_1",
+      "type_count": 2
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 3,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": false,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 2
+  },
+  {
+    "allocations": [],
+    "calls": [
+      "create"
+    ],
+    "created": false,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "existing": [
+        [
+          0,
+          true
+        ],
+        [
+          0,
+          true
+        ],
+        [
+          1,
+          true
+        ],
+        [
+          0,
+          false
+        ]
+      ],
+      "game_mode": 0,
+      "max": 1,
+      "name": "limit_0_2_1",
+      "type_count": 3
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 4,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": false,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 3
+  },
+  {
+    "allocations": [
+      160,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "existing": [
+        [
+          0,
+          true
+        ],
+        [
+          0,
+          true
+        ],
+        [
+          1,
+          true
+        ],
+        [
+          0,
+          false
+        ]
+      ],
+      "game_mode": 0,
+      "max": -1,
+      "name": "limit_0_2_-1",
+      "type_count": 3
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 1,
+      "script": 1,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 5,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": false,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": true,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 4
+  },
+  {
+    "allocations": [],
+    "calls": [
+      "create",
+      "house_team_count"
+    ],
+    "created": false,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "existing": [
+        [
+          1,
+          true
+        ],
+        [
+          0,
+          false
+        ]
+      ],
+      "game_mode": 1,
+      "max": 0,
+      "name": "limit_1_0_0",
+      "type_count": 1
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 2,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": false,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [
+      160,
+      48
+    ],
+    "calls": [
+      "create",
+      "house_team_count",
+      "team_ctor",
+      "team_waypoint",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "existing": [
+        [
+          1,
+          true
+        ],
+        [
+          0,
+          false
+        ]
+      ],
+      "game_mode": 1,
+      "max": 1,
+      "name": "limit_1_0_1",
+      "type_count": 1
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 1,
+      "script": 1,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 3,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": false,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": true,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 2
+  },
+  {
+    "allocations": [],
+    "calls": [
+      "create",
+      "house_team_count"
+    ],
+    "created": false,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "existing": [
+        [
+          0,
+          true
+        ],
+        [
+          1,
+          true
+        ],
+        [
+          0,
+          false
+        ]
+      ],
+      "game_mode": 1,
+      "max": 1,
+      "name": "limit_1_1_1",
+      "type_count": 2
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 3,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": false,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 2
+  },
+  {
+    "allocations": [],
+    "calls": [
+      "create",
+      "house_team_count"
+    ],
+    "created": false,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "existing": [
+        [
+          0,
+          true
+        ],
+        [
+          0,
+          true
+        ],
+        [
+          1,
+          true
+        ],
+        [
+          0,
+          false
+        ]
+      ],
+      "game_mode": 1,
+      "max": 1,
+      "name": "limit_1_2_1",
+      "type_count": 3
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 4,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": false,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 3
+  },
+  {
+    "allocations": [
+      160,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "existing": [
+        [
+          0,
+          true
+        ],
+        [
+          0,
+          true
+        ],
+        [
+          1,
+          true
+        ],
+        [
+          0,
+          false
+        ]
+      ],
+      "game_mode": 1,
+      "max": -1,
+      "name": "limit_1_2_-1",
+      "type_count": 3
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 1,
+      "script": 1,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 5,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": false,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": true,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 4
+  },
+  {
+    "allocations": [
+      160,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "name": "trigger_0",
+      "trigger_action": true
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 1,
+      "script": 1,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": false,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": 1,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [
+      160,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "max": 0,
+      "name": "trigger_1",
+      "trigger_action": true
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 1,
+      "script": 1,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": false,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": 1,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [
+      160,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 7,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "creation_depth": 7,
+      "max": 0,
+      "name": "trigger_2",
+      "trigger_action": true
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 1,
+      "script": 1,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": false,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": 1,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [],
+    "calls": [],
+    "created": false,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "name": "trigger_3",
+      "null_team_type": true,
+      "trigger_action": true
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 0,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": 1,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 0
+  },
+  {
+    "allocations": [],
+    "calls": [
+      "create",
+      "is_multiplayer_slot"
+    ],
+    "created": false,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "default_owner": -1,
+      "name": "trigger_4",
+      "trigger_action": true
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 0,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": 1,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 0
+  },
+  {
+    "allocations": [
+      160,
+      48
+    ],
+    "calls": [
+      "create",
+      "is_multiplayer_slot",
+      "resolve_multiplayer_slot",
+      "team_ctor",
+      "team_waypoint",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "default_owner": -1,
+      "multiplayer_slot": 4475,
+      "name": "trigger_5",
+      "trigger_action": true
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 1,
+      "script": 1,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 1,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": false,
+      "target_cell": null,
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": 1,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [
+      160,
+      56,
+      48
+    ],
+    "calls": [
+      "create",
+      "team_ctor",
+      "team_waypoint",
+      "waypoint",
+      "team_waypoint",
+      "waypoint",
+      "cell_lookup",
+      "tag_ctor",
+      "script_ctor"
+    ],
+    "created": true,
+    "creation_depth": 0,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "name": "trigger_6",
+      "tag": true,
+      "trigger_action": true,
+      "waypoint_index": 4
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 2,
+      "script": 1,
+      "tag": 1,
+      "tag_trigger_base": 1,
+      "team": 1,
+      "team_base_a": 1,
+      "team_base_b": 1,
+      "team_base_c": 1,
+      "trigger": 0
+    },
+    "result": {
+      "created_frame": 123,
+      "flags_74_84": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "member_count": 0,
+      "member_type_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "owner_index": 0,
+      "script_aux": 0,
+      "script_cursor": -1,
+      "tag_present": true,
+      "target_cell": [
+        64,
+        64
+      ],
+      "timers": [
+        123,
+        0,
+        123,
+        0
+      ],
+      "triggers": []
+    },
+    "return_value": 1,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 1
+  },
+  {
+    "allocations": [],
+    "calls": [
+      "create"
+    ],
+    "created": false,
+    "creation_depth": -1,
+    "house_base_defense_counts": [
+      7,
+      8
+    ],
+    "input": {
+      "creation_depth": -1,
+      "max": 0,
+      "name": "trigger_7",
+      "trigger_action": true
+    },
+    "next_random": 2026076499,
+    "registry_counts": {
+      "abstract": 0,
+      "script": 0,
+      "tag": 0,
+      "tag_trigger_base": 0,
+      "team": 0,
+      "team_base_a": 0,
+      "team_base_b": 0,
+      "team_base_c": 0,
+      "trigger": 0
+    },
+    "result": null,
+    "return_value": 1,
+    "rng_changed": false,
+    "rng_draws": 0,
+    "type_count": 0
+  }
+]
