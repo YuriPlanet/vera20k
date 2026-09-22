@@ -73,6 +73,12 @@ fn record_test_event(event: RadioTestEvent) {
 /// remaining ascending-slot walk, matching `Broadcast_Radio_ToAll @ 0x0065ACE0`.
 /// No entity borrow is held across [`transmit`].
 pub(crate) fn broadcast_break(sim: &mut Simulation, sender_sid: u64) {
+    broadcast(sim, sender_sid, RadioMessage::Break);
+}
+
+/// Radio65ACE0, shared by landing24/takeoff25 and teardown3. Receivers may
+/// mutate later sparse slots synchronously; never collect contacts up front.
+pub(crate) fn broadcast(sim: &mut Simulation, sender_sid: u64, message: RadioMessage) {
     let capacity = sim
         .substrate
         .entities
@@ -93,17 +99,16 @@ pub(crate) fn broadcast_break(sim: &mut Simulation, sender_sid: u64) {
             target_sid,
         });
         #[cfg(test)]
-        sim.trace_lifecycle_for_test(LifecycleTestEvent::BreakSlot {
-            slot,
-            target: target_sid,
-        });
+        if message == RadioMessage::Break {
+            sim.trace_lifecycle_for_test(LifecycleTestEvent::BreakSlot { slot, target: target_sid });
+        }
 
         if let Some(target_sid) = target_sid {
             transmit(
                 sim,
                 sender_sid,
                 target_sid,
-                RadioMessage::Break,
+                message,
                 RadioPayload::default(),
             );
         }

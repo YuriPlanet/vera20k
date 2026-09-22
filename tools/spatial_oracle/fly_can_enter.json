@@ -1,0 +1,3678 @@
+[
+  {
+    "coordinate": [
+      16512,
+      16512,
+      0
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      65,
+      65
+    ],
+    "input": {
+      "bits": 0,
+      "first": false,
+      "level": 0,
+      "slope": 0
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      0
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 0,
+      "first": true,
+      "level": 0,
+      "slope": 0
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      0
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      65,
+      65
+    ],
+    "input": {
+      "bits": 8,
+      "first": false,
+      "level": 0,
+      "slope": 0
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      0
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 8,
+      "first": true,
+      "level": 0,
+      "slope": 0
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      0
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      65,
+      65
+    ],
+    "input": {
+      "bits": 16,
+      "first": false,
+      "level": 0,
+      "slope": 0
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      0
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 16,
+      "first": true,
+      "level": 0,
+      "slope": 0
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      0
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      65,
+      65
+    ],
+    "input": {
+      "bits": 24,
+      "first": false,
+      "level": 0,
+      "slope": 0
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      0
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 24,
+      "first": true,
+      "level": 0,
+      "slope": 0
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      52
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      65,
+      65
+    ],
+    "input": {
+      "bits": 0,
+      "first": false,
+      "level": 0,
+      "slope": 1
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      52
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 0,
+      "first": true,
+      "level": 0,
+      "slope": 1
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      52
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      65,
+      65
+    ],
+    "input": {
+      "bits": 8,
+      "first": false,
+      "level": 0,
+      "slope": 1
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      52
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 8,
+      "first": true,
+      "level": 0,
+      "slope": 1
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      52
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      65,
+      65
+    ],
+    "input": {
+      "bits": 16,
+      "first": false,
+      "level": 0,
+      "slope": 1
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      52
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 16,
+      "first": true,
+      "level": 0,
+      "slope": 1
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      52
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      65,
+      65
+    ],
+    "input": {
+      "bits": 24,
+      "first": false,
+      "level": 0,
+      "slope": 1
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      52
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 24,
+      "first": true,
+      "level": 0,
+      "slope": 1
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      52
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      65,
+      65
+    ],
+    "input": {
+      "bits": 0,
+      "first": false,
+      "level": 0,
+      "slope": 4
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      52
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 0,
+      "first": true,
+      "level": 0,
+      "slope": 4
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      52
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      65,
+      65
+    ],
+    "input": {
+      "bits": 8,
+      "first": false,
+      "level": 0,
+      "slope": 4
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      52
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 8,
+      "first": true,
+      "level": 0,
+      "slope": 4
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      52
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      65,
+      65
+    ],
+    "input": {
+      "bits": 16,
+      "first": false,
+      "level": 0,
+      "slope": 4
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      52
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 16,
+      "first": true,
+      "level": 0,
+      "slope": 4
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      52
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      65,
+      65
+    ],
+    "input": {
+      "bits": 24,
+      "first": false,
+      "level": 0,
+      "slope": 4
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      52
+    ],
+    "diagonal": [
+      65,
+      65
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 24,
+      "first": true,
+      "level": 0,
+      "slope": 4
+    },
+    "projected": [
+      64,
+      64
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      104
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 0,
+      "first": false,
+      "level": 1,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      104
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 0,
+      "first": true,
+      "level": 1,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      104
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 8,
+      "first": false,
+      "level": 1,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      104
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 8,
+      "first": true,
+      "level": 1,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      104
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 16,
+      "first": false,
+      "level": 1,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      104
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 16,
+      "first": true,
+      "level": 1,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      104
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 24,
+      "first": false,
+      "level": 1,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      104
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 24,
+      "first": true,
+      "level": 1,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      156
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 0,
+      "first": false,
+      "level": 1,
+      "slope": 1
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      156
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 0,
+      "first": true,
+      "level": 1,
+      "slope": 1
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      156
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 8,
+      "first": false,
+      "level": 1,
+      "slope": 1
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      156
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 8,
+      "first": true,
+      "level": 1,
+      "slope": 1
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      156
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 16,
+      "first": false,
+      "level": 1,
+      "slope": 1
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      156
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 16,
+      "first": true,
+      "level": 1,
+      "slope": 1
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      156
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 24,
+      "first": false,
+      "level": 1,
+      "slope": 1
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      156
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 24,
+      "first": true,
+      "level": 1,
+      "slope": 1
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      156
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 0,
+      "first": false,
+      "level": 1,
+      "slope": 4
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      156
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 0,
+      "first": true,
+      "level": 1,
+      "slope": 4
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      156
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 8,
+      "first": false,
+      "level": 1,
+      "slope": 4
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      156
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 8,
+      "first": true,
+      "level": 1,
+      "slope": 4
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      156
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 16,
+      "first": false,
+      "level": 1,
+      "slope": 4
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      156
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 16,
+      "first": true,
+      "level": 1,
+      "slope": 4
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      156
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 24,
+      "first": false,
+      "level": 1,
+      "slope": 4
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      156
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 24,
+      "first": true,
+      "level": 1,
+      "slope": 4
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      208
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 0,
+      "first": false,
+      "level": 2,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      208
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 0,
+      "first": true,
+      "level": 2,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      208
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 8,
+      "first": false,
+      "level": 2,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      208
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 8,
+      "first": true,
+      "level": 2,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      208
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 16,
+      "first": false,
+      "level": 2,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      208
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 16,
+      "first": true,
+      "level": 2,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      208
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 24,
+      "first": false,
+      "level": 2,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      208
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 24,
+      "first": true,
+      "level": 2,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      260
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 0,
+      "first": false,
+      "level": 2,
+      "slope": 1
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      260
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 0,
+      "first": true,
+      "level": 2,
+      "slope": 1
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      260
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 8,
+      "first": false,
+      "level": 2,
+      "slope": 1
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      260
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 8,
+      "first": true,
+      "level": 2,
+      "slope": 1
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      260
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 16,
+      "first": false,
+      "level": 2,
+      "slope": 1
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      260
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 16,
+      "first": true,
+      "level": 2,
+      "slope": 1
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      260
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 24,
+      "first": false,
+      "level": 2,
+      "slope": 1
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      260
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 24,
+      "first": true,
+      "level": 2,
+      "slope": 1
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      260
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 0,
+      "first": false,
+      "level": 2,
+      "slope": 4
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      260
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 0,
+      "first": true,
+      "level": 2,
+      "slope": 4
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      260
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 8,
+      "first": false,
+      "level": 2,
+      "slope": 4
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      260
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 8,
+      "first": true,
+      "level": 2,
+      "slope": 4
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      260
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 16,
+      "first": false,
+      "level": 2,
+      "slope": 4
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      260
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 16,
+      "first": true,
+      "level": 2,
+      "slope": 4
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      260
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 24,
+      "first": false,
+      "level": 2,
+      "slope": 4
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      260
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 24,
+      "first": true,
+      "level": 2,
+      "slope": 4
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      312
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 0,
+      "first": false,
+      "level": 3,
+      "slope": 0
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      312
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      62,
+      62
+    ],
+    "input": {
+      "bits": 0,
+      "first": true,
+      "level": 3,
+      "slope": 0
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      312
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 8,
+      "first": false,
+      "level": 3,
+      "slope": 0
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      312
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      62,
+      62
+    ],
+    "input": {
+      "bits": 8,
+      "first": true,
+      "level": 3,
+      "slope": 0
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      312
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 16,
+      "first": false,
+      "level": 3,
+      "slope": 0
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      312
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      62,
+      62
+    ],
+    "input": {
+      "bits": 16,
+      "first": true,
+      "level": 3,
+      "slope": 0
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      312
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 24,
+      "first": false,
+      "level": 3,
+      "slope": 0
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      312
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      62,
+      62
+    ],
+    "input": {
+      "bits": 24,
+      "first": true,
+      "level": 3,
+      "slope": 0
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      364
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 0,
+      "first": false,
+      "level": 3,
+      "slope": 1
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      364
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      62,
+      62
+    ],
+    "input": {
+      "bits": 0,
+      "first": true,
+      "level": 3,
+      "slope": 1
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      364
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 8,
+      "first": false,
+      "level": 3,
+      "slope": 1
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      364
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      62,
+      62
+    ],
+    "input": {
+      "bits": 8,
+      "first": true,
+      "level": 3,
+      "slope": 1
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      364
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 16,
+      "first": false,
+      "level": 3,
+      "slope": 1
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      364
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      62,
+      62
+    ],
+    "input": {
+      "bits": 16,
+      "first": true,
+      "level": 3,
+      "slope": 1
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      364
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 24,
+      "first": false,
+      "level": 3,
+      "slope": 1
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      364
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      62,
+      62
+    ],
+    "input": {
+      "bits": 24,
+      "first": true,
+      "level": 3,
+      "slope": 1
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      364
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 0,
+      "first": false,
+      "level": 3,
+      "slope": 4
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      364
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      62,
+      62
+    ],
+    "input": {
+      "bits": 0,
+      "first": true,
+      "level": 3,
+      "slope": 4
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      364
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 8,
+      "first": false,
+      "level": 3,
+      "slope": 4
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      364
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      62,
+      62
+    ],
+    "input": {
+      "bits": 8,
+      "first": true,
+      "level": 3,
+      "slope": 4
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      364
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 16,
+      "first": false,
+      "level": 3,
+      "slope": 4
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      364
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      62,
+      62
+    ],
+    "input": {
+      "bits": 16,
+      "first": true,
+      "level": 3,
+      "slope": 4
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      364
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 24,
+      "first": false,
+      "level": 3,
+      "slope": 4
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      364
+    ],
+    "diagonal": [
+      63,
+      63
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      62,
+      62
+    ],
+    "input": {
+      "bits": 24,
+      "first": true,
+      "level": 3,
+      "slope": 4
+    },
+    "projected": [
+      62,
+      62
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      104
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 0,
+      "game_mode": 1,
+      "level": 1,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      104
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 0,
+      "level": 1,
+      "owned": false,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      104
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 0,
+      "level": 1,
+      "mission_only": true,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      104
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 0,
+      "level": 1,
+      "occupant": true,
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      16512,
+      16512,
+      0
+    ],
+    "result": 7
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      104
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      64,
+      64
+    ],
+    "input": {
+      "bits": 8,
+      "first": false,
+      "level": 1,
+      "query": [
+        147584,
+        16256,
+        0
+      ],
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      147584,
+      16256,
+      0
+    ],
+    "result": 0
+  },
+  {
+    "coordinate": [
+      16512,
+      16512,
+      104
+    ],
+    "diagonal": [
+      64,
+      64
+    ],
+    "events": [
+      "winged_passability",
+      "cell_coordinate",
+      "shroud"
+    ],
+    "exposed": [
+      63,
+      63
+    ],
+    "input": {
+      "bits": 8,
+      "first": true,
+      "level": 1,
+      "query": [
+        147584,
+        16256,
+        0
+      ],
+      "slope": 0
+    },
+    "projected": [
+      63,
+      63
+    ],
+    "query": [
+      147584,
+      16256,
+      0
+    ],
+    "result": 0
+  }
+]

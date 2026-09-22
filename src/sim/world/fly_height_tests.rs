@@ -506,6 +506,7 @@ fn destination_fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
         "landing": input["landing"].as_bool().unwrap_or(false),
         "destination": input.get("previous").cloned().unwrap_or(serde_json::json!([0,0,0])),
         "cruise_mode": input["mode"].as_bool().unwrap_or(false),
+        "moving": input["moving"].as_bool().unwrap_or(false),
     }))
     .unwrap();
     sim.add_entity_occupancy(1);
@@ -513,8 +514,7 @@ fn destination_fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
 }
 
 fn issue_coordinate(sim: &mut Simulation, rules: &RuleSet, xyz: [i32; 3]) -> bool {
-    crate::sim::movement::air_movement::issue_air_coordinate_move_command(
-        &mut sim.substrate.entities,
+    sim.move_air_coordinate(
         1,
         crate::sim::components::DriveCoord {
             x: xyz[0],
@@ -522,9 +522,11 @@ fn issue_coordinate(sim: &mut Simulation, rules: &RuleSet, xyz: [i32; 3]) -> boo
             z: xyz[2],
         },
         SimFixed::from_num(10),
-        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, Some(rules)),
-        sim.resolved_terrain.as_ref(),
-        Some((rules, &sim.interner)),
+        Some(crate::sim::movement::DestinationTiming::from_rules(
+            sim.session.binary_frame,
+            Some(rules),
+        )),
+        Some(rules),
     )
 }
 
@@ -583,7 +585,7 @@ fn fly_destination_orders_match_original_retained_xyz_and_refusals() {
             row["mode"].as_bool().unwrap(),
             "{input}"
         );
-        // Moving+34 is still separate from the legacy MovementTarget lifetime.
+        assert_eq!(state.moving(), row["moving"].as_bool().unwrap(), "{input}");
     }
 }
 
@@ -1012,6 +1014,93 @@ fn fly_phase_outer_health_power_and_life_gates_precede_nonlandable_override() {
         let before = sim.state_hash();
         assert!(!sim.complete_fly_phase(1, Some(&rules)));
         assert_eq!(sim.state_hash(), before, "{gate}");
+    }
+}
+
+#[test]
+fn fly_landing_state_hashes_and_restores_active_and_stashed_instances() {
+    use super::hash_schema::HashSchema;
+    use crate::rules::locomotor_type::LocomotorKind;
+    use crate::sim::movement::{locomotion::piggyback, locomotor::MovementLayer};
+    for stashed in [false, true] {
+        for field in ["moving", "landing_effect_latched", "airport_bound", "pitch"] {
+            let row = destination_vectors().remove(0);
+            let (mut before, _) = destination_fixture(&row);
+            let (mut changed, _) = destination_fixture(&row);
+            let e = changed.substrate.entities.get_mut(1).unwrap();
+            if field == "pitch" {
+                e.flight_attitude = serde_json::from_value(serde_json::json!({
+                    "pitch": SimFixed::lit("0.25")
+                }))
+                .unwrap();
+            } else {
+                let state = e.locomotor.as_mut().unwrap().fly_runtime_mut().unwrap();
+                let mut data = serde_json::to_value(&*state).unwrap();
+                data[field] = serde_json::json!(true);
+                *state = serde_json::from_value(data).unwrap();
+            }
+            for instance in [&mut before, &mut changed] {
+                if stashed {
+                    let loco = instance
+                        .substrate
+                        .entities
+                        .get_mut(1)
+                        .unwrap()
+                        .locomotor
+                        .as_mut()
+                        .unwrap();
+                    assert_eq!(
+                        piggyback::begin(loco, LocomotorKind::Drive, MovementLayer::Ground, 0),
+                        piggyback::BeginOutcome::Installed
+                    );
+                }
+                instance.scenario_rng = crate::sim::rng::SimRng::new(0);
+            }
+            assert_ne!(
+                before.state_hash(),
+                changed.state_hash(),
+                "{field}, stashed={stashed}"
+            );
+            assert_eq!(
+                before.state_hash_with_schema(HashSchema::Before(192)),
+                changed.state_hash_with_schema(HashSchema::Before(192)),
+                "{field}, stashed={stashed}"
+            );
+            let bytes = GameSnapshot::save(&changed, 0, 0, "Fly landing state", 0);
+            let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+            restored.retain_in_scenario_process_state_from(&changed);
+            restored.resolved_terrain = changed.resolved_terrain.clone();
+            restored.restore_after_snapshot_load().unwrap();
+            assert_eq!(
+                changed.state_hash(),
+                restored.state_hash(),
+                "{field}, stashed={stashed}"
+            );
+            for instance in [&mut changed, &mut restored] {
+                if stashed {
+                    assert!(
+                        piggyback::end(
+                            instance
+                                .substrate
+                                .entities
+                                .get_mut(1)
+                                .unwrap()
+                                .locomotor
+                                .as_mut()
+                                .unwrap()
+                        )
+                        .is_some()
+                    );
+                }
+            }
+            let source = changed.substrate.entities.get(1).unwrap();
+            let copy = restored.substrate.entities.get(1).unwrap();
+            assert_eq!(source.flight_attitude, copy.flight_attitude);
+            assert_eq!(
+                source.locomotor.as_ref().unwrap().fly_runtime(),
+                copy.locomotor.as_ref().unwrap().fly_runtime()
+            );
+        }
     }
 }
 

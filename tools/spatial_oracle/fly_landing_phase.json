@@ -5600,85 +5600,85 @@
   },
   {
     "after": {
-      "air_members": 1,
+      "air_members": 0,
       "coordinates": [
         16512,
         16512,
         260
       ],
       "destination": [
-        16512,
-        16512,
+        0,
+        0,
         0
       ],
       "layers": [
         0,
         0,
-        0,
-        0,
-        1
-      ],
-      "marked": true,
-      "moving": true,
-      "neighbor_cell": [
+        1,
         0,
         0
+      ],
+      "marked": true,
+      "moving": false,
+      "neighbor_cell": [
+        64,
+        64
       ],
       "neighbors": [
         [
           63,
           63,
-          0
+          1
         ],
         [
           63,
           64,
-          0
+          1
         ],
         [
           63,
           65,
-          0
+          1
         ],
         [
           64,
           63,
-          0
+          1
         ],
         [
           64,
           65,
-          0
+          1
         ],
         [
           65,
           63,
-          0
+          1
         ],
         [
           65,
           64,
-          0
+          1
         ],
         [
           65,
           65,
-          0
+          1
         ]
       ],
       "on_bridge": false,
       "path_timer": [
-        0,
-        0
+        100,
+        11
       ],
       "phase": [
         0,
-        1,
+        0,
         1
       ],
       "speeds": [
         0.0,
-        0.5
+        0.0
       ]
     },
     "before": {
@@ -5779,6 +5779,15 @@
       ],
       [
         "landing_sound"
+      ],
+      [
+        "air_remove"
+      ],
+      [
+        "owner_slot_544"
+      ],
+      [
+        "landing_assign_destination"
       ],
       [
         "display_submit"
@@ -6211,6 +6220,2518 @@
         0
       ],
       "name": "different_empty_destination"
+    },
+    "returned": 0,
+    "rng_changed": false
+  },
+  {
+    "after": {
+      "air_members": 0,
+      "coordinates": [
+        16512,
+        16512,
+        416
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "marked": true,
+      "moving": false,
+      "neighbor_cell": [
+        64,
+        64
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          1
+        ],
+        [
+          63,
+          64,
+          1
+        ],
+        [
+          63,
+          65,
+          1
+        ],
+        [
+          64,
+          63,
+          1
+        ],
+        [
+          64,
+          65,
+          1
+        ],
+        [
+          65,
+          63,
+          1
+        ],
+        [
+          65,
+          64,
+          1
+        ],
+        [
+          65,
+          65,
+          1
+        ]
+      ],
+      "on_bridge": true,
+      "path_timer": [
+        100,
+        11
+      ],
+      "phase": [
+        0,
+        0,
+        1
+      ],
+      "speeds": [
+        0.0,
+        0.0
+      ]
+    },
+    "before": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        416
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        1,
+        0
+      ],
+      "speeds": [
+        0.75,
+        0.5
+      ]
+    },
+    "events": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "display_remove"
+      ],
+      [
+        "landing"
+      ],
+      [
+        "aircraft_can_enter"
+      ],
+      [
+        "landing_sound"
+      ],
+      [
+        "air_remove"
+      ],
+      [
+        "owner_slot_544"
+      ],
+      [
+        "landing_assign_destination"
+      ],
+      [
+        "phase_ground_admission"
+      ],
+      [
+        "phase_ground_radio"
+      ],
+      [
+        "display_submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "input": {
+      "bridge": true,
+      "name": "new_bridge_attachment",
+      "z": 416
+    },
+    "returned": 0,
+    "rng_changed": false
+  },
+  {
+    "after": {
+      "air_members": 0,
+      "coordinates": [
+        16512,
+        16512,
+        426
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": false,
+      "neighbor_cell": [
+        64,
+        64
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          1
+        ],
+        [
+          63,
+          64,
+          1
+        ],
+        [
+          63,
+          65,
+          1
+        ],
+        [
+          64,
+          63,
+          1
+        ],
+        [
+          64,
+          65,
+          1
+        ],
+        [
+          65,
+          63,
+          1
+        ],
+        [
+          65,
+          64,
+          1
+        ],
+        [
+          65,
+          65,
+          1
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        100,
+        11
+      ],
+      "phase": [
+        1,
+        0,
+        1
+      ],
+      "speeds": [
+        0.0,
+        0.0
+      ]
+    },
+    "before": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        416
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        1,
+        0
+      ],
+      "speeds": [
+        0.75,
+        0.5
+      ]
+    },
+    "events": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "display_remove"
+      ],
+      [
+        "landing"
+      ],
+      [
+        "aircraft_can_enter"
+      ],
+      [
+        "landing_sound"
+      ],
+      [
+        "air_remove"
+      ],
+      [
+        "owner_slot_544"
+      ],
+      [
+        "landing_assign_destination"
+      ],
+      [
+        "phase_ground_admission"
+      ],
+      [
+        "mark",
+        0
+      ],
+      [
+        "mark",
+        1
+      ],
+      [
+        "display_submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "input": {
+      "blocking_unit": true,
+      "bridge": true,
+      "name": "bridge_ground_occupied",
+      "z": 416
+    },
+    "returned": 0,
+    "rng_changed": false
+  },
+  {
+    "after": {
+      "air_members": 0,
+      "coordinates": [
+        16512,
+        16512,
+        426
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": false,
+      "neighbor_cell": [
+        64,
+        64
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          1
+        ],
+        [
+          63,
+          64,
+          1
+        ],
+        [
+          63,
+          65,
+          1
+        ],
+        [
+          64,
+          63,
+          1
+        ],
+        [
+          64,
+          65,
+          1
+        ],
+        [
+          65,
+          63,
+          1
+        ],
+        [
+          65,
+          64,
+          1
+        ],
+        [
+          65,
+          65,
+          1
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        100,
+        11
+      ],
+      "phase": [
+        1,
+        0,
+        1
+      ],
+      "speeds": [
+        0.0,
+        0.0
+      ]
+    },
+    "before": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        416
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        1,
+        0
+      ],
+      "speeds": [
+        0.75,
+        0.5
+      ]
+    },
+    "events": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "display_remove"
+      ],
+      [
+        "landing"
+      ],
+      [
+        "aircraft_can_enter"
+      ],
+      [
+        "landing_sound"
+      ],
+      [
+        "air_remove"
+      ],
+      [
+        "owner_slot_544"
+      ],
+      [
+        "landing_assign_destination"
+      ],
+      [
+        "phase_ground_admission"
+      ],
+      [
+        "mark",
+        0
+      ],
+      [
+        "mark",
+        1
+      ],
+      [
+        "display_submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "input": {
+      "bridge": true,
+      "name": "bridge_cell_reserved",
+      "reserved": true,
+      "z": 416
+    },
+    "returned": 0,
+    "rng_changed": false
+  },
+  {
+    "after": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        0
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        1,
+        1
+      ],
+      "speeds": [
+        0.0,
+        0.5
+      ]
+    },
+    "before": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        0
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        1,
+        1
+      ],
+      "speeds": [
+        0.75,
+        0.5
+      ]
+    },
+    "events": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "display_remove"
+      ],
+      [
+        "landing"
+      ],
+      [
+        "aircraft_can_enter"
+      ],
+      [
+        "display_submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "input": {
+      "dropship": true,
+      "latched": true,
+      "name": "dropship_settle",
+      "owner_float_2e8": 0.25
+    },
+    "returned": 0,
+    "rng_changed": false
+  },
+  {
+    "after": {
+      "air_members": 0,
+      "coordinates": [
+        16512,
+        16512,
+        0
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "marked": true,
+      "moving": false,
+      "neighbor_cell": [
+        64,
+        64
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          1
+        ],
+        [
+          63,
+          64,
+          1
+        ],
+        [
+          63,
+          65,
+          1
+        ],
+        [
+          64,
+          63,
+          1
+        ],
+        [
+          64,
+          65,
+          1
+        ],
+        [
+          65,
+          63,
+          1
+        ],
+        [
+          65,
+          64,
+          1
+        ],
+        [
+          65,
+          65,
+          1
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        100,
+        11
+      ],
+      "phase": [
+        0,
+        0,
+        1
+      ],
+      "speeds": [
+        0.0,
+        0.0
+      ]
+    },
+    "before": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        0
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        1,
+        1
+      ],
+      "speeds": [
+        0.75,
+        0.5
+      ]
+    },
+    "events": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "display_remove"
+      ],
+      [
+        "landing"
+      ],
+      [
+        "aircraft_can_enter"
+      ],
+      [
+        "air_remove"
+      ],
+      [
+        "owner_slot_544"
+      ],
+      [
+        "landing_assign_destination"
+      ],
+      [
+        "display_submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "input": {
+      "dropship": true,
+      "latched": true,
+      "name": "dropship_final_settle",
+      "owner_float_2e8": 0.01
+    },
+    "returned": 0,
+    "rng_changed": false
+  },
+  {
+    "after": {
+      "air_members": 0,
+      "coordinates": [
+        16512,
+        16512,
+        0
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "marked": true,
+      "moving": false,
+      "neighbor_cell": [
+        64,
+        64
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          1
+        ],
+        [
+          63,
+          64,
+          1
+        ],
+        [
+          63,
+          65,
+          1
+        ],
+        [
+          64,
+          63,
+          1
+        ],
+        [
+          64,
+          65,
+          1
+        ],
+        [
+          65,
+          63,
+          1
+        ],
+        [
+          65,
+          64,
+          1
+        ],
+        [
+          65,
+          65,
+          1
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        100,
+        11
+      ],
+      "phase": [
+        0,
+        0,
+        1
+      ],
+      "speeds": [
+        0.0,
+        0.0
+      ]
+    },
+    "before": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        0
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        1,
+        0
+      ],
+      "speeds": [
+        0.75,
+        0.5
+      ]
+    },
+    "events": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "display_remove"
+      ],
+      [
+        "landing"
+      ],
+      [
+        "begin_takeoff"
+      ],
+      [
+        "landing_sound"
+      ],
+      [
+        "nearby_cell_search"
+      ],
+      [
+        "landing_sound"
+      ],
+      [
+        "air_remove"
+      ],
+      [
+        "owner_slot_544"
+      ],
+      [
+        "landing_assign_destination"
+      ],
+      [
+        "display_submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "input": {
+      "airport_bound": true,
+      "name": "pad_refusal_retry_0",
+      "z": 0
+    },
+    "returned": 0,
+    "rng_changed": false
+  },
+  {
+    "after": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        1
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        0,
+        1
+      ],
+      "speeds": [
+        0.0,
+        0.5
+      ]
+    },
+    "before": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        1
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        1,
+        0
+      ],
+      "speeds": [
+        0.75,
+        0.5
+      ]
+    },
+    "events": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "display_remove"
+      ],
+      [
+        "landing"
+      ],
+      [
+        "begin_takeoff"
+      ],
+      [
+        "landing_sound"
+      ],
+      [
+        "nearby_cell_search"
+      ],
+      [
+        "landing_sound"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "display_submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "input": {
+      "airport_bound": true,
+      "name": "pad_refusal_retry_1",
+      "z": 1
+    },
+    "returned": 0,
+    "rng_changed": false
+  },
+  {
+    "after": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        299
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        0,
+        1
+      ],
+      "speeds": [
+        0.0,
+        0.5
+      ]
+    },
+    "before": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        299
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        1,
+        0
+      ],
+      "speeds": [
+        0.75,
+        0.5
+      ]
+    },
+    "events": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "display_remove"
+      ],
+      [
+        "landing"
+      ],
+      [
+        "begin_takeoff"
+      ],
+      [
+        "landing_sound"
+      ],
+      [
+        "nearby_cell_search"
+      ],
+      [
+        "landing_sound"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "display_submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "input": {
+      "airport_bound": true,
+      "name": "pad_refusal_retry_299",
+      "z": 299
+    },
+    "returned": 0,
+    "rng_changed": false
+  },
+  {
+    "after": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        300
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        0,
+        0
+      ],
+      "speeds": [
+        0.0,
+        0.5
+      ]
+    },
+    "before": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        300
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        1,
+        0
+      ],
+      "speeds": [
+        0.75,
+        0.5
+      ]
+    },
+    "events": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "display_remove"
+      ],
+      [
+        "landing"
+      ],
+      [
+        "begin_takeoff"
+      ],
+      [
+        "landing_sound"
+      ],
+      [
+        "nearby_cell_search"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "display_submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "input": {
+      "airport_bound": true,
+      "name": "pad_refusal_retry_300",
+      "z": 300
+    },
+    "returned": 0,
+    "rng_changed": false
+  },
+  {
+    "after": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        900
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        0,
+        0
+      ],
+      "speeds": [
+        1.0,
+        0.5
+      ]
+    },
+    "before": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        900
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        1,
+        0
+      ],
+      "speeds": [
+        0.75,
+        0.5
+      ]
+    },
+    "events": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "display_remove"
+      ],
+      [
+        "landing"
+      ],
+      [
+        "begin_takeoff"
+      ],
+      [
+        "landing_sound"
+      ],
+      [
+        "nearby_cell_search"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "display_submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "input": {
+      "airport_bound": true,
+      "name": "pad_refusal_retry_900",
+      "z": 900
+    },
+    "returned": 0,
+    "rng_changed": false
+  },
+  {
+    "after": {
+      "air_members": 0,
+      "coordinates": [
+        16512,
+        16512,
+        416
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "marked": true,
+      "moving": false,
+      "neighbor_cell": [
+        64,
+        64
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          1
+        ],
+        [
+          63,
+          64,
+          1
+        ],
+        [
+          63,
+          65,
+          1
+        ],
+        [
+          64,
+          63,
+          1
+        ],
+        [
+          64,
+          65,
+          1
+        ],
+        [
+          65,
+          63,
+          1
+        ],
+        [
+          65,
+          64,
+          1
+        ],
+        [
+          65,
+          65,
+          1
+        ]
+      ],
+      "on_bridge": true,
+      "path_timer": [
+        100,
+        11
+      ],
+      "phase": [
+        0,
+        0,
+        1
+      ],
+      "speeds": [
+        0.0,
+        0.0
+      ]
+    },
+    "before": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        416
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        1,
+        0
+      ],
+      "speeds": [
+        0.75,
+        0.5
+      ]
+    },
+    "events": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "display_remove"
+      ],
+      [
+        "landing"
+      ],
+      [
+        "begin_takeoff"
+      ],
+      [
+        "landing_sound"
+      ],
+      [
+        "nearby_cell_search"
+      ],
+      [
+        "landing_sound"
+      ],
+      [
+        "air_remove"
+      ],
+      [
+        "owner_slot_544"
+      ],
+      [
+        "landing_assign_destination"
+      ],
+      [
+        "phase_ground_admission"
+      ],
+      [
+        "phase_ground_radio"
+      ],
+      [
+        "display_submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "input": {
+      "airport_bound": true,
+      "bridge": true,
+      "name": "bridge_pad_refusal_retry_416",
+      "z": 416
+    },
+    "returned": 0,
+    "rng_changed": false
+  },
+  {
+    "after": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        900
+      ],
+      "destination": [
+        16512,
+        16512,
+        416
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        0,
+        0
+      ],
+      "speeds": [
+        0.0,
+        0.5
+      ]
+    },
+    "before": {
+      "air_members": 1,
+      "coordinates": [
+        16512,
+        16512,
+        900
+      ],
+      "destination": [
+        16512,
+        16512,
+        0
+      ],
+      "layers": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "marked": true,
+      "moving": true,
+      "neighbor_cell": [
+        0,
+        0
+      ],
+      "neighbors": [
+        [
+          63,
+          63,
+          0
+        ],
+        [
+          63,
+          64,
+          0
+        ],
+        [
+          63,
+          65,
+          0
+        ],
+        [
+          64,
+          63,
+          0
+        ],
+        [
+          64,
+          65,
+          0
+        ],
+        [
+          65,
+          63,
+          0
+        ],
+        [
+          65,
+          64,
+          0
+        ],
+        [
+          65,
+          65,
+          0
+        ]
+      ],
+      "on_bridge": false,
+      "path_timer": [
+        0,
+        0
+      ],
+      "phase": [
+        0,
+        1,
+        0
+      ],
+      "speeds": [
+        0.75,
+        0.5
+      ]
+    },
+    "events": [
+      [
+        "mark",
+        0
+      ],
+      [
+        "display_remove"
+      ],
+      [
+        "landing"
+      ],
+      [
+        "begin_takeoff"
+      ],
+      [
+        "landing_sound"
+      ],
+      [
+        "nearby_cell_search"
+      ],
+      [
+        "takeoff"
+      ],
+      [
+        "display_submit"
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "input": {
+      "airport_bound": true,
+      "bridge": true,
+      "name": "bridge_pad_refusal_retry_900",
+      "z": 900
     },
     "returned": 0,
     "rng_changed": false

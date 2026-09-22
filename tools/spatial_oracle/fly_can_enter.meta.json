@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "102 full Aircraft Can_Enter_Cell calls: ground shroud bit8 versus bit16, even/odd projected height, two projected cells, mode/owner/mission gates, same-house occupant and two fixed-grid alias inputs through original MapAtCoord. Excludes Team6EC300, hostile occupant side effects, absent Cell slots and full Fly landing/Process.",
+  "assumptions": [
+    "Real Aircraft/Cell vtables; no Team. Mode0 owned aircraft except explicit gate cases.",
+    "Ground104 globals initialized, supplied levels/slopes and raw Cell+12C bits. Same-house occupant only.",
+    "No visibility lifecycle, current-sight producer or complete movement transaction is claimed."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "can_enter": "0x004196B0",
+    "cell_coord": "0x00486840",
+    "shroud": "0x00586360"
+  },
+  "payload_sha256": "e64f5bf3722fa52efe1d862ddd0cd3e3c101e6def2da2cf972d1d5c35e3734c3"
+}

@@ -599,6 +599,11 @@ pub struct GameEntity {
     /// Live Foot-owned applied speed; survives active locomotor replacement.
     #[serde(default)]
     pub foot_speed: crate::sim::components::FootSpeedState,
+    /// Techno+2E8, ctor6F2E00 zero, saved70C354. Fly approach writes it;
+    /// landing and Aircraft unload consume it. Independent of body rocking
+    /// and of the active/suspended locomotor. Deterministic fixed radians.
+    #[serde(default)]
+    pub(crate) flight_attitude: crate::sim::movement::fly_height::FlightAttitude,
     /// Foot+6B6 raw occupation enable; shared by Drive/Ship and world Mark.
     /// Foot ctor4D344A initializes1; Unit7353CE invokes that base ctor.
     pub(crate) foot_occupation_enabled: bool,
@@ -1343,6 +1348,7 @@ impl GameEntity {
                 ..NavigationState::default()
             },
             foot_speed: crate::sim::components::FootSpeedState::default(),
+            flight_attitude: Default::default(),
             foot_occupation_enabled: true,
             foot_locomotor_swap_active: false,
             attack_target: None,

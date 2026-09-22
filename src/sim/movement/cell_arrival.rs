@@ -303,7 +303,8 @@ mod tests {
         for id in [2, 3] {
             assert_eq!(
                 crate::sim::occupancy::cell_list_layer_for_entity(
-                    restored.substrate.entities.get(id).unwrap()
+                    restored.substrate.entities.get(id).unwrap(),
+                    restored.resolved_terrain.as_ref(),
                 ),
                 None
             );

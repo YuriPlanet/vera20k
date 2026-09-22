@@ -204,17 +204,25 @@ impl crate::sim::world::Simulation {
                     .is_some()
         });
         if !is_jumpjet_infantry {
-            return super::air_movement::issue_air_move_command(
-                &mut self.substrate.entities,
+            let is_fly = self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|e| e.locomotor.as_ref().and_then(|l| l.fly_runtime()).is_some());
+            let coordinate = if is_fly {
+                super::navcom::target_cell_coord(target.0, target.1, self.resolved_terrain.as_ref())
+            } else {
+                crate::sim::components::DriveCoord::cell(target.0, target.1, 0)
+            };
+            return self.move_air_coordinate(
                 id,
-                target,
+                coordinate,
                 speed,
-                crate::sim::movement::DestinationTiming::from_rules(
+                Some(super::DestinationTiming::from_rules(
                     self.session.binary_frame,
-                    rules.into(),
-                ),
-                self.resolved_terrain.as_ref(),
-                rules.map(|rules| (rules, &self.interner)),
+                    rules,
+                )),
+                rules,
             );
         }
         let Some(terrain) = self.resolved_terrain.as_ref() else {

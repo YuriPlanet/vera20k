@@ -2,7 +2,7 @@
 
 Real Aircraft, Fly, Cell, air-tracker, neighbor-counter and destination callees
 execute. Runtime map/type/contact state is supplied; no gameplay call is replaced.
-This corpus covers accepted ordinary landings, not a complete Fly Process port.
+This corpus covers ordinary landings and successful retry searches, not a complete Fly Process port.
 """
 from pathlib import Path
 import struct
@@ -10,7 +10,7 @@ import struct
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_ESP
 from tools.native_oracle import SCRATCH, run_checked, finish_vectors, provenance
-from tools.spatial_oracle.aircraft_fire_location import Fixture, OWNER, TYPE, SCENARIO, cell, dwords
+from tools.spatial_oracle.aircraft_fire_location import Fixture, OWNER, TYPE, SCENARIO, BLOCKER, cell, dwords
 from tools.spatial_oracle.crate_ground_membership import LAYERS
 from tools.spatial_oracle.map_queries import packed
 
@@ -20,19 +20,23 @@ LOCO, HOUSE, AIR_BUFFERS, RULES, DISPLAY_BUFFERS = [
 AIR_TRACKER = 0x887888
 
 
-def execute(case):
+def fixture(case):
     x, y = case.get('cell', [64, 64])
     level, slope = case.get('level', 0), case.get('slope', 0)
     # Coordinates are world values; `z` is deliberately not an altitude cache.
     z = case.get('z', 0)
     f = Fixture(dict(aircraft=[x * 256 + 128, y * 256 + 128, z]))
     u = f.u
+    # Tactical owns the dirty-cell list used by the changed-layer fog-border
+    # suffix. Supply storage; keep the original updater and its calls intact.
+    u.mem_write(0x887324, dwords(SCRATCH + 0x80000))
     u.mem_write(cell(x, y), dwords(0x7E4EEC))
     u.mem_write(cell(x, y) + 0x44, dwords(-1))
     u.mem_write(cell(x, y) + 0x11B, bytes([level, slope]))
     u.mem_write(cell(x, y) + 0x140, dwords(0x100 if case.get('bridge') else 0))
     f.call(0x4CC9A0, LOCO, [])
     u.mem_write(LOCO + 0xC, dwords(OWNER))
+    u.mem_write(LOCO + 0x18, bytes([case.get('airport_bound', False)]))
     u.mem_write(LOCO + 0x1C, dwords(*case.get('destination', [x * 256 + 128, y * 256 + 128, 0])))
     u.mem_write(LOCO + 0x34, b'\1')
     u.mem_write(LOCO + 0x40, struct.pack('<dd', 0.75, 0.5))
@@ -45,13 +49,18 @@ def execute(case):
     u.mem_write(OWNER + 0x21C, dwords(HOUSE))
     u.mem_write(OWNER + 0xE4, dwords(SCRATCH + 0x70000, 1))
     u.mem_write(OWNER + 0x2E8, struct.pack('<f', case.get('owner_float_2e8', 0)))
+    u.mem_write(TYPE + 0xC95, bytes([case.get('dropship',False)]))
     u.mem_write(TYPE + 0x530, dwords(-1))  # no landing sound asset
+    u.mem_write(TYPE + 0x52C, dwords(-1))  # no takeoff sound asset
+    u.mem_write(TYPE + 0x618, dwords(-1))
+    u.mem_write(TYPE + 0xE0D, bytes([case.get('airport_bound', False)]))
     u.mem_write(TYPE + 0xE0A, b'\1')  # Landable
     u.mem_write(TYPE + 0xDFC, b'\0')  # no Carryall animation/base
-    for address, value in ((0xAC13C8, 104), (0xAC13BC, 416), (0x8B3CAC, 416)):
+    for address, value in ((0x89E7C0, 104), (0xAC13C8, 104), (0xAC13BC, 416), (0x8B3CAC, 416)):
         u.mem_write(address, dwords(value))
     u.mem_write(0x8871E0, dwords(RULES))
     u.mem_write(RULES + 0x1768, dwords(11))
+    u.mem_write(RULES + 0x7B4, dwords(1500))
     u.mem_write(0xA8ED84, dwords(100))
 
     # Original tracker-vector startup, stopping immediately before CRT atexit.
@@ -61,7 +70,10 @@ def execute(case):
     run_checked(u, 0x412870, 0x4128D6, count=10000)
     for bucket in range(400):
         u.mem_write(AIR_TRACKER + bucket * 24 + 4, dwords(AIR_BUFFERS + bucket * 64, 16))
-    f.call(0x4134A0, AIR_TRACKER, [OWNER])
+    if case.get("air_registered", True):
+        f.call(0x4134A0, AIR_TRACKER, [OWNER])
+    else:
+        u.mem_write(OWNER + 0x560, bytes(u.mem_read(0x8B3C58, 4)))
     f.call(0x49F2F0, 0, [])  # eight original packed neighbor deltas
 
     old = case.get('previous_neighbor_cell', [0, 0])
@@ -114,6 +126,31 @@ def execute(case):
                         for offset in (0x668, 0x670)],
         )
 
+    if case.get('blocking_unit'):
+        u.mem_write(BLOCKER + 0x21C, dwords(HOUSE))
+        u.mem_write(BLOCKER + 0x9C, dwords(x*256+128,y*256+128,0))
+        u.mem_write(cell(x,y)+0xE4,dwords(BLOCKER))
+    if case.get('reserved'):
+        actor=SCRATCH+0x90000
+        u.mem_write(actor+0x90,b'\1')
+        u.mem_write(actor+0x5A4,dwords(cell(x,y)))
+        u.mem_write(0xA8E394,dwords(SCRATCH+0x91000))
+        u.mem_write(SCRATCH+0x91000,dwords(actor))
+        u.mem_write(0xA8E3A0,dwords(1))
+    if case.get('airport_bound'):
+        # No contact building admits the destination: full landing executes
+        # BeginTakeoff and FNPC. Supply the native Clear land cost table and
+        # absent overlays so original search/projection callees can execute.
+        u.mem_write(0x89EA40, struct.pack('<90f', *[1.0] * 90))
+        for y in range(128):
+            for x in range(128):
+                u.mem_write(cell(x, y) + 0x44, dwords(-1))
+    return f, state
+
+
+def execute(case):
+    f, state = fixture(case)
+    u = f.u
     before, events = state(), []
     before_rng = bytes(u.mem_read(SCENARIO + 0x218, 0x3F4))
     labels = {0x4CE840: 'landing', 0x4CE680: 'takeoff', 0x4A9770: 'display_remove',
@@ -147,7 +184,16 @@ def cases():
              dict(name='negative_owner_float', owner_float_2e8=-0.25),
              dict(name='above_sloped_cell', level=2, slope=1, z=260),
              dict(name='already_on_bridge', bridge=True, on_bridge=True, z=416),
-             dict(name='different_empty_destination', destination=[16768,16512,0])]
+             dict(name='different_empty_destination', destination=[16768,16512,0]),
+             dict(name='new_bridge_attachment', bridge=True, z=416),
+             dict(name='bridge_ground_occupied',bridge=True,z=416,blocking_unit=True),
+             dict(name='bridge_cell_reserved',bridge=True,z=416,reserved=True),
+             dict(name='dropship_settle',dropship=True,latched=True,owner_float_2e8=0.25),
+             dict(name='dropship_final_settle',dropship=True,latched=True,owner_float_2e8=0.01)]
+    rows += [dict(name=f'pad_refusal_retry_{z}', z=z, airport_bound=True)
+             for z in (0, 1, 299, 300, 900)]
+    rows += [dict(name=f'bridge_pad_refusal_retry_{z}', z=z, airport_bound=True, bridge=True)
+             for z in (416, 900)]
     return rows
 
 
@@ -171,10 +217,11 @@ if __name__ == '__main__':
                       'air_remove': 0x4135D0, 'air_init': 0x412870, 'neighbors_init': 0x49F2F0,
                       'display_init': 0x4A8630, 'mark': 0x4D3780},
         assumptions=['Real Aircraft and Fly vtables, original Fly constructor; initialized empty map and no Team, cargo, radio contacts, animations or target.',
-                     'Landable ordinary non-AirportBound type, zero+C95 and Carryall flags, landing sound index-1. Positive/negative owner+2E8 samples are supplied, not proof of their producer.',
+                     'Landable type, zero Carryall; AirportBound type and retained Fly+18 only on retry rows, with all land costs1 and no overlays. Supplied+C95 only in pre-latched pitch-settle cases; sound indexes-1. Owner+2E8 samples are supplied, not proof of their producer.',
                      'Original air-tracker and Display constructor prefixes stop before CRT atexit; preallocated buffers avoid allocator growth.',
+                     'Ground slope initializer input89E7C0=104 (47B3A0 lazily caches it); earlier29-row corpus omitted this and its lone slope row ran with an invalid zero slope scale.',
                      'Original Mark(PUT), Display submit and air Add establish initial membership. Supplied Z change models the preceding descent; full Process does not run.',
                      'Supplied Foot+55C neighbor source and Cell+122 seeds exercise wrapping and overlap; they are not constructor/lifecycle proofs. Rules+1768 path timer duration11, frame100.'],
         substitutions=[],
-        scope='29 full landing-phase calls on accepted ordinary aircraft: retained Top-to-Ground resubmission, threshold/latch, air removal, neighbor migration, destination clear, path timer, unchanged Scenario RNG and already-OnBridge landing. Excludes changed-layer phase suffixes, refusal/search/destruction, Carryall/type+C95 animation branches, AirportBound docking, complete Process, rendered output and Rust landing parity.',
+        scope='41 full landing-phase calls: retained Top-to-Ground resubmission, threshold/latch, air removal, neighbor migration, destination clear, path timer, unchanged Scenario RNG and already-OnBridge landing. Includes changed-layer bridge acceptance and occupant/reservation refusal, radio/sight/fog-border suffix, pre-latched Dropship settle, and AirportBound refusal through successful original FNPC/BeginTakeoff/MoveTo. Excludes failed-search/destruction, Carryall/type+C95 animation branches, radio docking lifecycle, complete Process, rendered output and Rust landing parity.',
     ))

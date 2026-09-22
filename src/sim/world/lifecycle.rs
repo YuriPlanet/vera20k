@@ -908,7 +908,21 @@ impl Simulation {
         // +198(owner) next; only afterward Infantry51E0EF clears +41B for
         // exactly Sight=0. Never move these producers before the Mark call.
         self.record_foot_owner_discovery(stable_id);
-        self.foot_neighbors_after_unlimbo(stable_id, context.rules);
+        let high_flight = self.foot_neighbors_after_unlimbo(stable_id, context.rules);
+        // Foot4D72B2/+54 requires high flight, then Type ConsideredAircraft
+        // (+D96) admits AirTrackerAdd4D72DB. Mark itself never adds Fly.
+        if self.substrate.entities.get(stable_id).is_some_and(|e| {
+            e.locomotor.as_ref().and_then(|l| l.fly_runtime()).is_some()
+                && high_flight
+                && context
+                    .rules
+                    .and_then(|r| r.object(self.interner.resolve(e.type_ref())))
+                    .map_or(e.category == EntityCategory::Aircraft, |o| {
+                        o.considered_aircraft
+                    })
+        }) {
+            self.register_fly_air_tracker(stable_id);
+        }
         // Aircraft4143A8 follows successful Foot Unlimbo, including the dead
         // Techno success arm. Failed placement above must not promote +3D4.
         if let Some(rules) = context.rules
@@ -1119,7 +1133,10 @@ impl Simulation {
         // Jumpjet high-flying5F6B90 reads this intermediate value.
         entity.lifecycle.cell_marked = true;
         let cells = entity_occupancy_cells(entity);
-        let layer = cell_list_layer_for_entity(entity);
+        let layer = cell_list_layer_for_entity(
+            entity,
+            context.terrain().or(self.resolved_terrain.as_ref()),
+        );
         let sub_cell = if entity.category == EntityCategory::Infantry {
             entity.sub_cell
         } else {
@@ -1139,15 +1156,24 @@ impl Simulation {
         };
         let exact_z_leptons = entity.position.exact_z_leptons;
         let inside_transport = entity.passenger_role.is_inside_transport();
-        let air_spatial_bucket =
-            (!inside_transport && air_spatial_tracks_entity(entity)).then(|| {
-                air_spatial_bucket_index(
-                    entity.position.rx,
-                    entity.position.ry,
-                    self.session.map_width,
-                    self.session.map_height,
-                )
-            });
+        let tracks_air = if entity
+            .locomotor
+            .as_ref()
+            .and_then(|l| l.fly_runtime())
+            .is_some()
+        {
+            entity.air_spatial_bucket.is_some()
+        } else {
+            air_spatial_tracks_entity(entity)
+        };
+        let air_spatial_bucket = (!inside_transport && tracks_air).then(|| {
+            air_spatial_bucket_index(
+                entity.position.rx,
+                entity.position.ry,
+                self.session.map_width,
+                self.session.map_height,
+            )
+        });
         let order = self.substrate.next_occupancy_enter_order.next();
 
         if category == EntityCategory::Structure {
@@ -1405,7 +1431,7 @@ impl Simulation {
             && entity.lifecycle.object_alive
             && !entity.lifecycle.in_limbo
             && entity.lifecycle.cell_marked
-            && cell_list_layer_for_entity(entity)
+            && cell_list_layer_for_entity(entity, self.resolved_terrain.as_ref())
                 == Some(crate::sim::movement::locomotor::MovementLayer::Ground))
         .then(|| {
             (
@@ -1433,8 +1459,10 @@ impl Simulation {
         };
         if entity.category != EntityCategory::Structure
             || !entity.lifecycle.cell_marked
-            || cell_list_layer_for_entity(entity)
-                != Some(crate::sim::movement::locomotor::MovementLayer::Ground)
+            || cell_list_layer_for_entity(
+                entity,
+                context.terrain().or(self.resolved_terrain.as_ref()),
+            ) != Some(crate::sim::movement::locomotor::MovementLayer::Ground)
         {
             return false;
         }
@@ -1512,7 +1540,10 @@ impl Simulation {
         // REMOVE5F5913 clears +74 before the same Foot +78 query.
         entity.lifecycle.cell_marked = false;
         let cells = entity_occupancy_cells(entity);
-        let layer = cell_list_layer_for_entity(entity);
+        let layer = cell_list_layer_for_entity(
+            entity,
+            context.terrain().or(self.resolved_terrain.as_ref()),
+        );
         let category = entity.category;
         let foundation = entity.foundation.clone();
         let hidden_profile = entity.building_hidden_occupancy;
@@ -1612,7 +1643,16 @@ impl Simulation {
                 && !entity.lifecycle.in_limbo
                 && entity.lifecycle.cell_marked
                 && !entity.passenger_role.is_inside_transport()
-                && air_spatial_tracks_entity(entity))
+                && if entity
+                    .locomotor
+                    .as_ref()
+                    .and_then(|l| l.fly_runtime())
+                    .is_some()
+                {
+                    entity.air_spatial_bucket.is_some()
+                } else {
+                    air_spatial_tracks_entity(entity)
+                })
             .then(|| {
                 air_spatial_bucket_index(
                     entity.position.rx,
@@ -1782,14 +1822,15 @@ impl Simulation {
             .entities
             .get(stable_id)
             .is_some_and(|entity| {
-                entity.category == EntityCategory::Aircraft
-                    && entity.lifecycle.object_alive
+                entity.lifecycle.object_alive
                     && !entity.lifecycle.in_limbo
                     && entity.locomotor.as_ref().is_some_and(|locomotor| {
                         locomotor.kind == LocomotorKind::Fly
                             && locomotor.layer == MovementLayer::Air
                     })
             });
+        // Fly4CD600 dispatches owner Mark around movement independently of
+        // RTTI. Custom Fly Infantry/Unit must also leave their ground list.
         if transact_fly {
             self.unmark_entity_remove_impl(stable_id, false, UninitContext::default());
         }
@@ -1829,8 +1870,7 @@ impl Simulation {
 
     /// Fly4CCB40 ->4CD2A0 after4CD600's movement/height Mark pair.
     /// Non-Landable aircraft return before the phase's OWN Mark/Display pair.
-    /// Landable pure-takeoff enters that pair even when both live layers agree.
-    /// Landing (first when both flags are set) still needs its separate port.
+    /// Landing runs first, then rechecks takeoff; both resubmit on equal layers.
     /// Return whether the phase performed the Display transaction.
     pub(super) fn complete_fly_phase(&mut self, id: u64, rules: Option<&RuleSet>) -> bool {
         let admitted = self.substrate.entities.get(id).is_some_and(|entity| {
@@ -1873,18 +1913,66 @@ impl Simulation {
             .unwrap()
             .fly_runtime()
             .unwrap()
-            .has_only_takeoff_callback()
+            .has_phase_callback()
         {
             return false;
         }
         let before = self.entity_display_layer(id, rules);
         self.unmark_entity_remove_impl(id, false, UninitContext::default());
         self.substrate.display.remove(id);
-        self.apply_fly_takeoff_callback(id, rules);
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|e| e.locomotor.as_ref())
+            .and_then(|l| l.fly_runtime())
+            .is_some_and(|s| s.landing())
+        {
+            self.apply_fly_landing_callback(id, rules);
+        }
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|e| e.locomotor.as_ref())
+            .and_then(|l| l.fly_runtime())
+            .is_some_and(|s| s.taking_off())
+        {
+            self.apply_fly_takeoff_callback(id, rules);
+        }
         let after = self.entity_display_layer(id, rules);
-        //4CE680 never writes coordinates or OnBridge, so no changed-layer
-        // landing side effects can run on this branch. Still resubmit on equal.
-        debug_assert_eq!(before, after);
+        if before != after {
+            if after == Some(super::display_layers::DisplayLayer::GROUND)
+                && !self
+                    .substrate
+                    .entities
+                    .get(id)
+                    .and_then(|e| e.locomotor.as_ref())
+                    .and_then(|l| l.fly_runtime())
+                    .is_some_and(|s| s.taking_off())
+                && !self.fly_landing_cell_admitted(id, rules)
+            {
+                if let Some(entity) = self.substrate.entities.get_mut(id) {
+                    entity
+                        .locomotor
+                        .as_mut()
+                        .unwrap()
+                        .fly_runtime_mut()
+                        .unwrap()
+                        .reject_landing_cell();
+                    entity.on_bridge = false;
+                }
+                self.unmark_entity_remove_impl(id, false, UninitContext::default());
+                let height = crate::sim::movement::air_movement::current_fly_height(
+                    self.substrate.entities.get(id).unwrap(),
+                    self.resolved_terrain.as_ref(),
+                );
+                self.set_fly_owner_height(id, height.wrapping_add(10));
+                self.add_entity_occupancy(id);
+            } else {
+                self.finish_fly_layer_transition(id, after, rules);
+            }
+        }
         self.submit_entity_display(id, rules, None);
         self.add_entity_occupancy(id);
         true

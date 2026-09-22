@@ -1449,96 +1449,142 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): non-Landable Fly phase and cruise mode
+## Current checkpoint (2026-09-22): Fly landing and phase ownership
 
-Active combat parity goal; do not rewrite it or invoke goal-prompt. The user
-retired the dependency map: do not use, consult or refresh it. No new critic.
 Owned checkout: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`,
-branch `feature/combat-foot-speed`. This increment follows published `1ab75310`;
-read actual Git HEAD on continuation. Source and checkpoint commit together.
-`.local/` contains intentional retained evidence. No PR: the completed critic's
-aircraft re-engagement and landing P1s still hold. Whole combat remains open.
+branch `feature/combat-foot-speed`. Landing increment parent:
+`48f56593d2eb8df39a4be0d872572f0868b322ea`; this checkpoint accompanies the
+implementation/evidence commit. Resolve its current HEAD/upstream from Git.
+No PR. Preserve the untracked `.local/` data and all existing work.
+The combat goal remains active: implementation and validated commit/publish/merge
+are authorized. Do not rewrite its prompt or invoke goal-prompt. No new critic.
 
-Current increment and acceptance:
-- Fly phase4CD2A0 for Aircraft `Landable=no` clears both callback flags, sets
-  cruise mode and restores live type FlightLevel, including -1 Rules fallback,
-  zero and40000. It returns before Mark/Display, speed or coordinate changes.
-  The production wrapper retains outer powered/alive/health>0 admission and
-  runs after movement. A prior landing target can lower Z this visit; the new
-  height target affects the next visit. Retail BPLN/SPYP use Landable=no.
-- `FlyRuntime` privately owns cruise mode+5C, ctorfalse. Non-null MoveTo selects
-  it after destination/takeoff handling using retained Z versus ground+120,
-  armed Target, existing Aircraft+6D2 action latch and Landable. It performs
-  the native second ground read even on forced-true arms. Enter resets mode at
-  Process start via the existing effective-Mission owner; current=-1 alone
-  falls back to queued. No duplicate mission/readiness state was introduced.
-- Snapshot191 hashes/saves cruise mode in active and suspended Fly runtimes.
-  The independent mode-hash test proves the Before191 projection unchanged.
-  Existing whole-replay pins did not change.
-- Moving+34, null MoveTo, landing latch+52, mode-driven speed/navigation and
-  full landing remain required. Retaining mode does not certify those consumers.
+Acceptance for this continuation: original Fly phase/landing semantics through
+production movement, retained spatial/Display membership, destination/timer and
+neighbor effects, persistence/hash, then actual docking/re-engagement consumers.
+A callback or isolated native sample does not complete that chain.
 
-Evidence and validation:
-- `fly_nonlandable_phase.{py,json,meta.json}`:64 complete original4CD2A0 calls,
-  both flag pairs/prior modes, Z0/900 and type FlightLevel -1/0/120/40000;
-  unchanged XYZ, speeds, facing histories, Mark and Display order. No gameplay
-  substitutions. `fly_mission_mode.*`:30 original4CD664..4CD67F ranges with real
-  ctor and virtual Mission getter, including unknown negative/current/queued
-  cases. `fly_destination`'s26 unchanged native payloads now compare mode too.
-  All three `--check` runs pass; existing75 `fly_takeoff_phase` also passes.
-  Binary SHA `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
-- Ghidra comments4CD2CA/4CD4E7/4CCE1C/4CCED9/4CD67B saved; annotations
-  read back. Existing function boundaries/types/bytes were not changed.
-- Final `cargo test -p vera20k --lib`: **9164passed,0failed,135ignored**,
-  14.49s after2m25s build (`.local/fly-mode-final-tests.log`). Includes all new
-  native/production/continuation checks. `cargo clippy -p vera20k --lib` passes,
-  1030warnings (unchanged count),24.78s (`.local/fly-mode-clippy.log`). Diff check
-  passes. All owned Cargo/native operations are terminal.
-- Preliminary focused suite:17pass/1fail. The failure compared an intermediate
-  landing-base Dummy stamp with full MoveTo; new native final ground read writes
-  the destination stamp. Regression corrected without changing native vectors.
-  Preliminary full suite:9163pass/1fail/135ignored,14.13s. Sole failure was the
-  explicit snapshot-version assertion190; updated to191. All production/new
-  native tests and unchanged replay pins passed in that run.
-- No asset binding/loader/rules changes in this increment; no new release/map
-  or rendered-output claim. Prior counter release below is not this candidate.
+Current implementation:
+- `world/fly_landing.rs` owns landing4CE840 and changed-layer4CD380 suffix;
+  lifecycle retains the surrounding Mark/Display transaction. Landing sets exact
+  physical Z/OnBridge, clears phase/speeds, removes Air membership, invokes the
+  existing Foot neighbor owner, clears admitted destinations/timers, and broadcasts
+  EnterDock/LeaveDock/Break through radio. The sight owner refreshes visibility.
+- `world/fly_orders.rs` owns non-null Fly MoveTo and BeginTakeoff. Deleted the
+  old movement-module entries and migrated cell/coordinate orders. BeginTakeoff
+  effects now precede the stored-destination mode/ground query, fixing shared
+  Dummy stamp order. Foot destination timing is optional for locomotor retries.
+- AirTracker registration is retained explicitly, admitted by BeginTakeoff or
+  high-flight ConsideredAircraft Unlimbo; temporary Mark transactions do not
+  create membership. Final landing removes it. Bucket crossing retains ordering.
+- FlyRuntime privately retains moving+34, one-shot landing effect+52 and the
+  Aircraft-only AirportBound copy made by Link4CCA20 into full Fly+18. Active
+  and stashed instances save/hash them. Owner FlightAttitude (+2E8) is distinct
+  from Rocking; approach and ground-settle are fixed-point, with native comparisons.
+  Hash/snapshot version192. Rules now read PitchAngle and AuxSound1/2; sounds
+  use sim-to-app events, animations use the existing AnimClass constructor.
+- AircraftCanEnter4196B0 uses retained ground-shroud bit8, resolved Cell XYZ,
+  odd-height projection and actual Cell aliases. Foot landing-space4DDC60 uses
+  resolved current Cell identity for playfield/occupants/passability and compares
+  other aircraft's retained Cell NavCom identity without restamping the Dummy.
+  Building lookup also resolves aliases. Team and missing-slot shroud state remain open.
+- Cell-list membership and display-layer queries now share current_fly_height
+  with movement. Native GetLayer reads exact Z/ground, not stale loco.altitude.
+  Migrated lifecycle and greatest-threat callers; legacy test-only occupancy
+  reconstruction has no terrain context. Existing13 native Fly layer cases now
+  compare both consumers with deliberately contradictory altitude caches.
+  Unlimbo reuses the existing neighbor transaction's high-flight result, including
+  its Mark gate and missile override, instead of querying a duplicate threshold.
+- Successful landing refusal retries execute world BeginTakeoff, original-shaped
+  FNPC Track/Fly search and MoveTo without resetting Foot timers. Found coordinates
+  use the raw chosen cell center and structural bridge+416, matching native calls.
 
-Preserved published prerequisite1ab75310:
-`cell_neighbors` owns Foot+55C history and updates the existing combined
-OverlayGrid Cell+122 plane. Unlimbo/PerCell/Limbo/owner-change/DropPayload and
-Walk/Drive/Ship/Jumpjet/Hover/Tube/Teleport/parachute hosts are connected. The
-Fly landing counter helper is tested but still lacks its production caller.
-Pathfinding consumes the retained plane via bounded4096-entry delta journals;
-lagged readers rebuild. Shared Dummy counter/loader-live-grid preservation are
-implemented. Native88 Foot slices and full9159pass/135ignored plus Clippy passed.
-Old release Dustbowl30-frame runs matched each other, not native combat or full
-state: executable SHA1154843b58cec7dc63be9ddf44b77241abc57a3551499305e99a4632f790636d;
-logs `.local/foot-neighbors-{final-tests,clippy,release,retail-a,retail-b}.log`.
-Hover/Tube/Teleport host approximations and other Cell+122 writers remain open.
+Reproducible native evidence (no gameplay stubs; original binary SHA
+`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`):
+- `fly_landing_phase`:41 full4CD2A0 calls, real Mark/Display/Air/neighbor and
+  landing callees. Includes bridge attachment, occupied/reserved refusal, pitch
+  settle, successful AirportBound refusal/search/retry. Ground slope initializer
+ 89E7C0=104 is now supplied (earlier29-row slope sample had invalid zero input).
+- `fly_takeoff_entry`:26 fullBeginTakeoff/MoveTo calls, spatial/facing behavior,
+  power versus entry gates, height boundaries, large FlightLevel, bridge/ground.
+- `fly_attitude`:65 original numeric-range/settle histories, bounded pitch and
+  completion-tick comparison; not arbitrary authored-angle or full Process parity.
+- `fly_can_enter`:102 full calls including bit8/bit16, projection, mode/owner/
+  mission gates and two fixed-grid alias inputs. No Team or missing-slot proof.
+- `fly_instance_link`:4 original Link calls, Aircraft/Unit x bound/unbound,
+  retained after a supplied live type flip. No replacement/lifecycle proof.
+- `fly_landing_space`:26 fullFoot4DDC60 calls, occupants/contacts/spawned,
+  Track cost/raw occupation, reservation alive/limbo/self, and alias comparisons.
+  First local fixture draft wrote an unrelated offset; corrected to raw+124 before
+  accepting vectors. No absent-cell Dummy or full caller lifecycle claim.
+All six native corpora have terminal successful `--check` runs. Existing26
+MoveTo and249 Carryall landing-base Rust vectors remain connected.
 
-Next safe action: continue actual Fly landing and aircraft re-engagement before
-PR/merge. Preserve current work; do not repeat critic or mark combat complete.
+Validation:
+- `cargo test -p vera20k --lib`: **9172passed,0failed,135ignored**,25.86s after
+  compilation (`.local/fly-landing-full5.log`). Includes102 CanEnter,41 phase,
+ 26 takeoff,4 Link,26 landing-space,13 physical-height cases with contradictory
+  caches,192 persistence, production retirement and unchanged replay pins.
+- Focused46 Fly tests also passed (`.local/fly-landing-focused7.log`). Native
+  `display_entity_layer --check` reproduces all88 rows, including13 Fly rows.
+- Earlier full1..4 failures led to the physical-height and custom-Fly wrapper
+  fixes above; the vector-order fixture now uses416 leptons (four levels), and
+  retirement uses actual takeoff instead of silently changing altitude after
+  ground registration. No replay baseline was changed to suppress a failure.
+- `cargo clippy -p vera20k --lib`:pass,1030warnings (same count as prior
+  increment),1m27s (`.local/fly-landing-clippy.log`).
+- `cargo build -p vera20k --release --bin parity-digest`:pass,4m07s,26warnings
+  (`.local/fly-landing-release.log`). Executable SHA256
+  `728c32753109a51dca9bc1c996a1219101db050ce3cf0887a9595a375f08471f`.
+  Two retail `Dustbowl.mmx` loads through the shared scenario loader, seed
+  `0x00C0FFEE`,30frames each, pass with identical per-frame digests:
+  `.local/fly-landing-retail-{a,b}.{log,jsonl}`; digest-file SHA256
+  `0e51d9630b2aae94e57ba87c68d82d3f42bcc6eab371e89452c478aaac443ddf`.
+  This validates retail loading and repeatability, not native combat or rendered
+  takeoff/landing/reload. All owned Cargo/native/retail operations are terminal.
 
-Landing continuation evidence:
-`fly_landing_phase` has29 full4CD2A0 calls using real Aircraft/Fly/Mark/Display/
-AirTracker/CanEnter/destination/counter callees. Accepted ordinary non-AirportBound
-cases cover retained Top->Ground resubmission even with equal live-layer queries,
-threshold299/300, health/latches, owner+2E8 signs, counter wrap/overlap, already-
-OnBridge and empty destination. RNG unchanged; full Rust callback is unported.
-Changed-layer bridge fixture reaches Foot4DDC60/radio24 then Tactical6DA8EE with
-missing renderer context: finish fixture, do not stub. Refusal/search/destruction,
-AirportBound radio, Carryall/IsDropship effects and full Process are excluded.
+Ghidra: renamed false4196B0 ActionOnCell to AircraftClass__Can_Enter_Cell;
+renamed4CCA20 to FlyLocomotionClass__Link_To_Object using original ctor/vtable
+and executable evidence. Both saved/read back. Foot4DDC60 EOL comment also
+saved/read back via read-only inline Java (no Ghidra function at that address;
+no boundary repair). Foot4DB800 comment also saved/read back: Infantry7EB058+78
+and Unit7F5C70+78 both reach Foot4DB7E0 -> loco+74; Fly7E89F4+74 is4CFCF0.
+Shared unrelated Java compile errors did not prevent the
+read script's successful result. No byte/prototype/boundary changes.
 
-Owner+2E8 is distinct from `RockingState`: Fly's matrix4CF610 uses owner+328/+32C
-for rocking and type+3B0 for pitch, not+2E8. Confirmed+2E8 producer is the
-IsDropship-only4CE2E5..4CE3BA approach expression using distance, Type+2F8 and
-Type PitchAngle+3B0. Landing4CE8D4..4CE90A decays it by0.02 at height0; positive
-values block completion4CEC92. IsMoving4CCA90 and AircraftUnload41520D also read
-it; ctor6F2E00 clears it and Save70C354 retains it. It needs a proper owner and
-all required producers/consumers; do not equate it with the existing body rocker.
-Full landing also needs speed target/current reset, FootSetSpeed4D3710 zero,
-air removal, retained counter helper, destination clear/path timer, effects and
-Mark/Display transaction. Non-Landable branch is now ported, not the landing arm.
+Next required joins and identified defects:
+- Native BeginLanding4CFA70 gates through effectiveMission7, Techno705D60 ->
+ 6385C0 planning/event queue, and live AircraftType AirportBound/current-building
+  radio contact; refusal calls Aircraft EnterIdle4176F0. Techno+514 is NOT proven
+  parasite state:6385C0 queues Deliberate28 and pops a111-byte planned event,
+  marks+1C pending and appends AC4B48. Getter705D20 reads+514 and setter705D10
+  stores it; setter callers include6370E9(global cleanup),638B39,637FCB,63836F
+  and63642D. Planning registry AC4C78 and cleanup6370B0/636310 were read only;
+  native prototypes/stack aliases still need instruction verification. The
+  prerequisite owner/producers are not ported.
+- Actual BeginLanding callers are Process4CE43C, navigation4CF520 and null
+  MoveTo4CCDDB; BeginTakeoff callers are MoveTo4CCED4 and landing retry4CE9DD.
+  Aircraft Docking1/3 and older aircraft_dock still write raw flags. Migrate the
+  real movement/docking triggers, not an invented per-tick AuxSound1 replay.
+- Full Process horizontal/continuous slowdown/drift/navigation/arrival remains
+  legacy. Native4CE3C0 same-cell/zero-target-speed landing gate and4CEFB0
+  navigation (docking coordinate, FindAttackCell, strafing/facing/height/slowdown)
+  have been read; decompilation has invalid stack aliases, use instructions.
+- FootAssignDestination(NULL) still lacks +6AD linked cleanup and current/queued
+  Attack skip-Stop behavior. Fly Stop4CCFD0 moves through EmergencyRelocate,
+  Aircraft FindAttackCell/FindNearestFriendlyAirfield, bounds/FNPC and destruction.
+  Normal completed landing has moving=false/pitch<=0, but other suffixes do not.
+- General null MoveTo and all FlightAttitude readers still require migration.
+- Team6EC300 waypoint early allow, shared Dummy shroud byte, real docking radio
+  lifecycle, failed-search C4/destruction and landing effects need coverage/closure.
+  26 landing-space cases do not certify every native object category or map slot.
+- Legacy production takeoff->landing->reload rendered validation and Attack
+  re-engagement are mandatory review findings, still unresolved. No PR/merge yet.
+
+Preserved published prerequisites:48f56593 cruise-mode/non-Landable phase;
+1ab75310 Foot neighbor ownership. Their prior full suites/Clippy passed; older
+release Dustbowl runs do not validate this WIP. Follow the remaining review and
+Tag/Trigger evidence below; documentation of omissions does not resolve them.
 
 Review and remaining required joins:
 The sole `combat_increment_critic` finished against d75dc8b6/main3a7a76dd;

@@ -58,7 +58,7 @@ fn is_ship_locomotor(entity: &GameEntity) -> bool {
         .is_some_and(|loco| matches!(loco.kind, LocomotorKind::Ship))
 }
 
-pub(super) fn target_cell_coord(
+pub(crate) fn target_cell_coord(
     rx: u16,
     ry: u16,
     resolved_terrain: Option<&ResolvedTerrainGrid>,

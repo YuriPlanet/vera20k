@@ -33,6 +33,13 @@ fn entity_layer(
         if !matches!(kind, Some(LocomotorKind::Fly | LocomotorKind::Jumpjet)) {
             return DisplayLayer::GROUND;
         }
+        if kind == Some(LocomotorKind::Fly) {
+            return if crate::sim::movement::air_movement::current_fly_height(entity, terrain) > 0 {
+                DisplayLayer::TOP
+            } else {
+                DisplayLayer::GROUND
+            };
+        }
     }
     let raw = position_world_coord(&entity.position);
     let height = ground_surface_z_at([raw.x, raw.y], entity.on_bridge, terrain, None)
@@ -43,13 +50,6 @@ fn entity_layer(
                 .as_ref()
                 .map_or(0, |l| l.altitude.to_num::<i32>())
         });
-    if kind == Some(LocomotorKind::Fly) && entity.category != EntityCategory::Structure {
-        return if height > 0 {
-            DisplayLayer::TOP
-        } else {
-            DisplayLayer::GROUND
-        };
-    }
     let mut adjusted_height = height;
     if kind == Some(LocomotorKind::Jumpjet) && !entity.on_bridge {
         // This map lookup precedes the high-flying gate even when +74 is false.
@@ -354,6 +354,25 @@ mod tests {
                 DisplayLayer::from_index(row["layer"].as_u64().unwrap() as u8).unwrap(),
                 "{name}"
             );
+            if kind == "fly" {
+                // Both consumers dispatch Fly4CFCF0. A stale compatibility
+                // cache must not put an airborne object on the ground list
+                // (or remove a landed one), independently of display retention.
+                for cached_height in [-1000, 1000] {
+                    entity.locomotor.as_mut().unwrap().altitude = SimFixed::from_num(cached_height);
+                    assert_eq!(
+                        crate::sim::occupancy::cell_list_layer_for_entity(entity, Some(&terrain))
+                            .is_some(),
+                        row["layer"] == 2,
+                        "{name}, cached height {cached_height}",
+                    );
+                    assert_eq!(
+                        entity_layer(entity, Some(&terrain), Some(&rules)),
+                        DisplayLayer::from_index(row["layer"].as_u64().unwrap() as u8).unwrap(),
+                        "{name}, cached height {cached_height}",
+                    );
+                }
+            }
         }
     }
 }

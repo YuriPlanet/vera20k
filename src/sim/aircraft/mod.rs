@@ -674,7 +674,9 @@ pub fn tick_aircraft_missions(
             // Docking sub_state 1: set air phase to Descending.
             if let AircraftMission::Docking { sub_state: 1, .. } = &m.new_mission {
                 if let Some(ref mut loco) = entity.locomotor {
-                    loco.begin_fly_landing();
+                    if loco.fly_runtime().is_some_and(|s| !s.landing()) {
+                        loco.begin_fly_landing();
+                    }
                 }
                 entity.movement_target = None;
             }

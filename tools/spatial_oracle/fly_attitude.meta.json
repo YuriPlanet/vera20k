@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Approach writer gates and f32 pitch histories through zero. Compare deterministic SimFixed pitch and completion tick counts; does not prove full horizontal Process, AircraftUnload, animation or landing.",
+  "assumptions": [
+    "Real Aircraft/Type/Fly tables and ctor. Supplied nonnegative distance, SlowdownDistance, speed, health and stack-local IsDropship flag. Original degree constant. Native control word supplied by shared Fixture.",
+    "Landing decay range is entered at sampled height0; calling it is explicitly separate from full landing effects and admission."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "approach_range": "0x004CE2E5",
+    "settle_range": "0x004CE8CB"
+  },
+  "payload_sha256": "9a083af57d56cac53998432617a862a1bb521dc9d4e2131e0ebcb97ba432bd43"
+}

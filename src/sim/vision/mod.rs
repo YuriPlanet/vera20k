@@ -1167,6 +1167,16 @@ impl FogState {
         None
     }
 
+    /// Native586360 tests Cell+12C bit8, which persists independently of the
+    /// current sight flag. Gameplay reads the viewer authority directly;
+    /// building a presentation cache cannot change destination admission.
+    pub(crate) fn is_ground_unshrouded(&self, owner: InternedId, rx: u16, ry: u16) -> bool {
+        self.by_owner.get(&owner).is_some_and(|view| {
+            view.index(rx, ry).and_then(|i| view.cell_runtime.get(i))
+                .is_some_and(|cell| cell.alt_flags & CellVisibilityRuntime::ALT_GROUND_VISIBLE != 0)
+        })
+    }
+
     /// Returns true if the owner (or a friendly ally) currently sees the cell.
     pub fn is_cell_visible(&self, owner: InternedId, rx: u16, ry: u16) -> bool {
         // Fast path: use pre-merged grid.
@@ -1575,7 +1585,6 @@ pub(crate) fn reveal_entity_vision(
 
 /// Explicit admitted release/readmit event (e.g. FootAI4DA6F7/4DA706),
 /// distinct from unchanged view reconciliation. The caller owns its timer/gates.
-#[cfg(test)]
 pub(crate) fn force_refresh_entity_vision(
     fog: &mut FogState,
     entity: &crate::sim::game_entity::GameEntity,

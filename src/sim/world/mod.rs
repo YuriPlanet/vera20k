@@ -32,6 +32,8 @@ pub(crate) mod damage_consequences;
 pub(crate) mod display_layers;
 mod display_registry;
 mod frame_error;
+mod fly_landing;
+mod fly_orders;
 mod lifecycle;
 mod load_object_lifecycle;
 mod logic_vector;
@@ -289,6 +291,8 @@ pub enum SimSoundEvent {
         stop_sound_id: Option<InternedId>,
         world: crate::sim::anim_class::AnimWorldCoord,
     },
+    /// Native Fly AuxSound1/AuxSound2 at the phase callback world coordinate.
+    AircraftPhase { sound_id: InternedId, world: crate::sim::anim_class::AnimWorldCoord },
     /// A weapon fired — play its Report= sound.
     WeaponFired {
         report_sound_id: InternedId,

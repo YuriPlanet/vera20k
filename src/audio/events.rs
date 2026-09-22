@@ -135,6 +135,10 @@ pub enum GameSoundEvent {
     },
 
     /// DeploySound on infantry stance entry or successful unit-to-building conversion.
+    AircraftPhase {
+        sound_id: String,
+        source: Option<SoundSource>,
+    },
     EntityDeployed {
         /// sound.ini ID from the entity's DeploySound= field.
         sound_id: String,
@@ -372,6 +376,7 @@ impl GameSoundEvent {
             | Self::UnitAttackOrder { sound_id, .. }
             | Self::EntityDestroyed { sound_id, .. }
             | Self::EntityCrushed { sound_id, .. }
+            | Self::AircraftPhase { sound_id, .. }
             | Self::EntityDeployed { sound_id, .. }
             | Self::LeaveTransport { sound_id, .. }
             | Self::EntityUndeployed { sound_id, .. }
@@ -407,6 +412,7 @@ impl GameSoundEvent {
             | Self::AnimationStopped { source, .. }
             | Self::EntityDestroyed { source, .. }
             | Self::EntityCrushed { source, .. }
+            | Self::AircraftPhase { source, .. }
             | Self::EntityDeployed { source, .. }
             | Self::LeaveTransport { source, .. }
             | Self::EntityUndeployed { source, .. }

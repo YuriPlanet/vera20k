@@ -300,6 +300,12 @@ impl LocomotorState {
                 if let LocomotorRuntimePayload::Jumpjet(runtime) = &mut payload {
                     runtime.link(&obj.jumpjet_params);
                 }
+                if let LocomotorRuntimePayload::Fly(runtime) = &mut payload {
+                    runtime.link(
+                        obj.category == crate::rules::object_type::ObjectCategory::Aircraft
+                            && obj.airport_bound,
+                    );
+                }
                 payload
             },
             layer,

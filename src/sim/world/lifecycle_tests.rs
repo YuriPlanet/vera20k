@@ -1735,13 +1735,17 @@ fn gsi_04_07_damage_air_spatial_entry_crossing_and_exit_keep_vector_order() {
     sim.session.map_width = 40;
     sim.session.map_height = 40;
     install_common_raw_terrain(&mut sim, 40, 40, 0, None);
-    install_fly_aircraft(&mut sim, 20, SimFixed::from_num(4));
-    install_fly_aircraft(&mut sim, 10, SimFixed::from_num(4));
+    // Foot Unlimbo4D72B2 adds ConsideredAircraft only above the native
+    // high-flight threshold (208 leptons). The altitude cache uses leptons,
+    // whereas the Reveal request below uses coarse levels: four levels = 416.
+    install_fly_aircraft(&mut sim, 20, SimFixed::from_num(416));
+    install_fly_aircraft(&mut sim, 10, SimFixed::from_num(416));
 
     let _ = sim.try_reveal_entity(20, common_raw_request(2, 4, 4, 128, 128));
     let _ = sim.try_reveal_entity(10, common_raw_request(3, 4, 4, 128, 128));
     let first = sim.substrate.entities.get(20).unwrap();
     let second = sim.substrate.entities.get(10).unwrap();
+    assert!(first.air_spatial_bucket.is_some());
     assert_eq!(first.air_spatial_bucket, second.air_spatial_bucket);
     assert!(
         first.air_spatial_enter_order < second.air_spatial_enter_order,
@@ -7693,8 +7697,6 @@ fn production_air_wrapper_retains_native_jumpjet_result_even_when_height_cache_c
 
 #[test]
 fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
-    use crate::sim::movement::DestinationTiming;
-    use crate::sim::movement::air_movement::issue_air_move_command;
     use crate::util::fixed_math::SIM_ONE;
 
     // Fly4CDD07/4CDD1A: XY integration precedes physical-height feedback.
@@ -7726,15 +7728,7 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
         loco.fly_current_speed = SIM_ONE;
         loco.speed_fraction = SIM_ONE;
         loco.rot = 0;
-        assert!(issue_air_move_command(
-            &mut sim.substrate.entities,
-            1,
-            (2, 2),
-            SimFixed::from_num(3840),
-            DestinationTiming::new(0, 60),
-            sim.resolved_terrain.as_ref(),
-            None,
-        ));
+        assert!(sim.issue_air_cell_destination(1, (2, 2), SimFixed::from_num(3840), None,));
         sim.tick_air_movement_with_cell_lists_one(1, None);
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         assert_eq!((entity.position.rx, entity.position.ry), (2, 2));

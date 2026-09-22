@@ -939,7 +939,8 @@ pub(crate) fn greatest_threat(
                     continue;
                 };
                 if !candidate.lifecycle.cell_marked
-                    || crate::sim::occupancy::cell_list_layer_for_entity(candidate).is_some()
+                    || crate::sim::occupancy::cell_list_layer_for_entity(candidate, terrain)
+                        .is_some()
                     || ctx.is_ally(candidate)
                 {
                     continue;
@@ -1703,7 +1704,12 @@ mod tests {
                     if id == 3 {
                         entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Fly));
                     }
-                    // Actual shared Mark produces BOTH landed-Fly authorities.
+                    // BeginTakeoff may register a still-grounded Fly before a
+                    // physical step. Mark retains that registration; it does
+                    // not create AirTracker membership from height or kind.
+                    if id == 3 {
+                        sim.begin_fly_takeoff(id, Some(&rules));
+                    }
                     sim.add_entity_occupancy(id);
                 }
                 let layer = if bridge {

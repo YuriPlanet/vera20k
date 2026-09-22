@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "26 full Foot landing-space calls: occupancy, radio contact, spawned exceptions, Track cost, reservation liveness/self and fixed-grid aliases. No caller lifecycle, missing-cell Dummy, docking or complete Fly Process proof.",
+  "assumptions": [
+    "Supplied ordinary marked Aircraft, real Cell/Map vtables and allocated 128x128 cells.",
+    "Flat Clear cells, no overlay, Track land cost zero or one; supplied raw occupation and contacts.",
+    "Aircraft registry has at most one supplied live/dead/limbo reservation."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "landing_space": "0x004DDC60",
+    "cell_at_coord": "0x00565730",
+    "nearest_techno": "0x0047C3D0",
+    "passability": "0x004834A0"
+  },
+  "payload_sha256": "beca81f9b8c766254d33c5744b994eda3f0492996e5f71853170cab4bce3ef8c"
+}

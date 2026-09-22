@@ -346,7 +346,7 @@ pub struct ObjectType {
     /// Ordinary Drive4B1C59..1C72/Ship6A12A3..12BC chain admission requires it.
     pub passive: bool,
     /// Lepton distance from destination at which braking begins (SlowdownDistance=).
-    /// Default 512 (~2 cells). Original engine default is 500.
+    /// Native default500 leptons.
     pub slowdown_distance: i32,
     /// TechnoType+618: constructor711050 seeds -1; ReadINI712336 reads
     /// `FlightLevel`. Getter717800 uses General.FlightLevel only for -1.
@@ -354,6 +354,12 @@ pub struct ObjectType {
     /// TechnoType+C95: ctor7113B9=false, ReadINI712350..712373 reads
     /// IsDropship; Fly4CDA28 selects its distinct vertical motion.
     pub(crate) is_dropship: bool,
+    /// TechnoType+3B0, ReadINI712379..712391: degrees converted to radians;
+    /// -1 preserves the constructor value (20 degrees). Used by Fly approach.
+    pub(crate) pitch_angle: SimFixed,
+    /// TechnoType+52C/+530, ReadINI712E4D/712E89: takeoff/landing cues.
+    pub(crate) aux_sound1: Option<String>,
+    pub(crate) aux_sound2: Option<String>,
     /// Vision range in cells.
     pub sight: i32,
     /// Technology level required (-1 = unbuildable by player).
@@ -1751,6 +1757,21 @@ impl ObjectType {
             slowdown_distance: section.get_i32("SlowdownDistance").unwrap_or(500),
             flight_level: section.get_i32("FlightLevel").unwrap_or(-1),
             is_dropship: section.get_bool("IsDropship").unwrap_or(false),
+            pitch_angle: sim_from_f32(
+                section
+                    .get_f32("PitchAngle")
+                    .filter(|v| *v != -1.0)
+                    .unwrap_or(20.0)
+                    * (std::f32::consts::PI / 180.0),
+            ),
+            aux_sound1: section
+                .get("AuxSound1")
+                .map(str::to_string)
+                .filter(|s| !s.is_empty()),
+            aux_sound2: section
+                .get("AuxSound2")
+                .map(str::to_string)
+                .filter(|s| !s.is_empty()),
             sight: section.get_i32("Sight").unwrap_or(0),
             // TechnoTypeClass ctor @ gamemd.exe 0x00711082 initializes
             // +0x634 to 255; ReadINI preserves that current value when the

@@ -1773,6 +1773,12 @@ impl Simulation {
             hash_retained_track_classes(entity, schema, hasher);
             entity.foot_speed.applied_fraction.hash(hasher);
             entity.foot_speed.cached_current_speed.hash(hasher);
+            if schema.includes(HashFeature::FlyLanding)
+                && entity.flight_attitude != Default::default()
+            {
+                0x2e8_u32.hash(hasher);
+                entity.flight_attitude.hash(hasher);
+            }
             if schema.includes(HashFeature::FootCrateSpeed) {
                 entity.foot_speed.crate_multiplier().hash(hasher);
             }
@@ -2357,6 +2363,11 @@ fn hash_locomotor_payload(
             }
             if schema.includes(HashFeature::FlyCruiseMode) {
                 state.cruise_mode().hash(hasher);
+            }
+            if schema.includes(HashFeature::FlyLanding) {
+                state.moving().hash(hasher);
+                state.landing_effect_latched().hash(hasher);
+                state.airport_bound().hash(hasher);
             }
         }
         LocomotorRuntimePayload::Jumpjet(state) => {

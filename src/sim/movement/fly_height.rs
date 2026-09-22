@@ -25,6 +25,58 @@ pub struct FlyRuntime {
     /// mode-driven speed/navigation decisions still require their native port.
     #[serde(default)]
     cruise_mode: bool,
+    /// Native+34: retained movement request; speed and destination can differ.
+    #[serde(default)]
+    moving: bool,
+    /// Native+52: one-shot landing animation/sound, reset by BeginLanding.
+    #[serde(default)]
+    landing_effect_latched: bool,
+    /// Full Fly+18: copied by LinkToObject4CCA20 from an Aircraft's type+E0D.
+    /// Landing reads this instance value; BeginLanding separately reads live type.
+    #[serde(default)]
+    airport_bound: bool,
+}
+
+/// Techno-owned approach pitch. Native stores f32; the engine uses SimFixed.
+/// The0.02 step rounds to1311/65536. Boundary histories are compared with the
+/// executable; differences below one fixed quantum are intentionally retained.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct FlightAttitude {
+    pitch: crate::util::fixed_math::SimFixed,
+}
+
+impl FlightAttitude {
+    pub(crate) fn blocks_landing(&self) -> bool {
+        self.pitch > crate::util::fixed_math::SIM_ZERO
+    }
+
+    /// Fly4CE2E5..4CE3BA. Caller owns IsDropship, health, speed and takeoff gates.
+    pub(crate) fn approach(
+        &mut self,
+        distance: i32,
+        slowdown: i32,
+        angle: crate::util::fixed_math::SimFixed,
+    ) {
+        if distance >= slowdown || slowdown <= 0 {
+            return;
+        }
+        // 1-(distance-0.6*slowdown)/(0.4*slowdown), then min(angle, ratio*angle).
+        // i128 intermediates keep authored distances outside I16F16 in range.
+        let numerator = i128::from(slowdown) - i128::from(distance);
+        let bits = i128::from(angle.to_bits()) * numerator * 5 / (i128::from(slowdown) * 2);
+        self.pitch = crate::util::fixed_math::SimFixed::from_bits(
+            bits.min(i128::from(angle.to_bits()))
+                .clamp(i128::from(i32::MIN), i128::from(i32::MAX)) as i32,
+        );
+    }
+
+    /// Fly4CE8D4..4CE90A, only IsDropship at sampled height exactly0.
+    pub(crate) fn settle(&mut self) {
+        if self.blocks_landing() {
+            self.pitch = (self.pitch - crate::util::fixed_math::SimFixed::lit("0.02"))
+                .max(crate::util::fixed_math::SIM_ZERO);
+        }
+    }
 }
 
 pub(crate) enum TakeoffFacing {
@@ -34,14 +86,74 @@ pub(crate) enum TakeoffFacing {
 }
 
 impl FlyRuntime {
+    pub(crate) fn link(&mut self, airport_bound: bool) {
+        self.airport_bound = airport_bound;
+    }
+
+    pub(crate) fn airport_bound(&self) -> bool {
+        self.airport_bound
+    }
+
     pub(crate) fn has_phase_callback(&self) -> bool {
         self.taking_off || self.landing
     }
 
-    /// Landing runs first in4CD2A0 when both flags are set; its callback must
-    /// complete before that case can select the takeoff arm.
-    pub(crate) fn has_only_takeoff_callback(&self) -> bool {
-        self.taking_off && !self.landing
+    pub(crate) fn landing(&self) -> bool {
+        self.landing
+    }
+
+    pub(crate) fn taking_off(&self) -> bool {
+        self.taking_off
+    }
+
+    pub(crate) fn moving(&self) -> bool {
+        self.moving
+    }
+
+    pub(crate) fn landing_effect_latched(&self) -> bool {
+        self.landing_effect_latched
+    }
+
+    ///4CEB53..4CEB90, once per admitted BeginLanding, strictly below300.
+    pub(crate) fn admit_landing_effect(&mut self, height: i32) -> bool {
+        if self.landing_effect_latched || height >= 300 {
+            return false;
+        }
+        self.landing_effect_latched = true;
+        true
+    }
+
+    ///4CED0B..4CED13; destination and moving are handled later, conditionally.
+    pub(crate) fn finish_landing(&mut self) {
+        self.landing = false;
+        self.taking_off = false;
+    }
+
+    ///4CEF5F precedes null MoveTo. Null MoveTo itself never writes+34.
+    pub(crate) fn finish_destination(&mut self) {
+        self.moving = false;
+    }
+
+    pub(crate) fn clear_destination_after_failed_landing(&mut self) {
+        self.destination = [0; 3];
+    }
+
+    /// Admitted null MoveTo4CCD6D..4CCE00. Caller performs BeginLanding if
+    /// requested; its refusal leaves the copied current coordinate intact.
+    pub(crate) fn null_destination(&mut self, current: DriveCoord, height: i32, base: i32) -> bool {
+        let begin = (height > base || self.taking_off) && !self.landing;
+        self.destination = if begin {
+            [current.x, current.y, current.z]
+        } else {
+            [0; 3]
+        };
+        self.cruise_mode = false;
+        begin
+    }
+
+    /// Phase4CD3C3 only sets this flag. It does not call BeginTakeoff.
+    pub(crate) fn reject_landing_cell(&mut self) {
+        self.taking_off = true;
     }
 
     /// Takeoff4CE746..4CE821. Height is already bridge-normalized by the caller.
@@ -116,14 +228,15 @@ impl FlyRuntime {
 
     /// Admitted non-null MoveTo4CCE1C..4CCE6E. A live Target and signed Ammo!=0
     /// replace Z with ground+FlightLevel; ground is read only on that arm.
-    /// The caller selects mode+5C after takeoff admission. Moving+34 and
-    /// null/Stop still require the pending native Process/landing migration.
+    /// Moving+34 is written before destination; the caller selects mode+5C
+    /// after the complete BeginTakeoff transaction.
     pub(crate) fn retain_destination(
         &mut self,
         request: DriveCoord,
         armed_flight_level: Option<i32>,
         ground: impl FnOnce() -> i32,
     ) {
+        self.moving = true;
         self.destination = [request.x, request.y, request.z];
         if let Some(flight_level) = armed_flight_level {
             self.destination[2] = ground().wrapping_add(flight_level);
@@ -165,6 +278,7 @@ impl FlyRuntime {
     pub(crate) fn begin_landing(&mut self) {
         self.taking_off = false;
         self.landing = true;
+        self.landing_effect_latched = false;
         self.target_height = 0;
     }
 
@@ -289,6 +403,44 @@ pub(crate) struct HeightOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_approach_attitude_and_completion_histories() {
+        use crate::util::fixed_math::SimFixed;
+        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/fly_attitude.json"
+        ))
+        .unwrap();
+        assert_eq!(rows.len(), 65);
+        for row in rows {
+            let input = &row["input"];
+            let mut state = FlightAttitude {
+                pitch: SimFixed::from_num(input["initial"].as_f64().unwrap_or(0.0)),
+            };
+            if input["dropship"].as_bool().unwrap_or(true)
+                && input["health"].as_i64().unwrap_or(100) > 0
+                && input["speed"].as_f64().unwrap_or(0.5) > 0.0
+                && !input["taking_off"].as_bool().unwrap_or(false)
+            {
+                state.approach(
+                    input["distance"].as_i64().unwrap() as i32,
+                    input["slowdown"].as_i64().unwrap() as i32,
+                    SimFixed::from_num(row["radians"].as_f64().unwrap()),
+                );
+            }
+            assert!(
+                (state.pitch.to_num::<f64>() - row["history"][0].as_f64().unwrap()).abs()
+                    < 1.0 / 65536.0,
+                "{row}"
+            );
+            let mut ticks = 0;
+            while state.blocks_landing() && ticks < 100 {
+                state.settle();
+                ticks += 1;
+            }
+            assert_eq!(ticks, row["settle_ticks"].as_u64().unwrap(), "{row}");
+        }
+    }
 
     #[test]
     fn all_saved_original_vertical_steps_match() {

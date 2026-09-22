@@ -98,17 +98,19 @@ impl Simulation {
     }
 
     /// Foot Unlimbo4D7248..4D72BF increments before the high-flight query;
-    /// high flight leaves the prior (constructor-zero) source unchanged.
+    /// high flight leaves the prior (constructor-zero) source unchanged. Return
+    /// that same native +54 result for the following AirTracker admission.
     pub(crate) fn foot_neighbors_after_unlimbo(
         &mut self,
         id: u64,
         rules: Option<&crate::rules::ruleset::RuleSet>,
-    ) {
+    ) -> bool {
         let Some(cell) = self.foot_neighbor_position(id) else {
-            return;
+            return false;
         };
         self.adjust_foot_neighbors(cell, true);
-        if !self.foot_neighbor_high_flight(id, rules) {
+        let high_flight = self.foot_neighbor_high_flight(id, rules);
+        if !high_flight {
             self.substrate
                 .entities
                 .get_mut(id)
@@ -117,6 +119,7 @@ impl Simulation {
                 .neighbor_state
                 .cell = cell;
         }
+        high_flight
     }
 
     /// Foot PerCell(reason2)4D8627..4D8757 skips the WHOLE migration on zero.
@@ -313,7 +316,9 @@ mod tests {
                 .unwrap()
             });
             match input["operation"].as_str().unwrap() {
-                "unlimbo" => sim.foot_neighbors_after_unlimbo(1, rules.as_ref()),
+                "unlimbo" => {
+                    sim.foot_neighbors_after_unlimbo(1, rules.as_ref());
+                }
                 "per_cell" => sim.foot_neighbors_at_per_cell(1),
                 "limbo" => sim.foot_neighbors_before_limbo(1),
                 "owner_change" => sim.foot_neighbors_after_owner_change(1, rules.as_ref()),

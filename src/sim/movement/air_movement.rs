@@ -6,7 +6,6 @@
 //! their native migration; they are not covered by that height comparison.
 
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::sim::components::{DriveCoord, MovementTarget};
 use crate::sim::debug_event_log::DebugEventKind;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::movement::locomotor::{AirMovePhase, LocomotorState, MovementLayer};
@@ -81,189 +80,18 @@ pub(crate) fn ensure_fly_facings(entity: &mut crate::sim::game_entity::GameEntit
         .get_or_insert_with(|| super::FacingClass::new(initial, rot));
 }
 
-/// Issue a move command for an air unit.
-///
-/// Returns whether the legacy execution adapter changed. Native MoveTo is void;
-/// this bool is not the enclosing Foot AssignDestination/NavCom outcome.
-/// Aircraft ignore ordinary terrain blocking
-/// (no terrain blocking check needed — they fly over everything).
-///
-/// Fly retains the resolved Cell coordinate once; its horizontal adapter reads
-/// that owner instead of rebuilding a coordinate from the path cache each tick.
-/// Native Aircraft/Foot AssignDestination and Fly null/Stop are still separate
-/// pending migrations; this is not their complete navigation transaction.
-pub fn issue_air_move_command(
-    entities: &mut EntityStore,
-    entity_id: u64,
-    target: (u16, u16),
-    speed: SimFixed,
-    timing: super::DestinationTiming,
-    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    rules_context: Option<(
-        &crate::rules::ruleset::RuleSet,
-        &crate::sim::intern::StringInterner,
-    )>,
-) -> bool {
-    let is_fly = entities.get(entity_id).is_some_and(|entity| {
-        entity
-            .locomotor
-            .as_ref()
-            .and_then(|l| l.fly_runtime())
-            .is_some()
-    });
-    let coordinate = if is_fly {
-        super::navcom::target_cell_coord(target.0, target.1, terrain)
-    } else {
-        DriveCoord::cell(target.0, target.1, 0)
-    };
-    issue_air_coordinate_move_command(
-        entities,
-        entity_id,
-        coordinate,
-        speed,
-        timing,
-        terrain,
-        rules_context,
-    )
+/// Shared represented MoveTo/BeginTakeoff refusal gates. EMP and Foot+6A0
+/// still require their missing native owners; do not substitute deploy state.
+pub(crate) fn fly_coordinate_admitted(entity: &crate::sim::game_entity::GameEntity) -> bool {
+    !entity.locomotor.as_ref().is_some_and(|l| !l.powered) && !fly_owner_disabled(entity)
 }
 
-/// The non-null coordinate boundary used by the air order adapter. It does not
-/// replace the owner NavCom reference or implement requester-specific +4C calls.
-pub(crate) fn issue_air_coordinate_move_command(
-    entities: &mut EntityStore,
-    entity_id: u64,
-    request: DriveCoord,
-    speed: SimFixed,
-    timing: super::DestinationTiming,
-    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    rules_context: Option<(
-        &crate::rules::ruleset::RuleSet,
-        &crate::sim::intern::StringInterner,
-    )>,
-) -> bool {
-    let Some(entity) = entities.get(entity_id) else {
-        return false;
-    };
-    if entity
-        .locomotor
+/// Represented owner disable gates shared by MoveTo and BeginTakeoff.
+pub(crate) fn fly_owner_disabled(entity: &crate::sim::game_entity::GameEntity) -> bool {
+    entity
+        .teleport_state
         .as_ref()
-        .and_then(|l| l.fly_runtime())
-        .is_some_and(|state| state.ignores_destination(request))
-    {
-        return false;
-    }
-    // Empty coordinates require the separate native null/landing transaction.
-    if request == (DriveCoord { x: 0, y: 0, z: 0 }) {
-        return false;
-    }
-    // MoveTo4CCCEE..4CCD3A admits through owner warp/disable and power gates.
-    // EMP+504 and the Foot+6A0 timer still need their missing native producers;
-    // see world/techno_ai_cloak.rs. Do not substitute deploy_state for either.
-    if entity.locomotor.as_ref().is_some_and(|l| !l.powered)
-        || entity
-            .teleport_state
-            .as_ref()
-            .is_some_and(|t| t.warp_in_active() || t.warp_out_active())
-    {
-        return false;
-    }
-
-    let flight_level = rules_context.map_or(500, |(rules, interner)| {
-        rules
-            .object(interner.resolve(entity.type_ref()))
-            .map_or(rules.general.flight_level, |object| {
-                object.flight_level(rules.general.flight_level)
-            })
-    });
-    let armed_flight_level = (entity.attack_target.is_some()
-        && entity
-            .aircraft_ammo
-            .as_ref()
-            .is_some_and(|ammo| ammo.current != 0))
-    .then_some(flight_level);
-    // Native stores/substitutes the destination BEFORE querying landing base
-    // and owner height. The ground query can stamp the shared Cell Dummy.
-    if let Some(state) = entities
-        .get_mut(entity_id)
-        .and_then(|entity| entity.locomotor.as_mut().and_then(|l| l.fly_runtime_mut()))
-    {
-        state.retain_destination(request, armed_flight_level, || {
-            super::ground_pose::ground_surface_z_at([request.x, request.y], false, terrain, None)
-                .unwrap_or(0)
-        });
-    }
-    let entity = entities.get(entity_id).expect("selected air mover");
-    let begin_takeoff = entity
-        .locomotor
-        .as_ref()
-        .and_then(|loco| loco.fly_runtime())
-        .is_some_and(|state| {
-            let base =
-                crate::sim::aircraft::landing_base::landing_base(entity, entities, rules_context);
-            state.should_begin_takeoff(
-                entity.health.current,
-                || current_fly_height(entity, terrain),
-                base,
-            )
-        });
-    // Derived cell projection for remaining mission/path consumers; Fly's XYZ
-    // is authoritative. Legacy execution lifetime and speed remain here until
-    // the complete native Process/Stop and mission consumers are migrated.
-    let target = (
-        (request.x / 256) as i16 as u16,
-        (request.y / 256) as i16 as u16,
-    );
-    let movement = MovementTarget {
-        path: vec![target],
-        path_layers: vec![MovementLayer::Air],
-        next_index: 0,
-        speed,
-        final_goal: Some(target),
-        ..Default::default()
-    };
-
-    let Some(entity) = entities.get_mut(entity_id) else {
-        return false;
-    };
-    timing.accept(entity);
-    entity.movement_target = Some(movement);
-
-    if begin_takeoff {
-        entity
-            .locomotor
-            .as_mut()
-            .expect("selected Fly locomotor")
-            .begin_fly_takeoff(flight_level);
-    }
-    //4CCED9: this is a second ground read, from the STORED (possibly armed-Z
-    // substituted) coordinate. Refusals above must never reach this query.
-    let aircraft = entity.category == crate::map::entities::EntityCategory::Aircraft;
-    let aircraft_ready = aircraft
-        && entity
-            .mission_leaf
-            .as_aircraft()
-            .is_some_and(|leaf| leaf.action_latch() != 0);
-    let non_landable = aircraft
-        && rules_context
-            .and_then(|(rules, interner)| rules.object(interner.resolve(entity.type_ref())))
-            .is_some_and(|object| !object.landable);
-    if let Some(state) = entity.locomotor.as_mut().and_then(|l| l.fly_runtime_mut()) {
-        let destination = state.destination();
-        let ground = super::ground_pose::ground_surface_z_at(
-            [destination.x, destination.y],
-            false,
-            terrain,
-            None,
-        )
-        .unwrap_or(0);
-        state.select_destination_mode(
-            ground,
-            armed_flight_level.is_some(),
-            aircraft_ready,
-            non_landable,
-        );
-    }
-    true
+        .is_some_and(|t| t.warp_in_active() || t.warp_out_active())
 }
 
 /// Per-tick stats for air movement diagnostics.
@@ -464,6 +292,21 @@ pub fn tick_air_movement(
             }
         }
 
+        //4CDD75..4CDDD3 samples distance after XY placement and BEFORE vertical
+        // motion/landing drift. The later pitch writer consumes this same local.
+        let destination = entity
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .fly_runtime()
+            .unwrap()
+            .destination();
+        let xy = super::ground_pose::position_world_xy(&entity.position);
+        let approach_distance = crate::sim::cell_kernel::native_xy_distance(
+            destination.x.wrapping_sub(xy[0]),
+            destination.y.wrapping_sub(xy[1]),
+        );
+
         // Original vertical controller follows the committed XY. Object Z
         // remains authoritative; loco.altitude is a bounded read cache only.
         let phase_before = fly_mission_phase(entity, terrain);
@@ -504,6 +347,22 @@ pub fn tick_air_movement(
                     to: format!("{phase_after:?}"),
                     reason: "height target projection".into(),
                 },
+            );
+        }
+
+        //4CE2E5..4CE3BA approach attitude. Only IsDropship produces Techno+2E8.
+        if let Some(object) =
+            rules_context.and_then(|(r, i)| r.object(i.resolve(entity.type_ref())))
+            && object.is_dropship
+            && entity.health.current > 0
+            && entity.locomotor.as_ref().is_some_and(|l| {
+                l.fly_current_speed > SIM_ZERO && l.fly_runtime().is_some_and(|s| !s.taking_off())
+            })
+        {
+            entity.flight_attitude.approach(
+                approach_distance,
+                object.slowdown_distance,
+                object.pitch_angle,
             );
         }
 
@@ -612,24 +471,16 @@ mod tests {
 
     #[test]
     fn test_issue_air_move_command() {
-        let mut entities = EntityStore::new();
+        let mut sim = crate::sim::world::Simulation::with_seed(0);
         let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
         entity.locomotor = Some(make_fly_loco());
-        entities.insert(entity);
+        sim.substrate.entities.insert(entity);
 
-        let ok = issue_air_move_command(
-            &mut entities,
-            1,
-            (20, 15),
-            SimFixed::from_num(10),
-            crate::sim::movement::DestinationTiming::new(0, 60),
-            None,
-            None,
-        );
+        let ok = sim.issue_air_cell_destination(1, (20, 15), SimFixed::from_num(10), None);
         assert!(ok);
 
         // Should have a MovementTarget with final_goal set.
-        let e = entities.get(1).expect("has entity");
+        let e = sim.substrate.entities.get(1).expect("has entity");
         let target = e.movement_target.as_ref().expect("has target");
         assert_eq!(target.final_goal, Some((20, 15)));
         // Path contains only the destination (no Bresenham).
@@ -645,22 +496,14 @@ mod tests {
     /// its phase is its own state field: `AirMovePhase` stays untouched.
     #[test]
     fn a_jumpjet_order_does_not_write_the_fly_phase() {
-        let mut entities = EntityStore::new();
+        let mut sim = crate::sim::world::Simulation::with_seed(0);
         let mut entity = GameEntity::test_default(1, "SHAD", "Americans", 10, 10);
         entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Jumpjet));
-        entities.insert(entity);
+        sim.substrate.entities.insert(entity);
 
-        assert!(issue_air_move_command(
-            &mut entities,
-            1,
-            (20, 15),
-            SimFixed::from_num(10),
-            crate::sim::movement::DestinationTiming::new(0, 60),
-            None,
-            None,
-        ));
+        assert!(sim.issue_air_cell_destination(1, (20, 15), SimFixed::from_num(10), None,));
 
-        let e = entities.get(1).expect("has entity");
+        let e = sim.substrate.entities.get(1).expect("has entity");
         assert!(e.movement_target.is_some(), "the order itself is accepted");
         assert_eq!(
             e.locomotor.as_ref().unwrap().air_phase(),
@@ -670,23 +513,15 @@ mod tests {
 
     #[test]
     fn test_issue_air_move_already_at_target() {
-        let mut entities = EntityStore::new();
+        let mut sim = crate::sim::world::Simulation::with_seed(0);
         let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
         entity.locomotor = Some(make_fly_loco());
-        entities.insert(entity);
+        sim.substrate.entities.insert(entity);
 
-        let ok = issue_air_move_command(
-            &mut entities,
-            1,
-            (10, 10),
-            SimFixed::from_num(10),
-            crate::sim::movement::DestinationTiming::new(0, 60),
-            None,
-            None,
-        );
+        let ok = sim.issue_air_cell_destination(1, (10, 10), SimFixed::from_num(10), None);
         assert!(ok);
         // Native MoveTo accepts a nonnull destination even at the owner cell.
-        let e = entities.get(1).expect("has entity");
+        let e = sim.substrate.entities.get(1).expect("has entity");
         assert!(e.movement_target.is_some());
     }
 
