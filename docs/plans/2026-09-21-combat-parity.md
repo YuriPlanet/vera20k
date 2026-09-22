@@ -146,11 +146,19 @@ Parasite (`feature/combat-parasite`, snapshot/hash 193), owner `sim/combat/paras
   transport load `737602`, bunker `70FBB9` (command and radio), DeploysInto `700EB4` (clears
   Unit+68C), retaliation `708ABD`. IsParalyzed `4DE770` feeds GetFireError `6FC623`/`6FCCD5` and
   both cloak gates.
-- Tests `combat::parasite::tests` (12, flat-map production frames): dog kill/release, drone
-  cadence (50 every 60 frames) and release, suppression death, heal, Sonic eject (facing 64,
-  paralysis 180), Iron Curtain (drone killed, dolphin C4), teleport eject, lost-host return,
-  one parasite per host, load/bunker/deploy refusals, save/load mid-infection. Rust regression
-  only; no native executable comparison.
+- Tests `combat::parasite::tests` (15, flat-map production frames): dog kill/release, deck
+  release, drone cadence (50 every 60 frames) and release, suppression death, heal, Sonic eject
+  (facing 64, paralysis 180, archive cleared), Iron Curtain (drone killed, dolphin C4, orders on a
+  curtained host dropped), teleport eject, lost-host return (archive kept), one parasite per
+  host, load/bunker/deploy refusals, Load timer restart (`6295DB..6295F3`), reselect memo out of
+  the peer hash. Rust regression only; no native executable comparison.
+- Critic (one pass, `127a0a50`): fixed peer-hash `limbo_reselect` (process-local, saved not
+  hashed), deck release Z, launch-lock/IC gates now drop the target like CanInfect (residual:
+  native waits for the 16-frame check `6FA472..6FA4CB`), Load restarts both timers, refusal
+  keeps ArchiveTarget (setter on `BaseDefenseResponseState`), squid attach guard, one CanInfect
+  (`ParasiteVictimFacts::of/admits`), stale docs. Recorded: Area Guard arm of Enter_Idle_Mode,
+  Unlimbo Can_Enter_Cell, the death-Stun timing (below). Declined: skipping limboed attackers in
+  the combat pass (unit fixtures fire from never-revealed entities; follow-up).
 
 ## Native evidence inventory
 
@@ -330,17 +338,30 @@ Team, Tag, Trigger (owners `TeamScriptVm`, `TriggerRuntime`):
   materialize Tag/CellTag/object attachments. Preserve `6E52A0` reuse, prepended instances,
   reset `726400` before gates, `689670`/`689910` resets, poll `55AFB0` order and compaction.
 
-Techno death Stun (next mechanism): TechnoClass::ReceiveDamage's death branch calls Stun
-(`702210` -> FootClass `4D5660` -> Techno `6FCD40`: Assign_Target/Destination NULL, `+280(3)`,
-spawn kill, Detach_All(1) unless Foot+6AD, deselect). VERA broadcasts PointerExpired only at
-UnInit, so every listener sees a dying object late (dogs reappear after the infantry death
-sequence, ~15 frames in the parasite fixture). Needs a consumer census before it lands.
+Techno death broadcast and Stun (next mechanism; research `death-stun-lane.md` in the session
+scratchpad): the first death-moment broadcast is ObjectClass::ReceiveDamage's exact-zero
+Detach_All(1) (`5F57AF`), before TechnoClass's death branch (slaves, drain, mind control, voice,
+radio OVER_OUT, Stun `702210`, fire-system teardown, debris, death weapon). FootClass::Stun
+`4D5660` (NULL destination, Foot+5E0=-1, Stop_Driver) -> TechnoClass::Stun `6FCD40`
+(Assign_Target/Destination NULL, OVER_OUT all, Kill_All_Spawns + ClearAllTargets and
+Detach_All(1) unless Foot+6AD Magnetron-held, deselect). VERA broadcasts only at UnInit (twice),
+so infantry die sequences delay every listener (dogs reappear ~15 frames late); units and
+buildings only reorder within the tick. Plan: one lifecycle owner for the exact-zero callback
+and a `techno_stun`, called from the receiver; expect moved hash pins (Scenario draws in target
+clears) and more roster walks per death at scale.
 
 Parasite residuals (recorded in `combat/parasite.rs`): squid grapple `6297F0` (squids do not
 LimboLaunch); paralysis in Drive/Ship/Fly/Hover/Teleport movers and player-control +0xA0
 (Drive/Ship owner); grinder `73A13E`, ChronoWarp `6CC763` and Magnetron `710026` releases wait
 for those mechanisms; Team membership memo `6FF7A3`; Sonic may target allied infected Foot
 `700377` (squid). Follow-up spawned: full CanEnterBunker (`70FB50` Turret and +67C gates).
+
+Also queued from the parasite work: Enter_Idle_Mode Area Guard arm (Infantry `51CD3E..`, Unit
+`738B67..`; DefaultToGuardArea, GUARD_AREA ability, IQ vs Rules+1440, slave links); Inviso
+(instant) deliveries skip the special detonation arms (squid, possibly other Inviso specials);
+skip limboed attackers in the combat pass; spawn-manager slot handler lacks the native
+alive-child check (Limbo does broadcast); ToProtect response not gated on the damage result;
+debris/aircraft Explosion picks use `main_rng` where native uses Scenario.
 
 Whole-combat gaps (plan list plus review coverage top 10):
 - Special warheads: 10 bodies no-op (`projectile.rs:856`); Parasite ported (squid residual).
@@ -362,5 +383,7 @@ on `3df1f957` merged with main `ef3bf17f` in the landing worktree.
 Landing PR candidate: `cargo test -p vera20k --lib` 9201 passed, 0 failed, 135 ignored
 (two new regressions: dock cycle, Display expiry); `cargo clippy -p vera20k --lib` pass,
 1022 warnings. No replay pin moved. No retail/rendered launch or Linux/macOS execution.
-Parasite candidate: `cargo test -p vera20k --lib` 9213 passed, 0 failed, 135 ignored (12 new);
-Clippy pass; no replay pin moved (the v193 fold adds only parasite/paralysis state).
+Parasite candidate (after critic fixes): `cargo test -p vera20k --lib` 9216 passed, 0 failed,
+135 ignored (15 new); Clippy pass, 1022 warnings; no replay pin moved (the v193 fold adds only
+parasite/paralysis state). Release `parity-digest` Dustbowl.mmx, seed `0x00C0FFEE`, 30 ticks:
+two identical runs.

@@ -1864,6 +1864,19 @@ impl Simulation {
                 .arm_timer
                 .start(self.session.binary_frame as i32, 0);
         }
+        // ParasiteClass Load 6295DB..6295F3 does the same for its suppression
+        // and bite timers: a bite is due at once and suppression is dropped.
+        let frame = self.session.binary_frame;
+        for id in self.substrate.entities.keys_sorted() {
+            if let Some(parasite) = self
+                .substrate
+                .entities
+                .get_mut(id)
+                .and_then(|entity| entity.parasite.as_deref_mut())
+            {
+                parasite.restart_timers_after_load(frame);
+            }
+        }
         self.rebuild_logic_membership();
         self.rebuild_building_anim_slot_indices();
         self.substrate

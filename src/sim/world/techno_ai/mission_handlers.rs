@@ -883,11 +883,13 @@ fn cell_land_type_is(
 ///   writer and meaning are UNKNOWN. Modelling it would be inventing a gate;
 ///   leaving it out can only make the selector run where the original skipped
 ///   it, and the skip case is unidentified.
-/// - the `Area Guard` arm of the no-destination branch. Choosing it over
-///   `Guard` turns on a weapon-ability flag and a type flag that are both
-///   unresolved; the ordinary arm for a player-controlled object is `Guard`,
-///   which is what [`move_arrival_evaluation`] already commits for the same
-///   unresolved branch. Keeping the two consistent matters more than guessing.
+/// - the `Area Guard` arm of the no-destination branch. Its inputs are now
+///   identified: the GUARD_AREA ability (`HasAbility(0x10)` at `0x0051CD4B`),
+///   Type+0xD39 `DefaultToGuardArea` (`0x0051CD5A`, Unit `0x00738B96`), team
+///   membership, and for AI houses CurrentIQ against Rules+0x1440 plus the
+///   slave links. Porting it is its own mechanism (recorded in
+///   `combat/parasite.rs`); until then this commits `Guard`, consistent with
+///   [`move_arrival_evaluation`].
 /// - the AI-only sub-arms, which need a live team and a house-threat field.
 pub(super) fn foot_enter_idle_mode_queue(
     rules: &RuleSet,
@@ -964,9 +966,9 @@ fn foot_enter_idle_mode_selection(
     //
     // Trigger: a caller whose committed and effective missions differ, or one
     // that reaches here with both a destination and a frozen mission. Player
-    // effect: none today — the only live entry is the Attack handler's
-    // no-target exit, where committed == effective == Attack and `[Attack]`
-    // carries neither key. Frequency: zero. Downstream risk: a second producer
+    // effect: none today — the live entries are the Attack handler's no-target
+    // exit and the parasite releases (`queue_foot_enter_idle_mode`), where
+    // committed == effective == Attack and `[Attack]` carries neither key. Frequency: zero. Downstream risk: a second producer
     // would inherit both. (Curiosity for whoever ports it: with a current of -1
     // and only a queued mission, native indexes `MissionControl[-1]` — an
     // out-of-bounds read one entry below the array.)

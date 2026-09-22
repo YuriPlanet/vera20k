@@ -219,9 +219,10 @@ pub(crate) enum TargetFacts<'a> {
     },
 }
 
-/// The victim half of ParasiteClass CanInfect `0x0062A8E0`: a live, unlimboed,
-/// uninfected, Parasiteable Foot outside a tank bunker, plus the water-set
-/// cell a Naval owner requires. GetFireError returns ILLEGAL (5) otherwise.
+/// ParasiteClass CanInfect `0x0062A8E0`, the one implementation both callers
+/// use (AttachTo and GetFireError): a live, unlimboed, uninfected,
+/// Parasiteable Foot outside a tank bunker, plus the water-set cell a Naval
+/// owner requires. GetFireError returns ILLEGAL (5) otherwise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ParasiteVictimFacts {
     pub(crate) infectable: bool,
@@ -236,7 +237,15 @@ impl ParasiteVictimFacts {
         on_water_set: false,
     };
 
-    pub(crate) fn of(target: &GameEntity, target_obj: &ObjectType, on_water_set: bool) -> Self {
+    /// A NULL victim cell passes the water gate (`0x00485060` is not reached).
+    pub(crate) fn of(
+        target: &GameEntity,
+        target_obj: &ObjectType,
+        terrain: Option<&ResolvedTerrainGrid>,
+    ) -> Self {
+        let on_water_set = terrain
+            .and_then(|grid| grid.cell(target.position.rx, target.position.ry))
+            .is_none_or(|cell| cell.is_water);
         Self {
             infectable: matches!(
                 target.category,
@@ -249,6 +258,11 @@ impl ParasiteVictimFacts {
                 && target.bunker_link.installed_in().is_none(),
             on_water_set,
         }
+    }
+
+    /// The owner half: a Naval owner also needs the water-set victim cell.
+    pub(crate) fn admits(self, naval_owner: bool) -> bool {
+        self.infectable && (!naval_owner || self.on_water_set)
     }
 }
 
@@ -911,8 +925,7 @@ fn targeting_fire_error_blocks(
             // 0x0062A8E0; buildings reach it as NULL). The launch lock
             // (0x006FCAE1) and Iron Curtain (0x006FCB21) gates read the frame
             // and are applied at fire admission instead.
-            if warhead.parasite && (!parasite.infectable || (obj.naval && !parasite.on_water_set))
-            {
+            if warhead.parasite && !parasite.admits(obj.naval) {
                 return true;
             }
             // 0x006FC705..0x006FC739: `IsHighFlying && !AA` → 5 (3 when the
@@ -1233,8 +1246,7 @@ pub(crate) fn techno_target_facts<'a>(
         cell_land_type,
         submerged: target.cloak.as_ref().is_some_and(|cloak| cloak.state != 0),
         is_ally,
-        // A NULL cell passes CanInfect's water gate.
-        parasite: ParasiteVictimFacts::of(target, target_obj, cell.is_none_or(|c| c.is_water)),
+        parasite: ParasiteVictimFacts::of(target, target_obj, terrain),
     }
 }
 

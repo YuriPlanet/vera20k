@@ -22,13 +22,27 @@
 //! loading, tank bunkers, DeploysInto, retaliation against the eater.
 //!
 //! RESIDUALS (each needs a mechanism VERA does not have yet):
-//! - Release at the killing hit: the death branch of TechnoClass::ReceiveDamage
-//!   calls Stun (`0x00702210` -> FootClass `0x004D5660` -> Techno `0x006FCD40`),
-//!   whose Detach_All(1) broadcasts PointerExpired while the host is still
-//!   dying. VERA broadcasts only at UnInit, so a dog reappears when the
-//!   infantry corpse is removed (after its death sequence) instead of in the
-//!   bite that killed it. Frequency: every dog kill. Risk: the dog is hidden
-//!   for the death sequence. Owner: the Techno death-Stun port.
+//! - Release at the killing hit (REQUIRED, next mechanism): the death branch
+//!   of TechnoClass::ReceiveDamage calls Stun (`0x00702210` -> FootClass
+//!   `0x004D5660` -> Techno `0x006FCD40`), whose Detach_All(1) broadcasts
+//!   PointerExpired while the host is still dying. VERA broadcasts only at
+//!   UnInit, so the owner stays in limbo for the infantry death sequence:
+//!   hidden, untargetable, unable to re-engage, with its reselect, idle mode
+//!   and suppression test (`0x0062A283`) all late; a short suppression can
+//!   lapse in between and spare an owner native deletes. Frequency: every dog
+//!   kill. Owner: the Techno death-Stun port, which keeps this loop open.
+//! - Area Guard after a release: Enter_Idle_Mode (Infantry `0x0051CD3E..`,
+//!   Unit `0x00738B67..`) picks Area Guard for DefaultToGuardArea types
+//!   (DOG/ADOG/DRON and 8 more) and, IQ-gated, for AI houses; the shared
+//!   selector (`queue_foot_enter_idle_mode`) still picks Guard. Effect: a
+//!   released dog or drone guards in place instead of chasing nearby targets.
+//!   Frequency: every release. Owner: the Enter_Idle_Mode selector port.
+//! - Unlimbo's Can_Enter_Cell (`0x005F4F1B..0x005F4F44`) runs on the unbracketed
+//!   AttachTo-refusal and ExitUnit releases and deletes an owner it refuses
+//!   (Unit/Infantry skip occupants of the attached victim's cell,
+//!   `0x0073F530`, `0x0051C259`). VERA places the owner. Trigger: a launch cell
+//!   taken during the jump, or a NearbyLocation cell only the victim can use.
+//!   Frequency: rare. Owner: the CanEnterCell consolidation (Drive/Ship port).
 //! - Paralysis in the movers: Drive/Ship Set_Destination and Process_Movement
 //!   (`0x004AFD5E`, `0x004B2759`, `0x0069F46E`, `0x006A1DA9`), Fly
 //!   `0x004CCD00`/`0x004CF96E`, Hover `0x00514DB9`/`0x00514FD2`, Teleport
@@ -44,8 +58,9 @@
 //!   suppression 500 + ExitUnit. VERA has no Chronosphere superweapon.
 //! - Magnetron lift (`0x00710026`): a Naval eater exits. VERA does not port the
 //!   IsLocomotor detonation arm.
-//! - Sonic may target an allied infected Foot (What_Action_OnObject
-//!   `0x00700377`); it frees squid grapples, which land with the squid port.
+//! - Sonic weapons may target an allied infected Foot (What_Action_OnObject
+//!   `0x00700377`); the Sonic hit already ejects any eater (`0x004D7345`), but
+//!   the order needs the cursor/command legality VERA does not port yet.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
@@ -98,6 +113,13 @@ impl ParasiteState {
     pub(crate) fn suppress(&mut self, frame: u32, duration: i32) {
         self.suppression = CdTimer::started(frame as i32, duration);
     }
+
+    /// ParasiteClass::Load `0x006295DB..0x006295F3`: both timers restart at
+    /// the load frame with zero duration.
+    pub(crate) fn restart_timers_after_load(&mut self, frame: u32) {
+        self.suppression = CdTimer::started(frame as i32, 0);
+        self.damage = CdTimer::started(frame as i32, 0);
+    }
 }
 
 /// Naval+Organic owners (retail `[SQD]`) run the grapple machine `0x006297F0`
@@ -105,11 +127,14 @@ impl ParasiteState {
 ///
 /// RESIDUAL (Squid grapple): the grapple state machine, its SQDG anim, wakes,
 /// splashes, Culling and per-tick victim paralysis are not ported. Until they
-/// are, such owners do not LimboLaunch and never attach. Trigger: a Giant Squid
-/// (SQD) firing SquidGrab/SquidGrabE. Effect: the squid stays visible and its
-/// grab does nothing (the Parasite arm still suppresses damage), where native
-/// grapples, paralyzes, rocks and damages the ship every 40 frames. Frequency:
-/// Yuri's Revenge naval games. Risk: naval combat balance only.
+/// are, such owners neither LimboLaunch nor attach (both gates below). Trigger:
+/// a Giant Squid (SQD) firing SquidGrab/SquidGrabE. Effect: SQDJUMP is Inviso,
+/// so VERA's instant-hit path deals ordinary ParasitePlus damage once per
+/// weapon ROF (99) with the squid visible and the ship free, where native
+/// grapples, paralyzes, rocks and damages the ship every 40 frames and culls it
+/// when weak. Frequency: Yuri's Revenge naval games. Risk: naval balance.
+/// (The instant-hit path also skips every special detonation arm; that gap is
+/// shared with other Inviso special warheads and tracked separately.)
 pub(crate) fn owner_uses_grapple(object: &ObjectType) -> bool {
     object.naval && object.organic
 }
@@ -179,57 +204,50 @@ fn cell_centre(cell: (i16, i16)) -> DriveCoord {
 }
 
 impl Simulation {
-    /// `CanInfect @ 0x0062A8E0`: every gate in native order.
+    /// `CanInfect @ 0x0062A8E0` for AttachTo, through the same
+    /// [`ParasiteVictimFacts`](super::combat_weapon::ParasiteVictimFacts)
+    /// GetFireError reads.
     pub(crate) fn parasite_can_infect(
         &self,
         owner: u64,
         victim: Option<u64>,
         rules: &RuleSet,
     ) -> bool {
-        let Some(victim_entity) = victim.and_then(|id| self.substrate.entities.get(id)) else {
+        let Some((victim_entity, victim_object)) = victim
+            .and_then(|id| self.substrate.entities.get(id))
+            .and_then(|entity| Some((entity, self.object_type(entity.type_ref(), rules)?)))
+        else {
             return false;
         };
-        if !matches!(
-            victim_entity.category,
-            EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-        ) || victim_entity.lifecycle.in_limbo
-            || !victim_entity.lifecycle.object_alive
-            || victim_entity.health.current == 0
-            || victim_entity.parasite_eating_me.is_some()
-        {
-            return false;
-        }
-        if !self
-            .object_type(victim_entity.type_ref(), rules)
-            .is_some_and(|object| object.parasiteable)
-        {
-            return false;
-        }
-        // +0x2E4: the Techno tank-bunker link (dock writer 0x00459301).
-        if victim_entity.bunker_link.installed_in().is_some() {
-            return false;
-        }
         let naval_owner = self
             .substrate
             .entities
             .get(owner)
             .and_then(|o| self.object_type(o.type_ref(), rules))
             .is_some_and(|object| object.naval);
-        if naval_owner {
-            // Victim GetCell must be a water-set tile (0x00485060).
-            return self.resolved_terrain.as_ref().is_none_or(|terrain| {
-                terrain
-                    .cell(victim_entity.position.rx, victim_entity.position.ry)
-                    .is_none_or(|cell| cell.is_water)
-            });
-        }
-        true
+        super::combat_weapon::ParasiteVictimFacts::of(
+            victim_entity,
+            victim_object,
+            self.resolved_terrain.as_ref(),
+        )
+        .admits(naval_owner)
     }
 
     /// `AttachTo @ 0x0062A980`, reached only from the Parasite detonation arm
     /// with the bullet Target filtered to FootClass (`0x00469406`).
     pub(crate) fn parasite_attach(&mut self, owner: u64, victim: Option<u64>, rules: &RuleSet) {
         let frame = self.session.binary_frame;
+        // Squid residual: a visible grapple owner must not attach while its
+        // grapple is unported (every release path would fail its reveal).
+        if self
+            .substrate
+            .entities
+            .get(owner)
+            .and_then(|o| self.object_type(o.type_ref(), rules))
+            .is_some_and(owner_uses_grapple)
+        {
+            return;
+        }
         let Some(state) = self
             .substrate
             .entities
@@ -283,16 +301,19 @@ impl Simulation {
             self.uninit_with_rules(owner, rules);
             return;
         }
-        self.parasite_released_owner_orders(owner, rules);
+        self.parasite_released_owner_orders(owner, false, rules);
     }
 
     /// Release tail shared by AttachTo refusal, ExitUnit and PointerExpired:
     /// VERA has no planning path (Foot vtable +0x4AC is false), so the owner
-    /// clears its archive target, target and destination, then
-    /// Enter_Idle_Mode(0,1).
-    fn parasite_released_owner_orders(&mut self, owner: u64, rules: &RuleSet) {
+    /// clears its target and destination, then Enter_Idle_Mode(0,1). Only
+    /// ExitUnit (`0x0062A771`) and PointerExpired (`0x0062A3D4`) also clear the
+    /// archive target; the AttachTo refusal (`0x0062AA96..0x0062AAC9`) keeps it.
+    fn parasite_released_owner_orders(&mut self, owner: u64, clear_archive: bool, rules: &RuleSet) {
         if let Some(entity) = self.substrate.entities.get_mut(owner) {
-            entity.base_defense_response.archive_target = None;
+            if clear_archive {
+                entity.base_defense_response.set_archive_target(None);
+            }
             crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
             crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
                 entity, None,
@@ -512,7 +533,7 @@ impl Simulation {
         });
         if placed {
             self.parasite_reselect(owner);
-            self.parasite_released_owner_orders(owner, rules);
+            self.parasite_released_owner_orders(owner, true, rules);
             if let Some(entity) = self.substrate.entities.get_mut(owner) {
                 entity.paralysis_timer = CdTimer::started(frame as i32, rof.wrapping_mul(3));
             }
@@ -602,7 +623,7 @@ impl Simulation {
         });
         if placed {
             self.parasite_reselect(owner);
-            self.parasite_released_owner_orders(owner, rules);
+            self.parasite_released_owner_orders(owner, true, rules);
         } else {
             self.substrate
                 .entities
@@ -937,11 +958,20 @@ impl Simulation {
             return false;
         };
         let infantry = entity.category == EntityCategory::Infantry;
-        let z = self
+        // Unlimbo receives the whole coordinate. A deck release from
+        // GetReleaseCoords (`0x0062AC60..0x0062ACF6`) carries the deck height,
+        // which the reveal adapter reads as `level + 4` with the owner's
+        // OnBridge; cell-centre coordinates (ExitUnit, AttachTo refusal) are
+        // ground, `CellClass::GetCoords @ 0x00486840`.
+        let ground_level = self
             .resolved_terrain
             .as_ref()
             .and_then(|terrain| terrain.cell(rx, ry))
             .map_or(0, |cell| cell.level);
+        let coord_level =
+            u8::try_from(coord.z.max(0) / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS)
+                .unwrap_or(u8::MAX);
+        let z = ground_level.max(coord_level);
         let sub_x = crate::util::fixed_math::SimFixed::from_num(coord.x.rem_euclid(256));
         let sub_y = crate::util::fixed_math::SimFixed::from_num(coord.y.rem_euclid(256));
         let (sub_cell, sub_x, sub_y) = if infantry {

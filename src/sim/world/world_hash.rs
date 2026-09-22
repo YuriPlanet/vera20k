@@ -1551,18 +1551,16 @@ impl Simulation {
             if schema.includes(HashFeature::Parasite) {
                 // ParasiteClass (Foot+69C) of dogs and drones, the victim's
                 // Foot+694/+698 links, and Foot+6A0 once it has been armed.
+                // `limbo_reselect` (+432) is deliberately absent: it is set
+                // only for the local player's selection, so peers differ.
                 if let Some(parasite) = entity.parasite.as_deref() {
                     b"parasite-v193".hash(hasher);
                     parasite.hash(hasher);
                 }
-                if entity.parasite_eating_me.is_some()
-                    || entity.parasite_launch_lock != 0
-                    || entity.limbo_reselect
-                {
+                if entity.parasite_eating_me.is_some() || entity.parasite_launch_lock != 0 {
                     b"parasite-victim-v193".hash(hasher);
                     entity.parasite_eating_me.hash(hasher);
                     entity.parasite_launch_lock.hash(hasher);
-                    entity.limbo_reselect.hash(hasher);
                 }
                 if entity.paralysis_timer.duration() != 0 {
                     0x6a0_u32.hash(hasher);

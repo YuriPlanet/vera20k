@@ -118,6 +118,13 @@ pub(crate) struct BaseDefenseResponseState {
     pub(crate) cooldown_duration_frames: i32,
 }
 
+impl BaseDefenseResponseState {
+    /// `TechnoClass::Set_ArchiveTarget @ 0x0070C610` (Techno+0x218).
+    pub(crate) fn set_archive_target(&mut self, target: Option<TargetKind>) {
+        self.archive_target = target;
+    }
+}
+
 impl Default for BaseDefenseResponseState {
     fn default() -> Self {
         Self {
@@ -1057,7 +1064,9 @@ pub struct GameEntity {
     #[serde(default)]
     pub paralysis_timer: crate::sim::timer::CdTimer,
     /// Techno+432 ReselectIfLimboed memo (`TechnoClass::Fire @ 0x006FF79C`),
-    /// consumed by a successful parasite release.
+    /// consumed by a successful parasite release. Process-local like
+    /// `selected`: written only for the local player's selection, so it is
+    /// saved but never folded into the peer hash.
     #[serde(default)]
     pub limbo_reselect: bool,
     /// Debug event log — records movement/state transitions for the inspector panel.

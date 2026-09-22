@@ -2112,9 +2112,13 @@ fn admit_attacker_fire<'r>(
     if weapon.is_sonic && has_active_wave {
         return None;
     }
-    // GetFireError 0x006FCAC5..0x006FCB21: the frame-dependent Parasite gates,
-    // a target launch-locked by another jump (Foot+698) or Iron-Curtained,
-    // refuse this frame without dropping the target.
+    // GetFireError 0x006FCAC5..0x006FCB21: a Parasite shot at a Foot another
+    // jump has launch-locked (Foot+698) or at an Iron-Curtained one is
+    // FIRE_ILLEGAL (5), like the CanInfect gate in the targeting subset, and
+    // VERA drops the target for all three alike. RESIDUAL: native keeps an
+    // ILLEGAL target until TechnoClass::AI's 16-frame check
+    // (0x006FA472..0x006FA4CB) drops it, so VERA gives up up to 15 frames
+    // sooner; no RNG or state beyond the target is involved.
     if selected.warhead.parasite
         && let TargetKind::Entity(target_id) = snap.target
         && world.substrate.entities.get(target_id).is_some_and(|target| {
@@ -2125,6 +2129,9 @@ fn admit_attacker_fire<'r>(
                 )
         })
     {
+        if delayed_building_slot.is_none() {
+            out.remove_attack.push(snap.stable_id);
+        }
         return None;
     }
     // GetFireError, FootClass::IsParalyzed `0x004DE770`: a paralyzed firer
