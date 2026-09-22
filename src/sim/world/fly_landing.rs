@@ -78,7 +78,7 @@ impl Simulation {
         }
     }
 
-    fn fly_building_at(&self, coord: DriveCoord) -> Option<u64> {
+    pub(super) fn fly_building_at(&self, coord: DriveCoord) -> Option<u64> {
         let requested = ((coord.x / 256) as i16, (coord.y / 256) as i16);
         // Preserve the shared Dummy stamp made by MapAtCoord before lookup.
         let (x, y) = self.resolved_terrain.as_ref().map_or(requested, |terrain| {

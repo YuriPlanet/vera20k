@@ -215,12 +215,9 @@ pub fn tick_attack_state(
             }
         }
 
-        // State1's FindFireLocation/AssignDestination suffix4197C0 remains
-        // unmigrated. Keep the state instead of fabricating a final-release
-        // countdown or clearing the target on a guessed next frame.
-        1 => AttackTickResult::stay(AircraftMission::Attack {
-            sub_state: if target_status.is_some() { 1 } else { 10 },
-        }),
+        // State1 requires live world effects and is dispatched through
+        // Simulation::aircraft_reengage before this read-only legacy handler.
+        1 => unreachable!("aircraft state1 requires the world transaction"),
 
         // ---------------------------------------------------------------
         // Other unported states retain the legacy Guard fallback.
@@ -250,7 +247,7 @@ impl AttackTickResult {
         }
     }
 
-    fn transition(mission: AircraftMission) -> Self {
+    pub(super) fn transition(mission: AircraftMission) -> Self {
         Self {
             new_mission: mission,
             fire_at: None,

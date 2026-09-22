@@ -1449,81 +1449,98 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): Building navigation prerequisite
+## Current checkpoint (2026-09-22): Aircraft re-engagement integration
 
-Owned branch `feature/combat-foot-speed`, parent `bcbf4beb` (Fly landing).
-Continue the active combat goal; no goal rewrite. Attack state1 still needs
-FindFireLocation4197C0 -> AssignDestination41AA80/4D94B0 -> Fly MoveTo and
-multi-release validation. This increment ports its building-coordinate
-receiver; the attack loop and docking lifecycle remain required work.
+Owned checkout `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`,
+branch `feature/combat-foot-speed`, increment parent `8325af12`. Resolve current
+HEAD/upstream from Git. Combat goal remains active; implementation and validated
+commit/publish/merge are authorized. No goal rewrite, new critic or PR. Preserve
+untracked `.local/`. This is an unfinished attack-loop migration, not merge-ready.
 
-Acceptance: replace the live Building+4C error with original447E90/447B20
-coordinate dispatch, reuse the existing foundation/direction/radio owners,
-migrate current +4C consumers, and compare original calls plus production
-arrival/capture and persistence. No new saved state or snapshot version.
+Acceptance: FindFireLocation4197C0 -> Aircraft/Foot destination -> actual NavCom
+state selection -> mission delay/RNG through production dispatch, preserving
+refusals, timers, cargo range, reservations and save/restore. Close the following
+approach/flight and setter dependencies before claiming the attack loop complete.
 
-Implementation:
-- `movement/building_coordinate.rs` reads live type flags, signed NumberOfDocks,
-  XYZ pads and sparse Contacts. Ordinary Building+4C returns foundation center;
-  Helipad/UnitRepair/Bunker dispatches +A8. Weeder and Refinery precedence,
-  null requester, missing/out-of-count slot and count1 unconditional offset0
-  follow original instructions. Undeclared pads read native zero initialization.
-- Bunker uses full native direction then rounded-byte quadrant; wide coordinate
-  subtraction reuses `direction_tables::native_angle` before f32 narrowing,
-  preserving signed-coordinate boundary behavior without host floating point.
-- Shared NavCom query now receives requester and type context. Drive/Ship's
-  post-track arrival query and the existing movement preparation caller migrate.
-  Engineer CaptureBuilding also uses it, removing its raw-anchor substitute for
-  special building targets. Other docking mission adapters remain required work.
-- Reused the existing258-call `building_navigation_coordinate` corpus. Corrected
-  its false `shipyard` input name to `weeder`: ReadINI4604C1 reads literal81AC50
-  `Weeder` into BuildingType+16BC. Refinery is+16BB (460A67/81AA5C).
-  Every original output coordinate and call trace is unchanged. Native
-  `--check` passes after the naming correction.
-- Ghidra447E90 renamed to `BuildingClass__Get_Navigation_Coord`; comments at
- 447E90/447B2D saved and read back. Vtable7E3EBC+4C=447E90 and+A8=447B20
-  read from binary. No byte, prototype or boundary changes.
+Implemented:
+- `world/aircraft_fire_location.rs` ports the search with shared deterministic
+  trig/distance, physical target/reference centers, CurrentHouse ground-open
+  bit16, native reservation/Spawned/AirportBound/Carryall admission and the
+  previous-record-best alternate. Success consumes one Scenario draw0..99.
+- `combat_weapon::weapon_range` owns7012C0's signed range and OpenTopped cargo
+  minimum, using current weapon/tier. Shared `aircraft_strafes` now serves both
+  search and release. Original51 native search cases unchanged;12 cargo cases
+  added (turret/current slot, elite/fallback, missing/negative/zero/long range).
+- `world/aircraft_attack.rs` replaces the inert state1 path. After the existing
+  pending-ammo/latch prefix, it searches, assigns, reads actual retained NavCom,
+  selects3/10 and writes Rate*900+ScenarioRandom(0,2) through MissionCom.
+- `fly_orders::assign_aircraft_attack_destination` represents the live-Attack
+  setter: high-target NULL, departure pad power/radio, Aux clearing, swap/
+  open-transport/bunker refusals, shared +4C coordinates and Fly MoveTo. Accepted
+  Foot timers reset even when Fly refuses; NULL retains Fly motion in this
+  live-target Attack caller. It is explicitly NOT the general setter.
+- Aircraft dispatch now follows Logic order; search commits reservations before
+  the next aircraft reads them. Three old test fixtures now install their real
+  Logic membership. No new saved state/version or rebaselined replay pins.
 
-Validation (all owned processes terminal):
-- `cargo test -p vera20k --lib`: **9176 passed,0 failed,135 ignored**,26.53s
-  after3m35s compilation (`.local/building-nav-full.log`). Includes all258 native
-  coordinate rows,136 representable live Foot-requester cases and11 sampled
-  save/restores, both Drive/Ship terminal callbacks and CaptureBuilding with a
-  native dock-coordinate expectation. No replay pins or snapshot version changed.
-- `cargo clippy -p vera20k --lib`:pass,1030 warnings (same count as parent),
- 53.29s (`.local/building-nav-clippy.log`). Native `building_navigation_coordinate
- --check`:pass. Ghidra rename/comments saved and read back.
-- Earlier focused runs identified fixture-only issues: duplicate INI section,
-  unallocated saved contact objects, missing explicit Walk CLSID and an incorrect
-  expected case count. Corrected fixture inputs; native outputs stayed unchanged.
-No PR, merge, repeated critic or new retail/rendered run. The prior sole critic
-still requires the attack and rendered-flight joins below before closure.
-Retain `.local/` and the extensive remaining required work below.
+Evidence/validation:
+- `aircraft_fire_location.{py,json,meta.json}`:63 complete native searches plus
+  raw cargo GetRange calls. Rust live readers/RNG and6 restore fixtures match.
+- `aircraft_reengagement.*`:16 complete original417FE0 state1 calls, including
+  real search, Aircraft/Foot setters, COM, Fly and RNG epilogue. Only OS atomic
+  imports substituted. Rust production dispatch matches destination/state,
+  Aux, ammo/latch, movement/timers and RNG continuation. Scope: supplied airborne
+  flat-map owners, no queuedEnter, repair contact, linked lift,+304 or+6AC.
+- Native re-engagement `--check` passes (`.local/aircraft-reengagement-check2.log`).
+- Earlier focused `cargo test -p vera20k --lib aircraft`:99 passed,0 failed.
+  Final full suite: **9180 passed,0 failed,135 ignored**,35.08s
+  (.local/aircraft-reengagement-full2.log), including all16 dispatch save/restores,
+  same-frame timer gating and two-aircraft Logic-order/live-reservation checks.
+  First full attempt was a new-test-only SimRng equality compilation error;
+  the fixture now compares its existing logical_state owner.
+- Final Clippy passes: **1030 warnings**, same count as parent,47.70s
+  (.local/aircraft-reengagement-clippy2.log). One new style warning was fixed
+  after the full suite by collapsing equivalent cargo-condition ifs; Clippy
+  rechecked that final source. All owned Cargo/native jobs are terminal.
+- No new retail/rendered run. The prior sole critic's flight/attack joins remain
+  required. Existing Linux/macOS compatibility is preserved by portable code;
+  this Windows run is not cross-platform execution proof.
 
-Next join notes (read this turn, not ported):
-- Existing full51-call `aircraft_fire_location` corpus and native_trig geometry
-  remain the next search evidence. Reuse `ground_pose::object_center_coord`
-  for Target+48 and the new shared NavCom query for requester-dependent +4C.
-- GetRange7012C0 uses GetWeapon(index) raw Range, reduced by the minimum armed
-  passenger GetCurrentWeapon range when OpenTopped+5E4 is true. Cargo+114's
-  head getter473450 reads+4; traversal follows passenger+30 until non-Foot.
-  Existing `PassengerCargo` is head-first. No new range implementation yet.
-- FindFireLocation4197C0 uses target NavCom+48 as reference for Foot targets,
-  previous-record minimum as alternate, one RandomRanged(0,99) on success.
-  Search campaign visibility reads GLOBAL Cell+12C bit16 without an owner
-  test; resolve the current viewer through the existing fog/session authority,
-  not an assumed aircraft-owner plane. Cell admission419B00 differs from
-  landing-space Foot4DDC60 and includes the requester in physical reservations.
-- State1's epilogue418D1D reads MissionControl rate and consumes additional
-  Scenario RandomRanged(0,2). State is3 or10 from actual NavCom after the void
-  destination setter, not from Fly MoveTo's adapter bool.
-- The258-call coordinate corpus supplies type offsets and contacts. It does
-  not certify ART parsing or docking lifecycle. Existing ArtRegistry pads
-  collect only0..7 and compact missing authored indices; broader pad-loader
-  migration and retained-array layering remain required where reachable.
-  Existing `building_dock_offset_lifecycle`, `building_dock_coord_rules` and
-  `building_dock_resize` native corpora already exist; inspect before adding
-  another oracle or treating their presence as a production port.
+Ghidra saved/read-back evidence:
+-7012C0 named TechnoClass__Get_Weapon_Range.418087 documents post-setter NavCom
+  semantics and bounded production coverage. Techno+304 is the retained
+  UseFireParticles system: ReadINI7726C3/7726D4 -> Weapon+129, FireAt6FF19E
+  constructs62DC50 and6FF1A7 stores+304; Foot4D954B releases virtual+F8.
+  Field added as pFireParticleSystem. Corrected+308 DamageSparkSystem to
+  SparkParticleSystem (UseSparkParticles +12A, FireAt6FF1F5). Rust lacks these
+  retained producers/cleanup. Base rules only FireballLauncher authors live
+  UseFireParticles and no base Aircraft weapon references it; this is NOT a
+  proof over mode/map overrides or all reachability.
+- Created the previously undefined23-byte function41B840 as
+  AircraftAux__Is_Fighter. Vtable7E2250+1C/7E226C points here; reads Type+E0E.
+  Existing INI evidence41CC7B..41CC95 proves Fighter, not FlyBy.418229 annotated:
+  far approach calls primary GetFLH(index0, additive zero XYZ), NOT zero FLH.
+
+Next safe work:
+1. Finish state3 using actual auxiliary+18 strafe /+1C Fighter classification.
+   Only strafe uses raw weapon Distance_To range; Fighter or Fly IsMovingNow
+   false enters4. IsMovingNow4CCAC0 reads actual speed object+48, not moving+34.
+   Otherwise noNav ->1; Navdistance<512 faces live Target, <16 ->4 and NULL
+   setter; far Nav faces from primary GetFLH. Returns delay1 on these arms.
+   Reuse the existing muzzle owner so FLH fixes migrate steering and firing.
+   Remove superseded target-cell approach and mission speed-tier behavior.
+   `.local/probe_aircraft_approach.py` executes7 full original state3 examples
+   through the re-engagement fixture callback; results in aircraft-approach-probe.log.
+   Promote this to a saved corpus, include facings/primaryFLH/boundaries and
+   production histories before treating state3 as validated.235 existing range
+   rows only prove the selected range arm, not admission.
+2. Complete queued Enter preprocessing, linked-lift +2AC/+2B0 detach, retained
+   fire-particle cleanup and +6AC suppression through their owners. Current
+   aircraft-specific setter is partial; +82 derives from cargo relationship.
+   General Fly Stop/BeginLanding, horizontal Process and real docking remain.
+3. Multi-release production and retail/rendered flight evidence before PR/merge.
+   Other whole-combat residuals below remain required; this checkpoint closes none.
+
 
 ## Previous checkpoint (2026-09-22): Fly landing and phase ownership
 

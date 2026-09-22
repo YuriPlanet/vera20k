@@ -144,7 +144,8 @@ pub fn tick_aircraft_missions(
     rules: &RuleSet,
     path_grid: Option<&crate::sim::pathfinding::PathGrid>,
 ) -> std::collections::BTreeSet<u64> {
-    // Phase 1: Snapshot all aircraft with missions.
+    // Search consumes Scenario RNG and commits NavCom reservations immediately.
+    // Their order is the live Logic vector, never EntityStore's stable-ID order.
     struct MissionSnap {
         id: u64,
         mission: AircraftMission,
@@ -152,9 +153,11 @@ pub fn tick_aircraft_missions(
 
     let snapshots: Vec<MissionSnap> = sim
         .substrate
-        .entities
-        .values()
-        .filter_map(|e| {
+        .logic
+        .as_slice()
+        .iter()
+        .filter_map(|&id| {
+            let e = sim.substrate.entities.get(id)?;
             // A Dying aircraft corpse must not run its mission (move, fire,
             // paradrop, reveal fog) for the tick before the end-of-tick drain.
             if e.dying {
@@ -273,13 +276,19 @@ pub fn tick_aircraft_missions(
                 if let Some(entity) = sim.substrate.entities.get_mut(snap.id) {
                     attack_mission::enter_attack_state(entity, *sub_state);
                 }
-                let result = attack_mission::tick_attack_state(
-                    &sim.substrate.entities,
-                    rules,
-                    &sim.interner,
-                    snap.id,
-                    *sub_state,
-                );
+                let result = if *sub_state == 1 {
+                    attack_mission::AttackTickResult::transition(
+                        sim.aircraft_reengage(snap.id, rules),
+                    )
+                } else {
+                    attack_mission::tick_attack_state(
+                        &sim.substrate.entities,
+                        rules,
+                        &sim.interner,
+                        snap.id,
+                        *sub_state,
+                    )
+                };
                 m.new_mission = result.new_mission;
                 m.fire_at = result.fire_at;
                 m.move_to = result.move_to;

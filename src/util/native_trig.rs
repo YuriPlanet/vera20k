@@ -184,11 +184,7 @@ mod tests {
                 })
             };
             let target = xyz("target", [16512, 16512, 0]);
-            let elite = input["veterancy"].as_i64().unwrap_or(0) >= 2
-                && input["elite_weapon"].as_bool().unwrap_or(true);
-            let range = input[if elite { "elite_range" } else { "range" }]
-                .as_i64()
-                .unwrap_or(if elite { 2304 } else { 1536 }) as i32;
+            let range = row["weapon_range"].as_i64().unwrap() as i32;
             let candidates = row["candidates"].as_array().unwrap();
             for (index, native) in candidates.iter().enumerate() {
                 let radius = range - 256 * (1 + index as i32 / 16);

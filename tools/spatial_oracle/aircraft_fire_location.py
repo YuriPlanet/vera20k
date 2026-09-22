@@ -83,6 +83,32 @@ class Fixture:
         u.mem_write(TYPE + 0xE0D, bytes([case.get('airport_bound', False)]))
         u.mem_write(TYPE + 0xDFC, bytes([case.get('carryall', False)]))
         u.mem_write(TYPE + 0xD54, bytes([case.get('spawned', False)]))
+        # Exercise GetRange7012C0's actual CargoClass head/+30 traversal and
+        # each passenger's native turret-aware GetCurrentWeapon70E1A0.
+        u.mem_write(TYPE + 0x5E4, bytes([case.get('open_topped', False)]))
+        cargo = case.get('passengers', [])
+        u.mem_write(OWNER + 0x118, dwords(SCRATCH + 0x90000 if cargo else 0))
+        for n, passenger in enumerate(cargo):
+            actor = SCRATCH + 0x90000 + n * 0x8000
+            kind, gun, elite = actor + 0x2000, actor + 0x4000, actor + 0x5000
+            u.mem_write(actor, dwords(0x7F5C70))
+            u.mem_write(actor + 0x14, dwords(passenger.get('flags', 5)))
+            u.mem_write(actor + 0x30, dwords(actor + 0x8000 if n + 1 < len(cargo) else 0))
+            u.mem_write(actor + 0x6C4, dwords(kind))
+            u.mem_write(actor + 0x138, dwords(passenger.get('current', 0)))
+            u.mem_write(actor + 0x150, struct.pack('<f', passenger.get('veterancy', 0)))
+            u.mem_write(kind, dwords(0x7F6218))
+            u.mem_write(kind + 0x808, dwords(passenger.get('turrets', 0)))
+            for slot, value in enumerate(passenger.get('ranges', [1024])):
+                if value is not None:
+                    address = gun + slot * 0x100
+                    u.mem_write(kind + 0x898 + slot * 0x1C, dwords(address))
+                    u.mem_write(address + 0xB4, dwords(value))
+            for slot, value in enumerate(passenger.get('elite_ranges', [])):
+                if value is not None:
+                    address = elite + slot * 0x100
+                    u.mem_write(kind + 0xA94 + slot * 0x1C, dwords(address))
+                    u.mem_write(address + 0xB4, dwords(value))
         u.mem_write(BLOCKER + 0x6C4, dwords(BLOCKER_TYPE))
         u.mem_write(BLOCKER_TYPE, dwords(0x7F6218))
         u.mem_write(BLOCKER_TYPE + 0xD54, bytes([case.get('blocker_spawned', False)]))
@@ -135,6 +161,7 @@ def execute(case):
     candidates, ranked, draws = [], [], []
     original = bytes(u.mem_read(0x4197C0, 0x4B6))
     before_rng = bytes(u.mem_read(SCENARIO + 0x218, 0x3F4))
+    weapon_range = i32(f.call(0x7012C0, OWNER, [0]))
 
     def observe(_u, pc, _size, _data):
         sp = u.reg_read(UC_X86_REG_ESP)
@@ -163,6 +190,7 @@ def execute(case):
     # same selected cell in a later isolated comparison.
     next_random = f.call(0x65C780, SCENARIO + 0x218, [])
     return dict(input=case, result=result, candidates=candidates, ranked=ranked, draws=draws,
+                weapon_range=weapon_range,
                 rng_changed=rng_changed, next_random=next_random)
 
 
@@ -211,6 +239,18 @@ def inputs():
         cases.append(dict(name='spawned_near_' + suffix, spawned=True,
                           blocker=[59 * 256 + 128, 64 * 256 + 128, 0],
                           blocker_cells=[[59,64]], seed=2, **flags))
+    for name, passengers in [
+        ('empty', []), ('unarmed', [dict(ranges=[None])]),
+        ('short', [dict(ranges=[512])]), ('long', [dict(ranges=[2048])]),
+        ('mixed', [dict(ranges=[2048]), dict(ranges=[769]), dict(ranges=[1024])]),
+        ('negative', [dict(ranges=[-1])]), ('zero', [dict(ranges=[0])]),
+        ('turret_slot', [dict(turrets=2, current=1, ranges=[2048, 768])]),
+        ('no_turrets', [dict(current=1, ranges=[1024, 512])]),
+        ('elite', [dict(veterancy=2, ranges=[1024], elite_ranges=[769])]),
+        ('elite_fallback', [dict(veterancy=2, ranges=[1024], elite_ranges=[None])]),
+    ]:
+        cases.append(dict(name='cargo_' + name, open_topped=True, passengers=passengers))
+    cases.append(dict(name='closed_cargo', open_topped=False, passengers=[dict(ranges=[512])]))
     return cases
 
 
@@ -248,7 +288,7 @@ if __name__ == '__main__':
                      'Supplied Foot vector, native marked/limbo bytes and physical/destination reservations.',
                      'Scenario RNG initialized by original65C6D0; PC53/chop ambient state.',
                      'Supplied Cell ground list and Techno/Foot class flags for Spawned candidate admission.',
-                     'Type+5E4 OpenTopped passenger-range arm is zero in these cases.'],
+                     'Twelve cargo contrasts execute GetRange through original Cargo head/+30 traversal and turret-aware GetCurrentWeapon, including elite fallback and signed range.'],
         substitutions=[],
-        scope='51 original full FindFireLocation calls including range/tier, sixteen-angle rings, native trig/distance, map/visibility, candidate admission, conditional RNG and its next draw. Supplied-state comparison; excludes initialization, reinforcement writers, OpenTopped passenger-range reduction, AssignDestination, Fly movement and full Mission_Attack.',
+        scope='63 original full FindFireLocation calls including range/tier, sixteen-angle rings, native trig/distance, map/visibility, candidate admission, conditional RNG and its next draw. Supplied-state comparison; excludes initialization, reinforcement writers, AssignDestination, Fly movement and full Mission_Attack.',
     ))

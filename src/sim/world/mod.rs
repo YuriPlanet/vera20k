@@ -28,12 +28,14 @@ mod jumpjet_cruise;
 #[cfg(test)]
 pub(crate) use infantry_terminal::InfantryDeathSequence;
 pub(crate) use infantry_terminal::{InfantryDeathPostlude, InfantryTerminal};
+mod aircraft_attack;
+mod aircraft_fire_location;
 pub(crate) mod damage_consequences;
 pub(crate) mod display_layers;
 mod display_registry;
-mod frame_error;
 mod fly_landing;
 mod fly_orders;
+mod frame_error;
 mod lifecycle;
 mod load_object_lifecycle;
 mod logic_vector;

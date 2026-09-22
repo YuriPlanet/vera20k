@@ -1172,8 +1172,19 @@ impl FogState {
     /// building a presentation cache cannot change destination admission.
     pub(crate) fn is_ground_unshrouded(&self, owner: InternedId, rx: u16, ry: u16) -> bool {
         self.by_owner.get(&owner).is_some_and(|view| {
-            view.index(rx, ry).and_then(|i| view.cell_runtime.get(i))
+            view.index(rx, ry)
+                .and_then(|i| view.cell_runtime.get(i))
                 .is_some_and(|cell| cell.alt_flags & CellVisibilityRuntime::ALT_GROUND_VISIBLE != 0)
+        })
+    }
+
+    /// Aircraft FindFireLocation419986 reads Cell+12C bit16 directly. This is
+    /// independent of bit8 and of the presentation's merged sight cache.
+    pub(crate) fn is_ground_open(&self, owner: InternedId, rx: u16, ry: u16) -> bool {
+        self.by_owner.get(&owner).is_some_and(|view| {
+            view.index(rx, ry)
+                .and_then(|i| view.cell_runtime.get(i))
+                .is_some_and(|cell| cell.alt_flags & CellVisibilityRuntime::ALT_GROUND_OPEN != 0)
         })
     }
 

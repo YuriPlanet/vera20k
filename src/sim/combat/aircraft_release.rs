@@ -9,15 +9,6 @@ use crate::sim::aircraft::AircraftMission;
 #[path = "aircraft_release_tests.rs"]
 mod tests;
 
-/// Auxiliary+18 at41B7F0 reads GetWeapon(0), including elite fallback.
-fn strafes(rules: &RuleSet, obj: &ObjectType, veterancy: u16) -> bool {
-    combat_weapon::primary_for_tier(obj, veterancy)
-        .and_then(|name| rules.weapon(name))
-        .and_then(|weapon| weapon.projectile.as_deref())
-        .and_then(|name| rules.projectile(name))
-        .is_some_and(|projectile| projectile.rot <= 1 && !projectile.inviso)
-}
-
 /// Re-read Target, selection facts and weapon tier after each synchronous shot.
 /// A detached/null target still participates in SelectWeapon and the loop bound,
 /// but Techno FireAt6FDDAE returns without emitting or rearming.
@@ -123,7 +114,7 @@ pub(super) fn fire(
         return;
     }
     let mut snap = snap.clone();
-    if !strafes(rules, obj, snap.veterancy) {
+    if !combat_weapon::aircraft_strafes(rules, obj, snap.veterancy) {
         // State4 setters4182D3..41830C precede GetFireError; Set does not snap.
         if let Some(desired) = world.substrate.entities.get(id).and_then(|entity| {
             crate::sim::movement::turret::facing_toward_target(
@@ -228,7 +219,7 @@ fn finish_release(world: &mut Simulation, rules: &RuleSet, id: u64, frame: u32) 
     let Some(obj) = rules.object(world.interner.resolve(entity.type_ref())) else {
         return;
     };
-    let strafe = strafes(rules, obj, entity.veterancy);
+    let strafe = combat_weapon::aircraft_strafes(rules, obj, entity.veterancy);
     let fighter = obj.fighter;
     let ammo = entity
         .aircraft_ammo

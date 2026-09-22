@@ -3,13 +3,123 @@
 //! locomotor retries must not reset those timers.
 use super::Simulation;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::{DriveCoord, MovementTarget};
+use crate::sim::components::{DriveCoord, MovementTarget, NavTargetRef};
 use crate::sim::movement::{
     DestinationTiming, air_movement, ground_pose, locomotor::MovementLayer,
 };
 use crate::util::fixed_math::SimFixed;
 
 impl Simulation {
+    /// Aircraft41AA80 -> Foot4D94B0, as reached by an Attack with a live Target.
+    /// NULL skips Stop in this caller, retaining the Fly request. This does not
+    /// replace the general destination setter: queued Enter preprocessing,
+    /// linked-lift detach (+2AC/+2B0), retained fire-particle cleanup (+304), and
+    /// the Unit-produced +6AC latch still need their native owner migrations.
+    pub(crate) fn assign_aircraft_attack_destination(
+        &mut self,
+        id: u64,
+        requested: Option<NavTargetRef>,
+        rules: &RuleSet,
+    ) {
+        let target_id = |target| match target {
+            NavTargetRef::Cell { .. } => None,
+            NavTargetRef::Entity { id }
+            | NavTargetRef::Building { id }
+            | NavTargetRef::Object { id } => Some(id),
+        };
+        //41AA8C: Target+54 is marked && physical GetHeight >= 2*104.
+        // Cells implement the false stub. High targets take the NULL Foot
+        // entry immediately, before departure power/radio work.
+        let high = requested.and_then(target_id).is_some_and(|target| {
+            self.substrate.entities.get(target).is_some_and(|e| {
+                e.lifecycle.object_alive
+                    && air_movement::current_fly_height(e, self.resolved_terrain.as_ref()) >= 208
+            })
+        });
+        let requested = if high { None } else { requested };
+        if requested.is_some() {
+            let entity = self
+                .substrate
+                .entities
+                .get(id)
+                .expect("aircraft destination owner");
+            let coord = ground_pose::position_world_coord(&entity.position);
+            let bridge = self.resolved_terrain.as_ref().is_some_and(|terrain| {
+                let cell =
+                    terrain.native_cell_identity(((coord.x / 256) as i16, (coord.y / 256) as i16));
+                terrain.native_cell_flags(cell) & 0x100 != 0
+            });
+            let pad = (!bridge)
+                .then(|| self.fly_building_at(coord))
+                .flatten()
+                .filter(|&building| {
+                    self.substrate
+                        .entities
+                        .get(building)
+                        .and_then(|e| rules.object(self.interner.resolve(e.type_ref())))
+                        .is_some_and(|o| o.unit_repair || o.unit_reload)
+                });
+            if let Some(pad) = pad {
+                //41AD39..41AD80;53A130 is the native false stub.
+                let entity = self.substrate.entities.get_mut(id).unwrap();
+                entity
+                    .locomotor
+                    .as_mut()
+                    .expect("Fly destination")
+                    .power_on();
+                let detach = entity.radio_contacts.slot(0) == Some(pad)
+                    && requested.and_then(target_id) != Some(pad);
+                if detach {
+                    crate::sim::radio::broadcast_break(self, id);
+                }
+            }
+        }
+        let entity = self.substrate.entities.get(id).unwrap();
+        // The existing cargo relationship owns this represented +82 input.
+        let open_transport = match entity.passenger_role {
+            crate::sim::passenger::PassengerRole::Inside { transport_id } => self
+                .substrate
+                .entities
+                .get(transport_id)
+                .and_then(|e| rules.object(self.interner.resolve(e.type_ref())))
+                .is_some_and(|o| o.open_topped),
+            _ => false,
+        };
+        let refused = requested.is_some()
+            && (entity.foot_locomotor_swap_active
+                || open_transport
+                || entity.bunker_link.installed_in().is_some());
+        let entity = self.substrate.entities.get_mut(id).unwrap();
+        entity.navigation.nav_com_aux = None;
+        if refused {
+            return;
+        }
+        crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
+            entity, requested,
+        );
+        if let Some(destination) = requested {
+            let coord = crate::sim::movement::nav_target_coordinate(
+                destination,
+                Some(id),
+                &self.substrate.entities,
+                self.resolved_terrain.as_ref(),
+                Some((rules, &self.interner)),
+            )
+            .expect("live aircraft NavCom coordinate");
+            let entity = self.substrate.entities.get(id).unwrap();
+            let speed = rules
+                .object(self.interner.resolve(entity.type_ref()))
+                .map_or(SimFixed::from_num(8), |o| {
+                    crate::util::fixed_math::ra2_speed_to_leptons_per_second(o.speed.max(1))
+                });
+            self.move_air_coordinate(id, coord, speed, None, Some(rules));
+        }
+        // Accepted Foot setter resets both timers even when Fly MoveTo refuses
+        // (e.g. powered off). Retry count is preserved.
+        DestinationTiming::from_rules(self.session.binary_frame, Some(rules))
+            .accept(self.substrate.entities.get_mut(id).unwrap());
+    }
+
     /// Non-null coordinate entry. The bool describes the remaining movement
     /// adapter, not the native void MoveTo or Foot AssignDestination result.
     pub(crate) fn move_air_coordinate(
