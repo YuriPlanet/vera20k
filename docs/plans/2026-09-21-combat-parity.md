@@ -231,12 +231,20 @@ probe; it is not a second implementation to publish.
 
 Task-owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`.
 Branch `feature/combat-foot-speed`, based on merged PR440 (`a37e8118`).
-Current increment atop published `75155bc835bbd49764f971dfd3769a48470c55b0`:
-retain Techno+3D4 deployment history through Aircraft Unlimbo and paradrop,
+Latest production source is published `9de592eacb65da849383bb05cf31e80eee7e48a9`:
+retained Techno+3D4 deployment history through Aircraft Unlimbo and paradrop,
 empty-selection click admission, save/restore and hashing (snapshot189). The
 preceding paid Fly motion uses full Primary facing and live type speed;
 `16b609e1` connects pure takeoff callback and Mark/Display. The native comparisons and all9,148 lib tests pass; see the flag section
 below for validation and exact coverage limits.
+Current evidence increment adds78 original Fly map-edge cases, correcting three
+earlier inferences: +E0B is FlyBy; scatter runs at most once;6EA089 SETS Team+7F.
+It changes no Rust behavior. Production Team creation is still absent (both
+creation helpers are cfg(test)); adding an unproduced activation flag would not
+connect this prerequisite. Next trace TeamTypeCreate6F09C0/reinforcement65DD30
+through membership, activation and action3 in the existing TeamScriptVm owner,
+then replace Fly's rectangular coordinate clamp using the saved native corpus.
+No critic/PR yet. The dependency map is retired and must not be used or refreshed.
 Snapshot188 retained Fly destination XYZ in active and stashed runtime. `f241211c` preserves
 the native FindFireLocation corpus, deterministic geometry comparisons and removal
 of the incorrect unused search model. Production source
@@ -1096,14 +1104,18 @@ Next map-edge dependency is concrete:4CDB88 calls original568300 (the existing
 `NativeOverlayMapShape::admits` geometry, not allocated-cell membership). An
 out-of-shape candidate calls owner+4DC: Aircraft table7E22A4 ->41B890. That
 predicate reads Target+2B4, raw mission+AC, retained+3D5, mission getter exclusions,
-Team+5D4/6EC300 and retained Techno+3D4 (now owned by GameEntity). Spawned Type+E0B
-bypasses correction. Otherwise565660 converts the packed cell to local coords,
-then the branch nudges X by128 toward the map center and, if needed, repeatedly
-calls49F420(distance64,flag0) until568300 accepts. Each scatter draws Scenario RNG
-via65C780; reuse `combat::inviso_scatter::random_direction_coord` after checking
-its exact bounds/math. Do not create a second geometry/scatter authority or
-replace retained+3D4 with a type inference. This is another production consumer
-of the same prerequisite already required by FindFireLocation.
+Team+5D4/6EC300 and retained Techno+3D4 (now owned by GameEntity). True enables
+correction. AircraftType FlyBy+E0B bypasses it (ReadINI41CD54..41CD6E,
+literal817FF8); Spawned is separately+D54. Otherwise565660 converts the packed
+cell to local coords, compares signed local.x to trunc(Map+12C/2), and adds128
+to world X when less, subtracts128 otherwise. Resize566332 writes+12C as
+Size.width+Size.height-1; this is not a LocalSize-width or generic center clamp.
+If still outside,49F420(distance64,flag0) runs ONCE. A final failed568300 skips
+SetCoords at4CDCFB->4CDD0D, while following height/phase work continues. There is
+no retry loop. The scatter consumes one Scenario RNG draw via65C780; reuse
+`combat::inviso_scatter::random_direction_coord` after checking its bounds/math.
+Do not create a second geometry/scatter authority or replace retained+3D4 with a
+type inference. The previous Spawned/repeated-scatter descriptions were wrong.
 
 ### Next safe implementation
 
@@ -1254,12 +1266,51 @@ Next map-edge Team dependency:6EC300 requires Team+7F, Script6915D0
 (unsigned cursor+2C < ScriptType+24.Count+A0), current action3, and its
 Scenario68BCC0 waypoint outside mode-one Map578460. Existing TeamScriptVm
 owns membership, cursor and actions, but not +7F. Direct writers found:
-constructor6E8B11; AI6E91BE SET after +79/+77 gates;6EA089 and6EA0E2
-clear/reset (their full semantics remain to trace). AI SET also writes +78=1,
+constructor6E8B11 clears; AI6E91BE SET after +79/+77 gates;6EA089 also SETS
+(BL=1 at6EA084); regroup6EA0E2 clears. AI SET also writes +78=1,
 +7A=0, conditional Foot member+689, calls Script691590, then sets+80.
 Do not derive+7F from the VM completed flag or assume teamless behavior for a
 member. Reuse this owner and trace the linked prerequisite flags before adding
 state. No Team implementation was changed in the deployment increment.
+
+Current Team prerequisite evidence:6EA3E0 recomputes+79 (member count equals
+signed TaskForce count sum), retains+78 once reached, and updates+7A. With
+TeamType.Reinforce+AB, +7A is count<=trunc(required/3) for required>2, otherwise
+count<required; without Reinforce it is !+78. GuardSlower+A7 makes+76=!+7A.
+Positive membership clears+7D/+7E; a changed+7A sets+7B. Empty teams clear+76,
+set+7A, clear+79/target+34; previously reached+78 takes Tag23/deletion instead.
+6EA0D0 also chooses regroup destinations and submits member missions: porting
+only its clear would omit required effects. Native Script ctor6913C0 and reset
+691590 start cursor=-1, unlike the current test constructor's0. The live AI
+advance6915B0 occurs after leader/recruitment/gather gates and submits a null
+argument to70C610 for members; preserve those transitions and action3's downstream path.
+
+The TeamType policy identities are proven by ReadINI6F119E..6F1206: key8430AC
+GuardSlower stores+A7, key843088 Reinforce stores+AB, both defaultfalse in ctor.
+Corrected Ghidra's false `TeamTypeClass__AI` label at6F1090 to
+`TeamTypeClass__ReadINI`: ctor installs vtable7F47D0 and slot+64 points here;
+the body calls AbstractType.ReadINI410A60 and INI readers, not live Team AI.
+Saved/read back that label/plate and focused comments at41CD6E,4CDBE1,4CDC37,
+4CDCFB,566332,6EA089 and6EC300, preserving existing annotations.
+
+Map-edge acceptance for the eventual production port: retained state and raw
+versus queued mission gates select the correct branch; reuse map Size/LocalSize,
+height-aware waypoint and scatter owners; preserve whole-lepton arithmetic,
+zero/one RNG draw, coordinate-write refusal and following height/Mark effects.
+Team creation, membership, activation/regroup and script progression must reach
+the consumer through production and survive save/restore. Current78-case native
+corpus `fly_map_edge` executes original4CDB4C up to4CDCFD or4CDD0D, including
+Aircraft/Team/Script/map/RNG callees with no substituted calls. It covers34
+commit and44 skip outcomes,33 zero-draw and45 one-draw cases, scatter success
+and failure, FlyBy versus Spawned, raw versus queued missions, unsigned cursor
+admission, waypoint height/slope, odd/non-square Size and local/span differences.
+This is reproducible native evidence only: supplied Team states do not prove
+their lifecycle, and the bounded run excludes prior Process admission and the
+following SetCoords/Mark/height effects. Rust map-edge integration remains open.
+Validation: `python -m tools.spatial_oracle.fly_map_edge --check` passes all78
+saved cases; `git diff --check` passes. No Rust source, schema or loader binding
+changed, so the deployment increment's lib/Clippy results remain applicable.
+All owned native operations are terminal; no Cargo process was launched.
 
 Deployment validation: `python -m tools.spatial_oracle.aircraft_mission_only
 --check` passes96 original instruction-region pairs. The five added tests pass

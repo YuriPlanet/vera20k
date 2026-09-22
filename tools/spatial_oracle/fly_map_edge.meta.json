@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Fly candidate validation including original Aircraft/Team/Script/map/RNG callees. Records both coordinate commit/refusal branches and exact draw counts. Does not prove Team creation/activation, prior Process admission or downstream SetCoords/Mark/height/mission effects.",
+  "assumptions": [
+    "Real Aircraft/Fly vtables and retained target,mission,+3D4,+3D5,FlyBy inputs.",
+    "Team,Script,cursor,waypoint and cell height are supplied state; lifecycle producers are excluded.",
+    "Native Map Size,normalized LocalSize and raw +12C supplied independently.",
+    "Entry is after paid coordinate math and MarkREMOVE; stops before SetCoords or at its skip target."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "candidate_admission": "0x004CDB4C",
+    "set_coords_boundary": "0x004CDCFD",
+    "skip_set_coords": "0x004CDD0D",
+    "aircraft_gate": "0x0041B890",
+    "team_gate": "0x006EC300",
+    "shape": "0x00568300",
+    "to_local": "0x00565660",
+    "scatter": "0x0049F420"
+  },
+  "payload_sha256": "35561156af471741dffd105e52e5ffcdb8f7e001400a4a51a2425ca56591b532"
+}
