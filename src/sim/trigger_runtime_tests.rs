@@ -148,6 +148,100 @@ fn spawn_type(sim: &mut Simulation, type_id: &str) -> u64 {
 }
 
 #[test]
+fn parsed_event_records_match_native_list_and_production_predicates() {
+    #[derive(serde::Deserialize)]
+    struct NativeCondition {
+        kind: i32,
+        value: i32,
+        name: String,
+        results: Vec<u8>,
+    }
+    #[derive(serde::Deserialize)]
+    struct NativeRow {
+        raw: String,
+        conditions: Vec<NativeCondition>,
+        frames: Vec<u32>,
+    }
+    let rows: Vec<NativeRow> = serde_json::from_str(include_str!(
+        "../../tools/spatial_oracle/trigger_event_records.json"
+    ))
+    .unwrap();
+    for row in rows {
+        let ini = crate::rules::ini_parser::IniFile::from_str(&format!(
+            "[Triggers]\nEVENT=Neutral,<none>,Event,0,1,1,1,0\n\
+             [Events]\nEVENT={}\n[Actions]\nEVENT=1,112,0,0,0,0,0,0,A\n",
+            row.raw
+        ));
+        let triggers = crate::map::triggers::parse_triggers(&ini);
+        let events = crate::map::events::parse_events(&ini);
+        let actions = crate::map::actions::parse_actions(&ini);
+        let conditions = &events["EVENT"].conditions;
+        assert_eq!(conditions.len(), row.conditions.len(), "{}", row.raw);
+        for (rust, native) in conditions.iter().zip(&row.conditions) {
+            assert_eq!(
+                (
+                    rust.kind,
+                    rust.value,
+                    rust.type_name.as_deref().unwrap_or("")
+                ),
+                (native.kind, native.value, native.name.as_str()),
+                "{}",
+                row.raw
+            );
+        }
+        // Timer events need the live Trigger instance port. Type-count reader
+        // coverage here does not certify the existing registry/count query.
+        if conditions.is_empty()
+            || !row.conditions.iter().all(|c| {
+                matches!(c.kind, 27 | 28 | 36 | 37 | 47) && c.results.len() == row.frames.len()
+            })
+        {
+            continue;
+        }
+        let graph = build_trigger_graph(
+            &HashMap::new(),
+            &HashMap::new(),
+            &triggers,
+            &events,
+            &actions,
+        );
+        for (n, frame) in row.frames.iter().enumerate() {
+            let mut sim = Simulation::new();
+            sim.session.binary_frame = *frame;
+            sim.trigger_runtime = TriggerRuntime::from_map(&triggers, &HashMap::new());
+            sim.trigger_runtime.globals_set.insert(7);
+            sim.trigger_runtime.locals_set.insert(9);
+            let result = sim
+                .advance_master_frame(
+                    &[],
+                    None,
+                    &BTreeMap::new(),
+                    None,
+                    None,
+                    67,
+                    TickLane::Ordinary,
+                    Some(TriggerInputs {
+                        graph: &graph,
+                        triggers: &triggers,
+                        events: &events,
+                        actions: &actions,
+                        waypoints: &HashMap::new(),
+                        rules: None,
+                    }),
+                )
+                .unwrap();
+            assert!(result.frame_committed);
+            assert_eq!(
+                !sim.drain_trigger_effects().is_empty(),
+                row.conditions.iter().all(|c| c.results[n] != 0),
+                "{} at frame {frame}",
+                row.raw
+            );
+        }
+    }
+}
+
+#[test]
 fn parsed_variable_actions_match_native_reader_dispatch_and_restore() {
     #[derive(serde::Deserialize)]
     struct NativeRow {
@@ -347,7 +441,8 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
             fields: vec![],
             conditions: vec![EventCondition {
                 kind: 47,
-                params: vec!["0".to_string(), "0".to_string()],
+                value: 0,
+                ..Default::default()
             }],
         },
     )]
@@ -634,7 +729,8 @@ fn time_trigger_can_center_camera_at_waypoint() {
             ],
             conditions: vec![EventCondition {
                 kind: 47,
-                params: vec!["3".to_string(), "0".to_string()],
+                value: 3,
+                ..Default::default()
             }],
         },
     )]
@@ -744,7 +840,8 @@ fn master_frame_polls_triggers_before_logic_houses_commit_and_delete() {
             fields: vec![],
             conditions: vec![EventCondition {
                 kind: 47,
-                params: vec!["0".to_string(), "0".to_string()],
+                value: 0,
+                ..Default::default()
             }],
         },
     )]
@@ -839,7 +936,8 @@ fn master_frame_save_load_continues_trigger_projectile_and_delete_state() {
             fields: vec![],
             conditions: vec![EventCondition {
                 kind: 47,
-                params: vec!["0".to_string(), "0".to_string()],
+                value: 0,
+                ..Default::default()
             }],
         },
     )]
@@ -1014,11 +1112,13 @@ fn elapsed_time_uses_signed_current_frame_divided_by_fifteen() {
     let runtime = TriggerRuntime::default();
     let one_second = EventCondition {
         kind: 47,
-        params: vec!["1".to_string(), "0".to_string()],
+        value: 1,
+        ..Default::default()
     };
     let zero_seconds = EventCondition {
         kind: 47,
-        params: vec!["0".to_string(), "0".to_string()],
+        value: 0,
+        ..Default::default()
     };
 
     assert!(runtime.evaluate_event(&zero_seconds, 0, None));
@@ -1057,7 +1157,8 @@ fn global_actions_can_enable_and_force_followup_trigger() {
                 ],
                 conditions: vec![EventCondition {
                     kind: 47,
-                    params: vec!["1".to_string(), "0".to_string()],
+                    value: 1,
+                    ..Default::default()
                 }],
             },
         ),
@@ -1073,7 +1174,8 @@ fn global_actions_can_enable_and_force_followup_trigger() {
                 ],
                 conditions: vec![EventCondition {
                     kind: 27,
-                    params: vec!["7".to_string(), "0".to_string()],
+                    value: 7,
+                    ..Default::default()
                 }],
             },
         ),
@@ -1242,7 +1344,8 @@ fn linked_trigger_field_queues_followup_trigger() {
                 ],
                 conditions: vec![EventCondition {
                     kind: 47,
-                    params: vec!["1".to_string(), "0".to_string()],
+                    value: 1,
+                    ..Default::default()
                 }],
             },
         ),
@@ -1258,7 +1361,8 @@ fn linked_trigger_field_queues_followup_trigger() {
                 ],
                 conditions: vec![EventCondition {
                     kind: 28,
-                    params: vec!["9".to_string(), "0".to_string()],
+                    value: 9,
+                    ..Default::default()
                 }],
             },
         ),
@@ -1383,7 +1487,8 @@ fn forced_trigger_with_unmet_conditions_does_not_fire() {
                 ],
                 conditions: vec![EventCondition {
                     kind: 47,
-                    params: vec!["1".to_string(), "0".to_string()],
+                    value: 1,
+                    ..Default::default()
                 }],
             },
         ),
@@ -1399,7 +1504,8 @@ fn forced_trigger_with_unmet_conditions_does_not_fire() {
                 ],
                 conditions: vec![EventCondition {
                     kind: 27,
-                    params: vec!["99".to_string(), "0".to_string()],
+                    value: 99,
+                    ..Default::default()
                 }],
             },
         ),
@@ -1514,7 +1620,8 @@ fn mission_announce_then_force_end_emits_result_effects() {
             ],
             conditions: vec![EventCondition {
                 kind: 47,
-                params: vec!["1".to_string(), "0".to_string()],
+                value: 1,
+                ..Default::default()
             }],
         },
     )]
@@ -1634,7 +1741,8 @@ fn local_variables_seed_and_gate_followup_triggers() {
                 ],
                 conditions: vec![EventCondition {
                     kind: 37,
-                    params: vec!["2".to_string(), "0".to_string()],
+                    value: 2,
+                    ..Default::default()
                 }],
             },
         ),
@@ -1650,7 +1758,8 @@ fn local_variables_seed_and_gate_followup_triggers() {
                 ],
                 conditions: vec![EventCondition {
                     kind: 36,
-                    params: vec!["2".to_string(), "0".to_string()],
+                    value: 2,
+                    ..Default::default()
                 }],
             },
         ),
@@ -1799,7 +1908,9 @@ fn techtype_exists_and_not_exists_query_simulation_world() {
                 ],
                 conditions: vec![EventCondition {
                     kind: 60,
-                    params: vec!["2".to_string(), "GAPOWR".to_string()],
+                    value: 2,
+                    type_name: Some("GAPOWR".to_string()),
+                    ..Default::default()
                 }],
             },
         ),
@@ -1815,7 +1926,9 @@ fn techtype_exists_and_not_exists_query_simulation_world() {
                 ],
                 conditions: vec![EventCondition {
                     kind: 61,
-                    params: vec!["0".to_string(), "GAAIRC".to_string()],
+                    value: 0,
+                    type_name: Some("GAAIRC".to_string()),
+                    ..Default::default()
                 }],
             },
         ),
@@ -1941,7 +2054,8 @@ fn run_waypoint_action(
             fields: Vec::new(),
             conditions: vec![EventCondition {
                 kind: 47,
-                params: vec!["0".to_string()],
+                value: 0,
+                ..Default::default()
             }],
         },
     )]

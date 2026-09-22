@@ -8276,5 +8276,4591 @@
       ]
     },
     "next_random": 2225548056
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726720",
+      "007258D0",
+      "00726950",
+      "007258D0",
+      "006E4F60",
+      "007258D0",
+      "007258D0",
+      "006E4DE0",
+      "00725FA0",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 2,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 1,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 2,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "frees": [],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 2,
+        "pending_tags": [
+          0
+        ],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 2,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "frees": [],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 2,
+        "pending_tags": [
+          0
+        ],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 2,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "frees": [
+          "trigger",
+          "tag"
+        ],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 1,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 0,
+          "tag_trigger_base": 0,
+          "trigger": 0
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          null
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "frees": [
+          "trigger",
+          "tag"
+        ],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          null,
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "lifecycle": true,
+      "name": "drain_mode_0",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "object"
+        ],
+        [
+          "attach_object",
+          0,
+          0
+        ],
+        [
+          "attach_cell",
+          0,
+          50,
+          60
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            0,
+            0
+          ],
+          0,
+          0
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            50,
+            60
+          ]
+        ],
+        [
+          "drain"
+        ],
+        [
+          "shared"
+        ]
+      ],
+      "repeat": 0
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726720",
+      "007258D0",
+      "00726950",
+      "007258D0",
+      "006E4F60",
+      "007258D0",
+      "007258D0",
+      "006E4DE0",
+      "00725FA0",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 2,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 1,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 2,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 1,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "frees": [],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 2,
+        "pending_tags": [
+          0
+        ],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 2,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "frees": [
+          "trigger",
+          "tag"
+        ],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 1,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 0,
+          "tag_trigger_base": 0,
+          "trigger": 0
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          null
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "frees": [
+          "trigger",
+          "tag"
+        ],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          null,
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "lifecycle": true,
+      "name": "drain_mode_1",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "object"
+        ],
+        [
+          "attach_object",
+          0,
+          0
+        ],
+        [
+          "attach_cell",
+          0,
+          50,
+          60
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            0,
+            0
+          ],
+          0,
+          0
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            50,
+            60
+          ]
+        ],
+        [
+          "drain"
+        ],
+        [
+          "shared"
+        ]
+      ],
+      "repeat": 1
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 2,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 1,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 2,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "frees": [],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 1,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 2,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "frees": [],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 1,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 2,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "frees": [],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 1,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 2,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "frees": [],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 1,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 2,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "lifecycle": true,
+      "name": "drain_mode_2",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "object"
+        ],
+        [
+          "attach_object",
+          0,
+          0
+        ],
+        [
+          "attach_cell",
+          0,
+          50,
+          60
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            0,
+            0
+          ],
+          0,
+          0
+        ],
+        [
+          "dispatch",
+          0,
+          13,
+          [
+            50,
+            60
+          ]
+        ],
+        [
+          "drain"
+        ],
+        [
+          "shared"
+        ]
+      ],
+      "repeat": 2
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      72,
+      56,
+      72,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00725FA0",
+      "00726400",
+      "006E4F60",
+      "007258D0",
+      "007258D0",
+      "00726950",
+      "007258D0",
+      "00726950",
+      "007258D0",
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00725FA0",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 3,
+          "trigger": 2
+        },
+        "returned": 0,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 4,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 3,
+          "trigger": 2
+        },
+        "returned": null,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 4,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 3,
+          "trigger": 2
+        },
+        "returned": 1,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 1,
+        "pending_tags": [
+          0
+        ],
+        "registry_counts": {
+          "abstract": 4,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 1,
+          "tag": 1,
+          "tag_trigger_base": 3,
+          "trigger": 2
+        },
+        "returned": null,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 1,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 2,
+        "pending_tags": [
+          0,
+          0
+        ],
+        "registry_counts": {
+          "abstract": 4,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 2,
+          "tag": 1,
+          "tag_trigger_base": 3,
+          "trigger": 2
+        },
+        "returned": null,
+        "rng_draws": 2,
+        "tags": [
+          {
+            "pending": 1,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 30,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [
+          "tag",
+          "trigger",
+          "trigger"
+        ],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 1,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 0,
+          "tag_trigger_base": 0,
+          "trigger": 0
+        },
+        "returned": null,
+        "rng_draws": 2,
+        "tags": [
+          null
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [
+          "tag",
+          "trigger",
+          "trigger"
+        ],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 4,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 3,
+          "trigger": 2
+        },
+        "returned": 1,
+        "rng_draws": 4,
+        "tags": [
+          null,
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 45,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "lifecycle": true,
+      "name": "explicit_tag_removal",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "object"
+        ],
+        [
+          "attach_object",
+          0,
+          0
+        ],
+        [
+          "mark_tag",
+          0
+        ],
+        [
+          "mark_tag",
+          0
+        ],
+        [
+          "drain"
+        ],
+        [
+          "shared"
+        ]
+      ],
+      "triggers": [
+        {
+          "events": [
+            [
+              51,
+              7
+            ]
+          ]
+        },
+        {
+          "events": [
+            [
+              51,
+              3
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 107402731
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00725FA0",
+      "00726400",
+      "00726720",
+      "00726720",
+      "00726950",
+      "007258D0",
+      "00726720",
+      "00726950",
+      "007258D0",
+      "006E4F60",
+      "007258D0",
+      "007258D0"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 3,
+          "trigger": 2
+        },
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [],
+        "pending_count": 1,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 1,
+          "tag": 1,
+          "tag_trigger_base": 3,
+          "trigger": 2
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [],
+        "pending_count": 2,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 3,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 2,
+          "tag": 1,
+          "tag_trigger_base": 3,
+          "trigger": 2
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [
+          "trigger"
+        ],
+        "globals": [],
+        "locals": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 2,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [
+          "trigger"
+        ],
+        "globals": [],
+        "locals": [],
+        "object_tags": [],
+        "pending_count": 1,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 2,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 1,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 1
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [
+          "trigger",
+          "trigger"
+        ],
+        "globals": [],
+        "locals": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 1,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 1,
+          "trigger": 0
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": []
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [
+          "trigger",
+          "trigger"
+        ],
+        "globals": [],
+        "locals": [],
+        "object_tags": [],
+        "pending_count": 1,
+        "pending_tags": [
+          0
+        ],
+        "registry_counts": {
+          "abstract": 1,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 1,
+          "tag": 1,
+          "tag_trigger_base": 1,
+          "trigger": 0
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 1,
+            "refs": 0,
+            "triggers": []
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [
+          "trigger",
+          "trigger",
+          "tag"
+        ],
+        "globals": [],
+        "locals": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 0,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 0,
+          "tag_trigger_base": 0,
+          "trigger": 0
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          null
+        ]
+      }
+    ],
+    "input": {
+      "lifecycle": true,
+      "name": "trigger_splice",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "mark_trigger",
+          0,
+          1
+        ],
+        [
+          "mark_trigger",
+          0,
+          1
+        ],
+        [
+          "drain"
+        ],
+        [
+          "mark_trigger",
+          0,
+          0
+        ],
+        [
+          "drain"
+        ],
+        [
+          "mark_tag",
+          0
+        ],
+        [
+          "drain"
+        ]
+      ],
+      "triggers": [
+        {},
+        {}
+      ]
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "006E4DE0",
+      "00725FA0",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 2,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 4,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 2,
+          "tag_trigger_base": 4,
+          "trigger": 2
+        },
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 5,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 2,
+          "tag_trigger_base": 4,
+          "trigger": 2
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 5,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 2,
+          "tag_trigger_base": 4,
+          "trigger": 2
+        },
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 5,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 2,
+          "tag_trigger_base": 4,
+          "trigger": 2
+        },
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          1
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 5,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 2,
+          "tag_trigger_base": 4,
+          "trigger": 2
+        },
+        "returned": 1,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 5,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 1,
+          "object_base": 1,
+          "object_base_b": 1,
+          "pending": 0,
+          "tag": 2,
+          "tag_trigger_base": 4,
+          "trigger": 2
+        },
+        "returned": 0,
+        "rng_draws": 0,
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "lifecycle": true,
+      "name": "object_reattachment",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "fresh"
+        ],
+        [
+          "object"
+        ],
+        [
+          "attach_object",
+          0,
+          0
+        ],
+        [
+          "attach_object",
+          0,
+          0
+        ],
+        [
+          "attach_object",
+          0,
+          1
+        ],
+        [
+          "attach_object",
+          0,
+          -1
+        ]
+      ]
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      56,
+      72,
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726720",
+      "007258D0",
+      "00726720",
+      "007258D0",
+      "00726720",
+      "007258D0",
+      "00726950",
+      "007258D0",
+      "006E4F60",
+      "007258D0",
+      "007258D0",
+      "00726950",
+      "007258D0",
+      "006E4F60",
+      "007258D0",
+      "007258D0",
+      "00726950",
+      "007258D0",
+      "006E4F60",
+      "007258D0",
+      "007258D0"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "dispatches": [],
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 2,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 0,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "dispatches": [],
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 4,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 2,
+          "tag_trigger_base": 4,
+          "trigger": 2
+        },
+        "returned": 1,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "dispatches": [],
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 6,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 3,
+          "tag_trigger_base": 6,
+          "trigger": 3
+        },
+        "returned": 2,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "dispatches": [],
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1,
+          2
+        ],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 6,
+          "cell_tags": 0,
+          "logic_tags": 3,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 3,
+          "tag_trigger_base": 6,
+          "trigger": 3
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            2,
+            27
+          ]
+        ],
+        "frees": [],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "logic_tags": [
+          1
+        ],
+        "object_tags": [],
+        "pending_count": 4,
+        "pending_tags": [
+          0,
+          2
+        ],
+        "registry_counts": {
+          "abstract": 6,
+          "cell_tags": 0,
+          "logic_tags": 1,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 4,
+          "tag": 3,
+          "tag_trigger_base": 6,
+          "trigger": 3
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            2,
+            27
+          ],
+          [
+            1,
+            13
+          ]
+        ],
+        "frees": [],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "logic_tags": [],
+        "object_tags": [],
+        "pending_count": 6,
+        "pending_tags": [
+          0,
+          2,
+          1
+        ],
+        "registry_counts": {
+          "abstract": 6,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 6,
+          "tag": 3,
+          "tag_trigger_base": 6,
+          "trigger": 3
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            2,
+            27
+          ],
+          [
+            1,
+            13
+          ]
+        ],
+        "frees": [
+          "trigger",
+          "tag",
+          "trigger",
+          "tag",
+          "trigger",
+          "tag"
+        ],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "logic_tags": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 0,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 0,
+          "tag_trigger_base": 0,
+          "trigger": 0
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          null,
+          null,
+          null
+        ]
+      }
+    ],
+    "input": {
+      "lifecycle": true,
+      "name": "logic_poll_repeat_0",
+      "operations": [
+        [
+          "shared",
+          0
+        ],
+        [
+          "shared",
+          1
+        ],
+        [
+          "shared",
+          2
+        ],
+        [
+          "register_logic",
+          0,
+          1,
+          2
+        ],
+        [
+          "poll"
+        ],
+        [
+          "poll"
+        ],
+        [
+          "drain"
+        ]
+      ],
+      "polling": true,
+      "repeat": 0
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      56,
+      72,
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "dispatches": [],
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 2,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 1,
+          "tag_trigger_base": 2,
+          "trigger": 1
+        },
+        "returned": 0,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "dispatches": [],
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 4,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 2,
+          "tag_trigger_base": 4,
+          "trigger": 2
+        },
+        "returned": 1,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "dispatches": [],
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 6,
+          "cell_tags": 0,
+          "logic_tags": 0,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 3,
+          "tag_trigger_base": 6,
+          "trigger": 3
+        },
+        "returned": 2,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "dispatches": [],
+        "frees": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1,
+          2
+        ],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 6,
+          "cell_tags": 0,
+          "logic_tags": 3,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 3,
+          "tag_trigger_base": 6,
+          "trigger": 3
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            1,
+            27
+          ],
+          [
+            2,
+            27
+          ]
+        ],
+        "frees": [],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1,
+          2
+        ],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 6,
+          "cell_tags": 0,
+          "logic_tags": 3,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 3,
+          "tag_trigger_base": 6,
+          "trigger": 3
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            1,
+            27
+          ],
+          [
+            2,
+            27
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            2,
+            13
+          ]
+        ],
+        "frees": [],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1,
+          2
+        ],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 6,
+          "cell_tags": 0,
+          "logic_tags": 3,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 3,
+          "tag_trigger_base": 6,
+          "trigger": 3
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            1,
+            27
+          ],
+          [
+            2,
+            27
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            2,
+            13
+          ]
+        ],
+        "frees": [],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1,
+          2
+        ],
+        "object_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "registry_counts": {
+          "abstract": 6,
+          "cell_tags": 0,
+          "logic_tags": 3,
+          "map_tags": 0,
+          "object": 0,
+          "object_base": 0,
+          "object_base_b": 0,
+          "pending": 0,
+          "tag": 3,
+          "tag_trigger_base": 6,
+          "trigger": 3
+        },
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "lifecycle": true,
+      "name": "logic_poll_repeat_2",
+      "operations": [
+        [
+          "shared",
+          0
+        ],
+        [
+          "shared",
+          1
+        ],
+        [
+          "shared",
+          2
+        ],
+        [
+          "register_logic",
+          0,
+          1,
+          2
+        ],
+        [
+          "poll"
+        ],
+        [
+          "poll"
+        ],
+        [
+          "drain"
+        ]
+      ],
+      "polling": true,
+      "repeat": 2
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 1,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            50
+          ],
+          [
+            0,
+            27
+          ],
+          [
+            0,
+            28
+          ],
+          [
+            0,
+            36
+          ],
+          [
+            0,
+            37
+          ],
+          [
+            0,
+            45
+          ],
+          [
+            0,
+            46
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            50
+          ],
+          [
+            0,
+            27
+          ],
+          [
+            0,
+            28
+          ],
+          [
+            0,
+            36
+          ],
+          [
+            0,
+            37
+          ],
+          [
+            0,
+            45
+          ],
+          [
+            0,
+            46
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "logic_poll_all_flags",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "register_logic",
+          0
+        ],
+        [
+          "scenario_flags",
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          "poll"
+        ],
+        [
+          "poll"
+        ]
+      ],
+      "polling": true,
+      "triggers": [
+        {
+          "events": [
+            [
+              47,
+              999
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 1,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 1,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 1,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 1,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 90,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            0,
+            13
+          ]
+        ],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 2,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 400,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ]
+        ],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 2,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 120,
+                "enabled": 1,
+                "pending": 0,
+                "start": 400,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "name": "logic_poll_random_timer",
+      "operations": [
+        [
+          "shared"
+        ],
+        [
+          "register_logic",
+          0
+        ],
+        [
+          "poll"
+        ],
+        [
+          "frame",
+          400
+        ],
+        [
+          "poll"
+        ],
+        [
+          "poll"
+        ]
+      ],
+      "polling": true,
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              51,
+              7
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2225548056
   }
 ]

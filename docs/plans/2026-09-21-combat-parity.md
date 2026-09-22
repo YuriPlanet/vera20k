@@ -1450,97 +1450,108 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): trigger action values and live-instance evidence
+## Current checkpoint (2026-09-22): native event records and Tag lifecycle
 
 Owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`;
-branch `feature/combat-foot-speed`. Increment based on published `1dd77444`;
+branch `feature/combat-foot-speed`. Increment based on published `56c70104`;
 the commit containing this checkpoint is the next source checkpoint. `.local/`
 is intentional untracked evidence. No critic or PR for this branch yet. The
-combat goal remains active; the dependency map is retired and must not be used.
+combat goal remains active. The dependency map is retired: never consult or refresh it.
 
-Implemented: numeric TAction operands now follow Read6DD5B0 instead of treating
-ParamType as the global/local variable index. Types0/11 use Param3;5/9 use token8;
-other literal types retain zero. Named lookup types6/7/8 remain explicitly
-unsupported. Scenario variable writes reject indices outside0..49/0..99.
-Action chunks now skip empty strtok fields before grouping while retaining raw
-diagnostics. No new runtime state, snapshot version or replay rebaseline.
+Implemented: Event records now materialize native numeric values, optional type
+names and unresolved Team references. TEvent Read71F4E0 consumes three tokens,
+or four for parameter type2; empty comma tokens are skipped, names retain case
+and whitespace and at most24 bytes, numeric values use CRT decimal-prefix/wrapping
+semantics. The original TriggerType7274DC..727516 loop prepends records, so the
+shared loader reverses authored conditions. All runtime consumers and fixtures
+use these fields instead of mistaking ParamType for the operand. No new mutable
+runtime state, snapshot version or replay rebaseline. Invalid global/local indices
+return false: native Get leaves an output byte uninitialized outside0..49/0..99,
+so stack residue is intentionally not reproduced.
 
-Acceptance/validation: original full TAction constructor/read and Execute28/29/56/57
-produce61 saved cases in `tools/spatial_oracle/trigger_action_values.{py,json,meta.json}`.
-`--check` passes. Rust `parsed_variable_actions_match_native_reader_dispatch_and_restore`
-compares all61 through parsed records, production master frames and save/restore,
-including clears, boundaries, overflow, whitespace, token shifts and unchanged
-RNG with no live reset consumers. All24 focused trigger tests pass. Full
-`cargo test -p vera20k --lib`: **9,151 passed,0 failed,135 ignored**,12.72s;
-`.local/trigger-action-values-full-tests.log`. Library Clippy passes with1,030
-existing warnings,29.44s; `.local/trigger-action-values-clippy.log`. Snapshot189
-and existing replay pins pass unchanged. This is operand/write parity, not live
-trigger lifecycle parity. A final release retail load is needed after these
-parser changes before merging the coherent branch.
+Acceptance/validation: `trigger_event_records.{py,json,meta.json}` preserves54
+original full constructor/read/list cases and bounded predicate samples. `--check`
+passes. Rust `parsed_event_records_match_native_list_and_production_predicates`
+compares record shape/order for every row and elapsed/global/local predicates
+through340 production master-frame checks, including signed frame boundaries. Resolved
+Team references, timer-instance state and nonempty TechnoType queries are NOT
+certified. Existing type-count queries still use an approximate case-insensitive
+entity-name scan without native reverse Type registry resolution; missing type
+must eventually return false for BOTH60/61. The signed threshold/empty-entity
+rule follows71EA03, but those registry cases need executable Rust comparisons.
 
-`tools/spatial_oracle/tag_lifecycle.{py,json,meta.json}` now preserves39 original
-retained histories; `--check` passes. It supplies operator-new storage, resolved
-definitions and initialized registries, but replaces no gameplay calls. It covers
-shared/fresh Tags, linked Trigger order, repeat/refcount behavior, cell detach and
-pending enqueue, completion bits, signed timer boundaries, RNG continuation,
-global/local reset fanout and enable/disable/force. Final deferred destruction,
-physical Object/Team lifecycle and full scenario registration/polling are excluded.
-There is no Rust live-instance comparison yet. Ghidra6DD5B0 and6E52A0 were named,
-annotated, saved and read back; no boundary or byte edits.
+All25 focused trigger tests pass. Full `cargo test -p vera20k --lib`: **9,152
+passed,0 failed,135 ignored**,12.25s; `.local/trigger-event-records-full-tests.log`.
+Library Clippy passes with1,030 existing warnings,29.15s;
+`.local/trigger-event-records-clippy.log`. Snapshot189/replay pins are unchanged.
+Release build passes in2m00s (`.local/trigger-event-records-release.log`). Retail
+validation details and limitations are below.
 
-Native ownership and ordering established from bodies/callers and the corpus:
-- Tag find/create6E52A0 returns the first registered same-TagType instance, even
-  when pending. Map object readers and scenario startup684C30 use it. Team ctor
-  directly calls6E4DE0 and gets a fresh Tag. Tag+2C counts source references;
-  ObjectAttach5F5B50 and CellAttach485250 decrement old/increment new references.
-- Tag ctor constructs TriggerTypes forward through+A8, but prepends live
-  Triggers: construction/RNG and action execution orders are opposite. Trigger
-  ctor725FA0 resets timers BEFORE enabled/difficulty checks. Abstract410170
-  initializes+10=-1; it does not itself assign a native unique ID.
-- TagProcess6E53A0 checks global inhibit/reentrancy/pending/type. Mode2 evaluates
-  and springs repeatedly; mode1 detaches until reference count is1, then springs
-  and expires; mode0 springs/expires. Trigger726720 marks+30 and queues. Mode0/1
-  Tag expiry calls DetachAll7258D0 and queues the Tag WITHOUT setting Tag+34;
-  separate6E5230 does mark+34. Preserve that distinction until final cleanup.
-- Trigger7264C0 keeps completion bits, evaluates all conditions even after one
-  fails, and resets before a successful repeat Spring7265C0. Timer reset726400
-  walks event order:13 writes15*arg;51 draws RandomRanged(0,arg), adds trunc(arg/2),
-  multiplies15 with wrapping i32, and clears only its event bit(index mod32).
-  Several timer events overwrite the same timer. Disabled instances still reset.
-- Scenario global689670/local689910 setters set+34AA only when the byte changes,
-  then6E57F0/6E5820 scan all live Tags and their Trigger chains. Matching27/28 or
-  36/37 events cause7263A0/7263D0 to reset each matching instance (including
-  disabled ones). Repeated same-value writes consume no reset RNG.
-- Action22 springs matching live Trigger instances in global construction order
-  directly, without predicate/Tag-repeat/deletion handling. Action53 enables
-  matching difficulty-admitted instances and resets their timers; no immediate
-  Spring. Action54 disables. Current definition queues/force test remain wrong.
-- Scenario684C30 registers Tags in TagType order by ORed event/action category:
-  bit4 ->8B41A8, bit16 ->8B40C8, bit8 ->House list. Classification71F680 takes
-  event KIND in ECX, not an event pointer. TagType6E61F0/TriggerType7271E0 aggregate
-  classifications. Logic55AFB0 polls8B40C8 in order: conditional50; changed-variable
-  27,28,36,37; conditional45,46; always13 then51; expired scenario timer14. First
-  successful Process skips remaining kinds for that Tag. Events47/60/61 evaluate
-  independently of the incoming kind. Do not reuse diagnostic graph sorting.
+`tag_lifecycle.{py,json,meta.json}` now preserves49 original histories;
+`--check` passes and the39 earlier histories are unchanged. New cases execute
+real Object construction/attachment, deferred drain725C70, original Tag/Trigger
+destructors and the complete Logic tag-poll prefix55AFB0..55B205. Only storage
+allocation/free, Windows IsBadReadPtr transport and fixture state are supplied;
+no gameplay call or instruction is replaced. Lifecycle cases keep gameplay/
+shutdown gates false. Registration classification, countdown expiry/UI callback,
+Team/physical Object destruction and gated House-win/cursor updates remain open.
+No Rust live-instance parity claim. Ghidra TEvent71F4E0 was named/annotated, and
+Logic55AFB0's plate was extended while preserving prior notes; both saved/read back.
 
-Next safe work: finish original deferred drain725C70/Trigger destructor and
-Object/Team attachment witnesses, then migrate the EXISTING TriggerRuntime to
-live instances and remove definition-ID latches/repeat approximation. Keep the
-owner reachable during action dispatch: current world::advance_triggers uses
-mem::take, so nested Team creation would otherwise publish into an empty runtime
-and lose the new state. Use the existing pending-delete owner in world/lifecycle,
-not a competing queue. Wire source attachments and constructor/RNG ordering through
-app/headless/restore together. Current headless loader binds empty trigger tables;
-MapEntity omits tags; SimResources lacks Tag/CellTag definitions; Team creation is
-still test-only. These are required migrations, not optional follow-ups.
+Native ownership and ordering to preserve in the migration:
+- Find/create6E52A0 returns the first registered same-TagType instance even pending.
+  Map object readers and scenario setup use it; Team constructor creates a fresh
+  Tag and does NOT increment its reference count. Object/cell attachments do.
+- Tag6E4DE0 constructs TriggerTypes forward through+A8 but prepends instances.
+  Trigger725FA0 resets timers BEFORE enabled/difficulty checks. Abstract410170
+  initializes+10=-1; these constructors do not assign a native unique ID.
+- Trigger7264C0 evaluates all events, retains completion bits and resets before
+  successful repeat Spring7265C0. Reset726400 walks reversed Event order:13
+  writes15*value;51 draws RandomRanged(0,value), adds trunc(value/2), multiplies15
+  with wrapping i32. Several events overwrite ONE timer; event bits use index mod32.
+- Global689670/local689910 changed writes set Scenario+34AA and reset matching
+  events on ALL live Tags, including disabled Triggers. Unchanged writes draw no RNG.
+  Action22 springs matching live Triggers in construction order directly;53
+  enables difficulty-admitted instances and resets;54 disables. Legacy force/
+  enable queues and their tests still encode incorrect behavior and must be replaced.
+- TagProcess6E53A0 repeat2 springs repeatedly; mode1 detaches until refs1 before
+  spring/expiry; mode0 springs/expires. Trigger726720 marks+30 and queues. Mode0/1
+  Tag expiry detaches/queues WITHOUT setting+34; separate6E5230 sets+34.
+- Real ObjectAttach5F5B50 changes reference counts, including same-tag reattachment.
+  Original deferred drain collapses duplicate pending entries. Trigger726950
+  destructor splices expired instances from Tag heads and predecessor links.
+  Tag6E4F60 queues remaining Triggers; the same drain processes those appended IDs.
+- Scenario684C30 registers TagTypes in source order by ORed event/action category:
+  bit4 map8B41A8, bit16 Logic8B40C8, bit8 House+38. Classifier71F680 takes KIND
+  in ECX. Poll55AFB0 tries conditional50; changed27/28/36/37; conditional45/46;
+  always13/51; expired countdown14. First successful Process skips later kinds.
+  Corpus proves changed variables affect later Tags in the SAME poll, and mode0
+  expiry compacts the LIVE vector without cursor repair: Tags0/2 run, Tag1 waits
+  until the next poll. Tail clears+34AA/+34A9/+34AB/+34BE. Never use diagnostic
+  TriggerGraph sorting as production order.
 
-Earlier retail validation remains bounded: release SHA256
-`facc362d92f9901303f20e923b5427be541cb0bac491a70f0046f0fbc5f58693`
-loaded sealed Soviet Fight.MAP and reached InGame/first frame. Files are in
-`.local/trigger-type-flags-retail-soviet/{run.json,loader.log,capture/capture.json}`.
-Full tactical capture was INVALID: tick1 MCV582 facing64 versus expected128,
-matching the previous capture failure. No final-frame/visual parity claim.
-Team activation/recruitment/script progression, Fly map-edge and other flight
-states, launch/scatter/homing, vehicle click entry/shared resolver, fire legality,
-special warheads and destruction remain required. All owned Cargo/native/capture
-operations are terminal at this checkpoint; no merge is pending.
+Next safe action: migrate the EXISTING TriggerRuntime to live Tag/Trigger instances,
+removing definition-ID fired/disabled latches and MapTrigger.repeating. Keep this
+owner reachable during actions: world::advance_triggers currently mem::takes it,
+which would lose nested Team creation state. Move dispatch onto Simulation with
+short state borrows; use world/lifecycle's existing pending-delete owner. Bind
+static Tag/CellTag definitions before map-object construction, retain authored
+Object attachments and initialize RNG/timers in native construction order. Wire
+app, headless and restore together. App creates a detached TriggerRuntime in
+loading/init.rs:3411; headless_scenario binds empty trigger tables; SimResources
+lacks Tag/CellTag definitions; MapEntity omits tags. Shared object population is
+sim/runtime.rs -> world/world_spawn.rs. Team construction/recruitment/AI are still
+test-only prerequisites. These migrations are required, not optional follow-ups.
+
+Current release SHA256
+`38b387174a0328ee8fff4f527341b4bec585b1f2e38d5669abcc8ccaa3d349fe`
+loaded sealed Soviet Fight.MAP far enough to reach scripted tick1. Capture is
+still INVALID: MCV582 facing64 versus expected128, the same failure as the prior
+checkpoint. See `.local/trigger-event-records-retail-soviet/{run.json,loader.log,
+capture/capture.json}`; all sealed inputs stayed unchanged and the child exited.
+Inherited RUST_LOG=1 retained warnings/errors, not INFO frame markers; do not claim
+a new successful frame capture. No visual parity claim. All owned Cargo/native/
+capture operations are terminal at this checkpoint.
+Team activation/recruitment/scripts, Fly map-edge and other flight states,
+launch/scatter/homing, vehicle click/shared resolver, fire legality, special
+warheads and destruction remain required. No merge is pending.

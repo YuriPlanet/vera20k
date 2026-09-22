@@ -248,32 +248,45 @@ impl TriggerRuntime {
     ) -> bool {
         match condition.kind {
             EVENT_ELAPSED_SCENARIO_TIME => {
-                parse_i32_param(&condition.params, 0).is_some_and(|seconds| {
-                    seconds <= (current_frame as i32) / LOGICAL_FRAMES_PER_SECOND
-                })
+                condition.value <= (current_frame as i32) / LOGICAL_FRAMES_PER_SECOND
             }
-            EVENT_GLOBAL_IS_SET => parse_u32_param(&condition.params, 0)
-                .is_some_and(|index| self.globals_set.contains(&index)),
-            EVENT_GLOBAL_IS_CLEAR => parse_u32_param(&condition.params, 0)
-                .is_some_and(|index| !self.globals_set.contains(&index)),
-            EVENT_LOCAL_IS_SET => parse_u32_param(&condition.params, 0)
-                .is_some_and(|index| self.locals_set.contains(&index)),
-            EVENT_LOCAL_IS_CLEAR => parse_u32_param(&condition.params, 0)
-                .is_some_and(|index| !self.locals_set.contains(&index)),
+            EVENT_GLOBAL_IS_SET
+            | EVENT_GLOBAL_IS_CLEAR
+            | EVENT_LOCAL_IS_SET
+            | EVENT_LOCAL_IS_CLEAR => {
+                let global = matches!(condition.kind, EVENT_GLOBAL_IS_SET | EVENT_GLOBAL_IS_CLEAR);
+                let limit = if global { 50 } else { 100 };
+                if !(0..limit).contains(&condition.value) {
+                    // Native Get689760/689A00 leaves an uninitialized output
+                    // byte on invalid indices. Reject malformed conditions;
+                    // stack residue is not a deterministic gameplay contract.
+                    return false;
+                }
+                let values = if global {
+                    &self.globals_set
+                } else {
+                    &self.locals_set
+                };
+                values.contains(&(condition.value as u32))
+                    == matches!(condition.kind, EVENT_GLOBAL_IS_SET | EVENT_LOCAL_IS_SET)
+            }
             EVENT_TECHTYPE_EXISTS => {
                 let Some(sim) = simulation else { return false };
-                let min_count = parse_u32_param(&condition.params, 0).unwrap_or(1);
-                let Some(type_id) = condition.params.get(1).map(|value| value.trim()) else {
+                let min_count = condition.value;
+                let Some(type_id) = condition.type_name.as_deref() else {
                     return false;
                 };
                 if type_id.is_empty() {
                     return false;
                 }
-                count_techtype(sim, type_id) >= min_count as usize
+                // Native71EA03 tests the signed threshold inside its scan:
+                // even a nonpositive threshold requires at least one Techno.
+                !sim.entities().is_empty()
+                    && count_techtype(sim, type_id) as i64 >= i64::from(min_count)
             }
             EVENT_TECHTYPE_DOES_NOT_EXIST => {
                 let Some(sim) = simulation else { return false };
-                let Some(type_id) = condition.params.get(1).map(|value| value.trim()) else {
+                let Some(type_id) = condition.type_name.as_deref() else {
                     return false;
                 };
                 if type_id.is_empty() {
@@ -448,10 +461,6 @@ fn enqueue_trigger(
     }
 }
 
-fn parse_u32_param(fields: &[String], index: usize) -> Option<u32> {
-    fields.get(index)?.trim().parse::<u32>().ok()
-}
-
 /// Resolve a trigger's canonical HouseType owner to the first registered House.
 ///
 /// gamemd-derived: `TriggerTypeClass::Read` canonicalizes the owner through
@@ -474,10 +483,6 @@ fn resolve_trigger_house(
             .and_then(|country| rules.country_index(sim.interner.resolve(country)))
             == Some(trigger_house_type)
     })
-}
-
-fn parse_i32_param(fields: &[String], index: usize) -> Option<i32> {
-    fields.get(index)?.trim().parse::<i32>().ok()
 }
 
 fn parse_visible_map_area(fields: &[String]) -> Option<[i32; 4]> {
