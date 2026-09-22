@@ -1819,7 +1819,7 @@ impl Simulation {
         {
             self.add_entity_occupancy(stable_id);
         }
-        self.complete_fly_takeoff_phase(stable_id, rules);
+        self.complete_fly_phase(stable_id, rules);
         self.sync_air_spatial_membership(stable_id);
         if let Some(before) = jumpjet_layer_before {
             self.complete_jumpjet_display_process(stable_id, before, rules);
@@ -1827,26 +1827,54 @@ impl Simulation {
         stats
     }
 
-    /// Fly4CCB40 ->4CD2A0's pure-takeoff branch. It follows4CD600's
-    /// movement/height Mark pair, then performs its OWN Mark/Display pair.
-    /// Native comparisons: fly_takeoff_phase.json (75 original full calls).
-    /// Landing (which runs first when both flags are set) and non-Landable
-    /// mode/height handling still require their separate native branches.
-    pub(super) fn complete_fly_takeoff_phase(&mut self, id: u64, rules: Option<&RuleSet>) -> bool {
+    /// Fly4CCB40 ->4CD2A0 after4CD600's movement/height Mark pair.
+    /// Non-Landable aircraft return before the phase's OWN Mark/Display pair.
+    /// Landable pure-takeoff enters that pair even when both live layers agree.
+    /// Landing (first when both flags are set) still needs its separate port.
+    /// Return whether the phase performed the Display transaction.
+    pub(super) fn complete_fly_phase(&mut self, id: u64, rules: Option<&RuleSet>) -> bool {
         let admitted = self.substrate.entities.get(id).is_some_and(|entity| {
             entity.lifecycle.object_alive
                 && entity.health.current > 0
-                && entity.locomotor.as_ref().is_some_and(|l| {
-                    l.powered
-                        && l.fly_runtime()
-                            .is_some_and(|state| state.has_only_takeoff_callback())
-                })
-                && !(entity.category == EntityCategory::Aircraft
-                    && rules
-                        .and_then(|r| r.object(self.interner.resolve(entity.type_ref())))
-                        .is_some_and(|object| !object.landable))
+                && entity
+                    .locomotor
+                    .as_ref()
+                    .is_some_and(|l| l.powered && l.fly_runtime().is_some())
         });
         if !admitted {
+            return false;
+        }
+        let entity = self.substrate.entities.get(id).unwrap();
+        let non_landable_level = (entity.category == EntityCategory::Aircraft)
+            .then(|| {
+                rules.and_then(|r| {
+                    r.object(self.interner.resolve(entity.type_ref()))
+                        .filter(|object| !object.landable)
+                        .map(|object| object.flight_level(r.general.flight_level))
+                })
+            })
+            .flatten();
+        if let Some(flight_level) = non_landable_level {
+            self.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .locomotor
+                .as_mut()
+                .unwrap()
+                .fly_runtime_mut()
+                .unwrap()
+                .force_non_landable_flight(flight_level);
+            return false;
+        }
+        if !entity
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .fly_runtime()
+            .unwrap()
+            .has_only_takeoff_callback()
+        {
             return false;
         }
         let before = self.entity_display_layer(id, rules);

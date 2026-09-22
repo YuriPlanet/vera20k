@@ -22,13 +22,18 @@ fn fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
     let flag = |name: &str| input[name].as_bool().unwrap_or(false);
     let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[General]\nFlightLevel=1500\n[AircraftTypes]\n0=TEST\n\
-         [TEST]\nStrength=100\nSpeed={}\nLandable=yes\n\
+         [TEST]\nStrength=100\nSpeed={}\nLandable={}\n\
          Locomotor={{4A582746-9839-11D1-B709-00A024DDAFD1}}\n\
          FlightLevel={}\nIsDropship={}\nCarryall={}\n\
          [BuildingTypes]\n0=PLAIN\n1=REPAIR\n2=HELIPAD\n\
          [PLAIN]\nStrength=100\n[REPAIR]\nStrength=100\nUnitRepair=yes\n\
          [HELIPAD]\nStrength=100\nHelipad=yes\n",
         integer("speed", 10),
+        if input["landable"].as_bool().unwrap_or(true) {
+            "yes"
+        } else {
+            "no"
+        },
         integer("flight_level", -1),
         if flag("dropship") { "yes" } else { "no" },
         if flag("carryall") { "yes" } else { "no" },
@@ -389,19 +394,16 @@ fn assert_native_move_takeoff(sim: &mut Simulation, rules: &RuleSet, row: &serde
             .shared_cell_dummy()
             .snapshot()
             .coord;
-        let prefix_dummy = [
-            row["dummy_coord"][0].as_i64().unwrap() as i32,
-            row["dummy_coord"][1].as_i64().unwrap() as i32,
-        ];
-        // These vectors start AFTER the caller resolves Cell+4C. Our full
-        // order now does that lookup first. A prefix that never called
-        // GetHeight keeps the destination stamp instead of its supplied -7,-8.
-        let expected = if prefix_dummy == [-7, -8] {
-            [12, 10]
-        } else {
-            prefix_dummy
-        };
-        assert_eq!([actual.0, actual.1], expected, "query cadence: {row}");
+        // The native base-decision corpus stops before4CCED9. Full MoveTo
+        // then queries ground from the retained destination (4CCEE2), as
+        // recorded by fly_destination.json. This production regression must
+        // therefore see the final destination stamp, not the earlier prefix's
+        // owner-height stamp. Base/BeginTakeoff remain the comparisons above.
+        assert_eq!(
+            [actual.0, actual.1],
+            [12, 10],
+            "final mode-query stamp: {row}"
+        );
     }
 }
 
@@ -472,6 +474,7 @@ fn destination_fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
         "z": input["z"].as_i64().unwrap_or(500),
         "target": 37,
         "flight_level": input["flight_level"].as_i64().unwrap_or(-1),
+        "landable": input["landable"].as_bool().unwrap_or(true),
     }});
     let (mut sim, rules) = fixture(&height_row);
     sim.remove_entity_occupancy(1);
@@ -492,6 +495,9 @@ fn destination_fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
         .as_bool()
         .unwrap_or(false)
         .then(|| AttackTarget::new(2));
+    entity
+        .mission_leaf
+        .set_aircraft_action_latch(input["ready"].as_bool().unwrap_or(false));
     let loco = entity.locomotor.as_mut().unwrap();
     loco.powered = input["powered"].as_bool().unwrap_or(true);
     *loco.fly_runtime_mut().unwrap() = serde_json::from_value(serde_json::json!({
@@ -499,6 +505,7 @@ fn destination_fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
         "taking_off": input["taking_off"].as_bool().unwrap_or(false),
         "landing": input["landing"].as_bool().unwrap_or(false),
         "destination": input.get("previous").cloned().unwrap_or(serde_json::json!([0,0,0])),
+        "cruise_mode": input["mode"].as_bool().unwrap_or(false),
     }))
     .unwrap();
     sim.add_entity_occupancy(1);
@@ -571,8 +578,12 @@ fn fly_destination_orders_match_original_retained_xyz_and_refusals() {
             assert!(entity.movement_target.is_none());
             assert_eq!(sim.shared_cell_dummy.snapshot().coord, (-7, -8), "{input}");
         }
-        // moving+34 and mode+5C are recorded by the native corpus but are not
-        // compared here: their Process/landing consumers remain unported.
+        assert_eq!(
+            state.cruise_mode(),
+            row["mode"].as_bool().unwrap(),
+            "{input}"
+        );
+        // Moving+34 is still separate from the legacy MovementTarget lifetime.
     }
 }
 
@@ -708,6 +719,7 @@ fn fly_destination_is_hashed_and_persisted_in_active_and_stashed_runtime() {
             [destination.x, destination.y, destination.z],
             [16519, 16523, 333]
         );
+        assert!(loco.fly_runtime().unwrap().cruise_mode());
     }
 }
 
@@ -738,6 +750,7 @@ fn takeoff_fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
         "taking_off": input["taking_off"].as_bool().unwrap_or(true),
         "landing": input["landing"].as_bool().unwrap_or(false),
         "destination": input.get("destination").cloned().unwrap_or(serde_json::json!([3456,2688,0])),
+        "cruise_mode": input["mode"].as_bool().unwrap_or(false),
     })).unwrap();
     sim.session.binary_frame = 100;
     (sim, rules)
@@ -834,7 +847,7 @@ fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
         sim.submit_entity_display(1, Some(&rules), None);
         sim.submit_entity_display(peer, Some(&rules), None);
         let rng = sim.scenario_rng.logical_state();
-        let admitted = sim.complete_fly_takeoff_phase(1, Some(&rules));
+        let admitted = sim.complete_fly_phase(1, Some(&rules));
         assert_eq!(
             admitted,
             !row["phase_calls"].as_array().unwrap().is_empty(),
@@ -868,6 +881,197 @@ fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
                 "{row}"
             );
         }
+        assert_eq!(sim.scenario_rng.logical_state(), rng);
+    }
+}
+
+#[test]
+fn fly_nonlandable_phase_matches_native_without_display_resubmission() {
+    use super::display_layers::DisplayLayer;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/fly_nonlandable_phase.json"
+    ))
+    .unwrap();
+    assert_eq!(rows.len(), 64);
+    for row in rows {
+        let (mut sim, rules) = takeoff_fixture(&row);
+        let peer = sim.allocate_stable_id();
+        insert_entity(&mut sim, peer, EntityCategory::Aircraft);
+        let owner = sim.substrate.entities.get(1).unwrap();
+        let (position, on_bridge, loco) = (
+            owner.position.clone(),
+            owner.on_bridge,
+            owner.locomotor.clone(),
+        );
+        let other = sim.substrate.entities.get_mut(peer).unwrap();
+        other.position = position;
+        other.on_bridge = on_bridge;
+        other.locomotor = loco;
+        sim.submit_entity_display(1, Some(&rules), None);
+        sim.submit_entity_display(peer, Some(&rules), None);
+        let rng = sim.scenario_rng.logical_state();
+        assert!(!sim.complete_fly_phase(1, Some(&rules)));
+        assert_native_takeoff_result(&sim, &row);
+        let entity = sim.substrate.entities.get(1).unwrap();
+        let state = entity.locomotor.as_ref().unwrap().fly_runtime().unwrap();
+        assert_eq!(state.cruise_mode(), row["mode"].as_bool().unwrap(), "{row}");
+        assert_eq!(
+            state.target_height(),
+            row["target_height"].as_i64().unwrap() as i32,
+            "{row}"
+        );
+        assert_eq!(
+            entity.lifecycle.cell_marked,
+            row["marked"].as_bool().unwrap(),
+            "{row}"
+        );
+        for index in 0..5 {
+            let actual: Vec<_> = sim
+                .substrate
+                .display
+                .members(DisplayLayer::from_index(index).unwrap())
+                .iter()
+                .map(|&id| {
+                    if id == 1 {
+                        0
+                    } else if id == peer {
+                        1
+                    } else {
+                        -1
+                    }
+                })
+                .collect();
+            assert_eq!(
+                serde_json::json!(actual),
+                row["layers"][index as usize],
+                "{row}"
+            );
+        }
+        assert_eq!(rng, sim.scenario_rng.logical_state());
+    }
+}
+
+#[test]
+fn fly_nonlandable_production_tick_replaces_landing_target_and_restores() {
+    let row = serde_json::json!({"input": {
+        "z":900, "target":0, "taking_off":false, "landing":true,
+        "landable":false, "flight_level":40000,
+    }});
+    let (mut sim, rules) = takeoff_fixture(&row);
+    sim.submit_entity_display(1, Some(&rules), None);
+    sim.tick_air_movement_with_cell_lists_one(1, Some(&rules));
+    let entity = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(
+        entity.position.exact_z_leptons,
+        Some(855),
+        "movement precedes phase override"
+    );
+    let state = entity.locomotor.as_ref().unwrap().fly_runtime().unwrap();
+    assert!(state.cruise_mode());
+    assert!(!state.has_phase_callback());
+    assert_eq!(state.target_height(), 40000);
+    let bytes = GameSnapshot::save(&sim, 0, 0, "Non-Landable Fly continuation", 0);
+    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+    restored.retain_in_scenario_process_state_from(&sim);
+    restored.resolved_terrain = sim.resolved_terrain.clone();
+    restored.restore_after_snapshot_load().unwrap();
+    assert_eq!(restored.state_hash(), sim.state_hash());
+    for frame in 101..105 {
+        for instance in [&mut sim, &mut restored] {
+            instance.session.binary_frame = frame;
+            instance.tick_air_movement_with_cell_lists_one(1, Some(&rules));
+            assert_eq!(
+                instance
+                    .substrate
+                    .entities
+                    .get(1)
+                    .unwrap()
+                    .position
+                    .exact_z_leptons,
+                Some(855 + (frame as i32 - 100) * 20)
+            );
+        }
+        assert_eq!(restored.state_hash(), sim.state_hash(), "frame{frame}");
+    }
+}
+
+#[test]
+fn fly_phase_outer_health_power_and_life_gates_precede_nonlandable_override() {
+    for gate in ["health", "power", "life"] {
+        let row = serde_json::json!({"input": {
+            "z":900, "target":123, "landing":true, "landable":false,
+        }});
+        let (mut sim, rules) = takeoff_fixture(&row);
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        match gate {
+            "health" => entity.health.current = 0,
+            "power" => entity.locomotor.as_mut().unwrap().powered = false,
+            "life" => entity.lifecycle.object_alive = false,
+            _ => unreachable!(),
+        }
+        let before = sim.state_hash();
+        assert!(!sim.complete_fly_phase(1, Some(&rules)));
+        assert_eq!(sim.state_hash(), before, "{gate}");
+    }
+}
+
+#[test]
+fn fly_cruise_mode_hashes_separately_from_destination() {
+    use super::hash_schema::HashSchema;
+    let row = destination_vectors().remove(0);
+    let (mut sim, _) = destination_fixture(&row);
+    let before = sim.state_hash();
+    let old = sim.state_hash_with_schema(HashSchema::Before(191));
+    // A readiness change can change mode for the identical retained XYZ.
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .locomotor
+        .as_mut()
+        .unwrap()
+        .fly_runtime_mut()
+        .unwrap()
+        .select_destination_mode(0, false, true, false);
+    assert_ne!(sim.state_hash(), before);
+    assert_eq!(sim.state_hash_with_schema(HashSchema::Before(191)), old);
+}
+
+#[test]
+fn fly_production_process_resets_enter_mode_using_native_mission_precedence() {
+    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/fly_mission_mode.json"
+    ))
+    .unwrap();
+    assert_eq!(rows.len(), 30);
+    for row in rows {
+        let (mut sim, rules) = fixture(&serde_json::json!({"input":{"z":900,"target":900}}));
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        let mut mission = serde_json::to_value(entity.mission).unwrap();
+        mission["current"] = row["current"].clone();
+        mission["queued"] = row["queued"].clone();
+        entity.mission = serde_json::from_value(mission).unwrap();
+        entity
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .fly_runtime_mut()
+            .unwrap()
+            .select_destination_mode(0, false, row["before"].as_bool().unwrap(), false);
+        let rng = sim.scenario_rng.logical_state();
+        sim.tick_air_movement_with_cell_lists_one(1, Some(&rules));
+        let mode = sim
+            .substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .fly_runtime()
+            .unwrap()
+            .cruise_mode();
+        assert_eq!(mode, row["after"].as_bool().unwrap(), "{row}");
         assert_eq!(sim.scenario_rng.logical_state(), rng);
     }
 }

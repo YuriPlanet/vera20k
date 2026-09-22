@@ -2355,6 +2355,9 @@ fn hash_locomotor_payload(
             if schema.includes(HashFeature::FlyDestination) {
                 state.destination().hash(hasher);
             }
+            if schema.includes(HashFeature::FlyCruiseMode) {
+                state.cruise_mode().hash(hasher);
+            }
         }
         LocomotorRuntimePayload::Jumpjet(state) => {
             10u8.hash(hasher);

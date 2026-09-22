@@ -1,0 +1,3586 @@
+[
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": -1,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": false,
+      "taking_off": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 1500
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": -1,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": true,
+      "taking_off": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 1500
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 0,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": false,
+      "taking_off": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 0,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": true,
+      "taking_off": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 120,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": false,
+      "taking_off": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 120
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 120,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": true,
+      "taking_off": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 120
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 40000,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": false,
+      "taking_off": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 40000
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 40000,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": true,
+      "taking_off": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 40000
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": -1,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": false,
+      "taking_off": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 1500
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": -1,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": true,
+      "taking_off": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 1500
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 0,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": false,
+      "taking_off": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 0,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": true,
+      "taking_off": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 120,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": false,
+      "taking_off": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 120
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 120,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": true,
+      "taking_off": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 120
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 40000,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": false,
+      "taking_off": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 40000
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 40000,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": true,
+      "taking_off": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 40000
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": -1,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": false,
+      "taking_off": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 1500
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": -1,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": true,
+      "taking_off": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 1500
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 0,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": false,
+      "taking_off": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 0,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": true,
+      "taking_off": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 120,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": false,
+      "taking_off": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 120
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 120,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": true,
+      "taking_off": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 120
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 40000,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": false,
+      "taking_off": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 40000
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 40000,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": true,
+      "taking_off": false,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 40000
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": -1,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": false,
+      "taking_off": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 1500
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": -1,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": true,
+      "taking_off": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 1500
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 0,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": false,
+      "taking_off": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 0,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": true,
+      "taking_off": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 120,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": false,
+      "taking_off": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 120
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 120,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": true,
+      "taking_off": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 120
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 40000,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": false,
+      "taking_off": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 40000
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      0
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 40000,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": true,
+      "taking_off": true,
+      "z": 0
+    },
+    "layers": [
+      [],
+      [],
+      [
+        0,
+        1
+      ],
+      [],
+      []
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 40000
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": -1,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": false,
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 1500
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": -1,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": true,
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 1500
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 0,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": false,
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 0,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": true,
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 120,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": false,
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 120
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 120,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": true,
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 120
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 40000,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": false,
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 40000
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 40000,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": true,
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 40000
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": -1,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": false,
+      "taking_off": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 1500
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": -1,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": true,
+      "taking_off": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 1500
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 0,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": false,
+      "taking_off": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 0,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": true,
+      "taking_off": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 120,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": false,
+      "taking_off": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 120
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 120,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": true,
+      "taking_off": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 120
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 40000,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": false,
+      "taking_off": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 40000
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 40000,
+      "landable": false,
+      "landing": false,
+      "marked": true,
+      "mode": true,
+      "taking_off": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 40000
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": -1,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": false,
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 1500
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": -1,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": true,
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 1500
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 0,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": false,
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 0,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": true,
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 120,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": false,
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 120
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 120,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": true,
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 120
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 40000,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": false,
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 40000
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 40000,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": true,
+      "taking_off": false,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 40000
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": -1,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": false,
+      "taking_off": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 1500
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": -1,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": true,
+      "taking_off": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 1500
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 0,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": false,
+      "taking_off": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 0,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": true,
+      "taking_off": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 0
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 120,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": false,
+      "taking_off": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 120
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 120,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": true,
+      "taking_off": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 120
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 40000,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": false,
+      "taking_off": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 40000
+  },
+  {
+    "calls": [],
+    "coordinates": [
+      2688,
+      2688,
+      900
+    ],
+    "facings": [
+      {
+        "current": 3266,
+        "destination": 49152,
+        "duration": 25,
+        "previous": 16384,
+        "rate": 1280,
+        "start": 90
+      },
+      {
+        "current": 10922,
+        "destination": 8192,
+        "duration": 12,
+        "previous": 24576,
+        "rate": 1280,
+        "start": 90
+      }
+    ],
+    "input": {
+      "flight_level": 40000,
+      "landable": false,
+      "landing": true,
+      "marked": true,
+      "mode": true,
+      "taking_off": true,
+      "z": 900
+    },
+    "layers": [
+      [],
+      [],
+      [],
+      [],
+      [
+        0,
+        1
+      ]
+    ],
+    "marked": true,
+    "mode": true,
+    "on_bridge": false,
+    "phase": [
+      0,
+      0
+    ],
+    "phase_calls": [],
+    "returned": 0,
+    "speed": 0.25,
+    "target_height": 40000
+  }
+]

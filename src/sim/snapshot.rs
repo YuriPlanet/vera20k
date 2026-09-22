@@ -553,7 +553,8 @@ use crate::sim::world::Simulation;
 // 187 -> 188: Fly retains exact destination XYZ, independent of the cell cache.
 // 188 -> 189: retained Techno+3D4 cannot be recovered from live type or cargo.
 // 189 -> 190: Foot+55C history and the combined retained wall/Foot Cell+122 plane.
-const SNAPSHOT_VERSION: u32 = 190;
+// 190 -> 191: Fly retains its native cruise-mode byte through save and piggyback.
+const SNAPSHOT_VERSION: u32 = 191;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3451,7 +3452,8 @@ mod tests {
         // 186 -> 187: object burst position replaces the target-owned count.
         // 187 -> 188: retained Fly destination XYZ cannot be recovered from cells.
         // 189 -> 190: Foot neighbor history and retained live counters.
-        assert_eq!(super::SNAPSHOT_VERSION, 190);
+        // 190 -> 191: Fly cruise mode survives save and locomotor suspension.
+        assert_eq!(super::SNAPSHOT_VERSION, 191);
     }
 
     #[test]

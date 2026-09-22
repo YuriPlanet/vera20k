@@ -18,6 +18,13 @@ pub struct FlyRuntime {
     /// Full Fly+1C/+20/+24, initialized to CoordStruct::Empty by4CC9A0.
     /// This is independent of Foot's NavCom identity and its changing position.
     destination: [i32; 3],
+    /// Fly+5C, independent of the takeoff/landing callback flags. MoveTo
+    /// chooses it from retained destination height, armed Target, Aircraft
+    /// readiness and Landable. Enter resets it; the non-Landable phase branch
+    /// forces it true. Constructor4CCA09 initializes false. Null MoveTo and
+    /// mode-driven speed/navigation decisions still require their native port.
+    #[serde(default)]
+    cruise_mode: bool,
 }
 
 pub(crate) enum TakeoffFacing {
@@ -59,6 +66,46 @@ impl FlyRuntime {
         DriveCoord { x, y, z }
     }
 
+    pub(crate) fn cruise_mode(&self) -> bool {
+        self.cruise_mode
+    }
+
+    /// Process4CD664..4CD67F, before its power/health branches. The effective
+    /// Mission getter5B3040 falls back to queued only when current is -1.
+    pub(crate) fn prepare_process(&mut self, mission: crate::sim::mission::MissionId) {
+        if mission
+            == crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Enter)
+        {
+            self.cruise_mode = false;
+        }
+    }
+
+    /// MoveTo4CCED9..4CCFA7, after the destination and takeoff transaction.
+    /// Ground is queried from the retained coordinate even when the armed or
+    /// non-Landable arm will force true. Signed addition wraps like native.
+    pub(crate) fn select_destination_mode(
+        &mut self,
+        ground: i32,
+        armed: bool,
+        aircraft_ready: bool,
+        non_landable_aircraft: bool,
+    ) {
+        self.cruise_mode = self.destination[2] > ground.wrapping_add(120)
+            || armed
+            || aircraft_ready
+            || non_landable_aircraft;
+    }
+
+    /// Phase4CD2CA..4CD2F5 precedes the ordinary callback/Display transaction.
+    /// It clears both requests even when neither was set and rereads the live
+    /// type FlightLevel. It does not move the owner or reset either speed.
+    pub(crate) fn force_non_landable_flight(&mut self, flight_level: i32) {
+        self.cruise_mode = true;
+        self.landing = false;
+        self.taking_off = false;
+        self.target_height = flight_level;
+    }
+
     /// MoveTo4CCC80..4CCCE0: signed truncation, then 16-bit CellStruct equality.
     /// This refusal precedes owner disable/power gates and all ground queries.
     pub(crate) fn ignores_destination(&self, request: DriveCoord) -> bool {
@@ -69,8 +116,8 @@ impl FlyRuntime {
 
     /// Admitted non-null MoveTo4CCE1C..4CCE6E. A live Target and signed Ammo!=0
     /// replace Z with ground+FlightLevel; ground is read only on that arm.
-    /// Moving+34, mode+5C and null/Stop still belong to the pending native
-    /// Process/landing migration, not to the legacy MovementTarget lifetime.
+    /// The caller selects mode+5C after takeoff admission. Moving+34 and
+    /// null/Stop still require the pending native Process/landing migration.
     pub(crate) fn retain_destination(
         &mut self,
         request: DriveCoord,

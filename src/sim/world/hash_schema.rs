@@ -92,6 +92,7 @@ pub(super) enum HashFeature {
     FlyDestination = 188,
     TechnoMissionOnly = 189,
     FootNeighborHistory = 190,
+    FlyCruiseMode = 191,
 }
 
 impl HashSchema {
@@ -112,6 +113,7 @@ impl HashSchema {
                     | HashFeature::FlyDestination
                     | HashFeature::TechnoMissionOnly
                     | HashFeature::FootNeighborHistory
+                    | HashFeature::FlyCruiseMode
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

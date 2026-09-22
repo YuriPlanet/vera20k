@@ -90,5 +90,5 @@ if __name__ == '__main__':
                      'Flat allocated map, optional destination level/slope; owner warp/EMP/Foot timer gates zero, radio and cargo empty.',
                      'Constructor initializes power; optional power-off contrast. Original executable and all callees unmodified.'],
         substitutions=[],
-        scope='26 original non-null MoveTo calls: retained XYZ, signed-cell landing refusal, power refusal, Target/Ammo Z substitution, height120 boundary, readiness and Landable mode. Rust destination comparisons do not certify the unported moving/mode suffix. Excludes null requests, phase callbacks, owner-gate producers and the subsequent Process/navigation/mission chain.',
+        scope='26 original non-null MoveTo calls: retained XYZ, signed-cell landing refusal, power refusal, Target/Ammo Z substitution, height120 boundary, readiness and Landable mode. Rust compares destination, refusals and mode. Moving-byte lifetime, null requests, phase callbacks, owner-gate producers and the subsequent Process/navigation/mission chain remain outside Rust comparison coverage.',
     ))

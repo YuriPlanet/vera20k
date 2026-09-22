@@ -12,13 +12,13 @@ from unicorn.x86_const import (
     UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_ESI, UC_X86_REG_ESP,
 )
 from tools.native_oracle import SCRATCH, RET_MAGIC, run_checked, finish_vectors, provenance
-from tools.spatial_oracle.crate_speed_effect import fixture, CELL
+from tools.spatial_oracle.crate_speed_effect import fixture, CELL, RULES
 from tools.spatial_oracle.map_queries import dwords, EMPTY_TABLE, TABLE, GLOBAL_TABLE
 
 LOCO, ARG, OUTPUT = SCRATCH + 0x1B000, SCRATCH + 0x1D000, SCRATCH + 0x1D100
 
 
-def execute(case, *, phase_transaction=False):
+def execute(case, *, phase_transaction=False, capture_flight_controls=False):
     u, sp, actors, _ = fixture(dict(actors=[dict(kind='aircraft')]))
     owner = actors[0]
     object_type = owner + 0x800
@@ -76,7 +76,11 @@ def execute(case, *, phase_transaction=False):
         u.mem_write(owner + 0x674, dwords(LOCO+4))
         u.mem_write(owner + 0x94, dwords(-1))
         u.mem_write(object_type + 0xE0A, bytes([case.get('landable',True)]))
-        u.mem_write(LOCO + 0x50, bytes([case.get('taking_off',True),0]))
+        u.mem_write(LOCO + 0x50, bytes([case.get('taking_off',True),case.get('landing',False)]))
+        if capture_flight_controls:
+            u.mem_write(LOCO + 0x5C, bytes([case.get('mode', False)]))
+            u.mem_write(object_type + 0x618, dwords(case.get('flight_level', -1)))
+            u.mem_write(RULES + 0x7B4, dwords(case.get('general_flight_level', 1500)))
         u.mem_write(peer, bytes(u.mem_read(owner,0x700)))
         u.reg_write(UC_X86_REG_ESP,sp)
         run_checked(u,0x4A8630,0x4A866D,count=100)
@@ -124,6 +128,9 @@ def execute(case, *, phase_transaction=False):
             pointers=struct.unpack('<'+'I'*count,u.mem_read(buffers+0x100*layer,count*4))
             layers.append([0 if pointer==owner else 1 if pointer==peer else -1 for pointer in pointers])
         result.update(phase_calls=phase_calls,layers=layers,marked=bool(u.mem_read(owner+0x74,1)[0]))
+    if capture_flight_controls:
+        result.update(mode=bool(u.mem_read(LOCO+0x5C,1)[0]),
+                      target_height=struct.unpack('<i',u.mem_read(LOCO+0x38,4))[0])
     return result
 
 

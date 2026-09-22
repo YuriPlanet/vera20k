@@ -235,6 +235,34 @@ pub(crate) fn issue_air_coordinate_move_command(
             .expect("selected Fly locomotor")
             .begin_fly_takeoff(flight_level);
     }
+    //4CCED9: this is a second ground read, from the STORED (possibly armed-Z
+    // substituted) coordinate. Refusals above must never reach this query.
+    let aircraft = entity.category == crate::map::entities::EntityCategory::Aircraft;
+    let aircraft_ready = aircraft
+        && entity
+            .mission_leaf
+            .as_aircraft()
+            .is_some_and(|leaf| leaf.action_latch() != 0);
+    let non_landable = aircraft
+        && rules_context
+            .and_then(|(rules, interner)| rules.object(interner.resolve(entity.type_ref())))
+            .is_some_and(|object| !object.landable);
+    if let Some(state) = entity.locomotor.as_mut().and_then(|l| l.fly_runtime_mut()) {
+        let destination = state.destination();
+        let ground = super::ground_pose::ground_surface_z_at(
+            [destination.x, destination.y],
+            false,
+            terrain,
+            None,
+        )
+        .unwrap_or(0);
+        state.select_destination_mode(
+            ground,
+            armed_flight_level.is_some(),
+            aircraft_ready,
+            non_landable,
+        );
+    }
     true
 }
 
@@ -300,6 +328,13 @@ pub fn tick_air_movement(
         let Some(entity) = entities.get_mut(entity_id) else {
             continue;
         };
+        entity
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .fly_runtime_mut()
+            .unwrap()
+            .prepare_process(entity.mission.effective());
         ensure_fly_facings(entity);
         // Fly4CDA62 reads Primary.Current before navigation/phase setters.
         // This byte is a presentation/legacy projection; displacement below
